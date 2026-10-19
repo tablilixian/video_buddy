@@ -682,6 +682,14 @@ export interface ComposedNodeInput {
   script?: string
   /** CV-143：成片音轨构成（角标展示）。 */
   audioComposition?: StudioAudioComposition
+  /**
+   * 三期 W5-4：草稿档产物标。
+   *
+   * `render_composition` 用 `quality: 'draft'` 渲出来的片（半分辨率 / 低码率 /
+   * 10s 关键帧间隔）**同样落画布、同样参与版本链**，但必须一眼能和交付档区分开 ——
+   * 否则用户会把「快速看一版」的粗片当最终成片交付。角标由 CanvasNode 渲染。
+   */
+  draft?: boolean
 }
 
 /**
@@ -728,6 +736,8 @@ export async function appendComposedVideoNode(
     sourceIds: input.sourceIds,
     operationType: 'video-composite',
     ...(input.audioComposition !== undefined ? { audioComposition: input.audioComposition } : {}),
+    // 三期 W5-4：只有草稿档才写（缺省不写 ⇒ 老节点与交付档节点的落盘形态一字不变）。
+    ...(input.draft === true ? { draft: true } : {}),
     shotVersion: composedVersion,
     ...(supersedeIds.length > 0 ? { supersedes: supersedeIds } : {}),
     ...(input.script !== undefined ? { script: input.script } : {}),

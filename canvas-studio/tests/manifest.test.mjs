@@ -26,11 +26,20 @@ function baseManifest() {
   }
 }
 
-test('合法 manifest 通过且无警告', () => {
+/**
+ * 三期 W1-3：`validateManifest` 现在会把**编排体检**（motion lint）并入 warnings。
+ * 那是「观感建议」不是「契约告警」—— 断言契约层干净时必须先滤掉
+ *（lint 自身的断言在 `tests/motion-lint.test.mjs` / 报告 `report.lint`）。
+ */
+function contractWarnings(result) {
+  return result.warnings.filter((warning) => !warning.startsWith('[编排体检 '))
+}
+
+test('合法 manifest 通过且无契约告警（lint 建议不计）', () => {
   const result = validateManifest(baseManifest())
   assert.equal(result.ok, true, result.errors.join('；'))
   assert.deepEqual(result.errors, [])
-  assert.deepEqual(result.warnings, [])
+  assert.deepEqual(contractWarnings(result), [], result.warnings.join('；'))
 })
 
 test('非对象 / 缺 meta 直接拒绝', () => {

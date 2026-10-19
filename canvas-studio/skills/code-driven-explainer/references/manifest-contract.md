@@ -45,6 +45,12 @@
   `x` / `y` **互斥**（同一条轨只能有一处决定位置，同时写直接校验失败）。
 - `fx`（可选，二期）：**视觉效果** —— `glow` / `stroke` / `shadow` / `blur` / `maskFade`，见下节。
 - `fadeFrames`（可选）：首尾淡入淡出帧数 —— `0` = 硬切；缺省 6。`subtitle` 卡缺省即 `0`。
+- `exit`（可选，三期）：**退场** —— 片尾/离场怎么走，见「三期：编排与质感」节。有它时
+  `fadeFrames` 的**尾部**淡化自动让位（只保留首部），不会双淡出。
+- `startAfter`（可选，三期）：**顺序衔接** —— 用「接在上一轨之后」代替手算绝对帧号，
+  与 `startFrame` **互斥**（同时写直接报错）。
+- `blend`（可选，三期）：`normal` / `screen` / `multiply` / `overlay` / `soft-light` —— 图层混合模式。
+- `colorShift`（可选，三期）：颜色随帧过渡（`shape.color` / `textCard.accentColor` / `audioViz.color`）。
 
 ## 帧级动画 `animate`
 
@@ -56,7 +62,7 @@
   "to":   { "x": 50,  "opacity": 1 },   // 终点（必填）
   "startFrame": 0,                       // 轨内相对帧，缺省 0
   "durationInFrames": 18,                // 动画时长（帧），缺省 = 整轨长
-  "easing": "easeInOut"                  // linear / easeIn / easeOut / easeInOut（缺省 easeInOut）
+  "easing": "easeOutCubic"               // 13 档白名单，见「三期：编排与质感」节（缺省 easeInOut）
 }
 ```
 
@@ -161,6 +167,19 @@
 
 `durationInFrames` 必须按 `list_shots` 的真值取整（见 `references/source-duration.md`）。
 
+三期加的五个媒体字段（**都是可选**，不写 = 与以前完全一样）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `trimBeforeFrames` | 从素材第几帧开始用（≥0 整数，**输出帧号域**）。一条 8s 素材只用其中 2.5s 就靠它 |
+| `playbackRate` | 播放速率 `(0.1, 4]`。`0.5` = 慢动作，`2` = 快放 |
+| `muted` | `true` = 关掉这段素材的原声（默认开声） |
+| `volume` | 素材原声音量 0–1（与 `muted` 二选一即可；`muted:true` 优先） |
+| `loop` | `true` = 素材比轨道短时循环填满 |
+
+⚠️ `trimBeforeFrames + durationInFrames × playbackRate` 不能超过素材真实时长 —— 超了尾部会是黑帧。
+拿不准就先用 `list_shots` 看真值。
+
 ### `image`（静态图）
 
 ```jsonc
@@ -184,6 +203,17 @@
   `startFrame`，末句到总帧），不留空白帧 —— 详见 `references/subtitle-timing.md`。
 - `subtitle` 缺省**硬切**（等价于写 `fadeFrames: 0`），避免句间接缝闪背景；`title` / `dataCard` /
   `bullets` 缺省保留淡入淡出（6 帧）。要改就显式写 `fadeFrames`（`0` = 硬切，值越大越柔）。
+- **三期 · 文本动效**（`anim`，可选；缺省 = 整块按 `fadeFrames` 淡入，与以前一样）：
+
+| `anim` | 观感 | 适合 |
+| --- | --- | --- |
+| `fadeUp` | 整体上浮淡入 | 标题、结论句 |
+| `maskReveal` | 自上而下揭开（遮罩） | 大标题、金句 |
+| `typewriter` | 逐字打出（带光标） | 引语、数据揭示 |
+| `wordStagger` | 逐词落位 | 标题、要点 |
+
+  `animOptions` 可微调：`{ "wordDelayFrames": 3, "offsetY": 14, "blur": 4 }`（词间延迟 / 上浮距离 px / 起始模糊 px）。
+  ⚠️ 动效作用于**整张卡**，不要为了让它动而把一句话拆成多张卡（拆了反而丢了对齐与断行）。
 
 ### `shape`（形状 / 色块 / 路径）
 
@@ -240,6 +270,16 @@
 
 `fromTrackId` / `toTrackId` 必须指向**真实存在且互不相同**的两条轨道；两轨**必须重叠**——首尾相接（无重叠）会退化为硬切（warning），完全不相交会直接报错。
 
+**三期参数化三个可选字段**（不写 = 与以前逐像素一致）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `easing` | 转场推进的缓动，白名单同 `animate`（缺省线性 —— 保住老片子观感） |
+| `softness` | `0`–`1`。`> 0` 时把**硬边擦除换成软边渐变**（只对 `wipeLeft` / `wipeRight` 生效）。`0.3`–`0.4` 就明显「贵」一档 |
+| `direction` | `left` / `right` / `up` / `down`（只对 `slide` / `wipe` 生效；缺省按效果自身语义） |
+
+⚠️ `softness` 上了 `0.8` 以上基本看不出在擦除（等于是个淡入），**0.2–0.45 是可用区间**。
+
 ### `audioViz`（音频可视化，二期 B1）
 
 ```jsonc
@@ -254,14 +294,145 @@
 | --- | --- | --- |
 | `src` | 必填 | 音频资产 URL（同源约束同上） |
 | `bars` | 24 | 柱数，1–128 整数 |
-| `mode` | `bars` | `bars` 单向 / `mirror` 上下对称 |
+| `mode` | `bars` | `bars` 单向 / `mirror` 上下对称 / `line` 连续波形线（三期） |
 | `gain` | 1.6 | 振幅增益 0–4（人声比配乐轻，给 1.4–2.2） |
 | `heightPercent` | 30 | 波形区高度（占画布高百分比） |
 | `position` | `bottom` | `bottom` / `top` |
 | `color` | 主题蓝 | 柱色 |
+| `smoothing` | 0 | 三期：帧间指数平滑 0–0.9。低帧率素材或抖动明显的曲子给 0.3–0.5 |
+| `gradient` | 无 | 三期：柱体渐变 `{ "from": "#38BDF8", "to": "rgba(0,0,0,0)" }` |
 
 用法要点：波形轨放 `tracks` 数组**靠后**（后写在上层）；配 `fx:"maskFade"` 让底部自然淡出；
 `durationInFrames` 不必等于音频总长（超出部分按静音画基线）。
+
+## 三期新增：编排与质感（速查）
+
+这一节是「让片子从网页截图变成成片」的全部开关。**所有字段都可选，不写 = 与二期逐像素一致**，
+所以老 manifest 不用改；但新做的片子不写这些，观感就还停在二期。
+
+### 全片调色 `meta.look`（最省事的一次观感升级）
+
+```jsonc
+"meta": {
+  "look": { "contrast": 1.06, "saturation": 1.12, "brightness": 1.02,
+            "temperature": 0.12, "vignette": 0.35, "grain": 0.16 }
+}
+```
+
+| 字段 | 缺省 | 范围 | 说明 |
+| --- | --- | --- | --- |
+| `contrast` | 1 | 0–4 | 对比度，`1.06` 起步就够（过 1.3 容易死黑/死白） |
+| `saturation` | 1 | 0–4 | 饱和度，`1.1`–`1.15` 最稳 |
+| `brightness` | 1 | 0–4 | 亮度 |
+| `temperature` | 0 | −1–1 | 正 = 暖（琥珀），负 = 冷（青蓝） |
+| `vignette` | 0 | 0–1 | 暗角，`0.3`–`0.4` 是「电影感」的甜点区 |
+| `grain` | 0 | 0–1 | 颗粒，`0.12`–`0.2` |
+
+**调色是全片统一的**（`meta` 级，不是逐轨）——逐轨调必然花，且会让相邻两镜色调打架。
+逐轨只保留 `blend`。`vignette` / `grain` 上到 `0.6` 以上会明显糊，不要贪。
+
+### 质量档 `quality`（工具参数，不是 manifest 字段）
+
+`render_composition` 的入参里另有 `quality`：
+
+| 档 | 用途 | 代价 |
+| --- | --- | --- |
+| `draft` | 半分辨率 / 低码率 / 10s 关键帧间隔，**自动跳过渲染前预览闸门** | 画质粗，画布角标标「草稿」 |
+| `standard` | 缺省。与二期完全一致的默认值 | — |
+| `high` | 交付 / 发布（高码率 / 2s 关键帧） | 文件大、慢一些 |
+
+节奏与排版没定之前一律用 `draft` 迭代，定稿再 `standard` / `high` 重渲一版。
+
+### 顺序衔接 `startAfter`（治「帧号算错」）
+
+```jsonc
+{ "id": "t4", "startAfter": { "trackId": "t3", "gapFrames": 4 }, "durationInFrames": 90, ... }
+```
+
+- 解析结果 = `引用轨的 startFrame + 引用轨的 durationInFrames + gapFrames`；
+- **与 `startFrame` 互斥**（同时写 = 报错）；**只能引用数组里更靠前的轨**（天然无环）；
+- 宿主解析后会回一行「顺序衔接已解析：…」，照那行核对即可，不要再自己手算。
+
+### 退场 `exit`（治「硬消失」）
+
+```jsonc
+"exit": { "to": { "y": 44, "opacity": 0 }, "durationInFrames": 8, "easing": "easeIn", "gapFrames": 0 }
+```
+
+- `from` **自动**取「入场动画在退场起点处的读数」⇒ 不会跳变，所以只写 `to`；
+- `durationInFrames` 缺省 = `clamp(入场时长 × 0.6, 4, 12)`（退场比进场快，观感才利落）；
+- `gapFrames`：提前多少帧结束退场（缺省 0 = 退到轨道末尾为止）；
+- 有 `exit` 时 `fadeFrames` 的**尾部**淡化自动让位（只保留首部），不会双淡出。
+
+### 颜色过渡 `colorShift`
+
+```jsonc
+"colorShift": { "from": "#4f9cf9", "to": "#ff7a59", "durationInFrames": 60, "easing": "easeInOut" }
+```
+
+作用于 `shape.color` / `textCard.accentColor` / `audioViz.color`。区间外取端点（不循环）。
+适合「同一元素从冷到暖表示状态变化」，别整条片子每个元素都在变色。
+
+### 图层混合 `blend`
+
+`normal`（缺省）/ `screen`（光晕叠加）/ `multiply`（纹理压暗）/ `overlay` / `soft-light`（双重曝光）。
+零运行时成本（GPU 合成）。
+
+### 缓动白名单（13 档）与 `spring`
+
+| 类别 | 取值 | 什么时候用 |
+| --- | --- | --- |
+| 老四档 | `linear` / `easeIn` / `easeOut` / `easeInOut` | 与二期公式一字不差，老片子保持原样 |
+| 收束感 | `easeOutCubic` / `easeOutQuart` / `easeOutExpo` / `easeOutCirc` | **入场首选**：前 30–40% 走完 70–88% 行程，利落 |
+| 发力感 | `easeInCubic` / `easeInOutCubic` / `easeInOutExpo` | 离场、镜头整体位移 |
+| 过冲 | `backOut` | 卡片弹入（过冲 10%，`opacity` 自动 clamp） |
+| 弹性 | `spring` | 「有重量」的落位，配 `spring: { stiffness, damping, mass }` |
+
+`spring` 缺省参数 = `stiffness 170 / damping 18 / mass 1`（ζ≈0.69 ⇒ 过冲约 5%，落位有「重量感」）。
+想更弹就降 `damping`（10 左右很像 iOS 的弹入），想更稳就抬到 26（几乎不过冲）。
+**`opacity` 永远被 clamp 在 0–1**（过冲只作用于 `x`/`y`/`scale`/`rotation`），所以大胆给 `backOut` / `spring`。
+
+### 音频包络与 BGM 闪避
+
+```jsonc
+"audio": { "bgmUrl": "…", "voiceOverUrl": "…",
+           "fadeInSeconds": 0.6, "fadeOutSeconds": 1.2, "duck": { "amount": 0.55 } }
+```
+
+- `fadeInSeconds` / `fadeOutSeconds`：BGM 整轨线性淡入淡出；
+- `duck.amount`：**字幕在屏时** BGM 压到该倍率（前后各 6 帧过渡）。依据是字幕轨窗口，不是音频分析 ⇒ 确定、零成本；
+- 近似说明：旁白间隙不恢复（字幕连续时 BGM 全程压低）。
+
+### 编排体检回执（lint）
+
+`validateManifest` 会在返回值的 `warnings` 里带上 `[编排体检 ML-xx] …` 条目，`render_composition`
+的结果里还有 `report.lint: [{ code, at }]` 可计数。**只 warning、不拒收**。12 条：
+
+| Code | 触发 | 怎么改 |
+| --- | --- | --- |
+| ML-01 | ≥3 条内容轨同帧入场且都带动画 | 错峰 3–6 帧，或用 `startAfter` |
+| ML-02 | 轨在片尾前结束、无 `exit`、无尾部淡化/转场 | 加 `exit` |
+| ML-03 | `animate.durationInFrames < 6` | 低于 6 帧观感是抖动 |
+| ML-04 | 动画 > 45 帧且位移 < 10% | 缩到 18–30 帧或加大位移 |
+| ML-05 | 有位移/缩放却用 `linear` | 换 `easeOutCubic` 及以上 |
+| ML-06 | 转场窗口 < 6 帧 | 拉长到 8–20 帧 |
+| ML-07 | 同帧 ≥4 条轨在动 | 1 主 2 次，其余错峰 |
+| ML-08 | 全片 `exit` 数为 0 且轨数 ≥ 5 | 片尾统一退场 |
+| ML-09 | 动画端点 `x`/`y` 超出 0–100 | 元素会跑出画 |
+| ML-10 | 静态时长占比 > 70% | 加运动或缩短镜头 |
+| ML-11 | 字幕超 3 行（720p） | 拆句或缩字号 |
+| ML-12 | 单行超 28 字 | 同上 |
+
+不想要这些提示可在 `meta` 里写 `"lint": "off"`。
+
+### 渲后抽帧与报告（自查用）
+
+`render_composition` 的结果里：
+
+- `frames: [{ frame, url }]` —— 4 张均匀抽帧 + 每个转场中点（上限 8）。**先看这几张图再向用户汇报**：
+  字压边、元素出画、转场叠影只能在这上面看出来；
+- `report: { quality, frames, totalMs, msPerFrame, encodeMs, bytes, bitrateKbps, width, height, sampledFrames, warm, lint }`
+  —— 这条片花了多久、质量档是否生效、哪几条 lint 命中。慢得离谱时先看 `msPerFrame` 与 `encodeMs` 的占比。
 
 ## 硬约束（违反即校验失败或不达预期）
 
@@ -271,7 +442,7 @@
 4. `meta.width` / `height` / `fps` / `durationInFrames` 必须是有限正数（帧数为正整数）。
 5. CSS 层叠（z-index）在客户端渲染器里**不支持**：叠放顺序由 `tracks` 数组顺序决定，后写在上层——要压底先把背景 shape 放前面。
 6. 转场窗口应落在相邻两轨的重叠区，否则过渡可能不可见（warning）。
-7. `animate.easing` 只接受 `linear` / `easeIn` / `easeOut` / `easeInOut`；`scale` 必须 > 0；
+7. `animate.easing` 只接受「三期新增：编排与质感」那节列的 13 档白名单；`scale` 必须 > 0；
    `opacity` 限 0–1；`fadeFrames` 是 ≥ 0 的整数。**契约外字段不会生效**（例如把 `animate` 写成
    `animation`、把 `transform` 写成 `position`）—— 宿主会把它们列进 `warnings` 回传。
    看到这类 warning 请照本手册改正字段名后重跑，**不要当成"已经生效"**。
@@ -282,7 +453,11 @@
     `draw.durationInFrames` 是正整数（不给则取本轨时长，该轨时长必须合法）。
 11. `fx` 是单值枚举（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），**不要传数组**。
 12. `audioViz` 的 `bars` 是 1–128 整数、`gain` 在 0–4、`heightPercent` 在 `(0, 100]`、
-    `mode` 只允许 `bars` / `mirror`、`position` 只允许 `bottom` / `top`；`src` 同样受同源约束。
+    `mode` 只允许 `bars` / `mirror` / `line`、`position` 只允许 `bottom` / `top`、
+    `smoothing` 在 0–0.9；`src` 同样受同源约束。
+13. 三期字段的类型边界：`exit.durationInFrames` / `exit.gapFrames` / `trimBeforeFrames` 是 ≥0 整数，
+    `playbackRate` 在 `(0.1, 4]`，`volume` / `softness` / `smoothing` / `look.*` 是 0–1（`contrast` /
+    `saturation` / `brightness` 除外），`blend` 是单值枚举。越界会直接报错点名该轨。
 
 ## 事件与一致性
 

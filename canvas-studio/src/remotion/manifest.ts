@@ -22,6 +22,7 @@
  */
 
 import type { StudioAudioComposition } from '../contracts/canvas.js'
+import { formatMotionLint, lintMotion } from './motion-lint.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
@@ -45,6 +46,37 @@ export interface ManifestMeta {
   /** 总时长（帧）；= max(track.endFrame)。 */
   durationInFrames: number
   backgroundColor?: string
+  /**
+   * 三期 W2-4：**全片调色**（对比 / 饱和 / 亮度 / 色温 / 暗角 / 颗粒）。
+   *
+   * 为什么是全局而不是逐轨 `fx`：调色是「全片统一」的事，逐轨调必然花；缺省不挂任何
+   * 滤镜层 ⇒ 老 manifest 逐像素不变。折算在 `timing.ts` 的 `lookStyles`（纯函数）。
+   */
+  look?: ManifestLook
+  /** 三期 W5-3：渲染质量档（也可由工具参数覆盖）。缺省 `standard`。 */
+  quality?: RenderQuality
+  /** 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。 */
+  lint?: 'off'
+}
+
+/** 三期 W5-3：三档质量预设（`draft` 半分辨率 + 低码率；`standard` 与今天完全一致）。 */
+export type RenderQuality = 'draft' | 'standard' | 'high'
+
+/**
+ * 三期 W2-4：全片调色参数。全部可选、全部有缺省中性值（缺省 = 不产生任何样式）。
+ *
+ * - `contrast` / `saturation` / `brightness`：CSS `filter` 倍率（1 = 不变）；
+ * - `temperature`：-1（冷）~ 1（暖），用 `sepia + hue-rotate` 近似；
+ * - `vignette`：0–1，四角压暗强度；
+ * - `grain`：0–1，胶片颗粒不透明度（按帧整数偏移，逐帧确定）。
+ */
+export interface ManifestLook {
+  contrast?: number
+  saturation?: number
+  brightness?: number
+  temperature?: number
+  vignette?: number
+  grain?: number
 }
 
 /** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化。 */
@@ -102,6 +134,74 @@ export interface BaseTrack {
    * 折算在 `animated-style.ts`（唯一接线点），5 类组件共用同一份口径。
    */
   fx?: TrackFx
+  /**
+   * 三期 W1-1：**退场动画**。缺省无退场（与三期之前完全一致）。
+   *
+   * `from` 由引擎自动取「入场动画在退场起点处的读数」⇒ 不会跳变；只想写 `to`。
+   */
+  exit?: ExitMotion
+  /**
+   * 三期 W1-2：**顺序衔接**。与 `startFrame` 互斥。
+   *
+   * 解析发生在宿主 `normalizeManifestTiming()`（纯函数），渲染器永远看不到它。
+   */
+  startAfter?: StartAfter
+  /**
+   * 三期 W2-5：混合模式（CSS `mix-blend-mode`）。缺省 `normal` ⇒ 不写样式，
+   * 老 manifest 像素不变。零运行时成本（GPU 合成）。
+   */
+  blend?: TrackBlend
+  /**
+   * 三期 W2-3：**颜色过渡**。作用于 `shape.color` / `textCard.accentColor` /
+   * `audioViz.color`；sRGB 线性插值，区间外取端点。
+   */
+  colorShift?: ColorShift
+}
+
+/**
+ * 三期 W1-1：退场动画。
+ *
+ * 区间 = `[dur - gapFrames - durationInFrames, dur - gapFrames)`；`to` 必填，
+ * `from` 自动取入场读数。`durationInFrames` 缺省 = 入场时长 × 0.6（clamp 4–12）——
+ * 「退场比进场快」是专业动效纪律，不该让模型每次手算。
+ */
+export interface ExitMotion {
+  /** 退场终点（只写想变的维度）。 */
+  to: VisualState
+  /** 退场耗时（帧）；缺省按入场时长的 0.6 倍推导。 */
+  durationInFrames?: number
+  /** 缓动（缺省 `easeIn`：退场加速离开，与入场的减速落位互补）。 */
+  easing?: AnimateEasing
+  /** 距轨道末尾提前结束的帧数（缺省 0 = 贴着轨道末尾退场）。 */
+  gapFrames?: number
+}
+
+/**
+ * 三期 W1-2：顺序衔接 —— 本轨从「另一条轨结束之后」开始。
+ *
+ * 引用必须指向**数组中更靠前**的轨（天然无环，无需拓扑排序）；与 `startFrame` 互斥。
+ */
+export interface StartAfter {
+  trackId: string
+  /** 两轨之间的空档帧（缺省 0 = 紧接）。 */
+  gapFrames?: number
+}
+
+/** 三期 W2-5：混合模式白名单（CSS `mix-blend-mode` 的子集）。 */
+export type TrackBlend = 'normal' | 'screen' | 'multiply' | 'overlay' | 'soft-light'
+
+/** 三期 W2-3：颜色过渡（sRGB 线性插值）。 */
+export interface ColorShift {
+  /** 起始色（`#rgb` / `#rrggbb`）。 */
+  from: string
+  /** 结束色（`#rgb` / `#rrggbb`）。 */
+  to: string
+  /** 轨内相对起始帧（缺省 0）。 */
+  startFrame?: number
+  /** 过渡时长（帧，缺省 = 整轨）。 */
+  durationInFrames?: number
+  /** 缓动（缺省 `easeInOut`）。 */
+  easing?: AnimateEasing
 }
 
 /**
@@ -140,8 +240,30 @@ export interface VisualState {
   opacity?: number
 }
 
-/** 缓动白名单（CV-334）：不开放任意贝塞尔 —— 模型会编出非法控制点。 */
-export type AnimateEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+/**
+ * 缓动白名单（CV-334；三期 W2-1 扩档）。
+ *
+ * ⚠️ **只增不改**：老 4 档（`linear` / `easeIn` / `easeOut` / `easeInOut`）的公式一字不动
+ * —— 它们决定了历史 manifest 的逐像素结果。新 7 档 + `spring` 是纯追加。
+ *
+ * 仍然**不开放任意贝塞尔**：模型编非法控制点的概率很高，命名曲线已覆盖 95% 场景。
+ */
+export type AnimateEasing =
+  | 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+  | 'easeInCubic' | 'easeOutCubic' | 'easeInOutCubic'
+  | 'easeOutQuart' | 'easeOutExpo' | 'easeOutCirc' | 'easeInOutExpo'
+  | 'backOut'
+  | 'spring'
+
+/** 三期 W2-2：spring 物理参数（缺省 170 / 18 / 1 ⇒ ζ≈0.69、过冲约 5%）。 */
+export interface SpringConfig {
+  /** 刚度（越大越快）。 */
+  stiffness?: number
+  /** 阻尼（越大越不过冲）。 */
+  damping?: number
+  /** 质量（越大越慢）。 */
+  mass?: number
+}
 
 /**
  * 一条帧级动画（CV-334）：轨内**相对帧**区间 `[startFrame, startFrame + durationInFrames)`
@@ -158,6 +280,8 @@ export interface Animate {
   durationInFrames?: number
   /** 缓动（缺省 `easeInOut`；`linear` 需显式指定）。 */
   easing?: AnimateEasing
+  /** 三期 W2-2：`easing: 'spring'` 时的物理参数（其它缓动下无效）。 */
+  spring?: SpringConfig
 }
 
 /**
@@ -215,6 +339,19 @@ export interface VideoClipTrack extends BaseTrack {
   src: string
   /** 是否启用 Ken-Burns 缓慢推拉（默认 false）。 */
   kenBurns?: boolean
+  /**
+   * 三期 W3-1：从源素材第几帧开始用（**输出合成帧**口径；源 fps 不同由宿主换算）。
+   * 缺省 0 = 从头。
+   */
+  trimBeforeFrames?: number
+  /** 三期 W3-1：播放速率（0.1–4；0.5 = 慢动作，2 = 快放）。缺省 1。 */
+  playbackRate?: number
+  /** 三期 W3-1：静音（关掉片段原声）。缺省 false。 */
+  muted?: boolean
+  /** 三期 W3-1：音量（0–1）。缺省 1。 */
+  volume?: number
+  /** 三期 W3-1：轨道时长超过素材时循环播放。缺省 false。 */
+  loop?: boolean
 }
 
 export interface ImageClipTrack extends BaseTrack {
@@ -223,6 +360,19 @@ export interface ImageClipTrack extends BaseTrack {
   /** 图片展示形态：`cover`（默认，填满）/ `contain`（留边）/ `kenburns`。 */
   fit?: 'cover' | 'contain' | 'kenburns'
   caption?: string
+}
+
+/** 三期 W4-2：文本动效预设。 */
+export type TextAnimPreset = 'fadeUp' | 'maskReveal' | 'typewriter' | 'wordStagger'
+
+/** 三期 W4-2：文本动效参数（全部有缺省值）。 */
+export interface TextAnimOptions {
+  /** 相邻词/字之间错开多少帧（缺省 3）。 */
+  wordDelayFrames?: number
+  /** 上浮距离（像素，缺省 14）。 */
+  offsetY?: number
+  /** 模糊强度（像素，缺省 4；0 = 不模糊）。 */
+  blur?: number
 }
 
 export interface TextCardTrack extends BaseTrack {
@@ -234,6 +384,10 @@ export interface TextCardTrack extends BaseTrack {
   /** `dataCard` 专用：键值对（如 `[{k:'全球老龄化',v:'16%'}]`）。 */
   data?: { k: string; v: string }[]
   accentColor?: string
+  /** 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。 */
+  anim?: TextAnimPreset
+  /** 三期 W4-2：文本动效参数。 */
+  animOptions?: TextAnimOptions
 }
 
 export interface ShapeTrack extends BaseTrack {
@@ -277,6 +431,12 @@ export interface TransitionTrack extends BaseTrack {
   fromTrackId: string
   /** 作用的目标轨道 id（后一轨）。 */
   toTrackId: string
+  /** 三期 W2-6：转场缓动（缺省沿用各效果的线性推进 —— 老 manifest 不变）。 */
+  easing?: AnimateEasing
+  /** 三期 W2-6：软化边缘（0–1；0 = 硬边，与今天一致）。只对 wipe 生效。 */
+  softness?: number
+  /** 三期 W2-6：方向（只对 slide / wipe 生效；缺省按效果自身语义）。 */
+  direction?: 'left' | 'right' | 'up' | 'down'
 }
 
 /**
@@ -294,14 +454,18 @@ export interface AudioVizTrack extends BaseTrack {
   bars?: number
   /** 柱色（缺省主题蓝）。 */
   color?: string
-  /** 形态：`bars`（单向）/ `mirror`（上下对称）。缺省 `bars`。 */
-  mode?: 'bars' | 'mirror'
+  /** 形态：`bars`（单向）/ `mirror`（上下对称）/ `line`（连续波形线）。缺省 `bars`。 */
+  mode?: 'bars' | 'mirror' | 'line'
   /** 振幅增益（0–4，缺省 1.6；人声/配乐响度差异大，靠它调视觉幅度）。 */
   gain?: number
   /** 波形区高度（占画布高度百分比，缺省 30）。 */
   heightPercent?: number
   /** 贴底还是贴顶（缺省 `bottom`）。 */
   position?: 'bottom' | 'top'
+  /** 三期 W3-3：帧间指数平滑（0–0.9；0 = 不平滑，与今天一致）。 */
+  smoothing?: number
+  /** 三期 W3-3：柱体渐变（缺省纯色）。 */
+  gradient?: { from?: string; to?: string }
 }
 
 export interface ManifestAudio {
@@ -311,6 +475,16 @@ export interface ManifestAudio {
   voiceOverUrl?: string
   /** 混音音量（0–1），缺省走 `BGM_MIX_VOLUME` / 1.0。 */
   mix?: { bgmVolume?: number; voiceVolume?: number }
+  /** 三期 W3-2：BGM 淡入（秒，缺省 0）。 */
+  fadeInSeconds?: number
+  /** 三期 W3-2：BGM 淡出（秒，缺省 0）。 */
+  fadeOutSeconds?: number
+  /**
+   * 三期 W3-2：BGM 自动闪避（D-09 选 A：以字幕窗口为依据，零音频分析）。
+   *
+   * 近似说明：旁白间隙不恢复 —— 字幕连续时 BGM 全程压低。
+   */
+  duck?: { amount?: number }
 }
 
 export interface ManifestGlobal {
@@ -351,14 +525,30 @@ const EFFECTS = new Set([
   'wipeLeft', 'wipeRight', 'clock', 'flipX',
 ])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
-/** CV-334：缓动白名单（与 `AnimateEasing` 同域，非法值报错而非静默回退）。 */
-const ANIMATE_EASINGS = new Set(['linear', 'easeIn', 'easeOut', 'easeInOut'])
+/** CV-334：缓动白名单（三期 W2-1 扩档；与 `AnimateEasing` 同域，非法值报错而非静默回退）。 */
+const ANIMATE_EASINGS = new Set<string>([
+  'linear', 'easeIn', 'easeOut', 'easeInOut',
+  // 三期 W2-1
+  'easeInCubic', 'easeOutCubic', 'easeInOutCubic',
+  'easeOutQuart', 'easeOutExpo', 'easeOutCirc', 'easeInOutExpo',
+  'backOut',
+  // 三期 W2-2
+  'spring',
+])
 /** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。 */
 const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade'])
 /** 二期 A1：公转方向白名单。 */
 const ORBIT_DIRECTIONS = new Set(['cw', 'ccw'])
 /** 二期 B1：音频可视化形态白名单。 */
-const AUDIO_VIZ_MODES = new Set(['bars', 'mirror'])
+const AUDIO_VIZ_MODES = new Set(['bars', 'mirror', 'line'])
+/** 三期 W2-5：混合模式白名单。 */
+const TRACK_BLENDS = new Set(['normal', 'screen', 'multiply', 'overlay', 'soft-light'])
+/** 三期 W2-6：转场方向白名单。 */
+const TRANSITION_DIRECTIONS = new Set(['left', 'right', 'up', 'down'])
+/** 三期 W4-2：文本动效预设白名单。 */
+const TEXT_ANIM_PRESETS = new Set(['fadeUp', 'maskReveal', 'typewriter', 'wordStagger'])
+/** 三期 W5-3：质量档白名单。 */
+const RENDER_QUALITIES = new Set(['draft', 'standard', 'high'])
 
 /**
  * 同源资产 URL 前缀（`urlToAssetPath` 反查的锚点；`materialize.ts` 物化后的落点）。
@@ -408,28 +598,37 @@ function isNonEmptyString(value: unknown): value is string {
 
 /** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
 const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
-const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor'])
+const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint'])
 const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',
   // 二期 A1 / A2
   'orbit', 'fx',
+  // 三期 W1-1 / W1-2 / W2-3 / W2-5
+  'exit', 'startAfter', 'colorShift', 'blend',
 ])
 const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
-  video: new Set(['src', 'kenBurns']),
+  video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
   image: new Set(['src', 'fit', 'caption']),
-  textCard: new Set(['variant', 'text', 'data', 'accentColor']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions']),
   shape: new Set(['shape', 'color', 'box', 'd', 'strokeWidth', 'draw']),
-  transition: new Set(['effect', 'fromTrackId', 'toTrackId']),
-  audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position']),
+  transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
+  audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
-const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing'])
+const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing', 'spring'])
 const KNOWN_ORBIT_KEYS = new Set(['center', 'radius', 'startAngle', 'periodInFrames', 'direction'])
 const KNOWN_ORBIT_CENTER_KEYS = new Set(['x', 'y'])
 const KNOWN_DRAW_KEYS = new Set(['to', 'startFrame', 'durationInFrames', 'easing'])
-const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'mix'])
+const KNOWN_EXIT_KEYS = new Set(['to', 'durationInFrames', 'easing', 'gapFrames'])
+const KNOWN_START_AFTER_KEYS = new Set(['trackId', 'gapFrames'])
+const KNOWN_COLOR_SHIFT_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing'])
+const KNOWN_LOOK_KEYS = new Set(['contrast', 'saturation', 'brightness', 'temperature', 'vignette', 'grain'])
+const KNOWN_TEXT_ANIM_OPTIONS_KEYS = new Set(['wordDelayFrames', 'offsetY', 'blur'])
+const KNOWN_SPRING_KEYS = new Set(['stiffness', 'damping', 'mass'])
+const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck'])
 const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
+const KNOWN_DUCK_KEYS = new Set(['amount'])
 const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor'])
 const KNOWN_FONT_KEYS = new Set(['family', 'weight', 'src'])
 
@@ -459,6 +658,9 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
 
   warnUnknownKeys(input, KNOWN_MANIFEST_KEYS, 'manifest', found)
   warnUnknownKeys(input.meta, KNOWN_META_KEYS, 'meta', found)
+  if (isRecord(input.meta) && isRecord(input.meta.look)) {
+    warnUnknownKeys(input.meta.look, KNOWN_LOOK_KEYS, 'meta.look', found)
+  }
 
   if (Array.isArray(input.tracks)) {
     for (let i = 0; i < input.tracks.length; i += 1) {
@@ -482,12 +684,35 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
         warnUnknownKeys(track.orbit.center, KNOWN_ORBIT_CENTER_KEYS, `${at}.orbit.center`, found)
       }
       if (isRecord(track.draw)) warnUnknownKeys(track.draw, KNOWN_DRAW_KEYS, `${at}.draw`, found)
+      // 三期：新增字段的子对象同扫（否则 `exit:{target:{…}}` 会被静默忽略）。
+      if (isRecord(track.exit)) warnUnknownKeys(track.exit, KNOWN_EXIT_KEYS, `${at}.exit`, found)
+      if (isRecord(track.exit) && isRecord(track.exit.to)) {
+        warnUnknownKeys(track.exit.to, KNOWN_VISUAL_STATE_KEYS, `${at}.exit.to`, found)
+      }
+      if (isRecord(track.startAfter)) {
+        warnUnknownKeys(track.startAfter, KNOWN_START_AFTER_KEYS, `${at}.startAfter`, found)
+      }
+      if (isRecord(track.colorShift)) {
+        warnUnknownKeys(track.colorShift, KNOWN_COLOR_SHIFT_KEYS, `${at}.colorShift`, found)
+      }
+      if (isRecord(track.animOptions)) {
+        warnUnknownKeys(track.animOptions, KNOWN_TEXT_ANIM_OPTIONS_KEYS, `${at}.animOptions`, found)
+      }
+      if (isRecord(track.gradient)) {
+        // 渐变只有两个键，单独扫一遍即可（避免把它当成契约外字段整条报掉）。
+        for (const key of Object.keys(track.gradient)) {
+          if (key !== 'from' && key !== 'to') {
+            found.push(`${at}.gradient 含契约外字段 "${key}"（已忽略）。`)
+          }
+        }
+      }
     }
   }
 
   if (isRecord(input.audio)) {
     warnUnknownKeys(input.audio, KNOWN_AUDIO_KEYS, 'audio', found)
     warnUnknownKeys(input.audio.mix, KNOWN_MIX_KEYS, 'audio.mix', found)
+    warnUnknownKeys(input.audio.duck, KNOWN_DUCK_KEYS, 'audio.duck', found)
   }
 
   if (isRecord(input.global)) {
@@ -514,6 +739,7 @@ function warnAnimateKeys(value: unknown, at: string, sink: string[]): void {
     warnUnknownKeys(item, KNOWN_ANIMATE_KEYS, label, sink)
     warnUnknownKeys(item.from, KNOWN_VISUAL_STATE_KEYS, `${label}.from`, sink)
     warnUnknownKeys(item.to, KNOWN_VISUAL_STATE_KEYS, `${label}.to`, sink)
+    if (isRecord(item.spring)) warnUnknownKeys(item.spring, KNOWN_SPRING_KEYS, `${label}.spring`, sink)
   }
 }
 
@@ -573,7 +799,23 @@ function validateAnimateList(value: unknown, at: string, errors: string[]): void
     }
     const easing = item.easing
     if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
-      errors.push(`${label}.easing 非法（${String(easing)}）—— 白名单：linear / easeIn / easeOut / easeInOut`)
+      errors.push(`${label}.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
+    }
+    if (item.spring !== undefined) validateSpringConfig(item.spring, `${label}.spring`, errors)
+  }
+}
+
+/** 三期 W2-2：`spring` 物理参数校验（缺省合法；非法值会让归一化时间算出 NaN）。 */
+function validateSpringConfig(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at} 必须是对象（如 {"stiffness":170,"damping":18,"mass":1}）`)
+    return
+  }
+  for (const key of ['stiffness', 'damping', 'mass'] as const) {
+    const raw = value[key]
+    if (raw === undefined) continue
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+      errors.push(`${at}.${key} 必须是 > 0 的有限数`)
     }
   }
 }
@@ -650,7 +892,97 @@ function validateDrawMotion(value: unknown, at: string, trackDuration: unknown, 
   }
   const easing = value.easing
   if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
-    errors.push(`${at}.draw.easing 非法（${String(easing)}）—— 白名单：linear / easeIn / easeOut / easeInOut`)
+    errors.push(`${at}.draw.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
+  }
+}
+
+// ───────────────────── 三期 · 编排 / 表现力字段校验（W1-1 / W1-2 / W2-3 / W2-5） ─────────────────────
+
+/** 正整数帧校验（缺省合法）。 */
+function validatePositiveInteger(value: unknown, at: string, errors: string[], label = '帧'): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
+    errors.push(`${at} 必须是正整数（${label}）`)
+  }
+}
+
+/** 非负整数校验（缺省合法）。 */
+function validateNonNegativeInteger(value: unknown, at: string, errors: string[]): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+    errors.push(`${at} 必须是 >= 0 的整数`)
+  }
+}
+
+/** 三期 W1-1：`exit` 校验。 */
+function validateExitMotion(value: unknown, at: string, trackDuration: unknown, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at}.exit 必须是对象（如 {"to":{"opacity":0,"y":44},"durationInFrames":8}）`)
+    return
+  }
+  if (value.to === undefined) errors.push(`${at}.exit.to 缺失（退场终点必填，写 {} 表示"不覆盖"）`)
+  else validateVisualStateFields(value.to, `${at}.exit.to`, errors)
+  validatePositiveInteger(value.durationInFrames, `${at}.exit.durationInFrames`, errors)
+  validateNonNegativeInteger(value.gapFrames, `${at}.exit.gapFrames`, errors)
+  const easing = value.easing
+  if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
+    errors.push(`${at}.exit.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
+  }
+  const duration = value.durationInFrames
+  if (
+    typeof duration === 'number' && Number.isFinite(duration) && typeof trackDuration === 'number' &&
+    Number.isFinite(trackDuration) && duration > trackDuration
+  ) {
+    errors.push(`${at}.exit.durationInFrames ${duration} 超过轨道时长 ${trackDuration}`)
+  }
+}
+
+/** 三期 W1-2：`startAfter` 校验（引用存在性与顺序在归一化阶段判，这里只查形状）。 */
+function validateStartAfter(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at}.startAfter 必须是对象（如 {"trackId":"t1","gapFrames":4}）`)
+    return
+  }
+  if (!isNonEmptyString(value.trackId)) errors.push(`${at}.startAfter.trackId 必须是非空字符串`)
+  validateNonNegativeInteger(value.gapFrames, `${at}.startAfter.gapFrames`, errors)
+}
+
+/** 三期 W2-3：`colorShift` 校验。 */
+function validateColorShift(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at}.colorShift 必须是对象（如 {"from":"#4f9cf9","to":"#ff7a59"}）`)
+    return
+  }
+  for (const key of ['from', 'to'] as const) {
+    const raw = value[key]
+    if (!isNonEmptyString(raw) || !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/u.test(raw)) {
+      errors.push(`${at}.colorShift.${key} 必须是 #rgb 或 #rrggbb 形式的颜色`)
+    }
+  }
+  validateNonNegativeInteger(value.startFrame, `${at}.colorShift.startFrame`, errors)
+  validatePositiveInteger(value.durationInFrames, `${at}.colorShift.durationInFrames`, errors)
+  const easing = value.easing
+  if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
+    errors.push(`${at}.colorShift.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
+  }
+}
+
+/** 三期 W2-4：`meta.look` 校验（全部数值 + 取值域）。 */
+function validateLook(value: unknown, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push('meta.look 必须是对象（如 {"contrast":1.06,"vignette":0.35,"grain":0.16}）')
+    return
+  }
+  const ranges: Readonly<Record<string, [number, number]>> = {
+    contrast: [0, 4], saturation: [0, 4], brightness: [0, 4],
+    temperature: [-1, 1], vignette: [0, 1], grain: [0, 1],
+  }
+  for (const [key, [min, max]] of Object.entries(ranges)) {
+    const raw = value[key]
+    if (raw === undefined) continue
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < min || raw > max) {
+      errors.push(`meta.look.${key} 必须是 ${min}–${max} 的数值`)
+    }
   }
 }
 
@@ -714,6 +1046,14 @@ export function validateManifest(input: unknown): ManifestValidation {
   if (!isFinitePositive(meta.durationInFrames) || !Number.isInteger(meta.durationInFrames)) {
     errors.push('meta.durationInFrames 必须是正整数（帧）')
   }
+  // 三期 W2-4 / W5-3：全片调色与质量档。
+  if (meta.look !== undefined) validateLook(meta.look, errors)
+  if (meta.quality !== undefined && (typeof meta.quality !== 'string' || !RENDER_QUALITIES.has(meta.quality))) {
+    errors.push(`meta.quality 非法（${String(meta.quality)}）—— 只允许 draft / standard / high`)
+  }
+  if (meta.lint !== undefined && meta.lint !== 'off') {
+    errors.push(`meta.lint 只允许 "off"（缺省开启体检）`)
+  }
 
   if (!Array.isArray(input.tracks)) {
     return { ok: false, errors: [...errors, 'manifest.tracks 必须是数组'], warnings }
@@ -745,8 +1085,16 @@ export function validateManifest(input: unknown): ManifestValidation {
 
     const start = track.startFrame
     const duration = track.durationInFrames
-    if (typeof start !== 'number' || !Number.isFinite(start) || start < 0 || !Number.isInteger(start)) {
-      errors.push(`${at}.startFrame 必须是 >= 0 的整数（帧）`)
+    // 三期 W1-2：`startAfter` 与 `startFrame` 互斥；用 `startAfter` 时 startFrame 允许缺省
+    //（由 `normalizeManifestTiming` 在渲染前解析）。渲染器看到的 manifest 必有数字 startFrame。
+    const usesStartAfter = track.startAfter !== undefined
+    if (usesStartAfter) {
+      validateStartAfter(track.startAfter, at, errors)
+      if (track.startFrame !== undefined) {
+        errors.push(`${at} 不能同时给 startFrame 与 startAfter（二选一：绝对帧或顺序衔接）`)
+      }
+    } else if (typeof start !== 'number' || !Number.isFinite(start) || start < 0 || !Number.isInteger(start)) {
+      errors.push(`${at}.startFrame 必须是 >= 0 的整数（帧），或改用 startAfter 顺序衔接`)
     }
     if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || !Number.isInteger(duration)) {
       errors.push(`${at}.durationInFrames 必须是正整数（帧）`)
@@ -784,6 +1132,13 @@ export function validateManifest(input: unknown): ManifestValidation {
       errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade`)
     }
 
+    // 三期：`exit` / `blend` / `colorShift` 同样是「所有内容轨通用」的字段。
+    if (track.exit !== undefined) validateExitMotion(track.exit, at, duration, errors)
+    if (track.blend !== undefined && (typeof track.blend !== 'string' || !TRACK_BLENDS.has(track.blend))) {
+      errors.push(`${at}.blend 非法（${String(track.blend)}）—— 白名单：normal / screen / multiply / overlay / soft-light`)
+    }
+    if (track.colorShift !== undefined) validateColorShift(track.colorShift, at, errors)
+
     switch (type) {
       case 'video':
       case 'image':
@@ -792,6 +1147,21 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         if (type === 'image' && track.fit !== undefined && (typeof track.fit !== 'string' || !IMAGE_FITS.has(track.fit))) {
           errors.push(`${at}.fit 非法（${String(track.fit)}）`)
+        }
+        // 三期 W3-1：裁剪 / 速率 / 静音 / 音量 / 循环（只对 video 有意义）。
+        if (type === 'video') {
+          validateNonNegativeInteger(track.trimBeforeFrames, `${at}.trimBeforeFrames`, errors)
+          const rate = track.playbackRate
+          if (rate !== undefined && (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0.1 || rate > 4)) {
+            errors.push(`${at}.playbackRate 必须是 0.1–4 的数值`)
+          }
+          if (track.muted !== undefined && typeof track.muted !== 'boolean') {
+            errors.push(`${at}.muted 必须是布尔值`)
+          }
+          validateUnitInterval(track.volume, `${at}.volume`, errors)
+          if (track.loop !== undefined && typeof track.loop !== 'boolean') {
+            errors.push(`${at}.loop 必须是布尔值`)
+          }
         }
         break
       case 'textCard': {
@@ -802,6 +1172,25 @@ export function validateManifest(input: unknown): ManifestValidation {
         const textOk = isNonEmptyString(text) ||
           (Array.isArray(text) && text.length > 0 && text.every((line) => isNonEmptyString(line)))
         if (!textOk) errors.push(`${at}.text 必须是非空字符串或非空字符串数组`)
+        // 三期 W4-2：文本动效预设。
+        if (track.anim !== undefined && (typeof track.anim !== 'string' || !TEXT_ANIM_PRESETS.has(track.anim))) {
+          errors.push(`${at}.anim 非法（${String(track.anim)}）—— 只允许 fadeUp / maskReveal / typewriter / wordStagger`)
+        }
+        if (track.animOptions !== undefined) {
+          if (!isRecord(track.animOptions)) {
+            errors.push(`${at}.animOptions 必须是对象`)
+          } else {
+            validateNonNegativeInteger(track.animOptions.wordDelayFrames, `${at}.animOptions.wordDelayFrames`, errors)
+            const offsetY = track.animOptions.offsetY
+            if (offsetY !== undefined && (typeof offsetY !== 'number' || !Number.isFinite(offsetY))) {
+              errors.push(`${at}.animOptions.offsetY 必须是有限数（像素）`)
+            }
+            const blur = track.animOptions.blur
+            if (blur !== undefined && (typeof blur !== 'number' || !Number.isFinite(blur) || blur < 0 || blur > 32)) {
+              errors.push(`${at}.animOptions.blur 必须是 0–32 的数值（像素）`)
+            }
+          }
+        }
         break
       }
       case 'shape': {
@@ -843,7 +1232,8 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         const mode = track.mode
         if (mode !== undefined && (typeof mode !== 'string' || !AUDIO_VIZ_MODES.has(mode))) {
-          errors.push(`${at}.mode 非法（${String(mode)}）—— 只允许 bars / mirror`)
+          // 三期 W3-3 加了 `line`：文案从白名单现算，别再手写一份（手写的那份已经漏了它）。
+          errors.push(`${at}.mode 非法（${String(mode)}）—— 只允许 ${[...AUDIO_VIZ_MODES].join(' / ')}`)
         }
         const gain = track.gain
         if (gain !== undefined && (typeof gain !== 'number' || !Number.isFinite(gain) || gain < 0 || gain > 4)) {
@@ -857,6 +1247,23 @@ export function validateManifest(input: unknown): ManifestValidation {
         if (position !== undefined && position !== 'bottom' && position !== 'top') {
           errors.push(`${at}.position 只允许 bottom / top`)
         }
+        // 三期 W3-3：平滑与渐变。
+        const smoothing = track.smoothing
+        if (smoothing !== undefined && (typeof smoothing !== 'number' || !Number.isFinite(smoothing) || smoothing < 0 || smoothing > 0.9)) {
+          errors.push(`${at}.smoothing 必须是 0–0.9 的数值`)
+        }
+        if (track.gradient !== undefined) {
+          if (!isRecord(track.gradient)) {
+            errors.push(`${at}.gradient 必须是对象（如 {"from":"#4f9cf9","to":"#0b1220"}）`)
+          } else {
+            for (const key of ['from', 'to'] as const) {
+              const raw = track.gradient[key]
+              if (raw !== undefined && (typeof raw !== 'string' || raw.length === 0)) {
+                errors.push(`${at}.gradient.${key} 必须是非空颜色字符串`)
+              }
+            }
+          }
+        }
         break
       }
       case 'transition':
@@ -865,6 +1272,17 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         if (!isNonEmptyString(track.fromTrackId)) errors.push(`${at}.fromTrackId 必须是非空字符串`)
         if (!isNonEmptyString(track.toTrackId)) errors.push(`${at}.toTrackId 必须是非空字符串`)
+        // 三期 W2-6：转场参数化。
+        if (track.easing !== undefined && (typeof track.easing !== 'string' || !ANIMATE_EASINGS.has(track.easing))) {
+          errors.push(`${at}.easing 非法（${String(track.easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
+        }
+        const softness = track.softness
+        if (softness !== undefined && (typeof softness !== 'number' || !Number.isFinite(softness) || softness < 0 || softness > 1)) {
+          errors.push(`${at}.softness 必须是 0–1 的数值`)
+        }
+        if (track.direction !== undefined && (typeof track.direction !== 'string' || !TRANSITION_DIRECTIONS.has(track.direction))) {
+          errors.push(`${at}.direction 只允许 left / right / up / down`)
+        }
         break
       default:
         break
@@ -885,6 +1303,20 @@ export function validateManifest(input: unknown): ManifestValidation {
     } else {
       validateAssetRefField(audio.bgmUrl, 'audio.bgmUrl', errors)
       validateAssetRefField(audio.voiceOverUrl, 'audio.voiceOverUrl', errors)
+      // 三期 W3-2：音量包络 + 闪避。
+      for (const key of ['fadeInSeconds', 'fadeOutSeconds'] as const) {
+        const raw = audio[key]
+        if (raw !== undefined && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || raw > 30)) {
+          errors.push(`audio.${key} 必须是 0–30 的数值（秒）`)
+        }
+      }
+      if (audio.duck !== undefined) {
+        if (!isRecord(audio.duck)) {
+          errors.push('audio.duck 必须是对象（如 {"amount":0.55}）')
+        } else {
+          validateUnitInterval(audio.duck.amount, 'audio.duck.amount', errors)
+        }
+      }
       const mix = audio.mix
       if (mix !== undefined) {
         if (!isRecord(mix)) {
@@ -926,6 +1358,12 @@ export function validateManifest(input: unknown): ManifestValidation {
   // 且当上面已经报错时这些告警不再是重点，但仍随结果回传，便于模型一次看清全部偏差。
   warnings.push(...collectUnknownFieldWarnings(input))
 
+  // 三期 W1-3：编排体检（只 warning，D-10 选 A）。结构合法之后再跑 —— 结构都错时
+  // 再报「6 个元素同帧入场」只会淹没真问题。
+  if (errors.length === 0) {
+    warnings.push(...formatMotionLint(lintMotion(input as unknown as CompositionManifest)))
+  }
+
   return { ok: errors.length === 0, errors, warnings }
 }
 
@@ -954,9 +1392,17 @@ function validateTransitions(
     }
     const from = byId.get(fromId)!
     const to = byId.get(toId)!
-    const fromStart = from.startFrame as number
+    const fromStart = from.startFrame
+    const toStart = to.startFrame
+    // 三期 W1-2：`startAfter` 轨在**归一化之前**没有数值 startFrame。
+    // 不跳过的后果是实测过的：`undefined + n = NaN` ⇒ `overlapEnd > overlapStart` 为 false
+    // ⇒ 落到「两轨完全不相交」分支，把一份完全合法的 manifest 直接拒收。
+    // 真正的重叠判定发生在归一化之后的第二次校验（`render_composition` 正是这么排的）。
+    if (typeof fromStart !== 'number' || !Number.isFinite(fromStart) ||
+      typeof toStart !== 'number' || !Number.isFinite(toStart)) {
+      continue
+    }
     const fromEnd = fromStart + (from.durationInFrames as number)
-    const toStart = to.startFrame as number
     const toEnd = toStart + (to.durationInFrames as number)
     const overlapStart = Math.max(fromStart, toStart)
     const overlapEnd = Math.min(fromEnd, toEnd)

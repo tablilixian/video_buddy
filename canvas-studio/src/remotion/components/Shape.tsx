@@ -16,11 +16,12 @@ import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ShapeTrack } from '../manifest.js'
 import { polygonPointsForShape } from '../shape-geometry.js'
-import { drawProgressAt } from '../timing.js'
+import { colorShiftAt, drawProgressAt } from '../timing.js'
 
 /** `fx` 里与容器相关的三项（文字类效果由各文本组件自己贴）。 */
 function containerFx(anim: ReturnType<typeof resolveAnimatedStyle>): React.CSSProperties {
   return {
+    ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
     ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
     ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
     ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
@@ -31,6 +32,8 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { width } = useVideoConfig()
   const anim = resolveAnimatedStyle(track, frame)
+  // 三期 W2-3：`colorShift` 覆盖静态 `color`（缺省 `null` ⇒ 原色，老 manifest 不变）。
+  const color = colorShiftAt(track, frame) ?? track.color
   const box = track.box ?? { x: 50, y: 50, w: 30, h: 20 }
   // `transform` / `animate` / `orbit` 显式给出位置时以它们为准；否则 `box` 仍是落点来源（老写法不变）。
   const left = anim.positionDeclared ? anim.x : box.x
@@ -62,7 +65,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
           <path
             d={track.d ?? ''}
             fill="none"
-            stroke={track.color}
+            stroke={color}
             strokeWidth={strokePx}
             vectorEffect="non-scaling-stroke"
             strokeLinecap="round"
@@ -93,7 +96,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
           }}
         >
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%">
-            <polygon points={points} fill={track.color} />
+            <polygon points={points} fill={color} />
           </svg>
         </div>
       </AbsoluteFill>
@@ -112,17 +115,17 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   let visual: React.CSSProperties
   switch (track.shape) {
     case 'circle':
-      visual = { ...base, borderRadius: '50%', background: track.color, height: '0%', paddingBottom: `${box.w}%` }
+      visual = { ...base, borderRadius: '50%', background: color, height: '0%', paddingBottom: `${box.w}%` }
       break
     case 'line':
-      visual = { ...base, height: 4, background: track.color, transform: `translate(0, -50%) ${anim.shapeTransform}` }
+      visual = { ...base, height: 4, background: color, transform: `translate(0, -50%) ${anim.shapeTransform}` }
       break
     case 'gradient':
-      visual = { ...base, background: `linear-gradient(135deg, ${track.color}, rgba(0,0,0,0.15))` }
+      visual = { ...base, background: `linear-gradient(135deg, ${color}, rgba(0,0,0,0.15))` }
       break
     case 'rect':
     default:
-      visual = { ...base, background: track.color }
+      visual = { ...base, background: color }
       break
   }
   return (

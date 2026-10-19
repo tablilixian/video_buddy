@@ -20,7 +20,7 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
-import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
+import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, reportStudioRenderProgress, uploadStudioRenderSample, type PendingStudioRenderJob } from './api.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -1351,7 +1351,11 @@ export function apply(ctx: ClientContext): void {
     // 的成本太高；预览面板消费的是**同一份 manifest 与同一套组件**，所见即所得。
     // 用户取消时**主动撤单**（不等超时）—— 让等待中的工具调用立刻结算，agent 马上知道
     // 是"用户不要这条片"，而不是干等十分钟后报超时。
-    if (previewingJobId !== job.jobId) {
+    //
+    // 三期 W5-3：`draft` 档**跳过**闸门 —— 它本身就是「快速看个大概」的那一档
+    //（半分辨率 / 低码率 / 10s 关键帧间隔），再让人等一轮预览，等于把省下的时间还回去。
+    const skipPreview = job.quality === 'draft'
+    if (!skipPreview && previewingJobId !== job.jobId) {
       previewingJobId = job.jobId
       let approved = true
       try {
@@ -1385,8 +1389,15 @@ export function apply(ctx: ClientContext): void {
       //   失败重试必然还失败，白烧一倍时间。
       const { renderManifestOnWebWithRetry } = await import('./remotion-render.js')
       let lastStep = -1
-      const { bytes, warnings } = await renderManifestOnWebWithRetry(job.manifest, {
+      // 三期 W5/W6：三件事一并交代给渲染器 ——
+      // - `quality`：质量档（宿主建单时按 `render_composition` 的 `quality` 参数写进单里）
+      // - `realDurations`：宿主 ffprobe 的真值，命中则跳过浏览器侧 `<video>` 探测（原来每次白等一轮）
+      // - `sampleFrames`：宿主建议的抽帧位置（缺省时渲染器自己取 4 张 + 转场中点）
+      const { bytes, warnings, samples, metrics } = await renderManifestOnWebWithRetry(job.manifest, {
         signal: controller.signal,
+        quality: job.quality,
+        realDurations: job.realDurations,
+        sampleFrames: job.sampleFrames,
         onProgress: (p) => {
           if (!Number.isFinite(p)) return
           const clamped = Math.min(1, Math.max(0, p))
@@ -1398,7 +1409,16 @@ export function apply(ctx: ClientContext): void {
         },
       })
       if (controller.signal.aborted) return
-      await commitStudioRenderJob(job.jobId, bytes, warnings)
+      // 三期 W6-1：抽帧**先**回写再交成片 —— 单张 PNG 只有几十 KB，早一步落盘；
+      // 而且宿主的抽帧路由是幂等的（工单已结算时返回 `url: null`），所以即便这步
+      // 失败也绝不能影响成片结算：一律 catch 掉，成片才是主产物。
+      for (const sample of samples) {
+        if (controller.signal.aborted) return
+        await uploadStudioRenderSample(job.jobId, sample.frame, sample.png).catch(() => null)
+      }
+      // 三期 W6-2：渲染色结果（耗时 / 码率 / 抽帧数 / 质量档）随成片一起回传宿主，
+      // 由 `commitRenderJob` 与宿主侧自测字段合并成 `report` 返回给 agent。
+      await commitStudioRenderJob(job.jobId, bytes, warnings, { ...metrics })
     } catch (cause) {
       if (controller.signal.aborted) return
       const reason = cause instanceof Error ? cause.message : String(cause)

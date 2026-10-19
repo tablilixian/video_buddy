@@ -3715,6 +3715,15 @@ button.csNodeHeadAlert:hover {
   text-decoration: line-through;
 }
 
+/* 三期 W5-4：草稿档 chip。草稿是「还没定稿」不是「已失效」——所以不划掉、也不压暗，
+   用暖色描边表达「临时」。底色用软填充而非实心：它在头部与版本 chip 并列，
+   实心会在同一行抢视觉重心，而草稿恰恰是应当被弱化的那一档。 */
+.csNodeBadgeDraft {
+  border: 1px dashed var(--cs-warn, #d9962b);
+  background: color-mix(in srgb, var(--cs-warn, #d9962b) 12%, transparent);
+  color: color-mix(in srgb, var(--cs-warn, #d9962b) 78%, var(--dsw-alias-label-primary));
+}
+
 /* CV-143：成片音轨构成读数 —— 不用回放听就能确认「环境声有没有被丢、
    BGM 有没有混进去」。单镜保留环境声、多镜全丢是自动策略，用户必须能一眼
    看到结论。C10：落到脚部左侧，与时长 / 分辨率排在一起（它们都是「这段素材
@@ -3761,10 +3770,143 @@ button.csNodeHeadAlert:hover {
 
 .csRenderPreviewStage {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  background: #05080f;
+}
+
+/* 三期 W6-3：步进工具条。帧号 chip 固定在中间 —— 它是「我现在看的是第几帧」的
+   唯一读数，左右两组按钮按「后退 / 前进」分列，手不用在两种语义之间换位。 */
+.csPreviewToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.csPreviewStepBtn,
+.csPreviewToggleBtn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-label-tertiary) 26%, transparent);
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csPreviewStepBtn:hover:not(:disabled),
+.csPreviewToggleBtn:hover {
+  color: var(--dsw-alias-label-primary);
+  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 45%, transparent);
+}
+
+.csPreviewStepBtn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* 安全区开关的「已开」态：用 accent 底而不是只换边框 —— 参考线是画在画面上的叠加层，
+   用户需要在不看画面的情况下也知道它开着。 */
+.csPreviewToggleBtnOn {
+  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 52%, transparent);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-hover));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+}
+
+.csPreviewFrameChip {
+  margin: 0 4px;
+  padding: 0 10px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, #fff 8%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.csPreviewFrameTotal {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 画面区：guides 的坐标系基准。Player 的控件是**叠在视频区底部**的绝对定位元素，
+   所以 inset:0 的参考线与视频画面严格重合，不会画到控件条外面。 */
+.csPreviewVideoArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.csPreviewGuides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 字幕安全区：左右各留 8%、下留 12%（与 W4-3 的 lint 判据同一口径 ——
+   预览画的和 lint 判的必须是同一条线，否则「体检通过但看着压边」）。 */
+.csPreviewGuideSafe {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 8%;
+  bottom: 12%;
+  border: 1px dashed color-mix(in srgb, #fff 42%, transparent);
+  border-radius: 4px;
+}
+
+.csPreviewGuideCenterV {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  bottom: 12%;
+  width: 0;
+  border-left: 1px dashed color-mix(in srgb, #fff 24%, transparent);
+}
+
+.csPreviewGuideCenterH {
+  position: absolute;
+  top: 50%;
+  left: 8%;
+  right: 8%;
+  height: 0;
+  border-top: 1px dashed color-mix(in srgb, #fff 24%, transparent);
+}
+
+.csPreviewDraftVideo {
+  display: block;
+  width: 100%;
   background: #05080f;
+}
+
+.csRenderPreviewHintBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.csRenderPreviewDraftRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.csRenderPreviewDraftError {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .csRenderPreviewFooter {

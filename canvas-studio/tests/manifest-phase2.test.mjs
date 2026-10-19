@@ -37,7 +37,15 @@ function errorsOf(manifest) {
 
 // ───────────────────────────── A1：orbit 校验 ─────────────────────────────
 
-test('orbit：合法声明通过，且不产生警告', () => {
+/**
+ * 三期 W1-3：`validateManifest` 现在会把**编排体检**（motion lint）并入 warnings。
+ * 本文件守的是「契约边界」—— 断言无告警时先滤掉 lint 行（那是观感建议，不是契约错误）。
+ */
+function contractWarnings(result) {
+  return result.warnings.filter((warning) => !warning.startsWith('[编排体检 '))
+}
+
+test('orbit：合法声明通过，且不产生契约告警', () => {
   const manifest = base({
     tracks: [{
       id: 'planet', type: 'shape', shape: 'circle', color: '#4EA8DE',
@@ -47,7 +55,7 @@ test('orbit：合法声明通过，且不产生警告', () => {
   })
   const result = validateManifest(manifest)
   assert.deepEqual(result.errors, [], result.errors.join('；'))
-  assert.deepEqual(result.warnings, [], result.warnings.join('；'))
+  assert.deepEqual(contractWarnings(result), [], result.warnings.join('；'))
 })
 
 test('orbit：与 transform.x/y 同时声明 ⇒ 拒收（位置只能有一处来源）', () => {

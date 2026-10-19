@@ -17,15 +17,18 @@ export const TransitionShell: React.FC<{ override: TrackTransitionOverride; chil
   override,
   children,
 }) => {
-  const { opacity, translateXPercent, scale, clipPath, maskImage, rotateY } = override
+  const { opacity, translateXPercent, translateYPercent, scale, clipPath, maskImage, rotateY } = override
   const identity =
-    opacity === 1 && translateXPercent === 0 && scale === 1 &&
+    opacity === 1 && translateXPercent === 0 && translateYPercent === 0 && scale === 1 &&
     clipPath === '' && maskImage === '' && rotateY === 0
   if (identity) return <AbsoluteFill>{children}</AbsoluteFill>
   // ⚠️ `perspective()` 必须写进 transform 串**且在 rotateY 之前** —— 写成元素的
   // `perspective` 属性只对**子元素**生效，自己身上的 rotateY 会退化成"水平压扁"，
   // 看起来像没有 3D。身份判据已在上面短路，老 manifest 不会走到这里。
-  const transform = `translateX(${translateXPercent}%) scale(${scale})${rotateY === 0 ? '' : ' perspective(1200px)'} rotateY(${rotateY}deg)`
+  const translate = translateYPercent === 0
+    ? `translateX(${translateXPercent}%)`
+    : `translate(${translateXPercent}%, ${translateYPercent}%)`
+  const transform = `${translate} scale(${scale})${rotateY === 0 ? '' : ' perspective(1200px)'} rotateY(${rotateY}deg)`
   return (
     <AbsoluteFill
       style={{

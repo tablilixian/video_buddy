@@ -1,14 +1,65 @@
-/** REQ-034 · B2 + 二期 A2/A5：`textCard` 轨 → 四态文本卡（subtitle / dataCard / title / bullets）。 */
+/** REQ-034 · B2 + 二期 A2/A5 + 三期 W2-3 / W2-5 / W4-1 / W4-2：四态文本卡。 */
 import type React from 'react'
+import { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
-import type { TextCardTrack } from '../manifest.js'
-import { fitTextPolicy } from '../timing.js'
+import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
+import {
+  colorShiftAt,
+  fitTextPolicy,
+  splitTextUnits,
+  textUnitProgress,
+  type TextMeasurer,
+} from '../timing.js'
 import { useFontFamilyStack } from './font-context.js'
 
 /** `text` 归一化为行数组（subtitle / title / bullets 都按行渲染）。 */
 function linesOf(text: string | string[]): string[] {
   return Array.isArray(text) ? text : [text]
+}
+
+/**
+ * 三期 W4-1：**真实字形测量**的缓存（模块级）。
+ *
+ * key = `family|weight|px|text`：字号在 `fitTextPolicy` 的迭代里会变，必须进 key；
+ * 文本重复度高（字幕/要点），缓存命中率很高。上限 4096 条 —— 超过就整体清空
+ * （一次渲染的文本量远小于这个数，简单清空比 LRU 更不容易出错）。
+ */
+const MEASURE_CACHE = new Map<string, number>()
+const MEASURE_CACHE_LIMIT = 4096
+
+/**
+ * 三期 W4-1：建一个 `canvas.measureText` 测量器；环境不支持时返回 `undefined`
+ *（调用方回落字符宽度估算 ⇒ Host / node / 老浏览器行为不变）。
+ */
+function createCanvasMeasurer(): TextMeasurer | undefined {
+  if (typeof document === 'undefined') return undefined
+  let context: CanvasRenderingContext2D | null = null
+  try {
+    const canvas = document.createElement('canvas')
+    context = canvas.getContext('2d')
+  } catch {
+    return undefined
+  }
+  if (context === null) return undefined
+  const ctx = context
+  return (text, fontPx, family, weight) => {
+    const key = `${family}|${weight}|${fontPx}|${text}`
+    const cached = MEASURE_CACHE.get(key)
+    if (cached !== undefined) return cached
+    // `ctx.font` 的语法与 CSS `font` 简写一致；family 是已组好的栈（含逗号/引号）。
+    ctx.font = `${weight} ${fontPx}px ${family}`
+    let width = 0
+    try {
+      width = ctx.measureText(text).width
+    } catch {
+      width = 0
+    }
+    if (!Number.isFinite(width) || width < 0) width = 0
+    if (MEASURE_CACHE.size >= MEASURE_CACHE_LIMIT) MEASURE_CACHE.clear()
+    MEASURE_CACHE.set(key, width)
+    return width
+  }
 }
 
 /**
@@ -20,7 +71,14 @@ function linesOf(text: string | string[]): string[] {
  */
 function fitOrKeep(
   lines: string[],
-  options: { maxWidthPx: number; baseFontPx: number; maxLines: number },
+  options: {
+    maxWidthPx: number
+    baseFontPx: number
+    maxLines: number
+    measure?: TextMeasurer | undefined
+    family?: string | undefined
+    weight?: number | undefined
+  },
 ): { text: string; fontSize: number; overflow: boolean } {
   const raw = lines.join('\n')
   const fit = fitTextPolicy(raw, options)
@@ -30,11 +88,54 @@ function fitOrKeep(
   return { text: fit.lines.join('\n'), fontSize: fit.fontPx, overflow: fit.overflow }
 }
 
+/**
+ * 三期 W4-2：逐词/逐字渲染（`anim` 缺省时**不走这里** —— 老 manifest 的 DOM 与像素不变）。
+ */
+const AnimatedText: React.FC<{
+  text: string
+  preset: NonNullable<TextCardTrack['anim']>
+  options: TextAnimOptions | undefined
+}> = ({ text, preset, options }) => {
+  const frame = useCurrentFrame()
+  const units = useMemo(() => splitTextUnits(text, preset), [text, preset])
+  const duration = preset === 'typewriter' ? 6 : 12
+  return (
+    <>
+      {units.map((unit, index) => {
+        if (unit.length === 0) return null
+        if (/^\s+$/u.test(unit)) return <span key={`space-${index}`}>{unit}</span>
+        const progress = textUnitProgress(index, frame, {
+          preset,
+          ...(options?.wordDelayFrames !== undefined ? { wordDelayFrames: options.wordDelayFrames } : {}),
+          unitDurationInFrames: duration,
+        })
+        const offsetY = (1 - progress) * (options?.offsetY ?? 14)
+        const blur = (1 - progress) * (options?.blur ?? 4)
+        const style: React.CSSProperties = preset === 'maskReveal'
+          ? {
+            display: 'inline-block',
+            // 遮罩揭示：从下往上「长」出来，字本身完全不透明。
+            clipPath: `inset(${((1 - progress) * 100).toFixed(2)}% 0 0 0)`,
+          }
+          : {
+            display: 'inline-block',
+            opacity: progress,
+            transform: `translateY(${offsetY.toFixed(2)}px)`,
+            ...(blur > 0.01 ? { filter: `blur(${blur.toFixed(2)}px)` } : {}),
+          }
+        return <span key={`unit-${index}`} style={style}>{unit}</span>
+      })}
+    </>
+  )
+}
+
 export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { width: canvasWidth } = useVideoConfig()
   // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
   const fontFamily = useFontFamilyStack()
+  // 三期 W4-1：真实测量器（浏览器里才建；建不出来就回落估算）。
+  const measurer = useMemo(() => createCanvasMeasurer(), [])
   // ⚠️ 逐句字幕卡**不做**首尾淡入淡出（2026-10-16 修）：字幕卡按句首尾相接排布，
   //    两卡各带 6 帧淡入淡出时，接缝处前后两卡的不透明度会同时落到 0（实测 0.00）
   //    ⇒ 每句交界闪一次背景。字幕按硬切切换是常规观感；要渐变过渡请用 `transition` 轨，
@@ -44,7 +145,8 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const anim = resolveAnimatedStyle(track, frame, {
     defaultFadeFrames: track.variant === 'subtitle' ? 0 : undefined,
   })
-  const accent = track.accentColor ?? '#4f9cf9'
+  // 三期 W2-3：`colorShift` 覆盖静态强调色（缺省 null ⇒ 原色）。
+  const accent = colorShiftAt(track, frame) ?? track.accentColor ?? '#4f9cf9'
   const lines = linesOf(track.text)
   // 二期 A2：效果统一由 `resolveAnimatedStyle` 折算，这里只展开 —— 不各自解读枚举。
   const textFx: React.CSSProperties = {
@@ -57,8 +159,20 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     opacity: anim.opacity,
     transform: anim.layerTransform,
     transformOrigin: 'center',
+    ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
     ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
     ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
+  }
+  const measureOptions = {
+    ...(measurer !== undefined ? { measure: measurer } : {}),
+    family: fontFamily,
+    weight: 700,
+  }
+
+  /** 三期 W4-2：有 `anim` 时逐词渲染，否则原样返回纯文本（老路径）。 */
+  const renderText = (value: string): React.ReactNode => {
+    if (track.anim === undefined) return value
+    return <AnimatedText text={value} preset={track.anim} options={track.animOptions} />
   }
 
   if (track.variant === 'subtitle') {
@@ -67,6 +181,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
       maxWidthPx: Math.max(200, canvasWidth * 0.86 - 64),
       baseFontPx: 44,
       maxLines: 3,
+      ...measureOptions,
     })
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'flex-end', alignItems: 'center', padding: 72 }}>
@@ -85,7 +200,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...textFx,
           }}
         >
-          {fitted.text}
+          {renderText(fitted.text)}
         </div>
       </AbsoluteFill>
     )
@@ -97,6 +212,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
       maxWidthPx: Math.max(240, canvasWidth * 0.9),
       baseFontPx: 84,
       maxLines: 2,
+      ...measureOptions,
     })
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
@@ -112,7 +228,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...textFx,
           }}
         >
-          {fitted.text}
+          {renderText(fitted.text)}
         </div>
       </AbsoluteFill>
     )
@@ -132,7 +248,9 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
           }}
         >
-          <div style={{ fontSize: 40, fontWeight: 700, color: '#e6edf3', ...textFx }}>{lines.join(' ')}</div>
+          <div style={{ fontSize: 40, fontWeight: 700, color: '#e6edf3', ...textFx }}>
+            {renderText(lines.join(' '))}
+          </div>
           <div style={{ height: 2, background: accent, margin: '26px 0 10px' }} />
           {(track.data ?? []).map((row) => (
             <div
@@ -159,6 +277,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     maxWidthPx: Math.min(900, Math.max(300, canvasWidth * 0.9)),
     baseFontPx: 48,
     maxLines: 6,
+    ...measureOptions,
   })
   const bulletLines = fitted.text.split('\n')
   return (
@@ -167,7 +286,9 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
         {bulletLines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>
             <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, marginRight: 24 }} />
-            <div style={{ fontSize: fitted.fontSize, color: '#e6edf3', ...textFx }}>{line}</div>
+            <div style={{ fontSize: fitted.fontSize, color: '#e6edf3', ...textFx }}>
+              {renderText(line)}
+            </div>
           </div>
         ))}
       </div>

@@ -238,6 +238,9 @@ look_card(name="雨夜霓虹", lockedPrompt="色彩：…\n光线：…\n材质�
 | 工作流第 6 步 | 逐镜出图（**按需、默认不出**：仅构图/走位精确要求时出姿态关键帧）按 §9.2 注入 |
 | 工作流第 7 步（质检） | 逐镜 `qc_shot` 的缺省基准**已含 Look 卡**：角色/场景卡按「逐项一致」、Look 卡按「整体调性」（允许轻微波动、不允许调性反转）分组判定；风格漂移项会点名对应 token 行（如「光线」）——改哪行 tokens 就看 §6 只重出样张；「节奏」单帧不可判，不会因它 FAIL |
 | Look 卡（CV-157，**已落地**） | `look_card` 把 tokens 与样张锚点资产化；本文件的采集/样张/steer 规则不变 |
+| `render_composition`（三期 W2-4） | Look 卡是**人读的设计语言**，成片的**机器读数**是 manifest 的 `meta.look`（`contrast` / `saturation` / `brightness` / `temperature` / `vignette` / `grain`）。写了 Look 卡就该把它译成这组数字，详见 `code-driven-explainer/references/manifest-contract.md`「全片调色」。译法：冷调低饱和 → `saturation 0.92` + `temperature -0.15`；暖调复古 → `temperature 0.18` + `vignette 0.35` + `grain 0.18`；高对比锐利 → `contrast 1.12` + `saturation 1.05`＋vignette 0 |
+
+> `meta.look` **不替代** Look 卡：卡管的是「生成侧」（角色/场景图长什么样），`meta.look` 管「合成侧」（把已出的片段统一到一个调子上）。两者同源不同层，别只写一处。
 
 ## 11. 参考图席位规则（与 `consistency.md` 对齐）
 

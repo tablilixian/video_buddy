@@ -59,11 +59,13 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
-import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest } from './remotion/manifest.js'
+import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
+import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
+import { lintMotion } from './remotion/motion-lint.js'
 import { runRenderJob } from './remotion/render-job.js'
-import { reconcileManifestVideoDurations } from './remotion/timing.js'
+import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
@@ -95,6 +97,48 @@ const resultSchema = {
       type: 'string' as const,
       enum: ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'none'] as const,
       description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / native+voiceOver=环境声+旁白 / native+bgm+voiceOver=三者叠混 / bgm=纯 BGM / voiceOver=只有旁白（纯代码片）/ bgm+voiceOver=BGM+旁白 / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
+    },
+    frames: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          frame: { type: 'integer' as const, description: '绝对帧号' },
+          url: { type: 'string' as const, description: '抽帧 PNG 的同源 URL（可直接看图核对排版 / 转场）' },
+        },
+      },
+      description: 'render_composition 专用：渲后抽帧（4 张均匀分布 + 转场中点，上限 8）。**先看这几张图再向用户汇报** —— 字压边、元素出画、转场叠影都只能在这上面看出来',
+    },
+    report: {
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: {
+        quality: { type: 'string' as const, description: '本次质量档：draft / standard / high' },
+        frames: { type: 'integer' as const, description: '渲染帧数' },
+        totalMs: { type: 'number' as const, description: '总耗时（毫秒，含字体/探测/编码）' },
+        msPerFrame: { type: 'number' as const, description: '每帧平均耗时（毫秒）' },
+        encodeMs: { type: 'number' as const, description: '编码阶段耗时（毫秒；编码器未上报时为 0）' },
+        bytes: { type: 'integer' as const, description: '成片字节数' },
+        bitrateKbps: { type: 'number' as const, description: '成片码率（kbps，按成片时长折算）' },
+        width: { type: 'integer' as const, description: '成片真实宽度（像素）' },
+        height: { type: 'integer' as const, description: '成片真实高度（像素）' },
+        sampledFrames: { type: 'integer' as const, description: '实际落盘抽帧数' },
+        warm: { type: 'boolean' as const, description: '是否为暖机后的第二遍（性能基线用）' },
+        lint: {
+          type: 'array' as const,
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              code: { type: 'string' as const, description: '编排体检编号（ML-01 … ML-12）' },
+              at: { type: 'string' as const, description: '定位（轨 id / 轨道序号 / 帧号）' },
+            },
+          },
+          description: '编排体检回执（与 warnings 里的文案同源；此处只留可计数的编号与定位）',
+        },
+      },
+      description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数。用于判断「这条片花了多久、质量档是否生效」',
     },
   },
 }
@@ -178,6 +222,24 @@ interface ComposeToolResult {
   skippedCount: number
   audioComposition: StudioAudioComposition
   warnings?: string[]
+  /** 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。 */
+  frames?: { frame: number; url: string }[]
+  /** 三期 W6-2：渲染报告（性能与质量可复盘）。 */
+  report?: {
+    quality: string
+    frames: number
+    totalMs: number
+    msPerFrame: number
+    encodeMs: number
+    bytes: number
+    bitrateKbps: number
+    width: number
+    height: number
+    sampledFrames: number
+    warm: boolean
+    /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位；详细文案在 `warnings` 里）。 */
+    lint?: { code: string; at: string }[]
+  }
 }
 
 /** 校验用：取 schema 已声明的属性名。 */
@@ -2404,31 +2466,41 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n\nmanifest 结构（JSON）：'
         + '\n- meta（必填）：{"title":"片名","width":1280,"height":720,"fps":30,"durationInFrames":180,"backgroundColor":"#0b1220"}；总时长应 = max(track.startFrame + track.durationInFrames)。'
         + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨必含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
-        + '\n  · 每轨通用字段（6 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；orbit? 公转（见下）；fx? 视觉效果：glow|stroke|shadow|blur|maskFade 单值（发光 / 描边 / 投影 / 虚化 / 底部渐隐）；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）。'
-        + '\n  · animate 写法：{"from":{...},"to":{...},"startFrame"? 轨内相对帧(缺省 0),"durationInFrames"? 时长(缺省=整轨),"easing"? "linear|easeIn|easeOut|easeInOut"(缺省 easeInOut)}。from / to 里可写 x / y / scale / rotation / opacity；**要动的维度请 from 与 to 都写**（只写一边时另一边取 transform 的值或缺省值）。例：{"from":{"x":115,"opacity":0},"to":{"x":50,"opacity":1},"durationInFrames":18} = 从画面右侧滑入并淡入；{"from":{"scale":1},"to":{"scale":1.6},"durationInFrames":30} = 放大强调。多条动画写成数组，按顺序叠加（后者覆盖它声明过的维度）。'
+        + '\n  · 每轨通用字段（6 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；orbit? 公转（见下）；fx? 视觉效果：glow|stroke|shadow|blur|maskFade 单值（发光 / 描边 / 投影 / 虚化 / 底部渐隐）；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）；exit? 退场（三期，见下）；startAfter? 顺序衔接（三期，与 startFrame 互斥）；blend? "normal|screen|multiply|overlay|soft-light" 图层混合（三期）；colorShift?{from,to,durationInFrames,easing?} 颜色随帧过渡（三期，作用于 shape.color / textCard.accentColor / audioViz.color）。'
+        + '\n  · animate 写法：{"from":{...},"to":{...},"startFrame"? 轨内相对帧(缺省 0),"durationInFrames"? 时长(缺省=整轨),"easing"? 见下,"spring"?{stiffness?,damping?,mass?}}。easing 13 档白名单：linear|easeIn|easeOut|easeInOut（老四档，公式不变）、easeInCubic|easeOutCubic|easeInOutCubic、easeOutQuart|easeOutExpo|easeOutCirc|easeInOutExpo、backOut（过冲 10%）、spring（弹簧闭式解，缺省 170/18/1；opacity 自动 clamp 在 0-1，位移/缩放/旋转可放心过冲）。**入场首选 easeOutCubic / easeOutExpo**（前 30-40% 走完 70-88% 行程，收尾利落），linear 只给匀速扫描用。from / to 里可写 x / y / scale / rotation / opacity；**要动的维度请 from 与 to 都写**（只写一边时另一边取 transform 的值或缺省值）。例：{"from":{"x":115,"opacity":0},"to":{"x":50,"opacity":1},"durationInFrames":18} = 从画面右侧滑入并淡入；{"from":{"scale":1},"to":{"scale":1.6},"durationInFrames":30} = 放大强调。多条动画写成数组，按顺序叠加（后者覆盖它声明过的维度）。'
+        + '\n  · exit 写法（三期 · 退场）：{"to":{"y":44,"opacity":0},"durationInFrames"? 缺省 clamp(入场×0.6,4,12),"easing"?,"gapFrames"? 0}。from **自动**取入场动画在退场起点处的读数（只写 to，不会跳变）；有 exit 时 fadeFrames 的尾部淡化自动让位（只留首部）。'
+        + '\n  · startAfter 写法（三期 · 顺序衔接）：{"trackId":"上一轨 id","gapFrames"? 0} —— 解析成「引用轨 startFrame + 其 durationInFrames + gapFrames」。**与 startFrame 互斥**，且只能引用数组里更靠前的轨；宿主解析后会回一行「顺序衔接已解析：…」，照它核对，不要手算帧号。'
         + '\n  · orbit 写法（绕点圆周运动，一行顶掉几十段关键帧）：{"center":{"x":50,"y":50},"radius":26,"startAngle"? 度(0=正右，增大=顺时针，缺省 0),"periodInFrames"? 转一圈帧数(缺省=整轨),"direction"? "cw|ccw"(缺省 cw)}。radius 取 (0,100] 百分比。⚠️ **位置来源三选一**：orbit / transform·animate 的 x,y / 缺省居中——同时写 orbit 和 x/y 会**直接拒收**（scale / rotation / opacity 不受限制，可同时动）。'
         + '\n  · 讲「过程 / 关系」的常见做法：多个元素依次出场 = 各自错开 startFrame + 同样的 animate；尺寸对比 = 各元素到位的 animate 里给不同 scale（起始 scale 可都相同）；周期往复 / 脉动 = 数组里给两条首尾相接的 animate；绕中心转圈 = **用 orbit**（不要手算关键帧）；一笔画路径 = shape("path") + d + draw（见下）。本契约不支持任意贝塞尔曲线与路径跟随。'
-        + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,…通用字段}'
+        + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,trimBeforeFrames? 从素材第几帧开始(>=0),"playbackRate"? 0.1-4(0.5=慢动作),muted?,volume? 0-1,loop?,…通用字段}'
         + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?,…通用字段}'
-        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?,…通用字段}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡缺省硬切，要淡入显式写 fadeFrames）'
+        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?,anim?:"fadeUp|maskReveal|typewriter|wordStagger",animOptions?{wordDelayFrames?,offsetY?,blur?},…通用字段}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡缺省硬切，要淡入显式写 fadeFrames。anim 是整卡动效，别为让它动而把一句话拆成多张卡）'
         + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient|arrow|triangle|star|polygon|path",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 是静态落点与尺寸；若 transform / animate 给了 x / y，以它们为准）。**path** 额外要 d（SVG 路径，坐标空间是 0-100 双轴百分比、非等比——16:9 下正圆的 rx:ry ≈ 1:0.5625）+ 可选 strokeWidth（百分比，缺省 0.5）+ draw?{to? 0-1,"startFrame"? 轨内帧,"durationInFrames"? 生长帧数,easing?}（描边从无到有生长；d / draw 只对 path 生效，写在别的形状上会 warning 说明已忽略）'
-        + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve|wipeLeft|wipeRight|clock|flipX",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠；wipeLeft/wipeRight = 硬边擦除推进，clock = 扇形扫描，flipX = 横向翻面）'
-        + '\n  · audioViz（音频可视化，柱高由真实振幅驱动、逐帧确定）：{id,type:"audioViz",src,startFrame,durationInFrames,bars? 1-128(缺省 24),mode? "bars|mirror"(缺省 bars),gain? 0-4(缺省 1.6),heightPercent? (0,100](缺省 30),position? "bottom|top"(缺省 bottom),color?}；src 同源约束同上，track 放数组靠后（后写在上层）'
-        + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
+        + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve|wipeLeft|wipeRight|clock|flipX",fromTrackId,toTrackId,startFrame,durationInFrames,easing?,softness? 0-1,direction?:"left|right|up|down"}（作用的两轨必须重叠；wipeLeft/wipeRight = 硬边擦除推进，clock = 扇形扫描，flipX = 横向翻面；三期加 softness>0 = 软边渐变擦除，只对 wipe 生效，0.2-0.45 是可用区间；direction 只对 slide/wipe 生效）'
+        + '\n  · audioViz（音频可视化，柱高由真实振幅驱动、逐帧确定）：{id,type:"audioViz",src,startFrame,durationInFrames,bars? 1-128(缺省 24),mode? "bars|mirror|line"(缺省 bars),gain? 0-4(缺省 1.6),heightPercent? (0,100](缺省 30),position? "bottom|top"(缺省 bottom),color?,smoothing? 0-0.9(三期，帧间指数平滑),gradient?{from,to}(三期，柱体渐变)}；src 同源约束同上，track 放数组靠后（后写在上层）'
+        + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1},"fadeInSeconds"?,"fadeOutSeconds"?,"duck"?{amount? 0-1}}（三期：淡入淡出 + 字幕在屏时 BGM 压到 amount 倍，前后各 6 帧过渡）'
         + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'
+        + '\n- meta 里还可写（三期）：look?{contrast?(缺省 1),saturation?(1),brightness?(1),temperature? -1~1,vignette? 0-1,grain? 0-1} = **全片统一调色**（暗角 0.3-0.4 + 颗粒 0.12-0.2 + 对比 1.06 是最省事的一次观感升级）；lint?:"off" 关闭编排体检提示。'
         + '\n\n素材引用约束：只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或**位于本项目资产目录内**的绝对路径，禁止一切外链；'
         + '填绝对路径时宿主会自动物化为同源 URL，目录外的路径会被拒收（CSR 渲染在浏览器环境取不到域外文件）。'
         + '素材缺失或不可用会**直接拒绝渲染**，不会静默出片。'
         + 'video / image 轨的 id 必须是该素材对应的**画布节点 id**（成片血缘据此生成，别填 t0 这类占位）。'
         + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正；**校正后若排布不再自洽（相邻轨不再重叠 / 转场失效）会连同明细直接拒收**——按报错里的真值重排轨道与转场窗口后重试，不要原样重试。'
+        + '\n\n返回里除 url / 时长 / 分辨率外还有（三期）：frames[] = 渲后抽帧（4 张均匀 + 转场中点，上限 8）——**先看这几张图再向用户汇报**，字压边 / 元素出画 / 转场叠影只能在这上面看出来；report{} = 质量档 / 帧数 / 总耗时 / 每帧耗时 / 编码耗时 / 字节 / 码率 / 抽帧数 / 编排体检命中（lint[]）。'
+        + '\nwarnings 里会出现「[编排体检 ML-xx] …」——这是**只提示不拒收**的观感体检（同帧入场 / 有进无出 / 动画过短 / 位移用 linear / 转场太短 / 静态占比过高 / 字幕超行等）。看到就照建议改，别当成渲染失败。'
         + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
       parameters: {
         manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见本工具说明）；解析 / 校验失败会显式报错且不渲染' },
         projectId: { type: 'string' as const, description: '可选：目标项目 id；缺省取当前会话项目' },
+        quality: {
+          type: 'string' as const,
+          enum: ['draft', 'standard', 'high'] as const,
+          description: '可选：渲染质量档。draft = 半分辨率 + 低码率 + 不抢主线程（迭代预览，跳过渲染前预览闸门，快 2.5×+）；standard = 与原来完全一致（缺省）；high = 高码率 + 短关键帧（交付/发布）',
+        },
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { manifest?: unknown; projectId?: unknown }
+        const a = args as { manifest?: unknown; projectId?: unknown; quality?: unknown }
         const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
         assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
         const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -2436,18 +2508,24 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (typeof a.manifest !== 'string' || a.manifest.trim() === '') {
           throwError('CS-USER-ERR', { message: '缺少 manifest（需 CompositionManifest JSON 字符串）。' })
         }
-        // 1) 解析 + 校验（宿主侧纯函数，无浏览器 —— 与渲染路线无关）
+        // 1) 解析 + 顺序衔接解析 + 校验（宿主侧纯函数，无浏览器 —— 与渲染路线无关）
         let parsed: unknown
         try {
           parsed = JSON.parse(a.manifest)
         } catch {
           throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON。请检查后重试。' })
         }
-        const validation = validateManifest(parsed)
+        // 三期 W1-2：`startAfter` 在**校验之前**解析成数字帧 —— 校验层允许 startFrame 缺省，
+        // 但渲染器只认数字。解析失败（自引用 / 前向引用）直接拒收，零副作用。
+        const normalized = normalizeManifestTiming(parsed as CompositionManifest)
+        if (normalized.errors.length > 0) {
+          throwError('CS-USER-ERR', { message: `manifest 顺序衔接解析失败：${normalized.errors.join('；')}` })
+        }
+        const validation = validateManifest(normalized.manifest)
         if (!validation.ok) {
           throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
         }
-        const manifest = parsed as CompositionManifest
+        const manifest = normalized.manifest
         // 1.5) 素材物化（R3）：域内本地绝对路径 → 同源 URL；域外路径**显式拒收**。
         //      route B 的渲染发生在渲染进程的**浏览器环境**，域外绝对路径会被解析成
         //      `http://<origin>/…` 而必然 404，且失败只发生在渲染进程、宿主无感 ⇒ 不能放行。
@@ -2487,17 +2565,30 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           })
         }
         // 3) 建「渲染工单」→ 等画布客户端 CSR 渲染 → 收成片字节（宿主在结算时落盘 + 探真值）
+        //    三期 W5-3：质量档由工具参数决定（缺省 standard = 与原来完全一致）；
+        //    W5-4：把宿主探到的真值透传给客户端 ⇒ 不再二次探测；
+        //    W6-1：抽帧位置在宿主算好（与客户端同一纯函数）。
+        const quality: RenderQuality | undefined =
+          a.quality === 'draft' || a.quality === 'standard' || a.quality === 'high' ? a.quality : undefined
+        if (a.quality !== undefined && quality === undefined) {
+          throwError('CS-USER-ERR', { message: `quality 非法（${String(a.quality)}）—— 只允许 draft / standard / high` })
+        }
         const job = await runRenderJob({
           projectId,
           manifest: renderManifest,
           fps: source.meta.fps,
           signal: exec.signal,
+          ...(quality !== undefined ? { quality } : {}),
+          realDurations: pre.realDurations,
+          sampleFrames: pickSampleFrames(renderManifest),
         })
         // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）
         const composedNode = await appendComposedVideoNode(registry, projectId, {
           url: job.url,
           duration: job.duration,
           audioComposition,
+          // 三期 W5-4：草稿档打标 —— 画布角标据此区分「快速看一版」与交付档。
+          ...(job.quality === 'draft' ? { draft: true } : {}),
           ...(job.width !== undefined ? { width: job.width } : {}),
           ...(job.height !== undefined ? { height: job.height } : {}),
           sourceIds: collectManifestSourceIds(renderManifest),
@@ -2506,11 +2597,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         //    评分对象用 `renderManifest`（真正被渲染的那份）—— 校正改过时长，拿校正前的
         //    `source` 打分与成片不是同一份数据。
         const risk = scoreSlideshowRisk(renderManifest)
+        // 三期 W1-3：取一次体检结果，既给报告里的计数，也让「置顶提醒」有统一来源。
+        const lintIssues = lintMotion(renderManifest)
+        const resolvedNote = formatResolvedStarts(normalized.resolved)
         const warnings = [
           ...validation.warnings,
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
           ...reconciled.warnings,
+          ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
           ...job.warnings,
         ]
         const payload: ComposeToolResult = {
@@ -2523,6 +2618,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           skippedCount: 0,
           audioComposition,
           ...(warnings.length > 0 ? { warnings } : {}),
+          ...(job.frames.length > 0
+            ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }
+            : {}),
+          // 三期 W1-3 / W6-2：编排体检的可计数回执。文案已由 `validateManifest` 末尾
+          // 并入 `warnings`（模型读一处即可）；这里只再取一次编号与定位，让报告可统计。
+          // 为什么敢重复求值：`lintMotion` 是**纯函数**（无 IO / 无随机），对同一份
+          // `renderManifest` 结果必然一致 —— 不会出现「报告 3 条、warnings 4 条」的分叉。
+          report: {
+            ...job.report,
+            ...(lintIssues.length > 0
+              ? { lint: lintIssues.map((issue) => ({ code: issue.code, at: issue.at })) }
+              : {}),
+          },
         }
         return payload
       },

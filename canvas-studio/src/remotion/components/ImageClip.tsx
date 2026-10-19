@@ -19,6 +19,7 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
       style={{
         opacity: anim.opacity,
         backgroundColor: '#05080f',
+        ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
         // 二期 A2：视觉效果由唯一接线点折算，这里只展开（组件不解读枚举）。
         ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
         ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),

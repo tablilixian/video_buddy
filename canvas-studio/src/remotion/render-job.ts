@@ -22,7 +22,7 @@ import { probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
-import type { CompositionManifest } from './manifest.js'
+import type { CompositionManifest, RenderQuality } from './manifest.js'
 import {
   listRenderJobs,
   reportRenderProgress,
@@ -30,7 +30,7 @@ import {
   releaseRenderSlot,
   type RenderJobView,
 } from './render-queue.js'
-import { renderTimeoutMs } from './timing.js'
+import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
 /**
  * 工单超时**下限**（毫秒）。
@@ -48,6 +48,36 @@ export interface PendingRenderJob {
   /** 校正后的 Manifest（宿主已派生音频构成 / 校正视频时长）。 */
   manifest: CompositionManifest
   fps: number
+  /** 三期 W5-3：质量档（客户端据此选编码参数，并决定是否跳过预览闸门）。 */
+  quality: RenderQuality
+  /**
+   * 三期 W5-4：宿主 ffprobe 已探到的真值时长（`src → 秒`）。
+   * 客户端**直接复用**，不再自己探一遍（原来 10 段素材要白等 1.5–8s）。
+   */
+  realDurations: Record<string, number>
+  /** 三期 W6-1：建议抽帧位置（绝对帧号）。 */
+  sampleFrames: number[]
+}
+
+/** 三期 W6-2：渲染报告（宿主侧形状，字段与客户端 `RenderMetrics` 对齐）。 */
+export interface RenderJobReport {
+  quality: RenderQuality
+  frames: number
+  totalMs: number
+  msPerFrame: number
+  encodeMs: number
+  bytes: number
+  bitrateKbps: number
+  width: number
+  height: number
+  sampledFrames: number
+  warm: boolean
+}
+
+/** 三期 W6-1：一张抽帧（已落盘的同源 URL）。 */
+export interface RenderSampleResult {
+  frame: number
+  url: string
 }
 
 /** `runRenderJob` 结算产物（宿主已落盘并探测真值）。 */
@@ -62,6 +92,12 @@ export interface RenderJobOutcome {
   height?: number
   /** 渲染期告警（客户端上报的字体降级 / 编码降级 + 宿主探测告警）。 */
   warnings: string[]
+  /** 三期 W5-3：本次质量档。 */
+  quality: RenderQuality
+  /** 三期 W6-1：抽帧（可为空）。 */
+  frames: RenderSampleResult[]
+  /** 三期 W6-2：渲染报告。 */
+  report: RenderJobReport
 }
 
 /** 建单参数。 */
@@ -73,6 +109,12 @@ export interface RunRenderJobOptions {
   /** 超时（毫秒）；缺省 `RENDER_JOB_TIMEOUT_MS`。测试注入短值。 */
   timeoutMs?: number
   signal?: AbortSignal
+  /** 三期 W5-3：质量档（缺省 `standard`）。 */
+  quality?: RenderQuality
+  /** 三期 W5-4：宿主探测到的素材真值时长（透传给客户端，免二次探测）。 */
+  realDurations?: Record<string, number>
+  /** 三期 W6-1：抽帧位置（缺省由客户端按 4 张 + 转场中点自选）。 */
+  sampleFrames?: number[]
 }
 
 /** 客户端回写内容。 */
@@ -81,6 +123,8 @@ export interface CommitRenderInput {
   bytes: Uint8Array
   /** 客户端上报的渲染期告警。 */
   warnings?: readonly string[]
+  /** 三期 W6-2：客户端渲染报告（缺省用宿主侧兜底值）。 */
+  report?: Partial<RenderJobReport>
 }
 
 /** 回写响应（也作为路由 200 体）。 */
@@ -98,6 +142,14 @@ interface ActiveRenderJob {
   projectId: string
   manifest: CompositionManifest
   fps: number
+  /** 三期 W5-3：质量档。 */
+  quality: RenderQuality
+  /** 三期 W5-4：宿主已探到的素材真值（透传客户端）。 */
+  realDurations: Record<string, number>
+  /** 三期 W6-1：建议抽帧位置。 */
+  sampleFrames: number[]
+  /** 三期 W6-1：已回写的抽帧。 */
+  samples: RenderSampleResult[]
   resolve: (outcome: RenderJobOutcome) => void
   reject: (cause: unknown) => void
   timer: ReturnType<typeof setTimeout>
@@ -120,7 +172,15 @@ export function pendingRenderJobFor(projectId: string): PendingRenderJob | null 
   for (const job of activeJobs.values()) {
     if (job.projectId !== projectId) continue
     if (!job.dispatched) continue
-    return { jobId: job.jobId, projectId: job.projectId, manifest: job.manifest, fps: job.fps }
+    return {
+      jobId: job.jobId,
+      projectId: job.projectId,
+      manifest: job.manifest,
+      fps: job.fps,
+      quality: job.quality,
+      realDurations: job.realDurations,
+      sampleFrames: job.sampleFrames,
+    }
   }
   return null
 }
@@ -182,6 +242,10 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       projectId,
       manifest,
       fps,
+      quality: options.quality ?? manifest.meta.quality ?? 'standard',
+      realDurations: options.realDurations ?? {},
+      sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
+      samples: [],
       resolve,
       reject,
       timer: setTimeout(() => {}, 0),
@@ -228,6 +292,34 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
 }
 
 /**
+ * 三期 W6-1：客户端回写一张抽帧（PNG 字节 → 项目资产目录）。
+ *
+ * @returns 落盘后的同源 URL；工单不存在 / 已结算返回 `null`（路由据此回 200 幂等）。
+ */
+export async function recordRenderSample(
+  registry: ProjectRegistry,
+  jobId: string,
+  frame: number,
+  png: Uint8Array,
+): Promise<RenderSampleResult | null> {
+  const job = activeJobs.get(jobId)
+  if (job === undefined || job.settled || png.length === 0) return null
+  const safeFrame = Number.isFinite(frame) ? Math.max(0, Math.round(frame)) : 0
+  // ⚠️ `saveLocalAssetBytes` 只按**扩展名**分类，落盘名由它自己生成（`<assetId>.png`）——
+  // 这里传的 name 不进文件名。帧号的真值在 `job.samples` / 结算产物的 `frames[].frame` 里，
+  // **不要**让任何调用方依赖文件名里的帧号（会静默对不上）。
+  const saved = await saveLocalAssetBytes(
+    registry,
+    job.projectId,
+    `remotion-sample-${newAssetId()}.png`,
+    png,
+  )
+  const sample: RenderSampleResult = { frame: safeFrame, url: saved.url }
+  job.samples.push(sample)
+  return sample
+}
+
+/**
  * 客户端回写成片字节：落盘（`saveLocalAssetBytes`，不 promote）+ 探测真值 + 结算。
  *
  * 探测失败（`duration: 0`）只加告警，不阻断——与 `compose_video` 对探测的宽容口径一致。
@@ -254,11 +346,30 @@ export async function commitRenderJob(
 
   job.settled = true
   settleAndForget(job, 'succeeded')
+  const frames = [...job.samples].sort((a, b) => a.frame - b.frame)
+  const report: RenderJobReport = {
+    // 宿主侧已知的字段（质量档 / 帧数 / 真实字节数 / 真实分辨率）优先；
+    // 客户端上报的耗时与码率只填宿主测不到的项。
+    quality: job.quality,
+    frames: Math.max(1, Math.round(job.manifest.meta.durationInFrames)),
+    totalMs: input.report?.totalMs ?? 0,
+    msPerFrame: input.report?.msPerFrame ?? 0,
+    encodeMs: input.report?.encodeMs ?? 0,
+    bytes: input.bytes.length,
+    bitrateKbps: input.report?.bitrateKbps ?? 0,
+    width: info.width ?? input.report?.width ?? 0,
+    height: info.height ?? input.report?.height ?? 0,
+    sampledFrames: frames.length,
+    warm: input.report?.warm ?? false,
+  }
   const outcome: RenderJobOutcome = {
     url: saved.url,
     assetFile: saved.assetFile,
     duration: info.duration,
     warnings,
+    quality: job.quality,
+    frames,
+    report,
     ...(info.width !== undefined ? { width: info.width } : {}),
     ...(info.height !== undefined ? { height: info.height } : {}),
   }

@@ -21,10 +21,19 @@
  * - **D2** 失败分类 + 有界重试（`classifyRenderFailure` / `renderManifestOnWebWithRetry`）：
  *   只有"编码失败"可重试，能力不支持重试是纯浪费（必然再失败一次）。
  */
-import { canRenderMediaOnWeb, renderMediaOnWeb, type CanRenderIssue, type CanRenderMediaOnWebResult } from '@remotion/web-renderer'
+import {
+  canRenderMediaOnWeb,
+  renderMediaOnWeb,
+  type CanRenderIssue,
+  type CanRenderMediaOnWebResult,
+  type FrameRange,
+  type WebRendererHardwareAcceleration,
+  type WebRendererPageResponsiveness,
+} from '@remotion/web-renderer'
 import { StudioComposition } from '../remotion/components/Root.js'
-import { validateManifest, type CompositionManifest } from '../remotion/manifest.js'
+import { validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
+import { pickSampleFrames } from '../remotion/timing.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
 
 /**
@@ -35,18 +44,103 @@ import { applyManifestFonts } from './remotion-font-inject.js'
  */
 export const DEFAULT_REMOTION_LICENSE_KEY = 'free-license'
 
+/**
+ * 三期 W5-3：三档质量预设。
+ *
+ * `standard` = **今天的全部默认值**（`scale 1` / `medium` 码率 / 5s 关键帧 / 每 33ms 让出
+ * 主线程 / 不缓存解码），因此缺省行为与三期之前逐帧一致 —— 这是「不退步」的锚。
+ *
+ * `draft` 的四个杠杆：半分辨率（帧面积 1/4）、低码率、拉长关键帧间隔、关掉主线程让出
+ *（`pageResponsiveness: 'disabled'`，渲染时页面会卡，但这是后台任务）。
+ */
+export interface QualityPreset {
+  scale: number
+  videoBitrate: 'low' | 'medium' | 'high'
+  keyframeIntervalInSeconds: number
+  pageResponsiveness: WebRendererPageResponsiveness
+  hardwareAcceleration: WebRendererHardwareAcceleration
+  mediaCacheSizeInBytes: number | null
+}
+
+export const QUALITY_PRESETS: Readonly<Record<RenderQuality, QualityPreset>> = {
+  draft: {
+    scale: 0.5,
+    videoBitrate: 'low',
+    keyframeIntervalInSeconds: 10,
+    pageResponsiveness: 'disabled',
+    hardwareAcceleration: 'prefer-hardware',
+    mediaCacheSizeInBytes: 128 * 1024 * 1024,
+  },
+  standard: {
+    scale: 1,
+    videoBitrate: 'medium',
+    keyframeIntervalInSeconds: 5,
+    pageResponsiveness: 'medium',
+    hardwareAcceleration: 'no-preference',
+    mediaCacheSizeInBytes: null,
+  },
+  high: {
+    scale: 1,
+    videoBitrate: 'high',
+    keyframeIntervalInSeconds: 2,
+    pageResponsiveness: 'medium',
+    hardwareAcceleration: 'prefer-hardware',
+    mediaCacheSizeInBytes: 256 * 1024 * 1024,
+  },
+}
+
+/** 一期抽帧结果（PNG 字节 + 帧号）。 */
+export interface RenderSample {
+  frame: number
+  png: Uint8Array
+}
+
+/** 三期 W6-2：渲染报告（性能与质量都可复盘）。 */
+export interface RenderMetrics {
+  quality: RenderQuality
+  frames: number
+  totalMs: number
+  msPerFrame: number
+  encodeMs: number
+  bytes: number
+  bitrateKbps: number
+  width: number
+  height: number
+  sampledFrames: number
+  warm: boolean
+}
+
 export interface RenderManifestOnWebOptions {
   signal?: AbortSignal
   /** 0–1 进度回调（二期 1b 起由工单桥真实消费：本地角标 + 回传宿主）。 */
   onProgress?: (progress: number) => void
   /** 许可键（缺省 `free-license`）；商用档从设置注入。 */
   licenseKey?: string
+  /**
+   * 三期 W5-3：质量档（缺省 `standard`）。`draft` 同时会跳过「渲染前预览闸门」
+   *（它本身就是预览）—— 那个决策在客户端工单桥里做，不在渲染器里。
+   */
+  quality?: RenderQuality | undefined
+  /**
+   * 三期 W5-4：宿主 ffprobe 已探到的真值时长（`src → 秒`）。
+   *
+   * 非空 ⇒ **跳过**浏览器侧的 `probeManifestDurations`（原来每次渲染都白等一遍）。
+   */
+  realDurations?: Record<string, number> | undefined
+  /** 三期 W6-1：抽帧目标（绝对帧号）；缺省自动取 4 张 + 转场中点（上限 8）。 */
+  sampleFrames?: readonly number[] | undefined
+  /** 三期 W6-1：只要单帧、不要编码成片时使用（`renderStillOnWeb` 兜底路径）。 */
+  frameRange?: FrameRange | undefined
 }
 
 export interface RenderedManifest {
   bytes: Uint8Array
   /** 渲染期非致命告警（能力探测的 warning + 后续字体 / 编码降级）。 */
   warnings: string[]
+  /** 三期 W6-1：抽帧（PNG 字节）。 */
+  samples: RenderSample[]
+  /** 三期 W6-2：渲染报告。 */
+  metrics: RenderMetrics
 }
 
 /** 渲染失败时抛出的可读错误（宿主会把它作为 `CS-RENDER-002` 的原因透传）。 */
@@ -54,6 +148,28 @@ export class WebRenderError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'WebRenderError'
+  }
+}
+
+/**
+ * 三期 W6-1：抽帧位置的选择口径在 `timing.ts` 的 `pickSampleFrames`（宿主 / 客户端共用，
+ * 纯函数可单测）。这里只做 re-export，方便既有调用方从本模块取。
+ */
+export { pickSampleFrames } from '../remotion/timing.js'
+
+/** 把一帧 `VideoFrame` 画进 `OffscreenCanvas` 并编码成 PNG（异步，但不阻塞取帧）。 */
+async function frameToPng(frame: VideoFrame): Promise<Uint8Array | null> {
+  try {
+    const width = Math.max(1, frame.displayWidth)
+    const height = Math.max(1, frame.displayHeight)
+    const canvas = new OffscreenCanvas(width, height)
+    const context = canvas.getContext('2d')
+    if (context === null) return null
+    context.drawImage(frame, 0, 0, width, height)
+    const blob = await canvas.convertToBlob({ type: 'image/png' })
+    return new Uint8Array(await blob.arrayBuffer())
+  } catch {
+    return null
   }
 }
 
@@ -67,10 +183,16 @@ export async function renderManifestOnWeb(
   options: RenderManifestOnWebOptions = {},
 ): Promise<RenderedManifest> {
   const { width, height, fps, durationInFrames } = manifest.meta
+  const quality: RenderQuality = options.quality ?? manifest.meta.quality ?? 'standard'
+  const preset = QUALITY_PRESETS[quality] ?? QUALITY_PRESETS.standard
+  const startedAt = Date.now()
   // R1：字体面先就绪再渲染（顺序不可颠倒 —— 渲染期才注入会拍到回退字体的帧）。
   const fontWarnings = await applyManifestFonts(manifest)
-  // 二期 B2：渲染前再探一次真值（宿主 ffprobe 失败时这里是最后一道保险）。
-  const probed = await probeManifestDurations(manifest, options.signal)
+  // 三期 W5-4：宿主已探到的真值直接复用；没给才在浏览器里再探一遍（二期 B2 兜底）。
+  const hostDurations = options.realDurations ?? {}
+  const probed: ManifestDurationProbe = Object.keys(hostDurations).length > 0
+    ? { realDurations: hostDurations, warnings: [] }
+    : await probeManifestDurations(manifest, options.signal)
   const probedManifest = applyProbedDurations(manifest, probed, fontWarnings)
   const capability: CanRenderMediaOnWebResult = await canRenderMediaOnWeb({ container: 'mp4', videoCodec: 'h264', width, height })
   if (!capability.canRender) {
@@ -85,6 +207,14 @@ export async function renderManifestOnWeb(
   ]
 
   const { signal } = options
+  const frames = Math.max(1, Math.round(durationInFrames))
+  const sampleFrames = options.frameRange === undefined
+    ? (options.sampleFrames ?? pickSampleFrames(probedManifest))
+    : []
+  const sampleSet = new Set(sampleFrames)
+  const pendingSamples: { frame: number; promise: Promise<Uint8Array | null> }[] = []
+  let frameIndex = 0
+  let encodeMs = 0
   const result = await renderMediaOnWeb({
     composition: {
       id: 'studio-composition',
@@ -92,7 +222,7 @@ export async function renderManifestOnWeb(
       width,
       height,
       fps,
-      durationInFrames: Math.max(1, Math.round(durationInFrames)),
+      durationInFrames: frames,
       defaultProps: { manifest: probedManifest },
       calculateMetadata: null,
     },
@@ -102,15 +232,60 @@ export async function renderManifestOnWeb(
     audioCodec: 'aac',
     outputTarget: 'arraybuffer',
     licenseKey: options.licenseKey ?? DEFAULT_REMOTION_LICENSE_KEY,
+    // ── 三期 W5-3：质量档（`standard` 与今天的默认值完全一致） ──
+    scale: preset.scale,
+    videoBitrate: preset.videoBitrate,
+    keyframeIntervalInSeconds: preset.keyframeIntervalInSeconds,
+    pageResponsiveness: preset.pageResponsiveness,
+    hardwareAcceleration: preset.hardwareAcceleration,
+    mediaCacheSizeInBytes: preset.mediaCacheSizeInBytes,
+    ...(options.frameRange === undefined ? {} : { frameRange: options.frameRange }),
+    // ── 三期 W6-1：抽帧（回调必须**同步返回** frame；编码异步攒着，渲染结束后统一收） ──
+    ...(sampleSet.size === 0 ? {} : {
+      onFrame: (frame: VideoFrame): VideoFrame => {
+        const index = frameIndex
+        frameIndex += 1
+        if (sampleSet.has(index)) {
+          pendingSamples.push({ frame: index, promise: frameToPng(frame) })
+        }
+        return frame
+      },
+    }),
     ...(options.onProgress !== undefined
-      ? { onProgress: (progress: { progress: number }) => options.onProgress?.(progress.progress) }
+      ? {
+        onProgress: (progress: { progress: number; doneIn: number | null }) => {
+          if (typeof progress.doneIn === 'number' && Number.isFinite(progress.doneIn)) encodeMs = progress.doneIn
+          options.onProgress?.(progress.progress)
+        },
+      }
       : {}),
     ...(signal === undefined ? {} : { signal }),
   })
   const blob = await result.getBlob()
   const bytes = new Uint8Array(await blob.arrayBuffer())
   if (bytes.length === 0) throw new WebRenderError('渲染产物为空（编码器未产出字节），请重试。')
-  return { bytes, warnings }
+  const samples: RenderSample[] = []
+  for (const entry of pendingSamples) {
+    const png = await entry.promise
+    if (png !== null && png.length > 0) samples.push({ frame: entry.frame, png })
+  }
+  samples.sort((a, b) => a.frame - b.frame)
+  const totalMs = Date.now() - startedAt
+  const seconds = frames / (Number.isFinite(fps) && fps > 0 ? fps : 30)
+  const metrics: RenderMetrics = {
+    quality,
+    frames,
+    totalMs,
+    msPerFrame: Math.round((totalMs / frames) * 100) / 100,
+    encodeMs,
+    bytes: bytes.length,
+    bitrateKbps: seconds > 0 ? Math.round((bytes.length * 8) / seconds / 1000) : 0,
+    width: Math.max(1, Math.round(width * preset.scale)),
+    height: Math.max(1, Math.round(height * preset.scale)),
+    sampledFrames: samples.length,
+    warm: false,
+  }
+  return { bytes, warnings, samples, metrics }
 }
 
 // ───────────────── 二期 D2：失败分类 + 有界重试（红线：重试前必须中断上一次） ─────────────────

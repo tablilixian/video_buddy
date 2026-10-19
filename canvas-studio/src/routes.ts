@@ -36,7 +36,7 @@ import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
-import { cancelRenderJob, commitRenderJob, listRenderJobViews, pendingRenderJobFor, reportRenderJobProgress } from './remotion/render-job.js'
+import { cancelRenderJob, commitRenderJob, listRenderJobViews, pendingRenderJobFor, recordRenderSample, reportRenderJobProgress, type RenderJobReport } from './remotion/render-job.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
@@ -289,9 +289,13 @@ const ROUTE_COMPOSE = '/canvas-studio/compose'
 const ROUTE_REMOTION_PENDING = '/canvas-studio/remotion/pending'
 const ROUTE_REMOTION_COMMIT = '/canvas-studio/remotion/commit'
 const ROUTE_REMOTION_CANCEL = '/canvas-studio/remotion/cancel'
-// 二期 1b：队列 + 进度（`GET` 列表 / `POST` 上报）。客户端轮询列表拿进度，上报节流到 ~3%。
+// 三期 1b：队列 + 进度（`GET` 列表 / `POST` 上报）。客户端轮询列表拿进度，上报节流到 ~3%。
 const ROUTE_REMOTION_JOBS = '/canvas-studio/remotion/jobs'
 const ROUTE_REMOTION_PROGRESS = '/canvas-studio/remotion/progress'
+// 三期 W6-1：抽帧回写（`POST` PNG 原始字节 + `jobId` / `frame`）。
+const ROUTE_REMOTION_SAMPLE = '/canvas-studio/remotion/sample'
+// 三期 W2-4：颗粒 tile（随包静态 PNG，逐帧按整数偏移平铺）。
+const ROUTE_REMOTION_GRAIN = '/canvas-studio/remotion/grain'
 // REQ-034 · R1：随包中文字体子集（`assets/fonts/*.woff2`）只读路由。客户端 CSR 渲染前
 // 以**同源** `@font-face` 注入 —— 跨源会静默 404 → 回退系统字体 → 中文观感事故
 //（devdoc §8.3 第 4 条标红项），勿改成别的域或改走 base64 内联。
@@ -314,6 +318,8 @@ const STYLE_DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'a
 
 /** REQ-034 · R1：随包中文字体子集目录（`scripts/build-font-subset.mjs` 产出，产物入库）。 */
 const REMOTION_FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'fonts')
+/** 三期 W2-4：颗粒 tile（`scripts/build-grain-tile.mjs` 产出，确定性噪点、产物入库）。 */
+const REMOTION_GRAIN_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'remotion', 'grain.png')
 
 /** 托管资产的扩展名 → Content-Type（P8.4 起含参考视频；CV-241 起含文本）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -574,6 +580,37 @@ function asRenderWarnings(raw: string | null): string[] {
   } catch {
     return []
   }
+}
+
+/**
+ * 三期 W6-2：`/remotion/commit` 的 `metrics` query 收口（URL 编码 JSON）。
+ *
+ * 只接受有限数；形状不符返回 `undefined`（报告是观测信息，不因它 400）。
+ */
+function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefined {
+  if (raw === null || raw.length === 0) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+  const source = parsed as Record<string, unknown>
+  const num = (key: string): number | undefined => {
+    const value = source[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  const report: Partial<RenderJobReport> = {}
+  for (const key of ['frames', 'totalMs', 'msPerFrame', 'encodeMs', 'bytes', 'bitrateKbps', 'width', 'height', 'sampledFrames'] as const) {
+    const value = num(key)
+    if (value !== undefined) report[key] = value
+  }
+  if (source.quality === 'draft' || source.quality === 'standard' || source.quality === 'high') {
+    report.quality = source.quality
+  }
+  if (typeof source.warm === 'boolean') report.warm = source.warm
+  return report
 }
 
 /** PATCH media 的媒体元数据数组收口：file 过安全字符集、kind 限三类；形状不符回 undefined。 */
@@ -2998,10 +3035,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         const warnings = asRenderWarnings(requestUrl.searchParams.get('warnings'))
+        const report = asRenderReport(requestUrl.searchParams.get('metrics'))
         const bytes = await readRawBody(req, controller.signal, MAX_RENDER_BODY_BYTES)
         const result = await commitRenderJob(registry, jobId, {
           bytes,
           ...(warnings.length > 0 ? { warnings } : {}),
+          ...(report !== undefined ? { report } : {}),
         })
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
       } catch (cause) {
@@ -3056,6 +3095,64 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
       } finally {
         stopWatching()
+      }
+    }}),
+
+    // 三期 W6-1：客户端回写一张抽帧（octet-stream PNG + `jobId` / `frame` query）。
+    // 幂等：工单不存在 / 已结算 → `{ok:true, url:null}`（不制造假错误）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_SAMPLE, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'remotion sample requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const onAbort = (): void => controller.abort()
+      req.once('aborted', onAbort)
+      try {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+        const jobId = requestUrl.searchParams.get('jobId')
+        const frameRaw = Number(requestUrl.searchParams.get('frame') ?? '0')
+        if (jobId === null || jobId.length === 0) {
+          sendJson(res, 400, { error: '缺少 jobId' })
+          return
+        }
+        const png = await readRawBody(req, controller.signal, MAX_BODY_BYTES)
+        const sample = await recordRenderSample(registry, jobId, Number.isFinite(frameRaw) ? frameRaw : 0, png)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, { ok: true, url: sample === null ? null : sample.url })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '抽帧回写失败。')
+        }
+      } finally {
+        req.off('aborted', onAbort)
+      }
+    }}),
+
+    // 三期 W2-4：颗粒 tile（只读静态 PNG；内容不变 ⇒ 强缓存）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_GRAIN, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'grain tile only supports GET' })
+        return
+      }
+      try {
+        const data = await readFile(REMOTION_GRAIN_FILE)
+        res.setHeader('content-type', 'image/png')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'grain tile not found' })
       }
     }}),
 

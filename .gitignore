@@ -17,6 +17,10 @@ canvas-studio/lib/
 # 字体子集构建的源字体缓存（10MB/字重；产物 assets/fonts/*.woff2 已入库，缓存不入库）
 canvas-studio/.cache/
 
+# 测试/沙箱临时产物（TMPDIR 指向工作区跑全量测试时留下；不是产品产物）
+canvas-studio/.tmp-smoke/
+canvas-studio/codebuddy-toybox.*
+
 # Bundled ffmpeg prebuilts (fetched per packaging run; ~119MB for macOS universal)
 dsh-plugin-desktop/build/ffmpeg/
 

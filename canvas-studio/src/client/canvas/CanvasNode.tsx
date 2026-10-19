@@ -351,6 +351,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
      而且是在媒体 metadata 到达的那一刻跳，正好被用户看见。 */
   const showShotIdx = shotIndex !== undefined
   const showVersion = node.shotVersion !== undefined && node.shotVersion > 1 && !retired
+  /* 三期 W5-4：草稿档角标。草稿片与交付片是同一条链上的两种画质，视觉上必须分开 ——
+     否则「快速看一版」的半分辨率粗片会被当成最终成片交付出去。 */
+  const showDraft = node.draft === true && !retired
   const isReference = node.isReference === true
   const showAudioMix = node.audioComposition !== undefined
   const showDuration = node.kind === 'video' && durationLabel !== null
@@ -658,6 +661,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             {/* CV-108：版本链角标——「同一镜位重出过」的身份标记。 */}
             {showVersion && (
               <span className="csNodeBadge csNodeBadgeVersion" title={`第 ${node.shotVersion} 版（同一镜位重出过）`}>v{node.shotVersion}</span>
+            )}
+            {/* 三期 W5-4：草稿档 chip —— 半分辨率 / 低码率 / 10s 关键帧间隔渲出来的
+                快速版。它与交付档走同一条落盘链，唯一差别是画质，所以只能靠角标认。 */}
+            {showDraft && (
+              <span className="csNodeBadge csNodeBadgeDraft" title="草稿档（半分辨率 / 低码率）：用于快速看节奏与排版，交付前请用 standard 或 high 重渲">草稿</span>
             )}
             {node.locked === true && <span className="csNodeBadge csNodeBadgeLock" title="已锁定（拖拽 / 缩放 / 编辑被拦下）">🔒</span>}
           </div>

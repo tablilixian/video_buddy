@@ -15,7 +15,7 @@ import type React from 'react'
 import { AbsoluteFill, continueRender, delayRender, useCurrentFrame } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { AudioVizTrack } from '../manifest.js'
-import { waveformBars } from '../timing.js'
+import { waveformBarsSmoothed, colorShiftAt } from '../timing.js'
 
 /** 包络格数：够细（512 格）又不至于让解码循环变慢。 */
 const ENVELOPE_BUCKETS = 512
@@ -95,10 +95,22 @@ export const AudioViz: React.FC<{ track: AudioVizTrack }> = ({ track }) => {
   const amplitudes = useAudioAmplitudes(track.src)
   const bars = Math.max(1, Math.min(128, Math.floor(track.bars ?? 24)))
   // `speed` 0.6：按 30fps 计，每秒前进 18 格 —— 视觉上跟得上音乐又不至于抽搐。
-  const heights = waveformBars(amplitudes, frame, { bars, gain: track.gain ?? 1.6, speed: 0.6 })
+  // 三期 W3-3：`smoothing` 帧间指数平滑（仍是纯函数；0 = 与今天完全一致）。
+  const heights = waveformBarsSmoothed(amplitudes, frame, {
+    bars,
+    gain: track.gain ?? 1.6,
+    speed: 0.6,
+    smoothing: track.smoothing ?? 0,
+  })
   const mirror = track.mode === 'mirror'
+  const lineMode = track.mode === 'line'
   const heightPercent = Math.max(1, Math.min(100, track.heightPercent ?? 28))
-  const color = track.color ?? '#4f9cf9'
+  // 三期 W2-3：`colorShift` 覆盖静态色。
+  const color = colorShiftAt(track, frame) ?? track.color ?? '#4f9cf9'
+  // 三期 W3-3：柱体渐变（缺省纯色）。
+  const fill = track.gradient === undefined
+    ? color
+    : `linear-gradient(180deg, ${track.gradient.from ?? color}, ${track.gradient.to ?? 'rgba(0,0,0,0)'})`
   const anchoredBottom = (track.position ?? 'bottom') === 'bottom'
   return (
     <AbsoluteFill
@@ -106,34 +118,62 @@ export const AudioViz: React.FC<{ track: AudioVizTrack }> = ({ track }) => {
         opacity: anim.opacity,
         justifyContent: (track.position ?? 'bottom') === 'bottom' ? 'flex-end' : 'flex-start',
         transform: anim.layerTransform,
+        ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
         ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
         ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: mirror ? 'center' : (anchoredBottom ? 'flex-end' : 'flex-start'),
-          gap: '0.35%',
-          width: '100%',
-          height: `${heightPercent}%`,
-          ...(anchoredBottom ? { marginBottom: 0 } : { marginTop: 0 }),
-        }}
-      >
-        {heights.map((value, index) => (
-          <div
-            key={index}
-            style={{
-              flex: 1,
-              // 基线：无振幅时也留 2% 高度，看上去是"静音时的波形"，不是渲染失败。
-              height: `${Math.max(2, value * 100)}%`,
-              background: color,
-              borderRadius: 4,
-              opacity: 0.92,
-            }}
+      {lineMode ? (
+        // 连续波形线：`points` 由纯函数算出的柱高映射到 0–100 viewBox，无插值、无动画。
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          width="100%"
+          height={`${heightPercent}%`}
+          style={{ display: 'block' }}
+        >
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth={1.6}
+            vectorEffect="non-scaling-stroke"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={heights
+              .map((value, index) => {
+                const x = heights.length <= 1 ? 50 : (index / (heights.length - 1)) * 100
+                const y = mirror ? 50 - (value * 100) / 2 : 100 - value * 100
+                return `${x.toFixed(3)},${y.toFixed(3)}`
+              })
+              .join(' ')}
           />
-        ))}
-      </div>
+        </svg>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: mirror ? 'center' : (anchoredBottom ? 'flex-end' : 'flex-start'),
+            gap: '0.35%',
+            width: '100%',
+            height: `${heightPercent}%`,
+            ...(anchoredBottom ? { marginBottom: 0 } : { marginTop: 0 }),
+          }}
+        >
+          {heights.map((value, index) => (
+            <div
+              key={index}
+              style={{
+                flex: 1,
+                // 基线：无振幅时也留 2% 高度，看上去是"静音时的波形"，不是渲染失败。
+                height: `${Math.max(2, value * 100)}%`,
+                background: fill,
+                borderRadius: 4,
+                opacity: 0.92,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </AbsoluteFill>
   )
 }

@@ -10,10 +10,14 @@
  *   `BGM_VOLUME`）。旁白默认 `1.0`。用户可在 `audio.mix` 显式覆盖。
  * - BGM 不做循环 / 拉伸（`compose.ts` 的 `bgmShortfallMessage` 口径：接缝/变调都
  *   「听得出错」，改由守卫提示换更长的 BGM）。
+ *
+ * 三期 W3-2：音量不再是常数 —— `volume` 传**帧的函数**（`audioVolumeAt` 纯函数），
+ * 从而实现淡入淡出与「字幕在屏时 BGM 压低」（D-09 选 A：零音频分析、确定性）。
  */
 import type React from 'react'
 import { Audio } from '@remotion/media'
 import type { ManifestAudio } from '../manifest.js'
+import { audioVolumeAt, type AudioDuckWindow } from '../timing.js'
 
 /** 与 `compose.ts` 对齐：有原生音轨时 BGM 只作铺底。 */
 const BGM_MIX_VOLUME = 0.35
@@ -21,15 +25,35 @@ const BGM_MIX_VOLUME = 0.35
 const BGM_VOLUME = 0.8
 const VOICE_VOLUME = 1
 
-export const AudioTrack: React.FC<{ audio: ManifestAudio; hasNativeAudio: boolean }> = ({
-  audio,
-  hasNativeAudio,
-}) => {
+export const AudioTrack: React.FC<{
+  audio: ManifestAudio
+  hasNativeAudio: boolean
+  durationInFrames: number
+  fps: number
+  duckWindows?: readonly AudioDuckWindow[]
+}> = ({ audio, hasNativeAudio, durationInFrames, fps, duckWindows = [] }) => {
   const bgmVolume = audio.mix?.bgmVolume ?? (hasNativeAudio ? BGM_MIX_VOLUME : BGM_VOLUME)
   const voiceVolume = audio.mix?.voiceVolume ?? VOICE_VOLUME
+  // 闪避只作用于 BGM（旁白本身就是被让路的那一路）。
+  const duckAmount = audio.duck?.amount ?? 1
+  const envelope = {
+    durationInFrames,
+    fps,
+    baseVolume: bgmVolume,
+    fadeInSeconds: audio.fadeInSeconds ?? 0,
+    fadeOutSeconds: audio.fadeOutSeconds ?? 0,
+    duckAmount,
+    duckWindows,
+  }
   return (
     <>
-      {audio.bgmUrl ? <Audio src={audio.bgmUrl} volume={bgmVolume} /> : null}
+      {audio.bgmUrl ? (
+        <Audio
+          src={audio.bgmUrl}
+          // `<Audio>` 的 volume 支持 `(frame) => number`；纯函数 ⇒ 逐帧确定。
+          volume={(frame: number) => audioVolumeAt(frame, envelope)}
+        />
+      ) : null}
       {audio.voiceOverUrl ? <Audio src={audio.voiceOverUrl} volume={voiceVolume} /> : null}
     </>
   )

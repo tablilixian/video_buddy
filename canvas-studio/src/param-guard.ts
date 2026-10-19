@@ -177,6 +177,9 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   constraints: '结构化 JSON 字符串（硬约束数组，落地后逐次注入）',
   // —— REQ-034（CV-327）render_composition ——
   manifest: '结构化 JSON 字符串（CompositionManifest：meta + tracks），占位形态（`{}` / 缺键）由 JSON.parse + validateManifest 逐项拒收，比「整篇只是占位词」这把通用尺子更准',
+  // 三期 W5-2：渲染质量档（draft / standard / high）。枚举值不合规由 schema 拒收，
+  // 且它不指向任何「别处产出的真实对象」，没有占位形态可言。
+  quality: '枚举（draft / standard / high），取值不合规由 schema 拒收',
   projectId: '项目 id（宿主下发的短标识）—— 非法 / 不存在的项目由 resolveProjectId 拒收，不是素材句柄，不存在「来自别处产出的真实对象」的占位形态',
 }
 

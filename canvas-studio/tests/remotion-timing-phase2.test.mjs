@@ -278,6 +278,9 @@ test('transitionOverride：老四种效果语义不变（窗口外恒等）', ()
   assert.deepEqual(identity, {
     opacity: 1,
     translateXPercent: 0,
+    // 三期 W2-6 新增的垂直位移分量：缺省 0 ⇒ 与只有 translateX 时**完全同一串**，
+    // 恒等语义不变（Transition.tsx 只在非 0 时才往 transform 里拼 translateY）。
+    translateYPercent: 0,
     scale: 1,
     clipPath: '',
     maskImage: '',

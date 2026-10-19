@@ -998,6 +998,12 @@ export interface PendingStudioRenderJob {
   projectId: string
   manifest: CompositionManifest
   fps: number
+  /** 三期 W5-3：质量档（`draft` 跳过预览闸门）。 */
+  quality?: 'draft' | 'standard' | 'high'
+  /** 三期 W5-4：宿主已探到的素材真值（客户端直接复用，不再探一遍）。 */
+  realDurations?: Record<string, number>
+  /** 三期 W6-1：宿主建议的抽帧位置。 */
+  sampleFrames?: number[]
 }
 
 /** 取该项目当前待渲染工单；无单返回 `null`。 */
@@ -1012,15 +1018,26 @@ export async function fetchPendingStudioRenderJob(
   return response.job
 }
 
-/** 回写成片字节（octet-stream）+ 渲染期告警；宿主落盘并结算等待中的工具调用。 */
+/**
+ * 三期 W6-2：渲染报告的上行形状。
+ *
+ * 为什么不是 `Record<string, number | boolean>`：报告里有一项 `quality`（`'draft'|'standard'|'high'`）
+ * 是**字符串**。宿主侧的 `asRenderReport` 会逐键白名单收口（不认的键直接丢），
+ * 所以这里放开到 `string` 是安全的 —— 上行通道只负责搬运，合法性判定在宿主。
+ */
+export type StudioRenderReport = Record<string, number | boolean | string>
+
+/** 回写成片字节（octet-stream）+ 渲染期告警 + 渲染报告；宿主落盘并结算等待中的工具调用。 */
 export async function commitStudioRenderJob(
   jobId: string,
   bytes: Uint8Array,
   warnings: readonly string[] = [],
+  report?: StudioRenderReport,
   signal?: AbortSignal,
 ): Promise<void> {
   const query = new URLSearchParams({ jobId })
   if (warnings.length > 0) query.set('warnings', JSON.stringify([...warnings]))
+  if (report !== undefined && Object.keys(report).length > 0) query.set('metrics', JSON.stringify(report))
   await readJson<{ ok: boolean }>(await fetch(`/canvas-studio/remotion/commit?${query.toString()}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream' },
@@ -1029,6 +1046,28 @@ export async function commitStudioRenderJob(
     body: bytes as unknown as BodyInit,
     ...(signal === undefined ? {} : { signal }),
   }))
+}
+
+/**
+ * 三期 W6-1：回写一张抽帧（PNG 原始字节）。宿主落盘后返回同源 URL；
+ * 工单已结算时 `url` 为 `null`（幂等）。
+ */
+export async function uploadStudioRenderSample(
+  jobId: string,
+  frame: number,
+  png: Uint8Array,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const query = new URLSearchParams({ jobId, frame: String(Math.max(0, Math.round(frame))) })
+  const response = await readJson<{ ok: boolean; url: string | null }>(
+    await fetch(`/canvas-studio/remotion/sample?${query.toString()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'image/png' },
+      body: png as unknown as BodyInit,
+      ...(signal === undefined ? {} : { signal }),
+    }),
+  )
+  return response.url
 }
 
 /** 撤单：`failed=true` = 渲染失败（带 reason）；否则视为主动取消。幂等（宿主可能已超时）。 */export async function cancelStudioRenderJob(

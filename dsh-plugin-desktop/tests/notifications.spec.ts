@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { JobId, JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { JobId, JobView } from '@deepseek-ai/dsh-jobs'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -8,18 +8,18 @@ import {
   DesktopNotificationSettingsSchema,
   inject,
   name,
+  type ConfigValue,
   type DesktopNotificationSettings,
 } from '../src/notifications.ts'
 import type { DesktopRuntime } from '../src/runtime.ts'
 
-type OptionalService = 'jobs' | 'sessions' | 'settings'
+type OptionalService = 'jobs' | 'sessions'
 
 interface NotificationHarness {
   readonly notifyAttention: ReturnType<typeof vi.fn>
-  readonly registerSettings: ReturnType<typeof vi.fn>
   readonly stopJobs: ReturnType<typeof vi.fn>
   readonly stopSessions: ReturnType<typeof vi.fn>
-  jobDone(snapshot: JobSnapshot): Promise<void>
+  jobDone(view: JobView): Promise<void>
   sessionEvent(session: Session, event: SessionEvent): Promise<void>
   sessionDisposed(session: Session): Promise<void>
   updateSettings(settings: DesktopNotificationSettings): Promise<void>
@@ -28,7 +28,7 @@ interface NotificationHarness {
   dispose(): void
 }
 
-function createHarness(available: readonly OptionalService[] = ['jobs', 'sessions', 'settings']): NotificationHarness {
+function createHarness(available: readonly OptionalService[] = ['jobs', 'sessions']): NotificationHarness {
   const notifyAttention = vi.fn()
   const stopJobs = vi.fn()
   const stopSessions = vi.fn()
@@ -36,13 +36,21 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
   const injections = new Map<OptionalService, (ctx: Context) => void>()
   const disposers = new Map<OptionalService, Array<() => void>>()
   let activeService: OptionalService | undefined
-  let jobListener: ((snapshot: JobSnapshot) => void | PromiseLike<void>) | undefined
+  let jobListener: ((event: {
+    type: 'settled'
+    awaited: boolean
+    job: JobView
+  }) => void | PromiseLike<void>) | undefined
   let sessionListener: ((session: Session, event: SessionEvent) => void | PromiseLike<void>) | undefined
   let sessionDisposedListener: ((session: Session) => void | PromiseLike<void>) | undefined
-  let settingsWatcher:
-    | ((next: DesktopNotificationSettings, previous: DesktopNotificationSettings) => void | Promise<void>)
-    | undefined
-  let currentSettings = DesktopNotificationSettingsSchema({} as DesktopNotificationSettings)
+  // 0.2.1：通知开关就是本插件的 Config，Loader 把它作为 volatile 引用交给 apply。
+  let currentSettings: DesktopNotificationSettings = {
+    enabled: true,
+    notifyOnTurnCompletion: true,
+    notifyOnTurnFailure: true,
+    notifyOnJobCompletion: true,
+    notifyOnJobFailure: true,
+  }
 
   const runtime = {
     platform: 'darwin',
@@ -50,26 +58,19 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
     notifyAttention,
   } as unknown as DesktopRuntime
 
-  const registerSettings = vi.fn(() => ({
-    get: () => currentSettings,
-    watch: (watcher: typeof settingsWatcher) => {
-      settingsWatcher = watcher
-      return () => { settingsWatcher = undefined }
-    },
-    update: vi.fn(async () => {}),
-    replace: vi.fn(async () => {}),
-  }))
+  const configValue: ConfigValue = { get: () => currentSettings }
 
   const ctx = {
     desktopRuntime: runtime,
-    settings: { register: registerSettings },
     jobs: {
-      onJobDone: (listener: typeof jobListener) => {
-        jobListener = listener
-        return () => {
-          jobListener = undefined
-          stopJobs()
-        }
+      events: {
+        subscribe: (_filter: unknown, listener: typeof jobListener) => {
+          jobListener = listener
+          return () => {
+            jobListener = undefined
+            stopJobs()
+          }
+        },
       },
     },
     on: (event: string, listener: typeof sessionListener | typeof sessionDisposedListener) => {
@@ -105,20 +106,18 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
     disposers.delete(service)
   }
 
-  apply(ctx)
+  apply(ctx, configValue)
 
   return {
     notifyAttention,
-    registerSettings,
     stopJobs,
     stopSessions,
-    async jobDone(snapshot) { await jobListener?.(snapshot) },
+    async jobDone(view) { await jobListener?.({ type: 'settled', awaited: false, job: view }) },
     async sessionEvent(session, event) { await sessionListener?.(session, event) },
     async sessionDisposed(session) { await sessionDisposedListener?.(session) },
     async updateSettings(next) {
-      const previous = currentSettings
+      // 让下一次读取看到新值：与 Loader 提交 volatile 后的效果一致。
       currentSettings = next
-      await settingsWatcher?.(next, previous)
     },
     teardownSessions() { teardown('sessions') },
     reattachSessions() {
@@ -129,7 +128,6 @@ function createHarness(available: readonly OptionalService[] = ['jobs', 'session
     dispose() {
       teardown('sessions')
       teardown('jobs')
-      teardown('settings')
     },
   }
 }
@@ -166,7 +164,7 @@ function userMessage(source: 'user' | 'plugin', seq: number): SessionEvent<'user
 
 describe('desktop notifications Host plugin', () => {
   it('registers live notification settings with the global switch enabled by default', () => {
-    const harness = createHarness(['settings'])
+    createHarness([])
 
     expect(name).toBe('desktop-notifications')
     expect(inject).toEqual(['desktopRuntime'])
@@ -178,26 +176,28 @@ describe('desktop notifications Host plugin', () => {
       notifyOnJobCompletion: true,
       notifyOnJobFailure: true,
     })
-    expect(harness.registerSettings).toHaveBeenCalledWith(
-      DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE,
-      DesktopNotificationSettingsSchema,
-      { applies: 'live' },
-    )
+    // 0.2.1：开关是插件 Config，Loader 装载时校验并注入；不再有 scope 注册。
+    expect(DesktopNotificationSettingsSchema({} as DesktopNotificationSettings).get()).toEqual({
+      enabled: true,
+      notifyOnTurnCompletion: true,
+      notifyOnTurnFailure: true,
+      notifyOnJobCompletion: true,
+      notifyOnJobFailure: true,
+    })
   })
 
   it('notifies for completed and failed jobs without exposing job details', async () => {
-    const harness = createHarness(['jobs', 'settings'])
+    const harness = createHarness(['jobs'])
     const snapshot = {
       id: 'bash-1' as JobId,
       kind: 'bash',
       label: 'node /Users/example/private.js --token secret',
       status: 'completed',
       detail: 'session-123',
-      output: 'private output',
       startedAt: 1,
       finishedAt: 2,
-      reported: false,
-    } satisfies JobSnapshot & { output: string }
+      output: { total: 0, earliest: 0 },
+    } satisfies JobView
 
     await harness.jobDone(snapshot)
     await harness.jobDone({ ...snapshot, status: 'failed' })
@@ -219,8 +219,8 @@ describe('desktop notifications Host plugin', () => {
       status: 'completed',
       startedAt: 1,
       finishedAt: 2,
-      reported: false,
-    } satisfies JobSnapshot
+      output: { total: 0, earliest: 0 },
+    } satisfies JobView
 
     await harness.updateSettings({
       enabled: true,
@@ -258,8 +258,8 @@ describe('desktop notifications Host plugin', () => {
       status: 'completed',
       startedAt: 1,
       finishedAt: 2,
-      reported: false,
-    } satisfies JobSnapshot
+      output: { total: 0, earliest: 0 },
+    } satisfies JobView
 
     await harness.updateSettings({
       enabled: false,

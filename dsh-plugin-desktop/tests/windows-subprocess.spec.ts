@@ -38,6 +38,7 @@ function terminalSpec(argv: readonly string[], env?: Record<string, string>): Su
     env: env ?? { KEEP: 'value', electron_run_as_node: 'stale' },
     rows: 24,
     cols: 80,
+    terminalType: 'xterm-256color',
     graceMs: 1_000,
   }
 }

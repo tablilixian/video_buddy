@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DSH_1024STORE_ADAPTER_ID,
@@ -22,7 +21,7 @@ import {
   DSHFIND_KEY,
   DSHFIND_PROVIDER_ID,
 } from '../src/adapters/dshfind.js'
-import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
+import type { MarketSettingsDocument, MarketSettingsStore } from '../src/catalog/source-store.js'
 import type { CatalogSourceManifest, LocalSourceRecord } from '../src/contracts/index.js'
 import { marketRoutes, registerMarketRoutes } from '../src/host/routes.js'
 import { restrictedHttpClient } from '../src/network/restricted-http.js'
@@ -114,7 +113,7 @@ async function startMarketServer(
     update: async (patch: object) => {
       settings.document = { ...settings.document, ...patch as Partial<MarketSettingsDocument> }
     },
-  } as unknown as SettingsScope<MarketSettingsDocument>
+  } as unknown as MarketSettingsStore
   const server = createServer((req, res) => {
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
     const handler = routes.get(pathname)

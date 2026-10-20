@@ -14,14 +14,13 @@ import { DSHFIND_ADAPTER_ID, DSHFIND_KEY, DSHFIND_PROVIDER_ID } from '../src/ada
 import { standardHttpAdapter } from '../src/adapters/standard-http.js'
 import { DefaultCatalogService, type CatalogFullIndex } from '../src/catalog/service.js'
 import { MemoryCatalogSourceStore, SettingsCatalogSourceStore } from '../src/catalog/source-store.js'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {
   CatalogHttpClient,
   CatalogProviderPage,
   CatalogSourceManifest,
   LocalSourceRecord,
 } from '../src/contracts/index.js'
-import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
+import type { MarketSettingsDocument, MarketSettingsStore } from '../src/catalog/source-store.js'
 import {
   createMarketSourceMutator,
   marketMutationAllowed,
@@ -147,7 +146,7 @@ async function requestMarketCatalog(
   const scope = {
     get: () => ({ sources: records }),
     update: vi.fn(),
-  } as unknown as SettingsScope<MarketSettingsDocument>
+  } as unknown as MarketSettingsStore
   const dispose = registerMarketRoutes(ctx as never, scope, installProvider)
   const request = Object.assign(new EventEmitter(), {
     method: 'GET',
@@ -1453,7 +1452,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => ({ sources: [second, first] }),
       update: vi.fn(),
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
 
     const records = await new SettingsCatalogSourceStore(scope).load()
 
@@ -1473,7 +1472,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => ({ sources: [second, first] }),
       update: vi.fn(),
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
 
     const records = await new SettingsCatalogSourceStore(scope).load()
 
@@ -1489,7 +1488,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => document,
       update: async (patch: { sources: readonly LocalSourceRecord[] }) => { document = { sources: patch.sources } },
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const readManifest = vi.fn(async () => manifest)
     const mutate = createMarketSourceMutator(scope, undefined, readManifest)
 
@@ -1519,7 +1518,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => document,
       update: async (patch: { sources: readonly LocalSourceRecord[] }) => { document = { sources: patch.sources } },
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const mutate = createMarketSourceMutator(scope)
 
     await mutate({ action: 'add-builtin', key: DSH_1024STORE_KEY }, new AbortController().signal)
@@ -1583,7 +1582,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => document,
       update,
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const mutate = createMarketSourceMutator(scope)
 
     const one = mutate({ action: 'select', sourceRecordId: first.sourceRecordId }, new AbortController().signal)
@@ -1638,7 +1637,7 @@ describe('source mutation boundary', () => {
       update: async (patch: { sources: readonly LocalSourceRecord[] }) => {
         document = { sources: patch.sources }
       },
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const mutate = createMarketSourceMutator(scope)
 
     await mutate(
@@ -1665,7 +1664,7 @@ describe('source mutation boundary', () => {
       await firstWrite
       document = { sources: patch.sources }
     })
-    const scope = { get: () => document, update } as unknown as SettingsScope<MarketSettingsDocument>
+    const scope = { get: () => document, update } as unknown as MarketSettingsStore
     const mutate = createMarketSourceMutator(scope)
     const first = mutate({ action: 'select', sourceRecordId: record.sourceRecordId }, new AbortController().signal)
     await vi.waitFor(() => { expect(update).toHaveBeenCalledOnce() })
@@ -1695,7 +1694,7 @@ describe('source mutation boundary', () => {
         document = { sources: patch.sources }
         events.push('saved')
       },
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const onUnavailable = vi.fn((sourceRecordId: string) => { events.push(`revoked:${sourceRecordId}`) })
     const mutate = createMarketSourceMutator(scope, onUnavailable)
 
@@ -1718,7 +1717,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => document,
       update: async (patch: { sources: readonly LocalSourceRecord[] }) => { document = { sources: patch.sources } },
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const mutate = createMarketSourceMutator(scope, onUnavailable)
 
     await mutate({ action: 'remove', sourceRecordId: current.sourceRecordId }, new AbortController().signal)
@@ -1746,7 +1745,7 @@ describe('source mutation boundary', () => {
     const scope = {
       get: () => ({ sources: [] }),
       update,
-    } as unknown as SettingsScope<MarketSettingsDocument>
+    } as unknown as MarketSettingsStore
     const dispose = registerMarketRoutes(ctx as never, scope)
     const request = Object.assign(new EventEmitter(), {
       method: 'POST',

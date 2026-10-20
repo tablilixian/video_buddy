@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type {
+  SessionEvent,
+  SessionHeader,
+  SessionLogOffset,
+  SessionSeq,
+} from '@deepseek-ai/dsh-session'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -23,10 +28,12 @@ function replaceEvent(seq: number, start: number, end: number, text = '.'): Sess
     time: 0,
     data: createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: 'test' },
+      // 0.2.1 删除了 `plugin` 这一 catch-all source kind；本 spec 只关心 surface
+      // 折叠，两个投影都不读 source，所以用用户来源造事件即可。
+      source: { kind: 'user' },
     }),
-    surfaceOp: { op: 'replace', start, end },
-    sourceEventSeqs: [start, end],
+    surfaceOp: { op: 'replace', start: start as SessionSeq, end: end as SessionSeq },
+    sourceEventSeqs: [start as SessionSeq, end as SessionSeq],
   } as unknown as SessionEvent
 }
 
@@ -34,18 +41,25 @@ describe('token-meter negative projection recovery', () => {
   it('invalidates pre-fix negative checkpoint rows via stateVersion mismatch', async () => {
     const ctx = await harness()
 
-    expect(contextBreakdownProjectionDefinition.stateVersion).toBe(3)
+    // 0.2.1 上游这两个单元的版本号已经前进（breakdown 6 / pressure 5），本仓库
+    // 的负值修复 patch 尚未按新产物重做（P4-b）。断言改成「任何旧于当前版本的
+    // checkpoint 都必须被丢弃」，语义与原 patch 的防线一致。
+    expect(contextBreakdownProjectionDefinition.stateVersion).toBe(6)
     expect(contextPressureProjectionDefinition.stateVersion).toBe(5)
 
     const restored = ctx.sessionProjections.restore({
       contextBreakdown: {
-        ver: 2,
-        seq: 38481,
-        val: { systemTokens: 5640, toolsTokens: 11075, messageTokens: -4840 },
+        ver: 5,
+        seq: 38_481 as never,
+        val: {
+          systems: [],
+          surfaceTokens: -4840,
+          breakdown: { systemTokens: 5640, toolsTokens: 11075, messageTokens: -4840 },
+        },
       },
       contextPressure: {
         ver: 4,
-        seq: 38481,
+        seq: 38_481 as never,
         val: {
           surfaceTokens: -4840,
           contextWindow: 1_000_000,
@@ -53,7 +67,11 @@ describe('token-meter negative projection recovery', () => {
           sampledSurfaceTokens: 36_309,
         },
       },
-    }, [], 0)
+    }, [], 0 as SessionLogOffset, {
+      id: 'session-negative-projection',
+      version: 0,
+      createdAt: 1,
+    } as unknown as SessionHeader, 0 as SessionLogOffset)
 
     expect(restored.snapshot.values.contextBreakdown).toEqual({
       systemTokens: 0,
@@ -62,9 +80,13 @@ describe('token-meter negative projection recovery', () => {
     })
     expect(restored.snapshot.values.contextPressure).toEqual({})
     expect(restored.checkpoint.contextBreakdown).toMatchObject({
-      ver: 3,
+      ver: 6,
       seq: -1,
-      val: { systemTokens: 0, toolsTokens: 0, messageTokens: 0 },
+      val: {
+        systems: [],
+        surfaceTokens: 0,
+        breakdown: { systemTokens: 0, toolsTokens: 0, messageTokens: 0 },
+      },
     })
     expect(restored.checkpoint.contextPressure).toMatchObject({
       ver: 5,
@@ -77,19 +99,24 @@ describe('token-meter negative projection recovery', () => {
     const replacement = replaceEvent(38482, 100, 200)
 
     const breakdown = contextBreakdownProjectionDefinition.apply({
-      systemTokens: 5640,
-      toolsTokens: 11075,
-      messageTokens: 0,
-      claim: { start: 100, end: 200, tokens: 47095 },
+      systems: [],
+      surfaceTokens: 0,
+      breakdown: { systemTokens: 5640, toolsTokens: 11075, messageTokens: 0 },
+      claim: {
+        start: 100 as SessionSeq,
+        end: 200 as SessionSeq,
+        tokens: 47_095,
+        systemSeqs: [],
+      },
     }, replacement)
-    expect(breakdown.messageTokens).toBe(0)
+    expect(breakdown.breakdown.messageTokens).toBe(0)
 
     const pressure = contextPressureProjectionDefinition.apply({
       surfaceTokens: 0,
       contextWindow: 1_000_000,
       pressureTokens: 89_773,
       sampledSurfaceTokens: 36_309,
-      claim: { start: 100, end: 200, tokens: 47095 },
+      claim: { start: 100 as SessionSeq, end: 200 as SessionSeq, tokens: 47_095 },
     }, replacement)
     expect(pressure.surfaceTokens).toBe(0)
   })

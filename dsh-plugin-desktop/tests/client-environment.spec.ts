@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply } from '../src/client/index.ts'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
-import { provideDesktopLayout } from '../src/client/layout-service.ts'
+import { installDesktopLayout } from '../src/client/layout-service.ts'
 import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
 import { DesktopFrameTitlebar } from '../src/client/ExtendedTitlebar.tsx'
 import { applyExtendedShell, applyFramedShell } from '../src/client/extended-shell.ts'
@@ -143,19 +143,28 @@ describe('advanced desktop layout', () => {
 
   it('releases the Cordis layout service with its owning effect', () => {
     let disposed = false
+    let cleanup: (() => void) | undefined
     const ctx = {
       reflect: {
+        get: () => undefined,
         provide: (name: string, value: unknown) => {
           expect(name).toBe('layout')
           expect(value).toBeInstanceOf(DesktopLayoutState)
           return () => { disposed = true }
         },
       },
+      slots: {
+        provideRoot: () => () => {},
+        subscribe: () => () => {},
+      },
+      // 0.2.1：安装函数只登记一个 effect，释放时机由 Cordis 决定，
+      // 所以这里捕获 effect 自己的 cleanup 并手动触发。
+      effect: (register: () => (() => void)) => { cleanup = register() },
     } as unknown as ClientContext
 
-    const dispose = provideDesktopLayout(ctx, new DesktopLayoutState())
+    installDesktopLayout(ctx, new DesktopLayoutState())
     expect(disposed).toBe(false)
-    dispose()
+    cleanup?.()
     expect(disposed).toBe(true)
   })
 
@@ -327,12 +336,14 @@ describe('advanced desktop layout', () => {
     const snapshots: object[] = []
     layout.subscribe(() => { snapshots.push(layout.getSnapshot()) })
     layout.toggleSidebar()
-    layout.openDetails()
-    layout.closeDetails()
+    layout.openRightbar(false, false)
+    layout.closeRightbar()
+    // 0.2.1：右栏的「开/关」与「宽度」拆成两个字段——上游面板自己报呈现方式，
+    // 保存的宽度不再被开关清零。
     expect(snapshots).toEqual([
-      { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
-      { sidebar: 0, details: 360, narrow: false, narrowExpanded: false },
-      { sidebar: 0, details: 0, narrow: false, narrowExpanded: false },
+      { sidebar: 0, rightbar: null, rightbarShown: false, rightbarTrack: false, rightbarFullscreen: false, narrow: false, narrowExpanded: false },
+      { sidebar: 0, rightbar: null, rightbarShown: true, rightbarTrack: false, rightbarFullscreen: false, narrow: false, narrowExpanded: false },
+      { sidebar: 0, rightbar: null, rightbarShown: false, rightbarTrack: false, rightbarFullscreen: false, narrow: false, narrowExpanded: false },
     ])
   })
 

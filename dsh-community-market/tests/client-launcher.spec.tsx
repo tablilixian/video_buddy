@@ -35,8 +35,10 @@ describe('community market launcher', () => {
       actions: instance.actions,
       useStore,
       t,
-      useSessions: (() => undefined) as MarketLauncherProps['useSessions'],
-      useWorkspaces: (() => undefined) as MarketLauncherProps['useWorkspaces'],
+      // 0.2.1：全局标准 props 换成 `usePanelInfo`（当前主面板），启动器的
+      // 宽窄展示只看 `wide`，这里给一个无选中面板的只读选择器。
+      usePanelInfo: ((selector: (state: { activePanelId: null }) => unknown) =>
+        selector({ activePanelId: null })) as MarketLauncherProps['usePanelInfo'],
     } satisfies MarketLauncherProps
 
     const { rerender } = render(<MarketLauncher {...props} />)

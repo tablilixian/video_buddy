@@ -123,7 +123,8 @@ function createHarness() {
 describe('community market Host capability lifecycle', () => {
   it('keeps desktop routes fail-closed until capabilities are live and after they are disposed', async () => {
     const harness = createHarness()
-    apply(harness.context as never)
+    // 0.2.1：配置由 Loader 以 volatile 引用注入，测试给一个只读空源即可。
+    apply(harness.context as never, { get: () => ({ sources: [] }) } as never)
 
     await expect(harness.request(marketRoutes.installable)).resolves.toMatchObject({ status: 503 })
     await expect(harness.request(marketRoutes.state)).resolves.toMatchObject({

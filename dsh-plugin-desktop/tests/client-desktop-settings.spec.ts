@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { ClientContext, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   DesktopDeveloperMenuItems,
   DesktopNativeActions,
@@ -124,7 +126,7 @@ describe('Desktop settings API', () => {
   })
 
   it('withdraws browser and LAN access before selecting a custom Desktop mode', async () => {
-    const set = vi.fn(async () => {})
+    const set = vi.fn(async () => true)
     const scope = {
       getSnapshot: () => ({
         status: 'ready' as const,
@@ -155,7 +157,7 @@ describe('Desktop settings API', () => {
   })
 
   it('withdraws browser and LAN access while the settings mirror is still loading', async () => {
-    const set = vi.fn(async () => {})
+    const set = vi.fn(async () => true)
     const scope = {
       getSnapshot: () => ({
         status: 'loading' as const,
@@ -404,12 +406,12 @@ describe('Desktop settings Slot registration', () => {
         user: undefined,
         revision: undefined,
         writable: false,
-        mode: 'host' as const,
       }),
       subscribe: () => () => {},
-      set: vi.fn(async () => {}),
-      unset: vi.fn(async () => {}),
-    } satisfies SettingsScope<unknown>
+      mutate: vi.fn(async (_ops: readonly SettingsPathOpView[], _expectedRevision?: number) => true),
+      set: vi.fn(async (_field: string, _value: unknown) => true),
+      unset: vi.fn(async (_field: string) => true),
+    } satisfies ConfigForm<unknown>
     const bind = vi.fn(() => scope)
     const register = vi.fn(() => () => {})
     const inject = vi.fn((_name: string, mount: () => unknown) => mount())

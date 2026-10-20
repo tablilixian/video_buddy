@@ -59,8 +59,11 @@ describe('DeepSeek streaming tool calls', () => {
     })
     const adapter = new DeepSeekAdapter({
       options: () => connection,
-      resolveApiKey: async () => 'test-key',
+      // 0.2.1：适配器只接收请求快照派生出的凭据头，不再回读端点取 key。
+      resolveAuth: async () => ({ headers: { authorization: 'Bearer test-key' } }),
       resolveUserId: () => 'test-user' as AnonymousUserId,
+      // 本 spec 不覆盖插件扩展字段，按空扩展满足必填契约。
+      prepareExtensions: async () => ({ fields: {}, accept: async () => {} }),
     })
     const chunks: StreamChunk[] = []
 

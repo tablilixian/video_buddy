@@ -1,3 +1,4 @@
+import type { Config as PwshConfig } from '@deepseek-ai/dsh-pwsh-local'
 import type { ShellExecSpec } from '@deepseek-ai/dsh-shell'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -20,9 +21,34 @@ function shellSpec(env?: Record<string, string>): ShellExecSpec {
     command: 'Write-Output ok',
     workdir: 'C:\\workspace',
     timeoutMs: 60_000,
+    onExpiry: 'kill',
     stdoutMaxBytes: 64_000,
     sandboxPolicy: undefined,
     ...(env === undefined ? {} : { env }),
+  }
+}
+
+/** A settings-runtime live config reference, editable the way the loader commits one. */
+interface LiveRef<T> {
+  get: () => T
+  set: (next: T) => void
+}
+
+function live<T>(value: T): LiveRef<T> {
+  let current = value
+  return { get: () => current, set: (next) => { current = next } }
+}
+
+/** A plugin config whose fields are live references, as dsh 0.2.1 hands them to the executor. */
+function pwshConfig(pwshPath: LiveRef<string | undefined>, cwd = 'C:\\workspace'): PwshConfig {
+  return {
+    cwd: live<string | undefined>(cwd),
+    timeoutMs: live(120_000),
+    maxTimeoutMs: live(600_000),
+    maxOutputBytes: live(64_000),
+    maxSpillBytes: live(64 * 1024 * 1024),
+    graceMs: live(2_000),
+    pwshPath,
   }
 }
 
@@ -55,24 +81,27 @@ describe('Windows Electron PowerShell sandbox adaptation', () => {
   })
 
   it('keeps explicit pwshPath config and non-Windows config unchanged', () => {
-    const explicit = { cwd: 'C:\\workspace', pwshPath: 'D:\\tools\\pwsh\\pwsh.exe' }
-    expect(desktopWindowsPwshConfig(explicit, {}, 'win32')).toBe(explicit)
+    const explicit = pwshConfig(live<string | undefined>('D:\\tools\\pwsh\\pwsh.exe'))
+    const adaptedExplicit = desktopWindowsPwshConfig(explicit, {}, 'win32')
+    expect(adaptedExplicit.pwshPath.get()).toBe('D:\\tools\\pwsh\\pwsh.exe')
 
-    const nonWindows = { cwd: '/workspace' }
-    expect(desktopWindowsPwshConfig(nonWindows, {}, 'darwin')).toBe(nonWindows)
+    const nonWindows = pwshConfig(live<string | undefined>(undefined), '/workspace')
+    const adaptedNonWindows = desktopWindowsPwshConfig(nonWindows, {}, 'darwin')
+    expect(adaptedNonWindows.pwshPath.get()).toBeUndefined()
+    // 其余预算必须仍是调用方自己的引用，否则设置提交会写进执行器读不到的对象。
+    expect(adaptedNonWindows.cwd).toBe(nonWindows.cwd)
+    expect(adaptedNonWindows.graceMs).toBe(nonWindows.graceMs)
   })
 
   it('defaults Windows sandbox config to a stable system PowerShell when available', () => {
-    const result = desktopWindowsPwshConfig({ cwd: 'C:\\workspace' }, {
+    const result = desktopWindowsPwshConfig(pwshConfig(live<string | undefined>(undefined)), {
       ProgramFiles: 'C:\\missing',
       SystemRoot: 'C:\\Windows',
       PATH: 'D:\\portable\\pwsh',
     }, 'win32', path => path === 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
 
-    expect(result).toEqual({
-      cwd: 'C:\\workspace',
-      pwshPath: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-    })
+    expect(result.cwd.get()).toBe('C:\\workspace')
+    expect(result.pwshPath.get()).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
   })
 
   it('adapts only the exact Electron-hosted win32 ACL runner argv', () => {

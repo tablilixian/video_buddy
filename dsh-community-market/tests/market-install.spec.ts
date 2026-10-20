@@ -3,10 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DSH_1024STORE_ADAPTER_ID, DSH_1024STORE_PROVIDER_ID } from '../src/adapters/dsh-1024store.js'
-import type { MarketSettingsDocument } from '../src/catalog/source-store.js'
+import type { MarketSettingsDocument, MarketSettingsStore } from '../src/catalog/source-store.js'
 import type { CatalogHttpClient, CatalogSnapshot } from '../src/contracts/index.js'
 import { marketRoutes, registerMarketRoutes } from '../src/host/routes.js'
 import {
@@ -23,13 +22,12 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(async path => await rm(path, { recursive: true, force: true })))
 })
 
-function memoryScope(): SettingsScope<MarketSettingsDocument> {
+function memoryScope(): MarketSettingsStore {
   let document: MarketSettingsDocument = { sources: [] }
+  // 0.2.1 的 store 面只有 get / update：写入统一经标准 settings 服务的 mutate。
   return {
     get: () => document,
-    watch: () => () => {},
     update: vi.fn(async patch => { document = { ...document, ...patch } as MarketSettingsDocument }),
-    replace: vi.fn(async section => { document = section as MarketSettingsDocument }),
   }
 }
 

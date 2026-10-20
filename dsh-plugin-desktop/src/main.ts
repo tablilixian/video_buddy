@@ -18,6 +18,7 @@ import { DSH_HOME_ENV, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-web-app'
 import { isDesktopInstallerQuitRequest } from './desktop-installer-quit.ts'
+import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
 import { createDesktopBrowserAccess } from './desktop-browser-access.ts'
 import {
   installDesktopDshRuntime,
@@ -43,7 +44,7 @@ import type {
   DesktopLifecycleRendererFailureReason,
 } from './lifecycle-events.ts'
 import { FileExporter } from './file-exporter.ts'
-import { DESKTOP_SETTINGS_NAMESPACE, type DesktopSettings } from './index.ts'
+import { name as DESKTOP_SHELL_NAME, type DesktopSettings } from './index.ts'
 import {
   desktopLanBrowserUrls,
   desktopLoopbackBrowserUrl,
@@ -932,8 +933,8 @@ async function start(): Promise<void> {
             const webRuntime = hostCtx.get('webRuntime')
             if (webRuntime === undefined) throw new Error(`${BIN_NAME}: Web runtime is unavailable`)
             return {
-              localUrl: desktopLoopbackBrowserUrl(hostCtx.webServer.port),
-              lanUrls: desktopLanBrowserUrls(hostCtx.webServer.port, webRuntime.lanAddresses),
+              localUrl: desktopLoopbackBrowserUrl(hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT),
+              lanUrls: desktopLanBrowserUrls(hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT, webRuntime.lanAddresses),
             }
           },
           selectMarket: async provider => desktopMarketSnapshotWithEffective(
@@ -975,10 +976,12 @@ async function start(): Promise<void> {
       throw cause
     })
     generation.bindHost(ctx)
-    fileExporter?.setThreshold((ctx.settings.get(DESKTOP_SETTINGS_NAMESPACE) as DesktopSettings | undefined)?.logLevel ?? 'info')
-    ctx.on('settings/updated', (namespace, next) => {
-      if (namespace !== DESKTOP_SETTINGS_NAMESPACE) return
-      fileExporter?.setThreshold((next as DesktopSettings).logLevel)
+    const readLogLevel = (): DesktopSettings['logLevel'] =>
+      (ctx.settings.describe().find(row => row.ns === DESKTOP_SHELL_NAME)?.value as DesktopSettings | undefined)?.logLevel ?? 'info'
+    fileExporter?.setThreshold(readLogLevel())
+    ctx.on('settings/document-updated', (namespace) => {
+      if (namespace !== DESKTOP_SHELL_NAME) return
+      fileExporter?.setThreshold(readLogLevel())
     })
     startupStage = 'renderer-startup'
     lifecycleRecorder.transitionStartupStage(startupStage)

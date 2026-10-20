@@ -8,23 +8,19 @@ import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugi
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   composeEntries,
-  healProfilesModuleFallback,
   initProfile,
   loadOptionalPatches,
   loadOverlayPatches,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
+  removeLinkProjections,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import FileSettingsProvider, {
-  resolveSpec as resolveSettingsFileSpec,
-  type Config as SettingsFileConfig,
-} from '@deepseek-ai/dsh-settings-file'
 import { parseDocument } from 'yaml'
 import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
@@ -90,7 +86,8 @@ const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
 const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
 const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
-const SETTINGS_FILE_PACKAGE = '@deepseek-ai/dsh-settings-file'
+const DESKTOP_SHELL_ROW_ID = 'desktop-shell'
+const DESKTOP_SHELL_PACKAGE = 'dsh-plugin-desktop'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -187,46 +184,26 @@ export function desktopShellModeFromSettings(document: unknown): DesktopShellMod
 }
 
 /**
- * Read startup settings from the same file resolved by the settings provider.
- * @param config - validated settings-file row config.
+ * Read startup settings from the composed desktop-shell row config.
+ * @param config - the Loader row config carrying persisted Desktop settings.
  * @returns the values projected into the startup Loader graph.
  */
-export function readDesktopStartupSettings(config: SettingsFileConfig): DesktopStartupSettings {
-  const spec = resolveSettingsFileSpec(config)
-  let text: string
-  try {
-    text = readFileSync(spec.filename, 'utf8')
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ...DEFAULT_DESKTOP_STARTUP_SETTINGS }
-    }
-    throw cause
-  }
-  let document: unknown
-  if (spec.format === 'yaml') {
-    const parsed = parseDocument(text, { prettyErrors: true })
-    if (parsed.errors.length > 0) {
-      throw new Error(`${BIN_NAME}: invalid settings document at ${spec.filename}: ${parsed.errors.map(error => error.message).join('; ')}`)
-    }
-    document = parsed.toJS() ?? {}
-  } else {
-    document = text.trim().length === 0 ? {} : JSON.parse(text)
-  }
-  return desktopStartupSettingsFromSettings(document)
+export function readDesktopStartupSettings(config: unknown): DesktopStartupSettings {
+  return desktopStartupSettingsFromSettings({ [DESKTOP_SETTINGS_NAMESPACE]: config })
 }
 
-/** Read only the shell mode from the settings provider's resolved file. */
-export function readDesktopShellMode(config: SettingsFileConfig): DesktopShellMode {
+/** Read only the shell mode from the composed desktop-shell row config. */
+export function readDesktopShellMode(config: unknown): DesktopShellMode {
   return readDesktopStartupSettings(config).mode
 }
 
 /** Resolve the public Web template once and reject an incompatible DSH release. */
 function requiredWebBundles(): string[] {
-  const bundles = PROFILE_TEMPLATES.web
-  if (bundles === undefined) {
+  const template = PROFILE_TEMPLATES.web
+  if (template === undefined) {
     throw new Error(`${BIN_NAME}: installed dsh-app-boot has no web profile template`)
   }
-  return [...bundles]
+  return [...template.bundles]
 }
 
 /** Prepared profile inputs consumed by app-boot. */
@@ -453,7 +430,7 @@ function loadRecoveryFilteredProfile(
     if (template === undefined) {
       throw new Error(`${BIN_NAME}: profile ${JSON.stringify(profileName)} does not exist`)
     }
-    initProfile(profileDir, template)
+    initProfile(profileDir, template.bundles)
   }
   const manifest = readProfileManifest(BIN_NAME, profileDir)
   const rawBundles = (manifest.dsh?.profile as { bundles?: unknown } | undefined)?.bundles
@@ -499,7 +476,7 @@ function loadRecoveryFilteredProfile(
       layers.push({
         packageName,
         packageDir,
-        patchPath,
+        patchPaths: [patchPath],
         patches: loadOverlayPatches(BIN_NAME, patchPath),
       })
     } catch (cause) {
@@ -515,6 +492,7 @@ function loadRecoveryFilteredProfile(
       layers,
       patchPath,
       patches: existsSync(patchPath) ? loadOverlayPatches(BIN_NAME, patchPath) : [],
+      skippedBundles: [],
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
   }
@@ -736,7 +714,7 @@ export function prepareDesktopProfile(
     : resolveProfileDir(profileName, home)
   const workspaceChanged = reconcileProfilePnpmWorkspace(profileDir)
   const requiresDependencyMigration = profileDependencyMigrationRequired(profileDir, workspaceChanged, platform)
-  healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  removeLinkProjections(profileDir)
   // `plugin-management` remains the community market's user-facing scope.
   // Recovery mode no longer reads or writes an independent disable policy:
   // package removal goes through the provider-neutral `dsh plugin remove`.
@@ -837,15 +815,11 @@ export function prepareDesktopProfile(
   for (const row of composedRows) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
-  const settings = rows.get('settings')
-  if (settings?.name !== SETTINGS_FILE_PACKAGE) {
-    throw new Error(`${BIN_NAME}: desktop profile must use ${SETTINGS_FILE_PACKAGE} in the settings row`)
+  const shellRow = rows.get(DESKTOP_SHELL_ROW_ID)
+  if (shellRow?.name !== DESKTOP_SHELL_PACKAGE) {
+    throw new Error(`${BIN_NAME}: desktop profile must include the ${DESKTOP_SHELL_PACKAGE} shell row`)
   }
-  const settingsConfig = FileSettingsProvider.Config({
-    dshHome: home,
-    ...rowConfig(settings),
-  } as SettingsFileConfig)
-  const settingsDocument = resolveSettingsFileSpec(settingsConfig).filename
+  const settingsDocument = join(home, 'settings.yaml')
   hooks.onSettingsDocumentResolved?.(settingsDocument)
   const {
     mode,
@@ -854,11 +828,7 @@ export function prepareDesktopProfile(
     windowsMaterial,
     openBrowser,
     networkExposure,
-  } = readDesktopStartupSettings(settingsConfig)
-  patches.push({
-    id: 'settings',
-    config: settingsConfig,
-  })
+  } = readDesktopStartupSettings(rowConfig(shellRow))
   const webRuntime = rows.get('web-runtime')
   if (webRuntime === undefined) {
     throw new Error(`${BIN_NAME}: desktop profile has no web-runtime row`)

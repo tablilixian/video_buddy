@@ -2409,6 +2409,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/dsh-deepseek-account@npm:0.2.1-rc.2":
+  version: 0.2.1-rc.2
+  resolution: "@deepseek-ai/dsh-deepseek-account@npm:0.2.1-rc.2"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.5
+    "@deepseek-ai/dsh-agent": 0.2.1-rc.2
+    "@deepseek-ai/dsh-brand": 0.2.1-rc.2
+    "@deepseek-ai/dsh-llm": 0.2.1-rc.2
+    "@deepseek-ai/dsh-util-values": 0.2.1-rc.2
+  peerDependenciesMeta:
+    "@deepseek-ai/dsh-agent":
+      optional: true
+  checksum: 10c0/7fd81980af146b968f5be991d4fc4763c413463f606ff3addb42baf7da60fb0ed27eeb556a8a40631c668558b3ec87ac54e8c9489339fb959665679add8e3478
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/dsh-deepseek-llm-api-extensions@npm:0.2.1-rc.2":
   version: 0.2.1-rc.2
   resolution: "@deepseek-ai/dsh-deepseek-llm-api-extensions@npm:0.2.1-rc.2"
@@ -3164,6 +3180,34 @@ __metadata:
     "@deepseek-ai/cordis-plugin-loader":
       optional: true
   checksum: 10c0/4afbcab02ed37e764ea774917316f147e17cfdd89a7be8dd3c0add39639673c9892f5b4dd63b52fc20cb308a7ee94ed0429a222a6a45de997041621871d85578
+  languageName: node
+  linkType: hard
+
+"@deepseek-ai/dsh-llm-deepseek@npm:0.2.1-rc.2":
+  version: 0.2.1-rc.2
+  resolution: "@deepseek-ai/dsh-llm-deepseek@npm:0.2.1-rc.2"
+  dependencies:
+    "@deepseek-ai/cosmokit": "npm:~1.8.6"
+    "@deepseek-ai/dsh-brand": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-util-values": "npm:0.2.1-rc.2"
+    "@deepseek-ai/schemastery": "npm:~3.18.5"
+    eventsource-parser: "npm:^3.1.0"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.5
+    "@deepseek-ai/cordis-plugin-loader": ~1.0.6
+    "@deepseek-ai/dsh-anonymous-user-id": 0.2.1-rc.2
+    "@deepseek-ai/dsh-atomic-write": 0.2.1-rc.2
+    "@deepseek-ai/dsh-attachment": 0.2.1-rc.2
+    "@deepseek-ai/dsh-deepseek-llm-api-extensions": 0.2.1-rc.2
+    "@deepseek-ai/dsh-fs": 0.2.1-rc.2
+    "@deepseek-ai/dsh-home-paths": 0.2.1-rc.2
+    "@deepseek-ai/dsh-launch-environment": 0.2.1-rc.2
+    "@deepseek-ai/dsh-llm": 0.2.1-rc.2
+    "@deepseek-ai/dsh-timeout": 0.2.1-rc.2
+  peerDependenciesMeta:
+    "@deepseek-ai/cordis-plugin-loader":
+      optional: true
+  checksum: 10c0/91ae651b51b3b879c6861a5b83caacb226fd04911c4105883d272334bd4046c260fa65d321cb15bf731492ad4cc8b90b8f73b6ecf20968a92aad3832d0fe32ed
   languageName: node
   linkType: hard
 
@@ -10940,6 +10984,7 @@ __metadata:
     "@deepseek-ai/dsh-client-connection": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-locale": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-modules": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-store": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-attachment": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-commands": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-conversation": "npm:0.2.1-rc.2"
@@ -10962,6 +11007,7 @@ __metadata:
     "@deepseek-ai/dsh-cordis-client-runner": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-cordis-host-runner": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-credentials": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-deepseek-account": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-file-reference": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-fs": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-fs-local": "npm:0.2.1-rc.2"
@@ -10974,11 +11020,13 @@ __metadata:
     "@deepseek-ai/dsh-jobs": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-launch-environment": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-llm": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-llm-deepseek": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-llm-retry": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-message-feedback": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-output-retention": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-permission-presets": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-plan-mode": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-ptc-runtime": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-pwsh-local": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-pwsh-sandbox": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-sandbox": "npm:0.2.1-rc.2"
@@ -11606,7 +11654,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eventsource-parser@npm:^3.0.0, eventsource-parser@npm:^3.0.1":
+"eventsource-parser@npm:^3.0.0, eventsource-parser@npm:^3.0.1, eventsource-parser@npm:^3.1.0":
   version: 3.1.1
   resolution: "eventsource-parser@npm:3.1.1"
   checksum: 10c0/dd3236c61140587253dcaaf947de528ac0e7371caffdc53c77afaeee36a17661f00e251a6ea16af56c99be5ac138303e67b5d750630e7c41b02e3564e8ad8c44

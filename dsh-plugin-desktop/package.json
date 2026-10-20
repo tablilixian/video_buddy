@@ -264,6 +264,10 @@
   },
   "devDependencies": {
     "@base-ui/react": "^1.7.0",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-deepseek-account": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm-deepseek": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-ptc-runtime": "0.2.1-rc.2",
     "@electron/asar": "3.4.1",
     "@electron/rebuild": "4.2.0",
     "@fontsource-variable/inter": "^5.3.0",

@@ -31,7 +31,7 @@
  * lobby-stash.ts 尾部）；拖拽 / Ctrl+V 由 StudioFrame 的全局接管汇进同一份登记。
  * 「发送第一句话后自动落进画布」的语义出口保留在来源弹出框脚注里。
  */
-import { useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LobbyStashBarInjected } from './contracts.js'
@@ -299,16 +299,25 @@ function HostDraftThumb({ attachment, onRemove }: {
   attachment: ComposerAttachment
   onRemove: ((id: ComposerAttachment['id']) => void) | undefined
 }): ReactElement {
+  // 0.2.1：`ComposerAttachment` 拆成 image / file 两支，只有 image 带 `previewUrl`
+  // （file 支是「选中即上传」的普通文件，没有本地预览）。非图片走 object URL，
+  // 并在卸载/换文件时回收 —— 直接每次 read 现造会漏 URL。
+  const objectUrl = useMemo(
+    () => (attachment.kind === 'image' ? undefined : URL.createObjectURL(attachment.file)),
+    [attachment],
+  )
+  useEffect(() => () => { if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl) }, [objectUrl])
+  const previewUrl = attachment.kind === 'image' ? attachment.previewUrl : (objectUrl ?? '')
   return (
     <ReferenceThumb
       title={attachment.file.name}
       name={attachment.file.name}
-      peekUrl={attachment.previewUrl}
+      peekUrl={previewUrl}
       {...(onRemove !== undefined ? { onRemove: () => { onRemove(attachment.id) } } : {})}
       removeLabel={`移除 ${attachment.file.name}`}
       removeTitle="移除草稿图片"
     >
-      <img className="csLobbyThumbMedia" src={attachment.previewUrl} alt={attachment.file.name} />
+      <img className="csLobbyThumbMedia" src={previewUrl} alt={attachment.file.name} />
     </ReferenceThumb>
   )
 }

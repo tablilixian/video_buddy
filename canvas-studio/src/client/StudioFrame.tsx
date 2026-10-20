@@ -352,6 +352,12 @@ const clapIcon = (
  */
 
 /** CV-015：非阻塞提示条目。 */
+/**
+ * 保留主面板键。dsh 0.2.1 把对话从 `conversation` 子槽搬进 keyed `main` 槽，
+ * 上游约定保留键 `'conversation'` 由 ui-conversation 注册（见 ui-layout 的 SlotMap 注释）。
+ */
+const CONVERSATION_PANEL_KEY = 'conversation'
+
 interface ToastItem {
   id: number
   kind: keyof typeof TOAST_MS
@@ -367,7 +373,7 @@ const newUploadId = (): string =>
 
 /** Studio root frame props: the standard root shares plus the studio inject face. */
 export type StudioFrameProps = PropsRuntime<'root'>
-  & PropsRenderSlots<'conversation' | 'shell.overlay'>
+  & PropsRenderSlots<'main' | 'shell.overlay'>
   & InjectFace<StudioProjectListInjected>
 
 /**
@@ -602,7 +608,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const signedInName = auth.status === 'signed-in' ? auth.user?.name : undefined
   const [loginOpen, setLoginOpen] = useState(false)
   useEffect(() => {
-    const scope = settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+    const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
     initAuthStore({
       supabaseUrl: scope.getSnapshot().value?.supabaseUrl ?? '',
       supabasePublishableKey: scope.getSnapshot().value?.supabasePublishableKey ?? '',
@@ -686,7 +692,7 @@ export function StudioFrame(props: StudioFrameProps) {
   // 必须在根组件同步，而不是只靠设置弹窗内的 onChange：那个只在弹窗打开时活着，
   // 重启后标志会退回默认值 ⇒ 出现「开关是开的、行为还是默认的」这种最难查的偏差。
   useEffect(() => {
-    const scope = settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+    const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
     const sync = (): void => {
       setErrorVisibility(scope.getSnapshot().value?.errorVisibility === 'all' ? 'all' : 'audience')
     }
@@ -2830,7 +2836,7 @@ export function StudioFrame(props: StudioFrameProps) {
           </button>
         )}
         <section className="csConversation">
-          {renderSlot('conversation', {})}
+          {renderSlot('main', {}, { entryKey: CONVERSATION_PANEL_KEY })}
         </section>
         {/* DD-09 / b：收起态换成 56px 竖条。与左栏 RailStrip 同理 —— 这里不用 CSS
             把对话区藏起来就完事，因为 56px 里需要「点回展开」的落点，而且竖条要能

@@ -17,7 +17,6 @@
  */
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
-import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** Owner share of `conversation.hero.brand.mark`：dsh 上游定义同名类型，本地复制以避免
  * 依赖上游运行时类型导出（上游 dist 与 src 导出表偶有差异）。 */
@@ -30,8 +29,11 @@ export interface HeroBrandMarkOwnerProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Canvas Studio 主表面；Desktop 宿主渲染进同一视口。 */
-    'root': { kind: 'single'; scope: 'root'; owner: Record<never, never> }
+    /**
+     * `root` 由上游 ui-layout 声明（owner 是它的 `RootOwnerProps`：`useSessions` /
+     * `usePanelInfo` 等根槽 hooks）。0.2.1 起本包**不得**再声明同名的窄版本 ——
+     * 声明冲突会让整棵 SlotMap 取第一个声明的形状，画布就拿不到根槽 hooks。
+     */
     /**
      * 对话空态 hero 的品牌标识（替换官方 FishLogo 为场记板）。
      * owner 由 dsh `ui-conversation` 在 HeroShell 渲染时提供 `{size, className}`，
@@ -42,4 +44,4 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 // 0.2.1 起 `settingsScope` 服务已随 dsh-client-runtime 删除；命名空间表改由
-// ui-settings 的 `ctx.configForms`（本文件顶部 type-only 引入其 Context 合并）。
+// ui-settings 的 `ctx.configForms`（Context 合并由 `contracts.ts` 的 type-only 引入）。

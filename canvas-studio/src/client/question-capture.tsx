@@ -48,7 +48,9 @@ export interface StudioQuestionChatData {
   note: string | null
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+// 0.2.1：`ChatNodeDataMap`（`ChatNodeKind` 的来源）已随 Chat 渲染层搬到 ui-chat；
+// 在 ui-conversation 上扩充不再生效（节点 data 会退化成 never）。
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     'canvas-studio-question': StudioQuestionChatData
   }

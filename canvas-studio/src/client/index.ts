@@ -1,7 +1,9 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ISessions, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 // 类型增强：Context 上获得 `workspaces`（IWorkspaces）。
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+// 类型增强：Context 上获得 `uiWorkspace`（会话/工作区导航，0.2.1 唯一入口）。
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
@@ -36,6 +38,8 @@ import { scenarioCheckpointErrors, type AutoTestScenario } from '../auto-test-sc
 import { buildAutoTestReport, type AutoTestCheckpointLine } from '../auto-test-report.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
+// 0.2.1：当前会话 / 最近会话的唯一取数口径（选择状态在 0.2.1 已无公开 API）。
+import { currentSession as currentSessionOf, currentSessionId as currentSessionIdOf, recentSession as recentSessionOf } from './current-session.js'
 import { frameSizeOf } from '../canvas-aspect.js'
 import { isReplayable } from '../node-params.js'
 // CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
@@ -90,7 +94,7 @@ import '../errors/catalog.js'
 // 「Renderer boot failed for 3 plugin(s)」（2026-08-31 实测）。官方插件
 // （ui-commands、ui-model-selection）也都是在调用处 `ctx.get('conversation')`
 // 惰性取服务，不在 inject 里声明。
-export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions', 'connection', 'settingsScope', 'theme']
+export const inject = ['slots', 'workspaces', 'uiWorkspace', 'uiConversation', 'sessions', 'connection', 'configForms', 'theme']
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
 const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -187,7 +191,10 @@ export function apply(ctx: ClientContext): void {
     return
   }
   const devSeed = params.get('cs-dev-seed') === '1'
-  const layout = new StudioLayoutController()
+  // 主面板注册表查询：`main` 是 keyed 槽，entryKey 即 panelId。
+  const layout = new StudioLayoutController(
+    id => ctx.slots.entries('main').some(entry => entry.options.key === id),
+  )
   // 唯一的 store 实例：apply 世界（workspace 订阅、capture 回调、openProject）
   // 与 React 组件（经 inject hooks 舱的 useStudio）读写同一个实例。不能再把
   // store 座位交给框架 —— 框架会按 handle×scopeKey 再 create() 一个独立实例，
@@ -301,21 +308,23 @@ export function apply(ctx: ClientContext): void {
     const manual = storeInstance.getSnapshot().selectedProjectId
     if (manual !== null) return manual
     const snapshot = ctx.workspaces.list.getSnapshot()
-    if (!snapshot.baselinesReady) return null
+    if (snapshot.phase !== 'ready') return null
     const projects = storeInstance.getSnapshot().projects
     // CV-034：优先用「当前会话的 cwd」映射 —— 画布跟随对话区当前打开的会话。
     // recentWorkspaceId 是「会话最新的 workspace」推导值：孤儿 workspace（项目
     // 已删但残留，或旧版本删除不摘 workspace）的空会话会把它带偏，导致启动后
     // 「对话有内容、画布空、列表无选中」的三不一致（2026-08-28 用户实测）。
     const sessions = sessionSvc.list.getSnapshot()
-    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+    const current = currentSessionOf(sessions)
     if (current !== undefined && current.cwd !== undefined) {
       const bound = projects.find((entry) => entry.dir === current.cwd)
       if (bound !== undefined) return bound.id
     }
-    const recentId = snapshot.recentWorkspaceId
-    if (recentId === undefined) return null
-    const view = snapshot.items.find((item) => item.workspaceId === recentId)
+    // 0.2.1 删除了 `WorkspaceSnapshot.recentWorkspaceId`：改按「最近更新的非空
+    // 会话」反推它所属 workspace（与原语义同源：会话的最新活动 → 它的 workspace）。
+    const recent = recentSessionOf(sessions)
+    if (recent === undefined) return null
+    const view = snapshot.items.find((item) => item.sessionIds.includes(recent.id))
     if (view === undefined || view.path === undefined) return null
     const project = projects.find((entry) => entry.dir === view.path)
     return project?.id ?? null
@@ -587,7 +596,7 @@ export function apply(ctx: ClientContext): void {
   // ① 注册 '@' 候选源：在输入框打 @ 能搜到画布素材并选中插入 chip；
   // ② 提供「把素材插成同一个 chip」的通道给右键菜单 / 参考托盘 / 详情面板。
   // 上游服务缺失（或签名漂移）时整体跳过，三处入口自动降级为纯文本 @ref 注入。
-  const currentSessionId = (): string | undefined => sessionSvc.list.getSnapshot().current
+  const currentSessionId = (): string | undefined => currentSessionIdOf(sessionSvc.list.getSnapshot())
   const activeAssetHandles = (): readonly AssetHandle[] => {
     const projectId = storeInstance.getSnapshot().selectedProjectId
     if (projectId === null) return []
@@ -653,7 +662,7 @@ export function apply(ctx: ClientContext): void {
     }
     return persistCanvasQueued(projectId).catch(() => {})
   }
-  ctx.effect(() => ctx.conversationEvents.register(createBriefCaptureDefinition({
+  ctx.effect(() => ctx.uiConversation.events.register(createBriefCaptureDefinition({
     getSelectedProjectId: () => resolveActiveProjectId(),
     hasBriefNode: (projectId) => (storeInstance.getSnapshot().nodes[projectId] ?? [])
       .some((node) => node.toolName === BRIEF_NODE_TOOL),
@@ -803,7 +812,7 @@ export function apply(ctx: ClientContext): void {
         const once = async (allowStorageRebuild: boolean): Promise<SubmitOutcomeLike> => {
           // 认领严格用当前会话 cwd：会话未就位（落点还在建 / inert 占位）不认领。
           const sessions = sessionSvc.list.getSnapshot()
-          const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+          const current = currentSessionOf(sessions)
           const dir = current?.cwd
           if (dir === undefined) return { kind: 'error' }
           let project: StudioProject
@@ -852,11 +861,10 @@ export function apply(ctx: ClientContext): void {
             try {
               // workspace.create 按 path 幂等复用（openProject 同款）。
               const workspace = await ctx.workspaces.create({ path: project.dir })
-              sessionSvc.clear()
               // 旧落点会话 cwd 失效，复用扫描必然落空 → 新建 blank 并同步就位
               //（connectWorkspace 契约：返回时 binding 已可取；调用方负责 open）。
-              const newId = await ctx.workspaces.connectWorkspace(workspace.workspaceId)
-              sessionSvc.open(newId)
+              const newId = await ctx.uiWorkspace.connectWorkspace(workspace.workspaceId)
+              ctx.uiWorkspace.openSession(newId)
               // 标题对齐项目名（openProject 同款；纯展示，失败不阻塞首句）。
               await ctx.workspaces.rename(workspace.workspaceId, project.name)
                 .catch((cause: unknown) => {
@@ -915,14 +923,13 @@ export function apply(ctx: ClientContext): void {
         args: Parameters<DivertConversation['sendSession']>,
       ): Promise<SubmitOutcomeLike> => {
         const before = sessionSvc.list.getSnapshot()
-        const previousId = before.current
+        const previousId = currentSessionIdOf(before)
         const previous = previousId === undefined ? undefined : before.byId[previousId]
         const staleCwd = previous?.cwd
 
         const workspace = await ctx.workspaces.create({ path: project.dir })
-        sessionSvc.clear()
-        const newId = await ctx.workspaces.connectWorkspace(workspace.workspaceId)
-        sessionSvc.open(newId)
+        const newId = await ctx.uiWorkspace.connectWorkspace(workspace.workspaceId)
+        ctx.uiWorkspace.openSession(newId)
         await ctx.workspaces.rename(workspace.workspaceId, project.name)
           .catch((cause: unknown) => {
             ctx.logger.warn(`canvas-studio: rebind rename skipped: ${cause instanceof Error ? cause.message : String(cause)}`)
@@ -951,7 +958,7 @@ export function apply(ctx: ClientContext): void {
         if (!requireSignIn()) return Promise.resolve({ kind: 'error' })
         // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
         // 基线未就绪时不误判（resolveActiveProjectId 那时恒 null）。
-        if (ctx.workspaces.list.getSnapshot().baselinesReady) {
+        if (ctx.workspaces.list.getSnapshot().phase === 'ready') {
           // CV-299 验收前修正：**首页意图优先**。`homePinned=true`（启动窗口 /
           // 品牌区回首页）表示用户明确停在首页，此时即便残留会话的 cwd 仍映射到
           // 某个老项目（宿主启动恢复会话，或 goHome 的 draft 落点异步未就位），
@@ -970,7 +977,7 @@ export function apply(ctx: ClientContext): void {
           // 处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
           const selected = storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
           const sessions = sessionSvc.list.getSnapshot()
-          const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+          const current = currentSessionOf(sessions)
           if (selected !== undefined && current?.cwd !== undefined && current.cwd !== selected.dir) {
             return rebindAndSend(selected, args)
           }
@@ -997,9 +1004,9 @@ export function apply(ctx: ClientContext): void {
     if (entry === undefined) return undefined
     const sessions = sessionSvc.list.getSnapshot()
     const byId = sessions.byId
-    return (entry.sessionIds as string[])
-      .map((id: string) => byId[id])
-      .filter((summary): summary is NonNullable<(typeof byId)[string]> =>
+    return entry.sessionIds
+      .map(id => byId[id])
+      .filter((summary): summary is SessionSummary =>
         summary !== undefined
         && summary.blank !== true
         && !workspaces.archivedSessionIds.includes(summary.id))
@@ -1009,7 +1016,7 @@ export function apply(ctx: ClientContext): void {
   const resumeLatestSession = (workspaceId: string): boolean => {
     const resumable = latestResumableSession(workspaceId)
     if (resumable === undefined) return false
-    if (sessionSvc.list.getSnapshot().current !== resumable.id) sessionSvc.open(resumable.id)
+    if (currentSessionIdOf(sessionSvc.list.getSnapshot()) !== resumable.id) ctx.uiWorkspace.openSession(resumable.id)
     return true
   }
 
@@ -1038,7 +1045,7 @@ export function apply(ctx: ClientContext): void {
     if (projectId === null) return
     const sessions = sessionSvc.list.getSnapshot()
     if (sessions.phase === 'pending') return
-    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+    const current = currentSessionOf(sessions)
     const has = current !== undefined && current.blank !== true
     if ((storeInstance.getSnapshot().hasConversation[projectId] ?? false) !== has) {
       storeInstance.actions.setHasConversation(projectId, has)
@@ -1077,15 +1084,14 @@ export function apply(ctx: ClientContext): void {
         // 当前会话已绑 draft 目录 → 落点就绪（幂等短路，订阅重复触发零成本）。
         if (!force && landedThisRun) {
           const sessions = sessionSvc.list.getSnapshot()
-          const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+          const current = currentSessionOf(sessions)
           if (current !== undefined && current.cwd === dir) return
         }
         // workspace.create 按 path 幂等复用既有注册（openProject 同款）。
         const workspace = await ctx.workspaces.create({ path: dir })
         // 切到 draft 工作区会话：startSession 会复用该工作区的 blank 会话（回首页
         // 来回切换不会堆积空会话），没有才新建。fire-and-forget（openProject 同款）。
-        sessionSvc.clear()
-        ctx.workspaces.startSession(workspace.workspaceId)
+        ctx.uiWorkspace.startSession(workspace.workspaceId)
         landedThisRun = true
       } catch (cause) {
         // 落点失败 = 首页宿主卡只剩 inert 占位（不崩、不阻塞回首页动作本身），
@@ -1102,7 +1108,7 @@ export function apply(ctx: ClientContext): void {
    * 或当前会话确实不映射任何项目）才建落点。避免「基线未就绪的瞬间」误建 draft。
    */
   const maybeDraftLanding = (): void => {
-    if (!ctx.workspaces.list.getSnapshot().baselinesReady) return
+    if (ctx.workspaces.list.getSnapshot().phase !== 'ready') return
     if (sessionSvc.list.getSnapshot().phase === 'pending') return
     if (storeInstance.getSnapshot().selectedProjectId !== null) return
     if (storeInstance.getSnapshot().homePinned || resolveActiveProjectId() === null) {
@@ -1182,25 +1188,29 @@ export function apply(ctx: ClientContext): void {
   const alignStartupSession = (): void => {
     if (startupSessionAligned) return
     const workspaces = ctx.workspaces.list.getSnapshot()
-    if (!workspaces.baselinesReady) return
+    if (workspaces.phase !== 'ready') return
     const sessions = sessionSvc.list.getSnapshot()
     // 会话基线未就绪（首拉未完成）时再等一拍，避免误判「无历史」。
     if (sessions.phase === 'pending') return
     startupSessionAligned = true
-    const recentId = workspaces.recentWorkspaceId
+    // 0.2.1：`recentWorkspaceId` 已删除 —— 由最近非空会话反推它所属 workspace。
+    const latest = recentSessionOf(sessions)
+    const recentId = latest === undefined
+      ? undefined
+      : workspaces.items.find((item) => item.sessionIds.includes(latest.id))?.workspaceId
     if (recentId === undefined) return
-    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+    const current = currentSessionOf(sessions)
     // 上游已恢复真实历史（非空会话）则不干预。
     if (current !== undefined && current.blank !== true) return
     const resumable = latestResumableSession(recentId)
-    if (resumable !== undefined && sessions.current !== resumable.id) {
+    if (resumable !== undefined && currentSessionIdOf(sessions) !== resumable.id) {
       // CV-297：**孤儿会话不恢复** —— cwd 不属于任何已登记项目目录（项目被删后残留）。
       // 只跳过、不归档不删除：首页落点会话的 cwd 同样不在项目目录集合里，误归档会把
       // 首页的会话摘掉。跳过后 UI 停在空 Hero，用户重发即走认领链路建新项目。
       const cwd = sessions.byId[resumable.id]?.cwd
       const orphan = cwd === undefined
         || !storeInstance.getSnapshot().projects.some((entry) => entry.dir === cwd)
-      if (!orphan) sessionSvc.open(resumable.id)
+      if (!orphan) ctx.uiWorkspace.openSession(resumable.id)
     }
   }
 
@@ -1461,7 +1471,9 @@ export function apply(ctx: ClientContext): void {
    */
   const sendChatText = async (sessionId: string, text: string): Promise<boolean> => {
     if (!requireSignIn()) throwError(AUTH_REQUIRED_CODE, { detail: 'chat send blocked: not signed in' })
-    const scoped = sessionSvc.scope(sessionId)
+    // 效果测试驱动器回的是裸 string（它从会话列表里取到 id 后不持有品牌类型）；
+    // 这里收敛成品牌类型，避免把 cast 散到各调用点。
+    const scoped = sessionSvc.scope(sessionId as SessionSummary['id'])
     const conversation = scoped?.get('conversation')
     if (conversation === undefined) return false
     await conversation.send(text)
@@ -1473,7 +1485,7 @@ export function apply(ctx: ClientContext): void {
   // 发消息一律经 `sendChatText`（内含聊天登录闸）；取不到会话就静默 —— 用户仍可
   // 手动在对话框里发送。
   const wakeAgent = (text: string): void => {
-    const sessionId = sessionSvc.list.getSnapshot().current
+    const sessionId = currentSessionIdOf(sessionSvc.list.getSnapshot())
     if (sessionId === undefined) return
     void sendChatText(sessionId, text).catch(() => {})
   }
@@ -1827,7 +1839,7 @@ export function apply(ctx: ClientContext): void {
     // 里的 URL（后端异常 / 渲染差异时不可靠）。工具调用开始先放一个「生成中」
     // 占位节点，失败时经 tool/result 的 data.error 标记错误。
     const reloadCanvas = (projectId: string): Promise<void> => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId))
-    const disposeCapture = ctx.conversationEvents.register(createAssetCaptureDefinition({
+    const disposeCapture = ctx.uiConversation.events.register(createAssetCaptureDefinition({
       reloadCanvas,
       getSelectedProjectId: () => resolveActiveProjectId(),
       // P2：CS-AUTH-001 的占位移除在 definition 内完成，这里只负责续期/弹窗。
@@ -1962,7 +1974,7 @@ export function apply(ctx: ClientContext): void {
 
   // 打断当前会话的运行中回合（工具生成时把 Host 侧请求取消）。
   const cancelCurrentTurn = async (): Promise<void> => {
-    const current = sessionSvc.list.getSnapshot().current
+    const current = currentSessionIdOf(sessionSvc.list.getSnapshot())
     if (current === undefined) return
     const binding = sessionSvc.binding(current)
     if (binding === undefined) return
@@ -2036,8 +2048,12 @@ export function apply(ctx: ClientContext): void {
         // 包拥有的子槽（sidebar 包在 client.js 内 register 并 renderSlot）。
         // canvas-studio 只通过 StudioFrame 的 renderSlot('sidebar.settings') 渲染进
         // 该槽；若在此重复声明，loader 加载 sidebar 包时会报「slot already declared」。
-        'conversation': { kind: 'single', scope: 'session-maybe' },
-        'details': { kind: 'single', scope: 'session' },
+        // 0.2.1：`conversation` + `details` 两个旧子槽被 `main`（keyed）+ `rightbar`
+        // 取代。画布只渲染 `main`（entryKey 恒为保留键 `conversation`）；`rightbar`
+        // 只声明不渲染 —— 与 0.1.x 声明 `details` 而不渲染同样的处理，让上游右栏
+        // 插件（ui-sidebar-right）的注册有座位可落，不因缺座位在加载时报错。
+        'main': { kind: 'keyed', scope: 'root' },
+        'rightbar': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       inject: () => {
@@ -2102,13 +2118,12 @@ export function apply(ctx: ClientContext): void {
             // 切换项目时先清除当前会话选择，避免 startSession/connectWorkspace
             // 异步完成前，右侧面板仍显示上一个项目的会话内容。
             // clear() 让布局进入 no-session 空态；connectWorkspace 随后会设置正确会话。
-            sessionSvc.clear()
             // 验收反馈 2026-08-25「切换后历史对话消失」：connectWorkspace 只复用
             // 工作区下的空白会话 —— 原会话一旦聊过（非 blank），startSession 每次
             // 都新开一个空会话并跳过去。这里改为恢复该工作区 updatedAt 最新的
             // 非空会话；确实没有（首次使用）才走 startSession 建空。
             if (!resumeLatestSession(workspace.workspaceId)) {
-              ctx.workspaces.startSession(workspace.workspaceId)
+              ctx.uiWorkspace.startSession(workspace.workspaceId)
             }
             // P4+：载入持久化画布（含视口）；载入完成后补落暂存的创意节点。
             await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
@@ -2652,7 +2667,7 @@ export function apply(ctx: ClientContext): void {
           // 它在 macOS/Linux/Windows 都走宿主原生文件夹选择器（macOS→osascript、
           // Linux→Zenity/KDialog、Windows→IFileOpenDialog），返回的路径 dsh Host
           // 已校验可写，无需额外 validate 步骤。
-          getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
+          getDirectoryPicker: () => ({ pick: () => ctx.uiWorkspace.pickDirectory() }),
           // CV-114：把素材插成聊天输入框里的真 chip（不可用时降级纯文本）。
           insertAssetChip: insertAssetChipForNode,
           // CV-124：把技能插成聊天输入框里的真 chip（同上降级策略）。

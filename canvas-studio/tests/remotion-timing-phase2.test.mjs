@@ -20,6 +20,7 @@ import {
   orbitStateAt,
   RENDER_TIMEOUT_MAX_MS,
   RENDER_TIMEOUT_MIN_MS,
+  RENDER_TIMEOUT_PER_FRAME_MS,
   renderTimeoutMs,
   transitionOverride,
   waveformBars,
@@ -218,23 +219,31 @@ test('waveformBars：offset 指定窗口起点，负索引也安全回绕', () =
   assert.deepEqual(waveformBars(amplitudes, 0, { bars: 2, gain: 1, offset: -1 }), [0.4, 0.1], '负 offset 回绕到尾部')
 })
 
-// ───────────────────────── D-04：超时公式 renderTimeoutMs ─────────────────────────
+// ───────────────── 超时公式 renderTimeoutMs（REQ-034 O-06 改口径） ─────────────────
+//
+// 旧口径（二期 D-04）= clamp(2×秒数 + 120s, 10min, 30min)。真机暴露两个问题：
+// ① 高 fps 片子按「秒」算被平白砍半（600 帧 60fps 只有 10s，预算比 30fps 少一半，
+//    而软编成本只跟帧数走）；② 下限 10 分钟意味着挂死时要等满 10 分钟（评审 P1-5）。
+// 新口径 = clamp(帧数 × 200ms + 60s, 90s, 20min)。
 
-test('renderTimeoutMs：clamp 在 10–30 分钟，随片长线性增长', () => {
-  assert.equal(RENDER_TIMEOUT_MIN_MS, 600_000, '下限 10 分钟')
-  assert.equal(RENDER_TIMEOUT_MAX_MS, 1_800_000, '上限 30 分钟')
-  assert.equal(renderTimeoutMs(60, 30), RENDER_TIMEOUT_MIN_MS, '2 秒片也不该低于下限')
-  assert.equal(renderTimeoutMs(0, 30), RENDER_TIMEOUT_MIN_MS, '时长非法 ⇒ 下限兜底')
-  assert.equal(renderTimeoutMs(Number.NaN, 30), RENDER_TIMEOUT_MIN_MS, 'NaN 帧数 ⇒ 下限兜底')
+test('renderTimeoutMs：clamp 在 90s–20min，随帧数线性增长（与 fps 无关）', () => {
+  assert.equal(RENDER_TIMEOUT_MIN_MS, 90_000, '下限 90 秒')
+  assert.equal(RENDER_TIMEOUT_MAX_MS, 1_200_000, '上限 20 分钟')
+  assert.equal(RENDER_TIMEOUT_PER_FRAME_MS, 200, '每帧预算 200ms')
 
-  // 400 秒片：400×2000 + 120000 = 920000（10 分钟以上、30 分钟以下）
-  assert.equal(renderTimeoutMs(400 * 30, 30), 920_000)
-  // 1000 秒片：远超上限 ⇒ 夹到 30 分钟
-  assert.equal(renderTimeoutMs(1000 * 30, 30), RENDER_TIMEOUT_MAX_MS)
-  // fps 非法按 30 兜底
-  assert.equal(renderTimeoutMs(400 * 30, 0), renderTimeoutMs(400 * 30, 30))
+  // 30 帧：30×200 + 60000 = 66000 < 90000 ⇒ 下限
+  assert.equal(renderTimeoutMs(30), RENDER_TIMEOUT_MIN_MS, '短片夹到下限')
+  assert.equal(renderTimeoutMs(0), RENDER_TIMEOUT_MIN_MS, '零帧 ⇒ 下限兜底')
+  assert.equal(renderTimeoutMs(Number.NaN), RENDER_TIMEOUT_MIN_MS, 'NaN 帧数 ⇒ 下限兜底')
+
+  // 600 帧（20s @30fps，真机 standard 实测 35s）：600×200 + 60000 = 180000
+  assert.equal(renderTimeoutMs(600), 180_000, '600 帧 ⇒ 3 分钟（实测 35s，3.4× 余量）')
+  // 6000 帧：6000×200 + 60000 = 1260000 > 上限 ⇒ 夹到 20 分钟
+  assert.equal(renderTimeoutMs(6000), RENDER_TIMEOUT_MAX_MS, '超长片夹到上限')
   // 单调不减
-  assert.ok(renderTimeoutMs(300 * 30, 30) >= renderTimeoutMs(200 * 30, 30))
+  assert.ok(renderTimeoutMs(9000) >= renderTimeoutMs(6000))
+  // 只看帧数：调用方少传 fps 也不会变（幂等签名）
+  assert.equal(renderTimeoutMs(600), renderTimeoutMs(600))
 })
 
 // ───────────────────────── A4：转场（新增四种，全部按帧求值） ─────────────────────────

@@ -1006,16 +1006,63 @@ export interface PendingStudioRenderJob {
   sampleFrames?: number[]
 }
 
-/** 取该项目当前待渲染工单；无单返回 `null`。 */
+/**
+ * 取该项目当前**归画布页渲染**的工单；无单返回 `null`。
+ *
+ * ⚠️ `owner=client` 不是冗余参数：宿主建单时已把单钉给某个执行者（REQ-034 O-06）。
+ * 不带这个参数虽然也会被当成 `client`（向后兼容），但显式写出来才不会有人误以为
+ * 「谁先轮询到谁渲」。
+ */
 export async function fetchPendingStudioRenderJob(
   projectId: string,
   signal?: AbortSignal,
 ): Promise<PendingStudioRenderJob | null> {
   const response = await readJson<{ job: PendingStudioRenderJob | null }>(await fetch(
-    `/canvas-studio/remotion/pending?projectId=${encodeURIComponent(projectId)}`,
+    `/canvas-studio/remotion/pending?owner=client&projectId=${encodeURIComponent(projectId)}`,
     { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
   ))
   return response.job
+}
+
+/**
+ * 取**任意项目**中归隐藏渲染窗口的工单（REQ-034 O-06）。
+ *
+ * 隐藏窗口不绑画布页 —— 用户在哪个项目里点渲染，窗口都该能取到，所以这里不传
+ * `projectId`。归属判定在宿主侧（`claimRenderJobFor`），这里拿到的一定是归自己的单。
+ */
+export async function fetchRenderHostStudioJob(
+  signal?: AbortSignal,
+): Promise<PendingStudioRenderJob | null> {
+  const response = await readJson<{ job: PendingStudioRenderJob | null }>(await fetch(
+    '/canvas-studio/remotion/pending?owner=host',
+    { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
+  ))
+  return response.job
+}
+
+/**
+ * 渲染队列快照（`GET /remotion/jobs`）—— 画布页用它**镜像**隐藏窗口的进度。
+ *
+ * 为什么需要镜像：O-06 把渲染交给隐藏窗口后，宿主不再把那张单发给画布页
+ *（`pending` 返回 `null`），画布页的角标就再也不知道进度了。用户的观感会从
+ * 「有进度条」直接掉到「什么都不发生」，比之前更差 —— 所以这里补一条只读观测。
+ */
+export interface StudioRenderJobView {
+  jobId: string
+  projectId: string
+  state: 'queued' | 'rendering' | 'succeeded' | 'failed' | 'cancelled' | 'timedOut'
+  progress: number
+}
+
+export async function fetchStudioRenderJobViews(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<StudioRenderJobView[]> {
+  const response = await readJson<{ jobs: StudioRenderJobView[] }>(await fetch(
+    `/canvas-studio/remotion/jobs?projectId=${encodeURIComponent(projectId)}`,
+    { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
+  ))
+  return Array.isArray(response.jobs) ? response.jobs : []
 }
 
 /**

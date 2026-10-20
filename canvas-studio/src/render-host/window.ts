@@ -14,6 +14,7 @@
  */
 import { createRequire } from 'node:module'
 import { RenderHostLifecycle, type RenderHostSnapshot } from './lifecycle.js'
+import { resetRenderHostReport } from './status.js'
 
 /** 用到的 electron 面（结构性声明，避免把 electron 变成包依赖）。 */
 export interface ElectronPowerSaveBlockerLike {
@@ -78,6 +79,14 @@ export interface EnsureRenderHostOptions {
   /** 与主窗口同分区，避免二次登录/二次资产缓存。 */
   partition?: string
   idleMs?: number | undefined
+  /**
+   * O-06：窗口「没了」的回调（renderer 崩溃 / 无响应 / 被关 / 加载失败）。
+   *
+   * 为什么要在主进程侧接这个信号，而不是只靠页面的 1s 心跳：渲染期的页面主线程
+   * 可能被编码器按住（`pageResponsiveness: 'disabled'`），心跳会抖；而 renderer
+   * 崩溃是**主进程立刻就知道**的事实，没必要等 30s 看门狗。
+   */
+  onLost?: (reason: string) => void
   /** 注入 electron（测试）；缺省走 `resolveElectron()`。 */
   electron?: ElectronModuleLike
   log?: (message: string) => void
@@ -106,6 +115,13 @@ export function ensureRenderHost(options: EnsureRenderHostOptions): RenderHostHa
     ? { electron: options.electron, via: 'fallback' as const, version: options.electron.app?.getVersion?.() }
     : resolveElectron()
   const log = options.log ?? (() => {})
+  /** O-06：窗口失联只通知一次 —— 崩溃与 close 往往前后脚到，重复通知会打两遍日志。 */
+  let lostReported = false
+  const notifyLost = (reason: string): void => {
+    if (lostReported) return
+    lostReported = true
+    try { options.onLost?.(reason) } catch { /* 回调异常不能拖住窗口回收 */ }
+  }
 
   if (resolved === undefined || resolved.electron.BrowserWindow === undefined) {
     log('[canvas-studio] RenderHost 不可用：取不到 electron，回退客户端渲染')
@@ -141,6 +157,9 @@ export function ensureRenderHost(options: EnsureRenderHostOptions): RenderHostHa
     idleMs: options.idleMs,
     onDispose: (reason) => {
       log(`[canvas-studio] RenderHost 销毁（${reason}）`)
+      // 窗口没了 ⇒ 上一份自报立即作废，否则 30s 内 `renderHostReady()` 会把新单派给空气。
+      resetRenderHostReport()
+      notifyLost(reason)
       if (!win.isDestroyed()) win.destroy()
       if (powerId !== null && blocker !== undefined) {
         try { blocker.stop(powerId) } catch { /* 进程正在退出时忽略 */ }
@@ -151,11 +170,23 @@ export function ensureRenderHost(options: EnsureRenderHostOptions): RenderHostHa
 
   win.on('closed', () => {
     // 用户/系统把窗口关了：状态机必须同步复位，否则下次 acquire 会以为窗口还在。
+    notifyLost('window-closed')
     if (current !== null) current.handle.lifecycle.dispose('window-closed')
+  })
+
+  // O-06 心跳的两条旁路（主进程侧，不依赖页面定时器）。
+  win.webContents.on('render-process-gone', (_event, details) => {
+    log(`[canvas-studio] RenderHost renderer 退出：${JSON.stringify(details)}`)
+    notifyLost('renderer-gone')
+  })
+  win.webContents.on('unresponsive', () => {
+    log('[canvas-studio] RenderHost 无响应')
+    notifyLost('unresponsive')
   })
 
   void win.loadURL(options.url).catch((error: unknown) => {
     log(`[canvas-studio] RenderHost 加载失败：${error instanceof Error ? error.message : String(error)}`)
+    notifyLost('load-failed')
     lifecycle.dispose('load-failed')
   })
 

@@ -1250,19 +1250,28 @@ export function pickSampleFrames(manifest: CompositionManifest): number[] {
 // ─────────────────────── 二期 1b · 渲染超时（按片长自适应） ───────────────────────
 
 /** 渲染超时下限 / 上限（毫秒）：短片不至于被误杀，长片也不会挂死。 */
-export const RENDER_TIMEOUT_MIN_MS = 10 * 60_000
-export const RENDER_TIMEOUT_MAX_MS = 30 * 60_000
+export const RENDER_TIMEOUT_MIN_MS = 90_000
+export const RENDER_TIMEOUT_MAX_MS = 20 * 60_000
+/** 每帧预算：真机实测 standard 档 ~58ms/帧，200ms 给到 3.4× 余量（含慢机与 2K）。 */
+export const RENDER_TIMEOUT_PER_FRAME_MS = 200
+/** 固定开销（字体注入、能力探测、ffprobe 复核、落盘）。 */
+export const RENDER_TIMEOUT_BASE_MS = 60_000
 
 /**
- * 二期 1b：按声明片长推导渲染工单超时（D-04 已定）。
+ * 按**帧数**推导渲染工单超时（REQ-034 O-06 口径，替换二期 D-04）。
  *
- * 公式：`clamp(2 × 片长 + 120s, 10min, 30min)`。固定 10 分钟对 3 分钟以上的片子偏紧
- * （CSR 软编比原生编码慢，长片被误杀后整批重渲），对上不封顶则挂了也看不出来。
+ * 公式：`clamp(帧数 × 200ms + 60s, 90s, 20min)`。
+ *
+ * 为什么从「2 × 秒数 + 120s，10–30min」换成按帧：软编的耗时基本随**帧数**线性走，
+ * 与 fps 无关（同一 600 帧，30fps 是 20s 片、60fps 是 10s 片，渲染成本相同）。
+ * 旧公式按秒算 ⇒ 高 fps 片子的预算被平白砍半。
+ *
+ * 旧下限 10 分钟是本次真机事故的主因：一个 20s 片 standard 档只要 35s，挂死时却要
+ * 等满 10 分钟才报错（评审 P1-5 记录了 agent 因此两次让用户「把画布切到前台」）。
+ * 新下限 90s 仍比实测慢 3×，但把最坏等待从 10 分钟压到 1.5 分钟。
  */
-export function renderTimeoutMs(durationInFrames: number, fps: number): number {
+export function renderTimeoutMs(durationInFrames: number): number {
   const frames = Number.isFinite(durationInFrames) ? Math.max(0, durationInFrames) : 0
-  const rate = Number.isFinite(fps) && fps > 0 ? fps : 30
-  const seconds = frames / rate
-  const raw = seconds * 2000 + 120_000
+  const raw = frames * RENDER_TIMEOUT_PER_FRAME_MS + RENDER_TIMEOUT_BASE_MS
   return Math.round(Math.min(RENDER_TIMEOUT_MAX_MS, Math.max(RENDER_TIMEOUT_MIN_MS, raw)))
 }

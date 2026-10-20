@@ -30,16 +30,30 @@ import {
   releaseRenderSlot,
   type RenderJobView,
 } from './render-queue.js'
+import { hasRenderHostLauncher, warmRenderHost } from '../render-host/dispatch.js'
+import { RENDER_HOST_STALE_MS, renderHostHealth, renderHostReady } from '../render-host/status.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
 /**
  * 工单超时**下限**（毫秒）。
  *
- * 二期 1b 起不再是固定值：真实超时 = `renderTimeoutMs(片长, fps)`
- * （`clamp(2 × 片长 + 120s, 10min, 30min)`，见 `timing.ts`）。保留这个常量是因为
- * 它仍是下限，且外部（测试 / 文档）按「十分钟量级」理解这条工单。
+ * 二期 1b 起不再是固定值：真实超时 = `renderTimeoutMs(帧数)`
+ * （`clamp(帧数 × 200ms + 60s, 90s, 20min)`，见 `timing.ts`；REQ-034 O-06 改口径）。
+ * 保留这个常量是因为它仍是下限，且外部（测试 / 文档）按「一分钟半量级」理解这条工单。
  */
-export const RENDER_JOB_TIMEOUT_MS = 10 * 60_000
+export const RENDER_JOB_TIMEOUT_MS = 90_000
+
+/**
+ * 这张单由谁来渲染（**建单时定，之后不改**）。
+ *
+ * - `render-host`：隐藏窗口（`src/render-host/`）。页面被遮挡/最小化/切会话都照跑。
+ * - `client`：用户画布页（三期之前的老路径）。页面不可见 ⇒ rAF 停摆 ⇒ 挂到超时。
+ *
+ * 为什么要在建单时钉死而不是每拍现算：现算会让「窗口在第 3 秒死掉」的单在下一拍
+ * 被客户端接走，而客户端只能**从头**渲一遍 —— 用户看到进度条回到 0，且上一单的抽帧
+ * 已经落了一半。钉死 + 心跳看门狗（失联即结算失败）语义更诚实：要么渲完，要么明确报错。
+ */
+export type RenderExecutor = 'render-host' | 'client'
 
 /** 客户端轮询看到的工单视图（不含宿主内部结算 handle）。 */
 export interface PendingRenderJob {
@@ -106,7 +120,7 @@ export interface RunRenderJobOptions {
   manifest: CompositionManifest
   /** 渲染帧率（缺省取 `manifest.meta.fps`）。 */
   fps?: number
-  /** 超时（毫秒）；缺省 `RENDER_JOB_TIMEOUT_MS`。测试注入短值。 */
+  /** 超时（毫秒）；缺省 `renderTimeoutMs(帧数)`。测试注入短值。 */
   timeoutMs?: number
   signal?: AbortSignal
   /** 三期 W5-3：质量档（缺省 `standard`）。 */
@@ -115,6 +129,12 @@ export interface RunRenderJobOptions {
   realDurations?: Record<string, number>
   /** 三期 W6-1：抽帧位置（缺省由客户端按 4 张 + 转场中点自选）。 */
   sampleFrames?: number[]
+  /** O-06：强制指定执行者（测试 / 排障用；缺省按 RenderHost 是否就绪自动选）。 */
+  executor?: RenderExecutor
+  /** O-06：等隐藏窗口自报就绪的上限（缺省 3s）。只影响冷启首单。 */
+  hostWarmupMs?: number
+  /** O-06：心跳判失联阈值（缺省 `RENDER_HOST_STALE_MS`）。测试注入短值。 */
+  heartbeatStaleMs?: number
 }
 
 /** 客户端回写内容。 */
@@ -150,6 +170,12 @@ interface ActiveRenderJob {
   sampleFrames: number[]
   /** 三期 W6-1：已回写的抽帧。 */
   samples: RenderSampleResult[]
+  /** O-06：这张单归谁渲（建单时定）。 */
+  executor: RenderExecutor
+  /** O-06：最近一次进度上报（心跳看门狗把它也算作「活着」的证据）。 */
+  lastProgressAt: number
+  /** O-06：宿主心跳看门狗（只在 `render-host` 单派发后存在）。 */
+  watchdog: ReturnType<typeof setInterval> | null
   resolve: (outcome: RenderJobOutcome) => void
   reject: (cause: unknown) => void
   timer: ReturnType<typeof setTimeout>
@@ -164,15 +190,23 @@ interface ActiveRenderJob {
 const activeJobs = new Map<string, ActiveRenderJob>()
 
 /**
- * 每个项目的**可渲染**工单（二期 1b：只返回已获得槽位的那张）。
+ * 取一张**归本执行者渲染**的工单（`GET /remotion/pending` 的唯一实现）。
  *
- * 排队中的单不暴露给客户端 —— 否则队列就只是装饰：客户端会立刻开渲，并发又回到 N。
+ * `owner` 是请求方：隐藏窗口传 `render-host`，用户画布页传 `client`。
+ * 归谁在建单时已定（见 `RenderExecutor` 的注释），这里只是按归属过滤 ——
+ * **不在这里做「先到先得」的抢占**，否则两条 1s 轮询会互相偷单。
+ *
+ * @param projectId `null` = 任意项目（只有 RenderHost 这么用：它不绑定画布页）
  */
-export function pendingRenderJobFor(projectId: string): PendingRenderJob | null {
+export function claimRenderJobFor(
+  projectId: string | null,
+  owner: RenderExecutor,
+): PendingRenderJob | null {
   for (const job of activeJobs.values()) {
-    if (job.projectId !== projectId) continue
+    if (job.projectId !== projectId && projectId !== null) continue
     if (!job.dispatched) continue
-    return {
+    if (job.executor !== owner) continue
+        return {
       jobId: job.jobId,
       projectId: job.projectId,
       manifest: job.manifest,
@@ -183,6 +217,16 @@ export function pendingRenderJobFor(projectId: string): PendingRenderJob | null 
     }
   }
   return null
+}
+
+/**
+ * 向后兼容的旧入口（等价于「以客户端身份取单」）。
+ *
+ * ⚠️ 在 RenderHost 就绪时，属于隐藏窗口的单这里会返回 `null` —— 这正是 O-06 要的：
+ * 客户端不该看见别人（别的执行者）的单。
+ */
+export function pendingRenderJobFor(projectId: string): PendingRenderJob | null {
+  return claimRenderJobFor(projectId, 'client')
 }
 
 /** 测试 / 诊断用：当前活跃工单数（含排队中的）。 */
@@ -204,14 +248,122 @@ export function listRenderJobViews(projectId?: string): RenderJobView[] {
 
 /** 客户端上报渲染进度（0–1）；单不存在 / 未在渲染返回 `false`。 */
 export function reportRenderJobProgress(jobId: string, progress: number): boolean {
-  return reportRenderProgress(jobId, progress)
+  const applied = reportRenderProgress(jobId, progress)
+  // O-06：进度也是「页面还活着」的证据 —— 看门狗用它兜住「主线程被编码器按住」的窗口。
+  if (applied) {
+    const job = activeJobs.get(jobId)
+    if (job !== undefined) job.lastProgressAt = Date.now()
+  }
+  return applied
 }
 
 function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | 'cancelled' | 'timedOut', error?: string): void {
   clearTimeout(job.timer)
+  if (job.watchdog !== null) {
+    clearInterval(job.watchdog)
+    job.watchdog = null
+  }
   if (job.onAbort !== undefined) job.signal?.removeEventListener('abort', job.onAbort)
   activeJobs.delete(job.jobId)
   releaseRenderSlot(job.jobId, state, error)
+}
+
+/** 冷启探测间隔（毫秒）。 */
+const EXECUTOR_PROBE_MS = 100
+
+/**
+ * 建单时决定这张单归谁渲（见 `RenderExecutor` 的注释）。
+ *
+ * ⚠️ 这个函数**必须只在真正需要等的时候才 await**：`runRenderJob` 在它之前建单，
+ * 一旦无条件 `await`，调用方「起单 → 立刻取单」的一拍就会拿到 `null`
+ *（工单表还是空的）—— 老测试与老客户端都是这么用的。所以这里先算能**同步**定的
+ * 两种情况，只有「有拉起器但窗口还在起」才真去等。
+ */
+function immediateExecutor(options: RunRenderJobOptions): RenderExecutor | undefined {
+  if (options.executor !== undefined) return options.executor
+  // 没有拉起器（纯 CLI 宿主 / 单测）⇒ 没有窗口可言，直接客户端，零等待。
+  if (!hasRenderHostLauncher()) return 'client'
+  // 窗口已自报就绪 ⇒ 同步归它。
+  if (renderHostReady()) return 'render-host'
+  return undefined
+}
+
+/**
+ * 冷启等待：窗口存在但还没自报就绪（新建约 1s）。
+ *
+ * 为什么值得等这 3 秒：首单如果甩给画布页，而用户此时切走了，就正好复现本次要修的
+ * 那个挂死。3s 换「首单也走隐藏窗口」是划算的；等不到则老实回退客户端。
+ */
+async function pickExecutor(options: RunRenderJobOptions): Promise<RenderExecutor> {
+  warmRenderHost()
+  const budget = Math.max(0, options.hostWarmupMs ?? 3000)
+  if (budget === 0) return 'client'
+  const deadline = Date.now() + budget
+  while (Date.now() < deadline) {
+    if (options.signal?.aborted === true) return 'client'
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, EXECUTOR_PROBE_MS)
+      ;(timer as unknown as { unref?: () => void }).unref?.()
+    })
+    if (renderHostReady()) return 'render-host'
+  }
+  return 'client'
+}
+
+/**
+ * 心跳看门狗：`render-host` 单派发后开始盯着。
+ *
+ * 判据 = 「距最近一次生命迹象」> 阈值，生命迹象取两者**较新**的一个：
+ * ① 页面自报（`POST /render-host/status`，每 1s）；
+ * ② 进度上报（渲染循环里的 `onProgress`，`draft` 档冻结主线程时**只有它还会到**）。
+ *
+ * 只看①会误杀：`pageResponsiveness: 'disabled'` 会把主线程按住几十秒。
+ * 两个都不来 ⇒ 页面真死了（或被系统挂起），此时**必须**结算，否则工具调用干等到超时。
+ */
+function armHostWatchdog(job: ActiveRenderJob, staleMs: number): void {
+  if (job.watchdog !== null) return
+  const timer = setInterval(() => {
+    if (job.settled) return
+    const now = Date.now()
+    const silentFor = Math.min(renderHostHealth(now).ageMs, now - job.lastProgressAt)
+    if (silentFor <= staleMs) return
+    job.settled = true
+    settleAndForget(job, 'failed', `render host silent for ${Math.round(silentFor / 1000)}s`)
+    job.reject(makeCanvasError('CS-RENDER-002', {
+      message: '渲染窗口异常，已中止本次渲染。请重试。',
+      detail: `render host heartbeat lost for ${Math.round(silentFor / 1000)}s`,
+    }))
+  }, Math.max(200, Math.min(1000, Math.floor(staleMs / 4))))
+  ;(timer as unknown as { unref?: () => void }).unref?.()
+  job.watchdog = timer
+}
+
+/**
+ * 渲染窗口没了（renderer 崩溃 / 无响应 / 窗口被关）：立刻结算**所有**归它的单。
+ *
+ * 比等看门狗早 30 秒 —— 用户看到的是「立即报错重试」而不是半分钟的空转。
+ * @returns 被结算的工单数（0 = 当时没有在飞的隐藏窗口单，调用方不必打日志）
+ */
+export function failRenderHostJobs(reason: string): number {
+  let count = 0
+  for (const job of [...activeJobs.values()]) {
+    if (job.executor !== 'render-host' || job.settled) continue
+    job.settled = true
+    settleAndForget(job, 'failed', reason)
+    job.reject(makeCanvasError('CS-RENDER-002', {
+      message: '渲染窗口异常，已中止本次渲染。请重试。',
+      detail: reason,
+    }))
+    count += 1
+  }
+  return count
+}
+
+/** 测试 / 诊断用：当前归隐藏窗口渲染的单数（含排队中的）。 */
+export function renderHostJobCount(): number {
+  let count = 0
+  for (const job of activeJobs.values()) if (job.executor === 'render-host') count += 1
+  return count
 }
 
 /**
@@ -224,12 +376,16 @@ function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | '
 export async function runRenderJob(options: RunRenderJobOptions): Promise<RenderJobOutcome> {
   const { projectId, manifest } = options
   const fps = options.fps ?? manifest.meta.fps
-  // 二期 1b（D-04）：超时按片长自适应，不再固定 10 分钟。
-  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(manifest.meta.durationInFrames, fps)
+  // 二期 1b（D-04）：超时按片长自适应；REQ-034 O-06 改按帧数。
+  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(manifest.meta.durationInFrames)
   const { signal } = options
   if (signal?.aborted === true) {
     throw makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' })
   }
+  // O-06：先定执行者（可能要等窗口冷启），再建单 —— 等待不该算进渲染预算。
+  const fastExecutor = immediateExecutor(options)
+  const executor = fastExecutor ?? await pickExecutor(options)
+  const heartbeatStaleMs = Math.max(50, options.heartbeatStaleMs ?? RENDER_HOST_STALE_MS)
   const jobId = `rj-${newAssetId()}`
   // 入队 + 尝试派发（同步入表 ⇒ 客户端当拍可见；并发 = 1 ⇒ 第二单要等前一单结算）。
   const slot = reserveRenderSlot(
@@ -246,6 +402,9 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       realDurations: options.realDurations ?? {},
       sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
       samples: [],
+      executor,
+      lastProgressAt: Date.now(),
+      watchdog: null,
       resolve,
       reject,
       timer: setTimeout(() => {}, 0),
@@ -256,6 +415,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
     activeJobs.set(jobId, job)
     const armTimeout = (): void => {
       if (job.settled) return
+      if (job.executor === 'render-host') armHostWatchdog(job, heartbeatStaleMs)
       job.timer = setTimeout(() => {
         if (job.settled) return
         job.settled = true

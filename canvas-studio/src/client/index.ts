@@ -20,7 +20,7 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
-import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, reportStudioRenderProgress, uploadStudioRenderSample, type PendingStudioRenderJob } from './api.js'
+import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, type PendingStudioRenderJob } from './api.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -1340,6 +1340,17 @@ export function apply(ctx: ClientContext): void {
       return // 网络抖动：下一拍再试（轮询本身就是重试）
     }
     if (job === null) {
+      // 两种情况都是「本页没有单」：① 工单已结算（宿主已渲完 / 超时 / 被撤单）；
+      // ② **这条单归隐藏窗口渲**（REQ-034 O-06，`pending` 按 owner 过滤）。
+      // ② 时角标不能凭空消失 —— 用队列观测面把隐藏窗口的进度镜像过来，
+      // 否则用户看到的是「点完渲染什么都没发生」，比切换执行者之前更差。
+      const mirror = await fetchStudioRenderJobViews(projectId).catch(() => [])
+      const running = mirror.find((view) => view.state === 'rendering' || view.state === 'queued')
+      if (running !== undefined) {
+        setRenderProgress(running.jobId, running.progress)
+        return // 继续轮询：镜像要跟着隐藏窗口的进度走
+      }
+      clearRenderProgress()
       // 工单已消失（宿主已结算 / 超时 / 被撤单）⇒ 收工，并中断本端可能还在跑的渲染。
       stopRenderPoll()
       return
@@ -1377,52 +1388,25 @@ export function apply(ctx: ClientContext): void {
     const controller = new AbortController()
     activeRender = { jobId: job.jobId, controller }
     try {
-      // REQ-034 · B3：**惰性**加载 CSR 渲染器 —— 它把 `remotion` / `@remotion/web-renderer`
-      // / `mediabunny` 全打进了 client bundle；顶层静态 import 会让这些重依赖在插件 boot
-      // （loader factory 执行）时就初始化，既有启动开销也会在无渲染需求时白跑。
+      // REQ-034 · O-06：协议（渲染 → 抽帧 → 成片 → 失败撤单）收敛在
+      // `render-job-executor.ts`，与隐藏窗口共用一份实现；这里只管画布页自己的策略：
+      // 本地进度写 store、预览闸门、收工清角标。
       //
-      // REQ-034 二期 1b / D2：
-      // - 进度：CSR 的 `onProgress` 是逐帧回调（一秒几十次），直接透传会把宿主 HTTP 打爆，
-      //   也会让 UI 每帧重渲染。所以**按 3% 台阶节流**（`Math.floor(p*33)` 变一次才上报），
-      //   上报分两路：本地 store（立即让角标动）+ 宿主（让 agent 侧也能看到，幂等）。
-      // - 重试：只对 `encode` 类失败重试（见 `classifyRenderFailure` 的判据），几何/契约类
-      //   失败重试必然还失败，白烧一倍时间。
-      const { renderManifestOnWebWithRetry } = await import('./remotion-render.js')
-      let lastStep = -1
-      // 三期 W5/W6：三件事一并交代给渲染器 ——
-      // - `quality`：质量档（宿主建单时按 `render_composition` 的 `quality` 参数写进单里）
-      // - `realDurations`：宿主 ffprobe 的真值，命中则跳过浏览器侧 `<video>` 探测（原来每次白等一轮）
-      // - `sampleFrames`：宿主建议的抽帧位置（缺省时渲染器自己取 4 张 + 转场中点）
-      const { bytes, warnings, samples, metrics } = await renderManifestOnWebWithRetry(job.manifest, {
+      // 进度：CSR 的 `onProgress` 是逐帧回调（一秒几十次）⇒ 本地按原样写 store（便宜），
+      // 宿主上报由执行器按 3% 台阶节流（避免把本机回环打爆）。
+      // 重试：只对 `encode` 类失败重试（见 `classifyRenderFailure` 的判据），几何/契约类
+      // 失败重试必然还失败，白烧一倍时间 —— 这条也在执行器里。
+      const { executeRenderJob } = await import('./render-job-executor.js')
+      await executeRenderJob({
+        job,
         signal: controller.signal,
-        quality: job.quality,
-        realDurations: job.realDurations,
-        sampleFrames: job.sampleFrames,
-        onProgress: (p) => {
-          if (!Number.isFinite(p)) return
-          const clamped = Math.min(1, Math.max(0, p))
-          const step = Math.floor(clamped * 33)
-          if (step === lastStep) return
-          lastStep = step
-          setRenderProgress(job.jobId, clamped)
-          void reportStudioRenderProgress(job.jobId, clamped).catch(() => {})
-        },
+        onProgress: (progress) => { setRenderProgress(job.jobId, progress) },
       })
-      if (controller.signal.aborted) return
-      // 三期 W6-1：抽帧**先**回写再交成片 —— 单张 PNG 只有几十 KB，早一步落盘；
-      // 而且宿主的抽帧路由是幂等的（工单已结算时返回 `url: null`），所以即便这步
-      // 失败也绝不能影响成片结算：一律 catch 掉，成片才是主产物。
-      for (const sample of samples) {
-        if (controller.signal.aborted) return
-        await uploadStudioRenderSample(job.jobId, sample.frame, sample.png).catch(() => null)
-      }
-      // 三期 W6-2：渲染色结果（耗时 / 码率 / 抽帧数 / 质量档）随成片一起回传宿主，
-      // 由 `commitRenderJob` 与宿主侧自测字段合并成 `report` 返回给 agent。
-      await commitStudioRenderJob(job.jobId, bytes, warnings, { ...metrics })
     } catch (cause) {
       if (controller.signal.aborted) return
       const reason = cause instanceof Error ? cause.message : String(cause)
-      // 渲染失败：把原因回写宿主（CS-RENDER-002），让等待中的工具调用立刻结算而非干等超时。
+      // 走到这里的都是「执行器自己都没起来」的异常（动态 import 失败等）：
+      // 仍要撤单，让等待中的工具调用立刻结算而非干等超时。执行器内部失败已撤过单。
       void cancelStudioRenderJob(job.jobId, true, reason).catch(() => {})
     } finally {
       if (activeRender?.jobId === job.jobId) activeRender = null

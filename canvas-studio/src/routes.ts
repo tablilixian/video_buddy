@@ -36,10 +36,11 @@ import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
-import { cancelRenderJob, commitRenderJob, listRenderJobViews, pendingRenderJobFor, recordRenderSample, reportRenderJobProgress, type RenderJobReport } from './remotion/render-job.js'
+import { cancelRenderJob, claimRenderJobFor, commitRenderJob, failRenderHostJobs, listRenderJobViews, recordRenderSample, reportRenderJobProgress, type RenderExecutor, type RenderJobReport } from './remotion/render-job.js'
 // REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
 import { renderHostHtml } from './render-host/page.js'
 import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
+import { setRenderHostLauncher } from './render-host/dispatch.js'
 import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHost } from './render-host/window.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -2945,12 +2946,19 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       }
       try {
         const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        // O-06：`owner` 决定「谁在取单」。缺省 `client` = 三期之前的老行为（旧客户端不带参数也照跑）。
+        const owner: RenderExecutor = requestUrl.searchParams.get('owner') === 'host' ? 'render-host' : 'client'
         const projectId = requestUrl.searchParams.get('projectId')
-        if (projectId === null || projectId.length === 0) {
+        if (owner === 'client' && (projectId === null || projectId.length === 0)) {
           sendJson(res, 400, { error: '缺少 projectId' })
           return
         }
-        if (!res.destroyed) sendJson(res, 200, { job: pendingRenderJobFor(projectId) })
+        // 隐藏窗口不绑画布页 ⇒ 允许不带 projectId（= 任意项目，只认归它渲的单）。
+        const scope = owner === 'render-host' && (projectId === null || projectId.length === 0) ? null : projectId
+        const job = claimRenderJobFor(scope, owner)
+        // 取到单 = 窗口真的在干活 ⇒ 重置空闲回收计时（心跳本身不算活动，否则窗口永不回收）。
+        if (job !== null) touchRenderHost()
+        if (!res.destroyed) sendJson(res, 200, { job })
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 400, '读取渲染工单失败，请稍后重试。')
       }
@@ -3229,7 +3237,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       try {
         const body = await readJson(req, controller.signal)
         const report = recordRenderHostReport(body)
-        touchRenderHost()
+        // ⚠️ 心跳 ≠ 活动：每拍都 touch 的话空闲回收永远不触发（窗口每天 24h 挂着吃内存）。
+        // 只有「正在渲」才算活动；取单成功那条路另外 touch（见 pending 路由）。
+        if (report.state === 'rendering') touchRenderHost()
         sendJson(res, 200, { ok: true, state: report.state })
       } catch (cause) {
         sendRouteFailure(res, cause, 400, '渲染窗口状态上报失败。')
@@ -3382,16 +3392,25 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       sendJson(res, 404, { error: 'unknown auth action' })
     }}),
   ]
-  // REQ-034 · O-05：S1 阶段用显式开关拉起隐藏窗口 —— 验收时人工打开页面看它自报 idle，
-  // 不必先等 O-06 的派单链路。默认关闭，生产路径零变化。
-  if (process.env.CANVAS_STUDIO_RENDER_HOST === '1') {
-    ensureRenderHost({
+  // ── REQ-034 · O-06：RenderHost 派单登记 ──
+  // 默认**懒启**：只有真要渲染时才建隐藏窗口（空闲零成本），`CANVAS_STUDIO_RENDER_HOST=0` 可整体关掉。
+  // `=1` 时额外在启动阶段就拉起（S1 人工验收要看 `/render-host/status` 自报 idle，等不到派单）。
+  if (process.env.CANVAS_STUDIO_RENDER_HOST !== '0') {
+    const launchRenderHost = (): boolean => ensureRenderHost({
       url: `http://127.0.0.1:${String(expectedPort)}${ROUTE_RENDER_HOST}`,
       log: (message) => { ctx.logger.info(message) },
-    })
+      onLost: (reason) => {
+        // 崩溃 / 无响应 / 被关：主进程立刻知道，比 30s 看门狗早得多。
+        const failed = failRenderHostJobs(`render host lost: ${reason}`)
+        if (failed > 0) ctx.logger.warn(`[canvas-studio] 渲染窗口失联（${reason}），已中止 ${failed} 单渲染`)
+      },
+    }) !== undefined
+    setRenderHostLauncher(launchRenderHost)
+    if (process.env.CANVAS_STUDIO_RENDER_HOST === '1') launchRenderHost()
   }
   return () => {
     // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
+    setRenderHostLauncher(undefined)
     stopLoopback()
     disposeRenderHost('plugin-dispose')
     for (const dispose of routes) dispose()

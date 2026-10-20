@@ -1,16 +1,15 @@
 /** Privacy-safe desktop attention for completed user turns and background jobs. */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
+import type { JobView } from '@deepseek-ai/dsh-jobs'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import type { DesktopLocale, DesktopNotification } from './runtime.ts'
 
 export const name = 'desktop-notifications'
 export const inject = ['desktopRuntime']
 
-export const DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE = settingsNamespace('dsh-desktop-notifications')
+export const DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE = 'dsh-desktop-notifications'
 
 export interface DesktopNotificationSettings {
   enabled: boolean
@@ -20,15 +19,25 @@ export interface DesktopNotificationSettings {
   notifyOnJobFailure: boolean
 }
 
-export const DesktopNotificationSettingsSchema: z<DesktopNotificationSettings> = z.object({
+export const Config = z.object({
   enabled: z.boolean().default(true),
   notifyOnTurnCompletion: z.boolean().default(true),
   notifyOnTurnFailure: z.boolean().default(true),
   notifyOnJobCompletion: z.boolean().default(true),
   notifyOnJobFailure: z.boolean().default(true),
-})
+}).volatile()
 
-const DEFAULT_SETTINGS = DesktopNotificationSettingsSchema({} as DesktopNotificationSettings)
+export type ConfigValue = Volatile<DesktopNotificationSettings | undefined>
+
+export const DesktopNotificationSettingsSchema = Config
+
+const DEFAULT_SETTINGS: DesktopNotificationSettings = {
+  enabled: true,
+  notifyOnTurnCompletion: true,
+  notifyOnTurnFailure: true,
+  notifyOnJobCompletion: true,
+  notifyOnJobFailure: true,
+}
 
 type NotificationOutcome = 'turn-completed' | 'turn-failed' | 'job-completed' | 'job-failed'
 
@@ -55,12 +64,12 @@ interface OpenTurn {
 function notifyJob(
   runtime: Context['desktopRuntime'],
   settings: DesktopNotificationSettings,
-  snapshot: JobSnapshot,
+  view: JobView,
 ): void {
   if (!settings.enabled) return
-  if (snapshot.status === 'completed' && settings.notifyOnJobCompletion) {
+  if (view.status === 'completed' && settings.notifyOnJobCompletion) {
     runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['job-completed'])
-  } else if (snapshot.status === 'failed' && settings.notifyOnJobFailure) {
+  } else if (view.status === 'failed' && settings.notifyOnJobFailure) {
     runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['job-failed'])
   }
 }
@@ -100,29 +109,16 @@ function trackTurn(
   }
 }
 
-/** Register independently optional settings, job, and live-session observers. */
-export function apply(ctx: Context): void {
-  let settings = DEFAULT_SETTINGS
-
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.effect(() => {
-      const scope = settingsCtx.settings.register(
-        DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE,
-        DesktopNotificationSettingsSchema,
-        { applies: 'live' },
-      )
-      settings = scope.get()
-      const stopWatching = scope.watch((next) => { settings = next })
-      return () => {
-        stopWatching()
-        settings = DEFAULT_SETTINGS
-      }
-    }, 'dsh-plugin-desktop: native notification settings')
-  })
+/** Register independently optional job and live-session observers. */
+export function apply(ctx: Context, configValue: ConfigValue): void {
+  const readSettings = (): DesktopNotificationSettings => configValue.get() ?? DEFAULT_SETTINGS
 
   ctx.inject(['jobs'], (jobsCtx) => {
     jobsCtx.effect(
-      () => jobsCtx.jobs.onJobDone(snapshot => { notifyJob(jobsCtx.desktopRuntime, settings, snapshot) }),
+      () => jobsCtx.jobs.events.subscribe({ owners: 'all' }, (event) => {
+        if (event.type !== 'settled' || event.awaited) return
+        notifyJob(jobsCtx.desktopRuntime, readSettings(), event.job)
+      }),
       'dsh-plugin-desktop: background job attention',
     )
   })
@@ -131,7 +127,7 @@ export function apply(ctx: Context): void {
     sessionsCtx.effect(() => {
       const openTurns = new Map<string, OpenTurn>()
       const stopEvents = sessionsCtx.on('session/event', (session, event) => {
-        trackTurn(sessionsCtx.desktopRuntime, settings, openTurns, session, event)
+        trackTurn(sessionsCtx.desktopRuntime, readSettings(), openTurns, session, event)
       })
       const stopDisposed = sessionsCtx.on('session/disposed', (session) => {
         openTurns.delete(String(session.header.id))

@@ -15,7 +15,7 @@
 import {
   useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement,
 } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {
   CanvasStudioModelApi, CanvasStudioSettingsScope, ConfigurableProviderView,
   DiscoveredModelView, SettingsNamespaceView, SettingsPathOpView,
@@ -88,7 +88,7 @@ interface ProviderDraft {
 }
 
 /** 订阅 settingsScope 的响应式快照（与 DesktopSettingsSection.useScope 同构）。 */
-function useScope<T>(scope: SettingsScope<T>) {
+function useScope<T>(scope: ConfigForm<T>) {
   const subscribe = useMemo(() => (listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useMemo(() => () => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
@@ -124,7 +124,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
 
   // 默认模型作用域（agent-default-model）。
   const agentScope = useMemo(
-    () => settingsScope.bind<AgentModelConfig>({ namespace: 'agent-default-model' }),
+    () => settingsScope.get<AgentModelConfig>('agent-default-model'),
     [settingsScope],
   )
   const agentSnap = useScope(agentScope)

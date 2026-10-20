@@ -13,7 +13,7 @@
  * 上游类型面刻意不引入依赖，只本地收窄成最小结构（runtime facade）：
  * 拿不到服务或签名漂移时静默失败，调用方降级回纯文本注入，行为不退化。
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { AssetHandle } from '../reference-handle.js'
 import { ASSET_KIND_LABEL, filterAssetHandles, filterLibraryAssets, truncateLabel } from '../reference-handle.js'
 import { formatRefToken } from '../reference-token.js'

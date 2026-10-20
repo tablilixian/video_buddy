@@ -3,7 +3,7 @@
 import {
   useCallback, useEffect, useId, useState, useSyncExternalStore, type FormEvent, type ReactNode,
 } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   DesktopMarketProvider, DesktopProfileView, DesktopSettingsApi, DesktopSettingsView,
@@ -42,8 +42,8 @@ export interface DesktopSettingsSectionInjected {
   readonly initialMode: DesktopShellSettings['mode']
   readonly micaSupported: boolean
   readonly setMode: (mode: DesktopShellSettings['mode']) => Promise<void>
-  readonly desktopSettings: SettingsScope<DesktopShellSettings>
-  readonly notificationSettings: SettingsScope<DesktopNotificationSettings>
+  readonly desktopSettings: ConfigForm<DesktopShellSettings>
+  readonly notificationSettings: ConfigForm<DesktopNotificationSettings>
 }
 
 /** Renderer-composed props for the official settings section entry. */
@@ -74,7 +74,7 @@ export function resolveDesktopLanConfirmation(
   if (confirmed) enableLan()
 }
 
-function useScope<T>(scope: SettingsScope<T>) {
+function useScope<T>(scope: ConfigForm<T>) {
   const subscribe = useCallback((listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useCallback(() => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)

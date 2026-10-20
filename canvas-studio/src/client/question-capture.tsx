@@ -14,8 +14,9 @@ import { memo, useEffect, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { autoAnswerSummary, extractResultNote } from '../question-result.js'
 import { getSkillEntry } from '../skill-catalog.js'
@@ -327,7 +328,7 @@ export function createQuestionCaptureDefinition():
  * @returns 注销函数。
  */
 export function registerQuestionChatNode(ctx: Context, hooks: QuestionCaptureHooks): () => void {
-  const disposeDefinition = ctx.conversationEvents.register(
+  const disposeDefinition = ctx.uiConversation.events.register(
     createQuestionCaptureDefinition() as never,
   )
   const disposeRenderer = ctx.slots.inject('conversation.chat.node' as never, () => ctx.slots.register(

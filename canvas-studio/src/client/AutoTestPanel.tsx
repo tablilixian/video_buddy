@@ -50,7 +50,7 @@ export function AutoTestPanel(props: AutoTestPanelProps): ReactElement | null {
   // 客户端设置作用域只有 subscribe 无推送（client/index.ts 设置订阅同款口径），
   // 用 useSyncExternalStore 订阅快照 —— 与 SettingsModal.useScope 同构。
   const scope = useMemo(
-    () => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }),
+    () => settingsScope.get<CanvasStudioConfig>('canvas-studio'),
     [settingsScope],
   )
   const subscribe = useMemo(() => (listener: () => void) => scope.subscribe(listener), [scope])

@@ -25,7 +25,7 @@
 import {
   useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement,
 } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { BRAND_PRESETS, BRAND_PRESET_IDS, type BrandPresetId } from '../brand.js'
 import { BRAND } from '../brand-copy.js'
@@ -57,7 +57,7 @@ export interface SettingsModalProps {
 type SettingsTab = 'general' | 'theme' | 'model' | 'output' | 'workflow' | 'storage' | 'diagnostics'
 
 /** 订阅 settingsScope 的响应式快照（与 DesktopSettingsSection.useScope 同构）。 */
-function useScope<T>(scope: SettingsScope<T>) {
+function useScope<T>(scope: ConfigForm<T>) {
   const subscribe = useMemo(() => (listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useMemo(() => () => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
@@ -78,7 +78,7 @@ function GeneralSection(props: {
 }): ReactElement {
   const { settingsScope, getCredentials } = props
   const scope = useMemo(
-    () => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }),
+    () => settingsScope.get<CanvasStudioConfig>('canvas-studio'),
     [settingsScope],
   )
   const snapshot = useScope(scope)
@@ -384,7 +384,7 @@ function ModelSection(props: { settingsScope: CanvasStudioSettingsScope; getMode
 /** 品牌配色分区：4 套 --cs-* 预设 swatch，选择即切换并持久化到 'canvas-studio' 命名空间。 */
 function BrandSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
   const { settingsScope } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   if (value === undefined) return <div className="csField">加载中…</div>
@@ -422,7 +422,7 @@ function BrandSection(props: { settingsScope: CanvasStudioSettingsScope }): Reac
 /** 输出与导出分区：默认画幅比例（已接入生成兜底）+ 导出格式/目录/质量（待 P3 导出管线）。 */
 function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
   const { settingsScope } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   if (value === undefined) return <div className="csField">加载中…</div>
@@ -530,7 +530,7 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
  */
 function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
   const { settingsScope } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   if (value === undefined) return <div className="csField">加载中…</div>
@@ -600,7 +600,7 @@ function StorageSection(props: {
   getDirectoryPicker: () => { pick: () => Promise<string | null> } | undefined
 }): ReactElement {
   const { settingsScope, getDirectoryPicker } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   const [picking, setPicking] = useState(false)
@@ -781,7 +781,7 @@ function StorageInfoBlock(): ReactElement {
  */
 function DiagnosticsSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
   const { settingsScope } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   if (value === undefined) return <div className="csField">加载中…</div>

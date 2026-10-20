@@ -12,7 +12,7 @@
  * - 稍后再说：仅置 flag，不改任何值（等同 schema 默认）。
  */
 import { useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioSettingsScope } from './contracts.js'
 
@@ -38,7 +38,7 @@ export interface FirstRunSettingsProps {
 }
 
 /** 订阅 settingsScope 的响应式快照（与 SettingsModal.useScope 同构）。 */
-function useScope<T>(scope: SettingsScope<T>) {
+function useScope<T>(scope: ConfigForm<T>) {
   const subscribe = useMemo(() => (listener: () => void) => scope.subscribe(listener), [scope])
   const snapshot = useMemo(() => () => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
@@ -46,7 +46,7 @@ function useScope<T>(scope: SettingsScope<T>) {
 
 export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
   const { settingsScope, getDirectoryPicker, onComplete } = props
-  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const scope = useMemo(() => settingsScope.get<CanvasStudioConfig>('canvas-studio'), [settingsScope])
   const snapshot = useScope(scope)
   const value = snapshot.value
   const [picking, setPicking] = useState(false)

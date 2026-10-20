@@ -16,7 +16,7 @@
  * pointer-move frame). Transient generation state (isLoading/progress/error)
  * lives on client-minted pending nodes and is stripped on reload.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { DEFAULT_NODE_SIZE } from '../canvas-aspect.js'

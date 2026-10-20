@@ -17,7 +17,7 @@
  */
 
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** Owner share of `conversation.hero.brand.mark`：dsh 上游定义同名类型，本地复制以避免
  * 依赖上游运行时类型导出（上游 dist 与 src 导出表偶有差异）。 */
@@ -41,11 +41,5 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    /** 绑定某个 settings 命名空间的响应式作用域（ui-settings 注入）。 */
-    settingsScope: {
-      bind<T>(spec: { namespace: string; decode?: (section: unknown) => T | undefined }): SettingsScope<T>
-    }
-  }
-}
+// 0.2.1 起 `settingsScope` 服务已随 dsh-client-runtime 删除；命名空间表改由
+// ui-settings 的 `ctx.configForms`（本文件顶部 type-only 引入其 Context 合并）。

@@ -1,4 +1,8 @@
-import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+// 类型增强：Context 上获得 `workspaces`（IWorkspaces）。
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 // 引入 conversation 插件的类型增强：Context 上获得 `conversation: IConversation`
@@ -1568,7 +1572,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => installStudioStyles(), 'canvas-studio: studio styles')
   // 品牌令牌：以持久化的配色预设启动（设置弹窗「外观」区可切换并持久化），并注入
   // 品牌 favicon。installBrandStyles 幂等，返回的卸载函数仅断开引用（元素常驻）。
-  const brandScope = ctx.settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+  const brandScope = ctx.configForms.get<CanvasStudioConfig>('canvas-studio')
   const initialBrandPreset = brandScope.getSnapshot().value?.brandPreset
   ctx.effect(() => installBrandStyles(initialBrandPreset), 'canvas-studio: brand tokens + favicon')
   /**
@@ -1717,8 +1721,8 @@ export function apply(ctx: ClientContext): void {
     // 同款；读不到按 schema 默认 confirm）。settingsScope 在 inject 列表里。
     defaultMode: (): StudioWorkflowMode => {
       try {
-        const value = ctx.settingsScope
-          .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+        const value = ctx.configForms
+          .get<CanvasStudioConfig>('canvas-studio')
           .getSnapshot().value?.workflowMode
         return value === 'auto' ? 'auto' : 'confirm'
       } catch {
@@ -2347,8 +2351,8 @@ export function apply(ctx: ClientContext): void {
         let autoTestStopRequested = false
         /** 只读快照：报告记录「本次生效设置」（拍板：运行期间不改任何真实设置）。 */
         const autoTestEffectiveSettings = () => {
-          const value = ctx.settingsScope
-            .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+          const value = ctx.configForms
+            .get<CanvasStudioConfig>('canvas-studio')
             .getSnapshot().value
           // 设置未就绪时按 schema 默认值兜底（与 host-config 的 default 同值；
           // 不 import config.ts 取 DEFAULT_RESOLUTION —— 它有 node:crypto，
@@ -2639,7 +2643,7 @@ export function apply(ctx: ClientContext): void {
           activateSkill,
           deactivateSkill,
           // 设置弹窗：绑定 'canvas-studio' 命名空间作用域 + 惰性凭据客户端。
-          settingsScope: ctx.settingsScope,
+          settingsScope: ctx.configForms,
           getCredentials: () => ctx.get('connection')?.api?.credentials,
           // 模型设置：惰性取 Host wire 接口（llm/settings/credentials 三域）。
           // 与桌面 dsh 原生「模型」设置共享同一份存储，状态对等。

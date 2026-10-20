@@ -6994,6 +6994,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@lexical/internal@npm:0.49.0":
+  version: 0.49.0
+  resolution: "@lexical/internal@npm:0.49.0"
+  peerDependencies:
+    typescript: ">=5.2"
+  peerDependenciesMeta:
+    typescript:
+      optional: true
+  checksum: 10c0/ee6d3c47c1dddf2495ce283cf7762442011c2cf1e725f93064adac18d567a96cbd34dd984974c40e1a5e637b53e81d33ddc186422e74d997dfc7e201698e2aca
+  languageName: node
+  linkType: hard
+
 "@malept/cross-spawn-promise@npm:^2.0.0":
   version: 2.0.0
   resolution: "@malept/cross-spawn-promise@npm:2.0.0"
@@ -10025,12 +10037,18 @@ __metadata:
   dependencies:
     "@deepseek-ai/cordis": "npm:4.0.5"
     "@deepseek-ai/dsh-agent": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-api-session-controller": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-api-workspace-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-atomic-write": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-attachment": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-store": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-attachment": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-ui-chat": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-conversation": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-layout": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-primitives": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-ui-settings": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-slots": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-theme": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-tool": "npm:0.2.1-rc.2"
@@ -10823,6 +10841,7 @@ __metadata:
     "@deepseek-ai/dsh-client-store": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-layout": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-primitives": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-settings": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-sidebar": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-slots": "npm:0.2.1-rc.2"
@@ -10885,6 +10904,7 @@ __metadata:
     "@deepseek-ai/dsh-client-locale": 0.2.1-rc.2
     "@deepseek-ai/dsh-client-ui-layout": 0.2.1-rc.2
     "@deepseek-ai/dsh-client-ui-primitives": 0.2.1-rc.2
+    "@deepseek-ai/dsh-client-ui-renderer": 0.2.1-rc.2
     "@deepseek-ai/dsh-client-ui-settings": 0.2.1-rc.2
     "@deepseek-ai/dsh-client-ui-sidebar": 0.2.1-rc.2
     "@deepseek-ai/dsh-client-ui-slots": 0.2.1-rc.2
@@ -10974,6 +10994,7 @@ __metadata:
     "@deepseek-ai/dsh-anonymous-user-id": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-gateway": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-remotes": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-api-workspace-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-app-boot": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-atomic-write": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-attachment": "npm:0.2.1-rc.2"
@@ -11075,6 +11096,7 @@ __metadata:
     "@fontsource-variable/inter": "npm:^5.3.0"
     "@tailwindcss/vite": "npm:^4"
     "@types/js-yaml": "npm:^4.0.9"
+    "@types/mdast": "npm:^4.0.4"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18"
     "@types/react-dom": "npm:^18"
@@ -11091,6 +11113,7 @@ __metadata:
     electron: "npm:43.4.0"
     electron-builder: "npm:26.15.7"
     koffi: "npm:3.1.5"
+    lexical: "npm:^0.49.0"
     lucide-react: "npm:^1.33.0"
     node-addon-require-builtin: "npm:^0.1.4"
     pnpm: "npm:11.8.0"
@@ -13272,6 +13295,20 @@ __metadata:
   version: 1.0.5
   resolution: "lazy-val@npm:1.0.5"
   checksum: 10c0/28ba7a0e704895a444eed47d110274090f485b991f2ea6fff2ab0878c529c53f60f2eb2d944cbbd68b91408e7455eabc62861c48289d4757fa9c818b97454f24
+  languageName: node
+  linkType: hard
+
+"lexical@npm:^0.49.0":
+  version: 0.49.0
+  resolution: "lexical@npm:0.49.0"
+  dependencies:
+    "@lexical/internal": "npm:0.49.0"
+  peerDependencies:
+    typescript: ">=5.2"
+  peerDependenciesMeta:
+    typescript:
+      optional: true
+  checksum: 10c0/a9a6d8d18b74c87759886653ad77705d0ba417f38ee065cc623b7e3ca3b663c21b89314b393d8323ee01e7108676e697a4c07be22522f3743355a751dda16d0f
   languageName: node
   linkType: hard
 

@@ -5,7 +5,8 @@
  */
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { EngineStoreInstance, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { EngineStoreInstance } from '@deepseek-ai/dsh-client-store'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { StoryboardVersionsPayload, StoryboardWriteResult, StoryboardDiffEntry } from './api.js'
 import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
@@ -17,9 +18,9 @@ import type { AutoTestScenario } from '../auto-test-scenarios.js'
 // REQ-028：草稿类型与映射真值搬进 src/lobby-spec.ts（两侧共用，可真 import 单测）。
 import type { LobbySpecDraft } from '../lobby-spec.js'
 
-/** 绑定某 settings 命名空间的响应式作用域（ui-settings 注入，canvas-studio 客户端用）。 */
+/** 某 settings 命名空间的响应式作用域（dsh 0.2.1 `ctx.configForms`，canvas-studio 客户端用）。 */
 export interface CanvasStudioSettingsScope {
-  bind<T>(spec: { namespace: string; decode?: (section: unknown) => T | undefined }): SettingsScope<T>
+  get<T>(entryId: string): ConfigForm<T>
 }
 
 /** 单个凭据 ref 的可配置视图（与 host wire `CredentialView` 对齐，值不落明文）。 */

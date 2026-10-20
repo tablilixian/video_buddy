@@ -1,6 +1,7 @@
 /** Official Settings Slot registration for Desktop-owned preferences. */
 
-import type { ClientContext, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DesktopSettingsSection, type DesktopNotificationSettings, type DesktopShellSettings } from './DesktopSettingsSection.tsx'
@@ -29,7 +30,7 @@ export interface DesktopSettingsClientControl {
  * access in ordered writes; the Host compares only effective generation state.
  */
 export async function persistDesktopModeSelection(
-  desktopSettings: Pick<SettingsScope<DesktopShellSettings>, 'set'>,
+  desktopSettings: Pick<ConfigForm<DesktopShellSettings>, 'set'>,
   mode: DesktopShellSettings['mode'],
 ): Promise<void> {
   if (mode === 'compatibility') {
@@ -58,12 +59,8 @@ export function applyDesktopSettings(
   ctx: ClientContext,
   environment: DesktopClientEnvironment,
 ): DesktopSettingsClientControl {
-  const desktopSettings = ctx.settingsScope.bind<DesktopShellSettings>({
-    namespace: DESKTOP_SHELL_SETTINGS_NAMESPACE,
-  })
-  const notificationSettings = ctx.settingsScope.bind<DesktopNotificationSettings>({
-    namespace: DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE,
-  })
+  const desktopSettings = ctx.configForms.get<DesktopShellSettings>(DESKTOP_SHELL_SETTINGS_NAMESPACE)
+  const notificationSettings = ctx.configForms.get<DesktopNotificationSettings>(DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE)
   const api = createDesktopSettingsApi()
   const t = ctx.locale.bind(DESKTOP_SETTINGS_LOCALE_NAMESPACE)
   const setMode = async (mode: DesktopShellSettings['mode']): Promise<void> => {

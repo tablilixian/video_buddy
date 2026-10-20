@@ -103,15 +103,36 @@ test('同时给 startFrame 与 startAfter ⇒ 报错（两个来源会让人算�
   assert.match(result.errors.join('；'), /不能同时给 startFrame 与 startAfter/)
 })
 
-test('gapFrames 非法（负数 / 小数）⇒ 报错', () => {
-  assert.match(
-    normalizeManifestTiming(base([TITLE('a', { startFrame: 0 }), TITLE('b', { startAfter: { trackId: 'a', gapFrames: -2 } })])).errors.join('；'),
-    /gapFrames 必须是 >= 0 的整数/,
-  )
+test('gapFrames：小数 ⇒ 报错；负数合法（O-08 = 与引用轨重叠）', () => {
   assert.match(
     normalizeManifestTiming(base([TITLE('a', { startFrame: 0 }), TITLE('b', { startAfter: { trackId: 'a', gapFrames: 1.5 } })])).errors.join('；'),
-    /gapFrames 必须是 >= 0 的整数/,
+    /gapFrames 必须是整数/,
   )
+  // O-08：`-2` 不再是错误 —— 解析结果 = 引用轨 end - 2（重叠 2 帧）。
+  const overlap = normalizeManifestTiming(base([
+    TITLE('a', { startFrame: 0, durationInFrames: 60 }),
+    TITLE('b', { startAfter: { trackId: 'a', gapFrames: -2 }, durationInFrames: 40 }),
+  ]))
+  assert.deepEqual(overlap.errors, [], '负 gapFrames 必须被接受')
+  assert.equal(overlap.manifest.tracks[1].startFrame, 58, '0 + 60 + (-2) = 58')
+  assert.equal(overlap.resolved[1].gapFrames, -2)
+  // 重叠量超过引用轨起点能容纳的范围 ⇒ 解析出负帧，必须拒收（否则渲染器裁掉轨道头部）。
+  assert.match(
+    normalizeManifestTiming(base([
+      TITLE('a', { startFrame: 10, durationInFrames: 20 }),
+      TITLE('b', { startAfter: { trackId: 'a', gapFrames: -40 }, durationInFrames: 30 }),
+    ])).errors.join('；'),
+    /解析出的起始帧为 -10/,
+  )
+})
+
+test('gapFrames 负值不足 6 帧 ⇒ 提示重叠窗口看不见（与 ML-06 同源）', () => {
+  const result = normalizeManifestTiming(base([
+    TITLE('a', { startFrame: 30, durationInFrames: 60 }),
+    TITLE('b', { startAfter: { trackId: 'a', gapFrames: -4 }, durationInFrames: 40 }),
+  ]))
+  assert.equal(result.errors.length, 0)
+  assert.match(result.warnings.join('；'), /只重叠 4 帧/)
 })
 
 test('startFrame 缺失且无 startAfter ⇒ 报错并给 0 占位（不让 NaN 往下游渗）', () => {
@@ -120,7 +141,7 @@ test('startFrame 缺失且无 startAfter ⇒ 报错并给 0 占位（不让 NaN 
   assert.equal(result.manifest.tracks[0].startFrame, 0, '占位必须是可用的数值，否则后续全变 NaN')
 })
 
-test('formatResolvedStarts：无链式返回空串；有链式逐条写成「id=帧(接 谁+空档)」', () => {
+test('formatResolvedStarts：无链式返回空串；有链式逐条写成「id=帧(接 谁 +空档)」', () => {
   assert.equal(formatResolvedStarts([{ id: 'a', startFrame: 0, via: 'startFrame' }]), '')
   assert.equal(
     formatResolvedStarts([
@@ -128,6 +149,16 @@ test('formatResolvedStarts：无链式返回空串；有链式逐条写成「id=
       { id: 'b', startFrame: 74, via: 'startAfter', refTrackId: 'a', gapFrames: 4 },
       { id: 'c', startFrame: 134, via: 'startAfter', refTrackId: 'b', gapFrames: 0 },
     ]),
-    'b=74(接 a+4)，c=134(接 b+0)',
+    'b=74(接 a +4)，c=134(接 b +0)',
+  )
+})
+
+test('formatResolvedStarts：负 gap 读成「重叠 N」而不是算术噪音', () => {
+  assert.equal(
+    formatResolvedStarts([
+      { id: 'a', startFrame: 0, via: 'startFrame' },
+      { id: 'b', startFrame: 48, via: 'startAfter', refTrackId: 'a', gapFrames: -12 },
+    ]),
+    'b=48(接 a 重叠 12)',
   )
 })

@@ -98,6 +98,14 @@ export function materializeManifestSources(
         const next = { ...manifest.audio }
         if (typeof next.bgmUrl === 'string') next.bgmUrl = toUrl(next.bgmUrl, 'audio.bgmUrl')
         if (typeof next.voiceOverUrl === 'string') next.voiceOverUrl = toUrl(next.voiceOverUrl, 'audio.voiceOverUrl')
+        // O-10：多轨旁白逐条物化（少物化一条 = 那一句在渲染进程里 404，成片静音）。
+        if (Array.isArray(next.voiceOver)) {
+          next.voiceOver = next.voiceOver.map((clip, index) => {
+            if (typeof clip.src !== 'string') return clip
+            const url = toUrl(clip.src, `audio.voiceOver[${index}].src`)
+            return url === clip.src ? clip : { ...clip, src: url }
+          })
+        }
         return next
       })()
 

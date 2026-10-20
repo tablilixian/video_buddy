@@ -6,7 +6,7 @@
  * 调用本模块，规避渲染进程的 CORS 限制。
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isAbsolute, join, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,6 +46,7 @@ import { deriveNodePlacement } from './canvas-placement.js'
 // CV-188：同一次探测顺带取**真实分辨率**（视频侧声明值以实测为准，见下方落盘段）。
 // 音频侧只要时长（宽高对 mp3 无意义），故两个入口并存 —— 共用同一次 `ffmpeg -i` 实现。
 import { probeMediaDuration, probeMediaInfo } from './ffmpeg-run.js'
+import { postProcessSpeech } from './speech-post.js'
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
 import { longRequestDispatcher } from './long-request.js'
 // CV-220：宿主侧单通道生成队列——同步单任务后端的并发收敛与位次可见。
@@ -3361,6 +3362,13 @@ export interface SpeechParams {
   instructPrompt?: string
   /** 参考音频（**上传句柄**，Drama filename）——提供后克隆其音色生成后续语音。 */
   refaudio?: string
+  /**
+   * O-09：语速倍率（0.5–2.0）。**宿主侧 ffmpeg 后处理**（`atempo`，变速不变调），
+   * 不透传给后端 —— `txt2speech` 没有这个字段（见 `speech-post.ts` 文件头）。
+   */
+  speed?: number
+  /** O-09：音高偏移（半音，-12 ~ +12）。宿主侧 `asetrate` 变调不变速。 */
+  pitchSemitones?: number
   /** 关联的画布产物 URL（画血缘箭头），可选。 */
   sourceUrls?: string[]
   /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
@@ -3385,6 +3393,8 @@ export interface SpeechResult {
   duration: number
   /** 实际提交的合成文本（已随画布节点落盘）。 */
   text: string
+  /** O-09：语速/音高后处理的非致命提示（越界夹取 / ffmpeg 不可用）。非空时必须转告用户。 */
+  warnings?: string[]
 }
 
 /**
@@ -3466,6 +3476,25 @@ export async function generateSpeech(
   const file = `${nodeId}.mp3`
   await writeFile(join(directory, file), bytes)
   await recordAssetHistory(registry, projectId, { file, tool: 'tts_voiceover', size: bytes.length }).catch(() => {})
+  // O-09：语速 / 音高在**宿主侧**用 ffmpeg 后处理（后端没有这两个字段）。
+  // 先写临时文件再 rename 覆盖 —— ffmpeg 不能同文件读写。失败不阻断交付（TTS 已成功），
+  // 只把原因放进 warnings 让模型如实告知用户。
+  const warnings: string[] = []
+  if (params.speed !== undefined || params.pitchSemitones !== undefined) {
+    const localPath = join(directory, file)
+    const postPath = join(directory, `${nodeId}-post.mp3`)
+    const post = await postProcessSpeech(localPath, postPath, {
+      ...(params.speed !== undefined ? { speed: params.speed } : {}),
+      ...(params.pitchSemitones !== undefined ? { pitchSemitones: params.pitchSemitones } : {}),
+    })
+    warnings.push(...post.warnings)
+    if (post.applied) {
+      await rename(postPath, localPath)
+    } else {
+      // 失败的临时产物可能残留半截，清掉（单文件删除，不触发批量闸）。
+      await rm(postPath, { force: true }).catch(() => {})
+    }
+  }
   const url = `/canvas-studio/assets/${projectId}/${file}`
   // 真实时长以 ffprobe 实测为准（响应 duration 是生成耗时，探针实测差 2.8 倍）；
   // 探测失败不伪造时长 —— 节点省略 duration 字段（角标不显示，好过显示错值）。
@@ -3502,5 +3531,5 @@ export async function generateSpeech(
   } else {
     await registry.appendCanvasNode(projectId, node)
   }
-  return { url, filename: produced.filename ?? file, nodeId: params.retryOf ?? nodeId, ...(probedDuration > 0 ? { duration: probedDuration } : { duration: 0 }), text: params.text }
+  return { url, filename: produced.filename ?? file, nodeId: params.retryOf ?? nodeId, ...(probedDuration > 0 ? { duration: probedDuration } : { duration: 0 }), text: params.text, ...(warnings.length > 0 ? { warnings } : {}) }
 }

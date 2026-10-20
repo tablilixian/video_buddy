@@ -45,11 +45,34 @@ export function hasLookTokenBaseline(expect: string): boolean {
  * CV-152：基准里带 Look tokens（`色彩：…` 等 5 行）时，在角色要素之外追加
  * **4 个单帧可判的风格维度**（色彩 / 光线 / 材质 / 镜头语汇）——「节奏」是跨镜
  * 时间维度，单帧无法判定，显式排除防止 VLM 拿它凑 FAIL。
+ *
+ * O-11（真机评审 P1-4）：**基准会串味**。手部微距被判 FAIL，理由里出现「未呈现面部
+ * 与发型」「与期望的中长焦中景交替、固定机位不符」—— 那是**另一镜**的语汇。根因是
+ * 提示词只有「全局资产卡」这一份基准，没有「本镜自己长什么样」：
+ * - `facesVisible === false`（微距 / 背影 / 空镜）⇒ 逐项清单去掉外貌，并显式写「没有脸
+ *   是正常的」；
+ * - `shotFocus`（该镜的运镜 + 视觉）⇒ 单独一段「本镜基准」，并禁止拿别的镜的景别/机位
+ *   来评价本镜。
  */
-export function buildQcPrompt(expect: string): string {
+export function buildQcPrompt(expect: string, options: QcPromptOptions = {}): string {
+  const facesVisible = options.facesVisible !== false
   const lines = [
-    '对照【期望描述】逐项核对画面中的固定要素：人物外貌（脸型/发型/发色）、服装（款式/颜色）、核心道具、整体配色与光感。',
+    facesVisible
+      ? '对照【期望描述】逐项核对画面中的固定要素：人物外貌（脸型/发型/发色）、服装（款式/颜色）、核心道具、整体配色与光感。'
+      : '对照【期望描述】逐项核对画面中的固定要素：服装（款式/颜色）、核心道具、整体配色与光感。**本镜不呈现面部，不要核对人物外貌**（脸型/发型/发色/五官）。',
   ]
+  const focus = options.shotFocus?.trim() ?? ''
+  if (focus.length > 0) {
+    lines.push(
+      `【本镜基准（这一镜自己的景别与机位）】${focus}`,
+      '只按这段评价本镜的构图 / 景别 / 机位；**不要套用其它镜的描述**（其它镜是中景、固定机位，不构成本镜的漂移项）。',
+    )
+  }
+  if (!facesVisible) {
+    lines.push(
+      '本镜是微距 / 背影 / 空镜一类：画面里**没有脸、发型、五官是正常的**，不要把它列为漂移项，也不要因此给 FAIL。',
+    )
+  }
   if (hasLookTokenBaseline(expect)) {
     lines.push(
       '期望描述里含【风格基准（Look）】的 5 项 tokens：除角色要素外，再逐项核对 4 个单帧可判的风格维度 —— 色彩与调色是否同调、光线方向与软硬是否一致、材质质感是否同类、镜头语汇（景深/机位感/框景）是否同法。风格漂移项请点名对应的 token 行（如「光线」）。',
@@ -66,6 +89,64 @@ export function buildQcPrompt(expect: string): string {
     expect,
   )
   return lines.join('\n')
+}
+
+/** `buildQcPrompt` 的逐镜上下文（O-11）。 */
+export interface QcPromptOptions {
+  /** 本镜是否呈现面部（缺省 true）。`false` ⇒ 跳过外貌核对。 */
+  facesVisible?: boolean
+  /** 本镜自己的景别 / 机位 / 主体（来源：分镜卡的【运镜】【视觉】行）。 */
+  shotFocus?: string
+}
+
+/** 从分镜卡正文提取出来的逐镜上下文。 */
+export interface QcCardContext {
+  /** 该镜的「运镜 / 视觉」摘要（无则空串）。 */
+  shotFocus: string
+  /** 卡上是否显式声明「不呈现面部」。 */
+  noFace: boolean
+}
+
+/** 分镜卡正文里与质检相关的字段标签（与 `storyboard-seed.ts` 的 `SHOT_TEXT_LABELS` 同值）。 */
+const CARD_LABEL_INDEX = '镜'
+const CARD_LABEL_CAMERA = '运镜'
+const CARD_LABEL_FACE = '面部'
+/** 单镜基准的最大字符数（卡片正文可能很长；VLM 提示词不该被一段景别描写吃掉预算）。 */
+const MAX_SHOT_FOCUS = 300
+
+/**
+ * O-11：从**分镜卡正文**派生质检上下文（纯函数，零 IO）。
+ *
+ * 为什么读卡而不读 `storyboard.json`：卡是 seed 按 shot 生成的稳定投影，`sbRef` /
+ * 正文都在画布节点上；质检路径多一次文件 IO 只为了拿两行字，得不偿失（且老项目
+ * 可能没有 storyboard 文件、只有卡）。
+ */
+export function deriveQcContext(cardText: string): QcCardContext {
+  let camera = ''
+  let visual = ''
+  let noFace = false
+  for (const raw of cardText.split('\n')) {
+    const line = raw.trim()
+    // ⚠️ 卡正文的视觉描写写在**首行** `【镜 1】<视觉>` 上（`shotCardText` 的 `index` 行），
+    // 不是独立的 `【视觉】` 行 —— 早期实现按 `【视觉】` 取，结果永远取不到，本镜基准
+    // 只剩运镜（手部微距仍被拿别的镜的景别判 FAIL）。两种写法都认，手写卡不吃亏。
+    const indexHit = new RegExp(`^【${CARD_LABEL_INDEX}\\s*\\d+】\\s*(.*)$`, 'u').exec(line)
+    if (indexHit !== null && visual === '') visual = (indexHit[1] ?? '').trim()
+    const visualHit = new RegExp(`^【视觉】\\s*(.*)$`, 'u').exec(line)
+    if (visualHit !== null && visual === '') visual = (visualHit[1] ?? '').trim()
+    const cameraHit = new RegExp(`^【${CARD_LABEL_CAMERA}】\\s*(.*)$`, 'u').exec(line)
+    if (cameraHit !== null && camera === '') camera = (cameraHit[1] ?? '').trim()
+    if (new RegExp(`^【${CARD_LABEL_FACE}】\\s*无`, 'u').test(line)) noFace = true
+  }
+  const parts = [
+    camera.length > 0 && camera !== '—' ? `运镜：${camera}` : '',
+    visual.length > 0 && visual !== '—' ? `视觉：${visual}` : '',
+  ].filter((part) => part.length > 0)
+  const shotFocus = parts.join('；')
+  return {
+    shotFocus: shotFocus.length > MAX_SHOT_FOCUS ? `${shotFocus.slice(0, MAX_SHOT_FOCUS)}…` : shotFocus,
+    noFace,
+  }
 }
 
 /**
@@ -191,6 +272,10 @@ export interface QcShotOptions {
   expect: string
   /** 分镜卡节点 id（用于跨重跑累计预算）。 */
   shotCardIds?: readonly string[]
+  /** O-11：本镜是否呈现面部（缺省 true）。 */
+  facesVisible?: boolean
+  /** O-11：本镜自己的景别 / 机位 / 主体（`deriveQcContext` 派生）。 */
+  shotFocus?: string
   signal?: AbortSignal
   now?: () => number
 }
@@ -222,7 +307,15 @@ export async function runShotQc(
   const budget = options.budget ?? DEFAULT_QC_BUDGET
   const target = pickQcTargetNode(nodes, filename)
   const attempts = nextQcAttempt(nodes, target, options.shotCardIds ?? [])
-  const raw = await options.analyze(filename, buildQcPrompt(options.expect), QC_SYSTEM_PROMPT, options.signal)
+  const raw = await options.analyze(
+    filename,
+    buildQcPrompt(options.expect, {
+      ...(options.facesVisible !== undefined ? { facesVisible: options.facesVisible } : {}),
+      ...(options.shotFocus !== undefined && options.shotFocus.trim().length > 0 ? { shotFocus: options.shotFocus } : {}),
+    }),
+    QC_SYSTEM_PROMPT,
+    options.signal,
+  )
   const verdict = parseQcVerdict(raw)
   const record: StudioQcRecord = {
     verdict: verdict.verdict,

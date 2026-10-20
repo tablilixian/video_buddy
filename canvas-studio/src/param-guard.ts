@@ -150,12 +150,18 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   colorGrade: '布尔开关',
   allowFreeText: '布尔开关',
   multiSelect: '布尔开关',
+  // REQ-034（O-11）：该镜是否呈现面部。false ⇒ 质检跳过外貌核对（手部微距不再被判「未呈现面部」）。
+  facesVisible: '布尔开关（false ⇒ 质检跳过外貌核对）',
   duration: '数值（秒），非法取值由 clampDuration 钳制',
   start: '数值（秒，cut_audio 裁切起点）——数值无文本占位形态，越界由 cutAudioSegment 校验并给出可用区间',
   end: '数值（秒，cut_audio 裁切终点）——同 start；超源长自动截到末尾并在 warnings 说明',
   filmDuration: '数值（秒）',
   durationMargin: '数值（倍率）',
   budget: '数值（重跑预算）',
+  // REQ-034（O-09）：tts_voiceover 的本地后处理参数 —— 后端没有这两个字段，
+  // 由宿主用 ffmpeg 确定性实现（atempo 变速不变调 / asetrate 变调不变速）。
+  speed: '数值（语速倍率，0.5–2），越界由 clampSpeechOptions 夹取并回 warning',
+  pitchSemitones: '数值（音高，±12 半音），越界由 clampSpeechOptions 夹取并回 warning',
   language: '语言代码（zh / en / ja / unknown），合法值天然只有 2–7 个字符，不是占位形态（占位工具组的 TTS/配音参数）',
   // —— 短代码值：整篇级尺子在这里要么无效、要么会误伤合法短值 ——
   // —— 已有专用守卫，中央守卫再接一手会**把更具体的文案挤掉** ——

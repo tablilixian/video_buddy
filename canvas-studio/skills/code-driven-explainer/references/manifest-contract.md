@@ -48,7 +48,7 @@
 - `exit`（可选，三期）：**退场** —— 片尾/离场怎么走，见「三期：编排与质感」节。有它时
   `fadeFrames` 的**尾部**淡化自动让位（只保留首部），不会双淡出。
 - `startAfter`（可选，三期）：**顺序衔接** —— 用「接在上一轨之后」代替手算绝对帧号，
-  与 `startFrame` **互斥**（同时写直接报错）。
+  与 `startFrame` **互斥**（同时写直接报错）。`gapFrames` 负数 = 与上一轨**重叠**（转场必用）。
 - `blend`（可选，三期）：`normal` / `screen` / `multiply` / `overlay` / `soft-light` —— 图层混合模式。
 - `colorShift`（可选，三期）：颜色随帧过渡（`shape.color` / `textCard.accentColor` / `audioViz.color`）。
 
@@ -348,10 +348,18 @@
 ### 顺序衔接 `startAfter`（治「帧号算错」）
 
 ```jsonc
+// 紧接：下一轨从上一轨结束处开始
 { "id": "t4", "startAfter": { "trackId": "t3", "gapFrames": 4 }, "durationInFrames": 90, ... }
+
+// 叠化：负 gapFrames = 与引用轨「重叠」这么多帧（-12 正好配 12 帧转场）
+{ "id": "t4", "startAfter": { "trackId": "t3", "gapFrames": -12 }, "durationInFrames": 90, ... }
 ```
 
-- 解析结果 = `引用轨的 startFrame + 引用轨的 durationInFrames + gapFrames`；
+- 解析结果 = `引用轨的 startFrame + 引用轨的 durationInFrames + gapFrames`（负号自己就是减法）；
+- **`gapFrames` 可以是负数**：`-12` = 与引用轨重叠 12 帧。**片子用 `transition` 时必须写负值**
+  —— 转场要求两轨重叠，`0` 只会首尾相接、退化成硬切。建议 `gapFrames` 的绝对值 = 该转场轨
+  的 `durationInFrames`（一起写 `-12` / 12），低于 6 帧会触发 ML-06；
+- 重叠量不能超过引用轨起点能容纳的范围（解析出负起始帧会被拒收）；
 - **与 `startFrame` 互斥**（同时写 = 报错）；**只能引用数组里更靠前的轨**（天然无环）；
 - 宿主解析后会回一行「顺序衔接已解析：…」，照那行核对即可，不要再自己手算。
 
@@ -397,13 +405,26 @@
 ### 音频包络与 BGM 闪避
 
 ```jsonc
+// 单句旁白
 "audio": { "bgmUrl": "…", "voiceOverUrl": "…",
            "fadeInSeconds": 0.6, "fadeOutSeconds": 1.2, "duck": { "amount": 0.55 } }
+
+// 多句旁白：voiceOver 数组，按 startFrame 落到时间轴（与 voiceOverUrl 互斥）
+"audio": { "bgmUrl": "…",
+           "voiceOver": [
+             { "src": "…/vo-1.mp3", "startFrame": 78 },
+             { "src": "…/vo-2.mp3", "startFrame": 212, "volume": 0.9 },
+             { "src": "…/vo-3.mp3", "startFrame": 357 }
+           ],
+           "mix": { "bgmVolume": 0.35, "voiceVolume": 1 } }
 ```
 
 - `fadeInSeconds` / `fadeOutSeconds`：BGM 整轨线性淡入淡出；
 - `duck.amount`：**字幕在屏时** BGM 压到该倍率（前后各 6 帧过渡）。依据是字幕轨窗口，不是音频分析 ⇒ 确定、零成本；
 - 近似说明：旁白间隙不恢复（字幕连续时 BGM 全程压低）。
+- **`voiceOver` 数组（O-10）**：多句旁白逐条给 `{src, startFrame?, volume?}`（`startFrame` 是**绝对帧**，
+  上限 64 条）。**不要自己用 ffmpeg 拼一条长音轨** —— 终端用户跑不了 ffmpeg，这条路对用户是断的。
+  `voiceOverUrl` 与 `voiceOver` 二选一：单句用前者，多句用后者（同时写会拒收）。
 
 ### 编排体检回执（lint）
 

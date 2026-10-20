@@ -63,6 +63,22 @@ export interface ManifestMeta {
 export type RenderQuality = 'draft' | 'standard' | 'high'
 
 /**
+ * 质量档 → **输出分辨率缩放**（唯一来源，O-12 复用）。
+ *
+ * 客户端渲染预设（`QUALITY_PRESETS.scale`）与宿主侧的「素材是否被上采样」判定
+ * 必须用同一个数：draft 档实际出片是半分辨率，若拿 `meta.width` 原值去判上采样，
+ * 864×480 素材进 640×360 的草稿也会被误报成糊片。
+ *
+ * 放在 `manifest.ts`（纯类型/常量模块）而不是客户端文件：宿主侧不能 import
+ * `client/remotion-render.ts`（那会把 `@remotion/web-renderer` 拖进 host bundle）。
+ */
+export const RENDER_QUALITY_SCALE: Readonly<Record<RenderQuality, number>> = {
+  draft: 0.5,
+  standard: 1,
+  high: 1,
+}
+
+/**
  * 三期 W2-4：全片调色参数。全部可选、全部有缺省中性值（缺省 = 不产生任何样式）。
  *
  * - `contrast` / `saturation` / `brightness`：CSS `filter` 倍率（1 = 不变）；
@@ -180,10 +196,19 @@ export interface ExitMotion {
  * 三期 W1-2：顺序衔接 —— 本轨从「另一条轨结束之后」开始。
  *
  * 引用必须指向**数组中更靠前**的轨（天然无环，无需拓扑排序）；与 `startFrame` 互斥。
+ *
+ * O-08：`gapFrames` **允许负数 = 与引用轨重叠**（`-10` = 重叠 10 帧，正好一个 10 帧
+ * 叠化窗口）。原实现强制 `>= 0`，导致 `startAfter` 只能产出相邻/留空，产不出转场
+ * 需要的重叠 ⇒ 只要片子用转场，顺序衔接就永远用不上。
  */
 export interface StartAfter {
   trackId: string
-  /** 两轨之间的空档帧（缺省 0 = 紧接）。 */
+  /**
+   * 两轨之间的空档帧（缺省 0 = 紧接）；**负数 = 与引用轨重叠的帧数**。
+   *
+   * 解析式始终是 `引用轨.startFrame + 引用轨.durationInFrames + gapFrames`，负号自己
+   * 就是减法。要与 `transition` 对齐时长：10 帧叠化就写 `-10`。
+   */
   gapFrames?: number
 }
 
@@ -468,11 +493,35 @@ export interface AudioVizTrack extends BaseTrack {
   gradient?: { from?: string; to?: string }
 }
 
+/**
+ * O-10：**单条旁白**（多句旁白各占一段时间轴）。
+ *
+ * 真机症状：三句旁白要落在 2.60 / 7.07 / 11.90 秒，而 `voiceOverUrl` 只收一个文件 ——
+ * agent 只能自己用 ffmpeg 拼一条 `voiceover-timeline-v4.mp3`。**终端用户跑不了 ffmpeg**，
+ * 于是「多句旁白」这条路对用户是断的。
+ */
+export interface ManifestVoiceOver {
+  /** 旁白资产 URL（`tts_voiceover` 产物，同源约束同 `tracks[].src`）。 */
+  src: string
+  /** 该句在成片里的起始帧（缺省 0）。 */
+  startFrame?: number
+  /** 单句音量（0–1）；缺省走 `mix.voiceVolume`（再缺省 1）。 */
+  volume?: number
+}
+
 export interface ManifestAudio {
   /** BGM 资产 URL（复用 `compose_video` 的 `bgmNodeId` 语义）。 */
   bgmUrl?: string
-  /** 旁白资产 URL（`tts_voiceover` 产物）。 */
+  /**
+   * 旁白资产 URL（`tts_voiceover` 产物）。**单轨兼容入口** —— 只有一句旁白时用这个；
+   * 多句请用 `voiceOver` 数组（两者**互斥**，同时给会拒收）。
+   */
   voiceOverUrl?: string
+  /**
+   * O-10：**多轨旁白**。`[{src, startFrame?, volume?}]`，宿主/渲染器按 `startFrame` 排到
+   * 时间轴，不需要 agent 自己用 ffmpeg 拼一条长音轨。
+   */
+  voiceOver?: ManifestVoiceOver[]
   /** 混音音量（0–1），缺省走 `BGM_MIX_VOLUME` / 1.0。 */
   mix?: { bgmVolume?: number; voiceVolume?: number }
   /** 三期 W3-2：BGM 淡入（秒，缺省 0）。 */
@@ -626,7 +675,10 @@ const KNOWN_COLOR_SHIFT_KEYS = new Set(['from', 'to', 'startFrame', 'durationInF
 const KNOWN_LOOK_KEYS = new Set(['contrast', 'saturation', 'brightness', 'temperature', 'vignette', 'grain'])
 const KNOWN_TEXT_ANIM_OPTIONS_KEYS = new Set(['wordDelayFrames', 'offsetY', 'blur'])
 const KNOWN_SPRING_KEYS = new Set(['stiffness', 'damping', 'mass'])
-const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck'])
+/** O-10：多轨旁白的条数上限（防一份 manifest 塞进上百条把渲染器音频层压垮）。 */
+const MAX_VOICE_OVER_CLIPS = 64
+
+const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'voiceOver', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck'])
 const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
 const KNOWN_DUCK_KEYS = new Set(['amount'])
 const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor'])
@@ -914,6 +966,20 @@ function validateNonNegativeInteger(value: unknown, at: string, errors: string[]
   }
 }
 
+/**
+ * 整数帧校验（**允许负值**，缺省合法）。
+ *
+ * O-08 专用：`startAfter.gapFrames` 的负值有明确语义（= 与引用轨重叠），不能套
+ * `validateNonNegativeInteger`。下限不在这里判 —— 「解析出的起始帧不能为负」取决于
+ * 引用轨的绝对起点，只有 `normalizeManifestTiming` 知道。
+ */
+function validateInteger(value: unknown, at: string, errors: string[]): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    errors.push(`${at} 必须是整数（负数 = 与引用轨重叠的帧数）`)
+  }
+}
+
 /** 三期 W1-1：`exit` 校验。 */
 function validateExitMotion(value: unknown, at: string, trackDuration: unknown, errors: string[]): void {
   if (!isRecord(value)) {
@@ -940,11 +1006,12 @@ function validateExitMotion(value: unknown, at: string, trackDuration: unknown, 
 /** 三期 W1-2：`startAfter` 校验（引用存在性与顺序在归一化阶段判，这里只查形状）。 */
 function validateStartAfter(value: unknown, at: string, errors: string[]): void {
   if (!isRecord(value)) {
-    errors.push(`${at}.startAfter 必须是对象（如 {"trackId":"t1","gapFrames":4}）`)
+    errors.push(`${at}.startAfter 必须是对象（如 {"trackId":"t1","gapFrames":-10}）`)
     return
   }
   if (!isNonEmptyString(value.trackId)) errors.push(`${at}.startAfter.trackId 必须是非空字符串`)
-  validateNonNegativeInteger(value.gapFrames, `${at}.startAfter.gapFrames`, errors)
+  // O-08：负数合法（= 与引用轨重叠）；写 `-10` 表示与 10 帧转场对齐。
+  validateInteger(value.gapFrames, `${at}.startAfter.gapFrames`, errors)
 }
 
 /** 三期 W2-3：`colorShift` 校验。 */
@@ -1303,6 +1370,30 @@ export function validateManifest(input: unknown): ManifestValidation {
     } else {
       validateAssetRefField(audio.bgmUrl, 'audio.bgmUrl', errors)
       validateAssetRefField(audio.voiceOverUrl, 'audio.voiceOverUrl', errors)
+      // O-10：多轨旁白。与单轨 `voiceOverUrl` 互斥（同时给会重复播放同一句）。
+      if (audio.voiceOver !== undefined) {
+        if (audio.voiceOverUrl !== undefined) {
+          errors.push('audio.voiceOverUrl 与 audio.voiceOver 二选一（单句用 voiceOverUrl，多句用 voiceOver 数组）')
+        }
+        if (!Array.isArray(audio.voiceOver)) {
+          errors.push('audio.voiceOver 必须是数组（如 [{"src":"…","startFrame":78}]）')
+        } else if (audio.voiceOver.length === 0) {
+          errors.push('audio.voiceOver 为空数组 —— 没有旁白就不要写这个字段')
+        } else if (audio.voiceOver.length > MAX_VOICE_OVER_CLIPS) {
+          errors.push(`audio.voiceOver 最多 ${MAX_VOICE_OVER_CLIPS} 条（当前 ${audio.voiceOver.length} 条）`)
+        } else {
+          audio.voiceOver.forEach((clip, index) => {
+            const at = `audio.voiceOver[${index}]`
+            if (!isRecord(clip)) {
+              errors.push(`${at} 必须是对象（如 {"src":"…","startFrame":0}）`)
+              return
+            }
+            validateAssetRefField(clip.src, `${at}.src`, errors)
+            validateNonNegativeInteger(clip.startFrame, `${at}.startFrame`, errors)
+            validateUnitInterval(clip.volume, `${at}.volume`, errors)
+          })
+        }
+      }
       // 三期 W3-2：音量包络 + 闪避。
       for (const key of ['fadeInSeconds', 'fadeOutSeconds'] as const) {
         const raw = audio[key]
@@ -1461,8 +1552,20 @@ export function deriveAudioComposition(manifest: CompositionManifest): StudioAud
   return audioCompositionFrom({
     hasNative: manifest.tracks.some((track) => track.type === 'video'),
     hasBgm: isNonEmptyString(manifest.audio?.bgmUrl),
-    hasVoiceOver: isNonEmptyString(manifest.audio?.voiceOverUrl),
+    hasVoiceOver: hasVoiceOverAudio(manifest.audio),
   })
+}
+
+/**
+ * O-10：是否带旁白（单轨 `voiceOverUrl` 或多轨 `voiceOver[]` 任一非空）。
+ *
+ * 单独抽出来是因为三个消费方（音轨构成、幻灯片风险评分、工具结果文案）都要同一个
+ * 结论；散写三份 `voiceOverUrl !== undefined` 必然在加多轨那天漏一处。
+ */
+export function hasVoiceOverAudio(audio: ManifestAudio | undefined): boolean {
+  if (audio === undefined) return false
+  if (isNonEmptyString(audio.voiceOverUrl)) return true
+  return Array.isArray(audio.voiceOver) && audio.voiceOver.some((clip) => isNonEmptyString(clip.src))
 }
 
 /**

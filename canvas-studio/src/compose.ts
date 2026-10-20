@@ -697,6 +697,10 @@ export interface ComposedNodeInput {
  * 返回新建节点。位置沿用 4 列网格；真实分辨率写入 mediaWidth/mediaHeight，
  * 文案写入 `script`，使详情面板可展示。客户端工具/结果重载后即出现在画布。
  * 节点框按真实分辨率等比换算（竖屏成片不再被 260×180 横屏占位框 cover 裁切）。
+ *
+ * **O-13：`draft: true` 时不再 append —— 就地替换当前活动的草稿成片节点**
+ * （同一 id / 位置 / 框尺寸，只换 url 与真值），画布上永远只有一个草稿预览。
+ * 交付档仍走「append + supersede 上一版」（CV-108 的版本链要留）。
  */
 export async function appendComposedVideoNode(
   registry: ProjectRegistry,
@@ -707,7 +711,45 @@ export async function appendComposedVideoNode(
   // CV-108：成片也进版本链——重新合成后旧成片标记失效（保留在画布上供对比，
   // 但不再被当作「当前成片」，避免多个成片并列分不清最终版）。
   const previousComposed = existing.filter((node) => node.toolName === 'compose' && isActiveShot(node))
-  const composedVersion = previousComposed.reduce((max, node) => Math.max(max, node.shotVersion ?? 1), 0) + 1
+  // O-13：**草稿档就地替换上一版草稿**。
+  //
+  // 真机症状：7 次成功渲染 ⇒ 画布上 7 个 video-composite 节点并排（6 个 draft:true，
+  // 各约 1MB），用户得手工清，画布随迭代线性膨胀。草稿是「快速看一版」的一次性预览，
+  // 它的历史价值是 0（要看的是当前这一版）；而交付档必须留版本链（CV-108）供对比回滚。
+  //
+  // 所以只对 draft 做替换：复用同一节点 id / 位置 / 框尺寸（用户手动摆过的位置不动），
+  // 只换 url / 时长 / 真值像素 / 血源 / 音轨构成，版本号 +1。交付档照旧 append + supersede。
+  if (input.draft === true) {
+    const previousDraft = previousComposed
+      .filter((node) => node.draft === true)
+      .sort((a, b) => b.createdAt - a.createdAt)[0]
+    if (previousDraft !== undefined) {
+      const updated: StudioCanvasNode = {
+        ...previousDraft,
+        url: input.url,
+        title: `草稿成片 ${new Date().toLocaleString('zh-CN')}`,
+        ...(input.duration !== undefined ? { duration: input.duration } : {}),
+        ...(input.width !== undefined ? { mediaWidth: input.width } : {}),
+        ...(input.height !== undefined ? { mediaHeight: input.height } : {}),
+        sourceIds: input.sourceIds,
+        ...(input.audioComposition !== undefined ? { audioComposition: input.audioComposition } : {}),
+        ...(input.script !== undefined ? { script: input.script } : {}),
+        draft: true,
+        shotVersion: (previousDraft.shotVersion ?? 1) + 1,
+      }
+      await registry.writeCanvas(
+        projectId,
+        existing.map((node) => (node.id === previousDraft.id ? updated : node)),
+      )
+      return updated
+    }
+  }
+  // 版本号对**所有**成片求最大值（不只 active）：上一版被取代后 active 集合会空，
+  // 只看 active 会让版本号从 1 重来（O-13 顺带修的口径问题）。
+  const composedVersion = existing.reduce(
+    (max, node) => (node.toolName === 'compose' ? Math.max(max, node.shotVersion ?? 1) : max),
+    0,
+  ) + 1
   const supersedeIds = previousComposed.map((node) => node.id)
   // 宽高齐备时按真实分辨率换算显示框（1:1→420×420、9:16→267×480、16:9→480×270，
   // 各自由 C10 的 frameSizeOf 再补上镜头条 chrome）；探测失败回退横屏占位，
@@ -721,7 +763,7 @@ export async function appendComposedVideoNode(
   const node: StudioCanvasNode = {
     id: newAssetId(),
     kind: 'video',
-    title: `成片 ${new Date().toLocaleString('zh-CN')}`,
+    title: `${input.draft === true ? '草稿成片' : '成片'} ${new Date().toLocaleString('zh-CN')}`,
     url: input.url,
     ...(input.duration !== undefined ? { duration: input.duration } : {}),
     ...(input.width !== undefined ? { mediaWidth: input.width } : {}),

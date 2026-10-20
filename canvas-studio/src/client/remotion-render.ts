@@ -31,7 +31,7 @@ import {
   type WebRendererPageResponsiveness,
 } from '@remotion/web-renderer'
 import { StudioComposition } from '../remotion/components/Root.js'
-import { validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
+import { RENDER_QUALITY_SCALE, validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
@@ -64,7 +64,9 @@ export interface QualityPreset {
 
 export const QUALITY_PRESETS: Readonly<Record<RenderQuality, QualityPreset>> = {
   draft: {
-    scale: 0.5,
+    // O-12：缩放值取自 `manifest.ts` 的 `RENDER_QUALITY_SCALE`（宿主侧判「素材是否被
+    // 上采样」用的是同一个数 —— 两份写死必然漂移）。
+    scale: RENDER_QUALITY_SCALE.draft,
     videoBitrate: 'low',
     keyframeIntervalInSeconds: 10,
     pageResponsiveness: 'disabled',

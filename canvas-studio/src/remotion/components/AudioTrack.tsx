@@ -15,6 +15,7 @@
  * 从而实现淡入淡出与「字幕在屏时 BGM 压低」（D-09 选 A：零音频分析、确定性）。
  */
 import type React from 'react'
+import { Sequence } from 'remotion'
 import { Audio } from '@remotion/media'
 import type { ManifestAudio } from '../manifest.js'
 import { audioVolumeAt, type AudioDuckWindow } from '../timing.js'
@@ -55,6 +56,21 @@ export const AudioTrack: React.FC<{
         />
       ) : null}
       {audio.voiceOverUrl ? <Audio src={audio.voiceOverUrl} volume={voiceVolume} /> : null}
+      {/*
+        O-10：多轨旁白。每句一个 `<Sequence from={startFrame}>` 包一层 `<Audio>` ——
+        时间轴由 manifest 决定，不再要求 agent 先拼一条长音轨（终端用户也跑不了 ffmpeg）。
+        `layout="none"`：音频不产生视觉盒子，别让它参与布局。
+        缺省音量沿用 `mix.voiceVolume`（与单轨口径一致），单句可显式覆盖。
+      */}
+      {(audio.voiceOver ?? []).map((clip, index) => (
+        <Sequence
+          key={`voice-over-${String(index)}`}
+          from={Math.max(0, Math.floor(clip.startFrame ?? 0))}
+          layout="none"
+        >
+          <Audio src={clip.src} volume={clip.volume ?? voiceVolume} />
+        </Sequence>
+      ))}
     </>
   )
 }

@@ -69,6 +69,14 @@ export interface StoryboardShot {
   readonly narrationRef?: string
   readonly promptEn?: string
   /**
+   * O-11：本镜**是否呈现面部**（缺省 true）。
+   *
+   * 手部微距 / 背影 / 空镜写 `false` 后，`qc_shot` 会自动关掉「外貌（脸型/发型/发色）」
+   * 这一组核对项 —— 否则质检员会拿别的镜的语汇判它 FAIL（真机实测：手部微距被判
+   * 「未呈现面部与发型」「与期望的中长焦中景交替、固定机位不符」，那是**另一镜**的描述）。
+   */
+  readonly facesVisible?: boolean
+  /**
    * 本镜效果图引用（生成时经 `image_generate` 的 `storyboardRef=<shot id>` 由 Host 自动回写）。
    * 只存引用不存副本；渲染层按画布节点解析出缩略图。agent 手写 storyboard 段时也可显式给。
    */
@@ -557,6 +565,8 @@ function normalizeShot(value: unknown): StoryboardShot {
     audio: str(record.audio),
     ...(narrationRef === '' ? {} : { narrationRef }),
     ...(promptEn === '' ? {} : { promptEn }),
+    // O-11：只保留显式 `false`（老稿没有这个键 ⇒ 形态一字不变，仍是「默认要看脸」）。
+    ...(record.facesVisible === false ? { facesVisible: false } : {}),
     ...(refImage === undefined ? {} : { refImage }),
     backup: record.backup === true,
   }

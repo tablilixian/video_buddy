@@ -40,7 +40,7 @@ import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asse
 import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
-import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
+import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
@@ -61,6 +61,7 @@ import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
 import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
+import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
@@ -286,6 +287,7 @@ const speechResultSchema = {
     nodeId: { type: 'string' as const, description: '画布音频节点 id' },
     duration: { type: 'number' as const, description: '配音**真实**时长（秒，落盘后 ffprobe 实测）；0 = 探测失败（不伪造）。⚠️ 响应里的 `duration` 是生成耗时（探针实测与真值差 2.8 倍），与本字段无关' },
     text: { type: 'string' as const, description: '实际合成的文本（已随画布节点落盘）' },
+    warnings: { type: 'array' as const, description: 'O-09：语速/音高后处理的非致命提示（越界被夹取 / ffmpeg 不可用）。非空时必须转告用户，不要说「已按 0.8 倍速」却没生效' },
   },
 }
 /** CV-271 同款守卫：`tts_voiceover` 结果字段必须全部出现在 schema 里。 */
@@ -588,7 +590,8 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
 function renderSpeechResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as SpeechResult
   const durationNote = v.duration > 0 ? `配音真实时长 ${v.duration}s（ffprobe 实测）。` : '时长探测失败（未伪造，节点不显示角标）。'
-  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；也可以走 render_composition 的 audio.voiceOverUrl。` }]
+  const warnNote = v.warnings !== undefined && v.warnings.length > 0 ? `\n⚠️ ${v.warnings.join('；')}` : ''
+  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}${warnNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；也可以走 render_composition 的 audio.voiceOverUrl（多句用 audio.voiceOver 数组，各自带 startFrame）。` }]
 }
 
 /** 把文本结果渲染成模型可读的文本块。 */
@@ -1673,7 +1676,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'qc_shot',
       description:
-        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-240：质检不参与生成过程**——本工具仅在**成片交付后**用于产出《质检报告》：逐镜运行后把结果汇总成报告随交付输出，**仅供参考，不触发返工**（PASS/FAIL 都不需要据此重出镜头，用户主动要求重做才传 `replaces`）；生成过程中调用本工具属于流程违规。FAIL/WARN 一律不自动重跑（CV-214：VLM 识别不可靠，自动重跑会烧预算把对的图改坏）。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）。',
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-240：质检不参与生成过程**——本工具仅在**成片交付后**用于产出《质检报告》：逐镜运行后把结果汇总成报告随交付输出，**仅供参考，不触发返工**（PASS/FAIL 都不需要据此重出镜头，用户主动要求重做才传 `replaces`）；生成过程中调用本工具属于流程违规。FAIL/WARN 一律不自动重跑（CV-214：VLM 识别不可靠，自动重跑会烧预算把对的图改坏）。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）。'
+        + '⚠️ **O-11：基准只按本镜判** —— 传了 shotRefs 时，Host 会从**该镜分镜卡正文**取它自己的「运镜 / 视觉」作为本镜基准，质检员不得拿别的镜的景别/机位语汇评价本镜；分镜卡里声明 `facesVisible:false`（微距 / 背影 / 空镜）会自动跳过外貌核对（也可显式传 facesVisible:false）。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
@@ -1681,6 +1685,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         expect: { type: 'string' as const, description: '判定基准：该镜必须保持的固定要素描述。缺省拼接本项目全部一致性资产卡的 lockedPrompt' },
         shotRefs: { type: 'array' as const, description: '该镜所属分镜卡（写法同 image_generate 的 shotRefs：卡片标题 / 「分镜 N」/ 节点 id）。**务必传**——重跑会生成新节点，不传则每次质检都算第 1 次，重跑预算会失效' },
         budget: { type: 'number' as const, description: `重跑预算，默认 ${DEFAULT_QC_BUDGET}。FAIL 次数达到预算时 exhausted=true，应停止自动重跑并把该镜上报用户仲裁` },
+        facesVisible: { type: 'boolean' as const, description: '可选：本镜是否呈现面部（缺省 true）。微距 / 背影 / 空镜传 false ⇒ 跳过「人物外貌（脸型/发型/发色）」核对，避免质检员拿别的镜的语汇判 FAIL。分镜卡上声明过 facesVisible:false 时自动生效，不必再传' },
       },
       output: {
         schema: {
@@ -1705,7 +1710,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         },
       },
       async execute(args, exec) {
-        const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number }
+        const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number; facesVisible?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'qc_shot', false)
         // CV-196：放手跑模式逐镜质检整体关闭（机器闸，不靠提示词自觉）——
@@ -1723,6 +1728,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const shotCardIds = Array.isArray(a.shotRefs) && a.shotRefs.length > 0
           ? await resolveShotRefs(registry, projectId, a.shotRefs)
           : []
+        // O-11：从**该镜的分镜卡正文**派生逐镜上下文 —— 镜自己的运镜/视觉，以及
+        // 「本镜不看脸」的声明。多卡时取首个非空 shotFocus；只有**全部**卡都声明不看脸
+        // 才关外貌核对（保守：任一张要看脸就核对）。
+        const cardContexts = shotCardIds
+          .map((id) => doc.nodes.find((node) => node.id === id))
+          .map((node) => (node === undefined ? null : deriveQcContext(node.text ?? '')))
+          .filter((ctx): ctx is ReturnType<typeof deriveQcContext> => ctx !== null)
+        const cardFocus = cardContexts.find((ctx) => ctx.shotFocus.length > 0)?.shotFocus
+        const cardNoFace = cardContexts.length > 0 && cardContexts.every((ctx) => ctx.noFace)
+        // 显式参数优先于卡上声明。
+        const facesVisible = a.facesVisible !== undefined ? a.facesVisible : (cardNoFace ? false : undefined)
         const result = await runShotQc(doc.nodes, filename, {
           // CV-155：带上 registry/projectId，让 analyzeImage 拿到产物名（本工具最常见
           // 的输入）时能自愈换句柄。不传 = 关掉自愈，qc_shot 会退回 0 成功。
@@ -1731,6 +1747,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           expect,
           shotCardIds,
           ...(a.budget !== undefined ? { budget: a.budget } : {}),
+          ...(facesVisible !== undefined ? { facesVisible } : {}),
+          ...(cardFocus !== undefined ? { shotFocus: cardFocus } : {}),
           signal: exec.signal,
         })
         if (result.nodeId !== null) {
@@ -2330,6 +2348,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '**instruct_prompt 声音设计**用自然语言写（语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言，支持 30 种语言 + 9 种中文方言，如「60岁女人笑着说，慢速，四川话」）；'
         + '写法见技能 voiceover-writing——写配音前先加载它。'
         + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'
+        + '**O-09：音色/语速的真实边界** —— 后端没有 `voiceId` 参数，音色（年龄/沙哑/气声）只能靠 instructPrompt 自然语言引导，超出音域时用 `speed`（变速不变调）与 `pitchSemitones`（变调不变速，负数更低沉）补，**不要为「60 岁沙哑」反复重试烧额度**：重试两次音色没变就说明这条路到顶了，改用 pitchSemitones:-3 + speed:0.9 这类确定性参数，或如实告知用户需要后处理。'
         + 'refaudio 传参考音频（upload_image 句柄或 @ref[音频节点标题]）可克隆其音色生成后续语音（克隆通道未实测，遇到失败按报错处理）；'
         + '⚠️ **多段旁白必须同音色**（C-5）：拆段合成时每段传同一个 refaudio；不用 refaudio 时各段 instruct_prompt 的音色七维逐字一致，严禁每段各写各的声音设计——详见技能 voiceover-writing。'
         + '产物 voxcpm_* 前缀 mp3，结果里的 duration 是 ffprobe 实测真值（后端响应里的 duration 是生成耗时，勿混）。'
@@ -2338,6 +2357,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       parameters: {
         text: { type: 'string' as const, required: true, description: '要合成的文本（要念的话）。成品台词/旁白，不要写占位' },
         instructPrompt: { type: 'string' as const, description: '可选：声音设计指令（自然语言：语言/性别/年龄/语气/情感/语速/方言，如「30岁女性，温柔坚定，普通话，稍慢」）。缺省用后端默认音色' },
+        speed: { type: 'number' as const, description: '可选（O-09）：语速倍率 0.5–2.0（0.8 = 放慢 20%）。宿主侧 ffmpeg 变速不变调（`atempo`），**不是**后端参数；与 instructPrompt 里的「稍慢」可叠加，但别用两次描述同一件事。缺省 1' },
+        pitchSemitones: { type: 'number' as const, description: '可选（O-09）：音高偏移半音 -12 ~ +12（负数 = 更低沉苍老，-3 约等于「低一档」）。宿主侧变调不变速；**音色本身（沙哑/气声）仍靠 instructPrompt 描述**，它只调基频。缺省 0' },
         refaudio: { type: 'string' as const, description: '可选：参考音频（upload_image 句柄或 @ref[显示名]）——提供后克隆其音色生成后续语音' },
         replaces: { type: 'string' as const, description: '可选：要重配的已有音频节点 id —— 传入后**原地重写**该节点（保留节点位置与血缘，替换音频与文本），不堆新卡；改词重配时应传' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
@@ -2345,7 +2366,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: speechResultSchema, render: renderSpeechResult },
       async execute(args, exec) {
-        const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; sourceUrls?: string[]; sourceNodeIds?: string[] }
+        const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; speed?: number; pitchSemitones?: number; sourceUrls?: string[]; sourceNodeIds?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'tts_voiceover', false)
         const refaudio = a.refaudio !== undefined ? await resolveRefValue(registry, projectId, a.refaudio, library, 'audio') : undefined
@@ -2353,6 +2374,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           text: a.text,
           ...(a.instructPrompt !== undefined ? { instructPrompt: a.instructPrompt } : {}),
           ...(refaudio !== undefined ? { refaudio } : {}),
+          ...(a.speed !== undefined ? { speed: a.speed } : {}),
+          ...(a.pitchSemitones !== undefined ? { pitchSemitones: a.pitchSemitones } : {}),
           ...(a.replaces !== undefined ? { retryOf: a.replaces } : {}),
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
@@ -2501,7 +2524,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n  · 每轨通用字段（6 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；orbit? 公转（见下）；fx? 视觉效果：glow|stroke|shadow|blur|maskFade 单值（发光 / 描边 / 投影 / 虚化 / 底部渐隐）；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）；exit? 退场（三期，见下）；startAfter? 顺序衔接（三期，与 startFrame 互斥）；blend? "normal|screen|multiply|overlay|soft-light" 图层混合（三期）；colorShift?{from,to,durationInFrames,easing?} 颜色随帧过渡（三期，作用于 shape.color / textCard.accentColor / audioViz.color）。'
         + '\n  · animate 写法：{"from":{...},"to":{...},"startFrame"? 轨内相对帧(缺省 0),"durationInFrames"? 时长(缺省=整轨),"easing"? 见下,"spring"?{stiffness?,damping?,mass?}}。easing 13 档白名单：linear|easeIn|easeOut|easeInOut（老四档，公式不变）、easeInCubic|easeOutCubic|easeInOutCubic、easeOutQuart|easeOutExpo|easeOutCirc|easeInOutExpo、backOut（过冲 10%）、spring（弹簧闭式解，缺省 170/18/1；opacity 自动 clamp 在 0-1，位移/缩放/旋转可放心过冲）。**入场首选 easeOutCubic / easeOutExpo**（前 30-40% 走完 70-88% 行程，收尾利落），linear 只给匀速扫描用。from / to 里可写 x / y / scale / rotation / opacity；**要动的维度请 from 与 to 都写**（只写一边时另一边取 transform 的值或缺省值）。例：{"from":{"x":115,"opacity":0},"to":{"x":50,"opacity":1},"durationInFrames":18} = 从画面右侧滑入并淡入；{"from":{"scale":1},"to":{"scale":1.6},"durationInFrames":30} = 放大强调。多条动画写成数组，按顺序叠加（后者覆盖它声明过的维度）。'
         + '\n  · exit 写法（三期 · 退场）：{"to":{"y":44,"opacity":0},"durationInFrames"? 缺省 clamp(入场×0.6,4,12),"easing"?,"gapFrames"? 0}。from **自动**取入场动画在退场起点处的读数（只写 to，不会跳变）；有 exit 时 fadeFrames 的尾部淡化自动让位（只留首部）。'
-        + '\n  · startAfter 写法（三期 · 顺序衔接）：{"trackId":"上一轨 id","gapFrames"? 0} —— 解析成「引用轨 startFrame + 其 durationInFrames + gapFrames」。**与 startFrame 互斥**，且只能引用数组里更靠前的轨；宿主解析后会回一行「顺序衔接已解析：…」，照它核对，不要手算帧号。'
+        + '\n  · startAfter 写法（三期 · 顺序衔接）：{"trackId":"上一轨 id","gapFrames"? 0} —— 解析成「引用轨 startFrame + 其 durationInFrames + gapFrames」。**与 startFrame 互斥**，且只能引用数组里更靠前的轨；宿主解析后会回一行「顺序衔接已解析：…」，照它核对，不要手算帧号。**gapFrames 可以写负数 = 与引用轨重叠**：要叠化就写 gapFrames:-12 并把 transition 轨的 durationInFrames 也设 12（0 只会首尾相接、转场退化成硬切；重叠 <6 帧会被体检判太短）。'
         + '\n  · orbit 写法（绕点圆周运动，一行顶掉几十段关键帧）：{"center":{"x":50,"y":50},"radius":26,"startAngle"? 度(0=正右，增大=顺时针，缺省 0),"periodInFrames"? 转一圈帧数(缺省=整轨),"direction"? "cw|ccw"(缺省 cw)}。radius 取 (0,100] 百分比。⚠️ **位置来源三选一**：orbit / transform·animate 的 x,y / 缺省居中——同时写 orbit 和 x/y 会**直接拒收**（scale / rotation / opacity 不受限制，可同时动）。'
         + '\n  · 讲「过程 / 关系」的常见做法：多个元素依次出场 = 各自错开 startFrame + 同样的 animate；尺寸对比 = 各元素到位的 animate 里给不同 scale（起始 scale 可都相同）；周期往复 / 脉动 = 数组里给两条首尾相接的 animate；绕中心转圈 = **用 orbit**（不要手算关键帧）；一笔画路径 = shape("path") + d + draw（见下）。本契约不支持任意贝塞尔曲线与路径跟随。'
         + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,trimBeforeFrames? 从素材第几帧开始(>=0),"playbackRate"? 0.1-4(0.5=慢动作),muted?,volume? 0-1,loop?,…通用字段}'
@@ -2510,7 +2533,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient|arrow|triangle|star|polygon|path",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 按画布百分比，**x/y 是形状中心**（不是左上角）、w/h 是宽高；铺满全屏用 {x:50,y:50,w:100,h:100}，写 0,0 只铺左上四分之一。若 transform / animate 给了 x / y，以它们为准）。**path** 额外要 d（SVG 路径，坐标空间是 0-100 双轴百分比、非等比——16:9 下正圆的 rx:ry ≈ 1:0.5625）+ 可选 strokeWidth（百分比，缺省 0.5）+ draw?{to? 0-1,"startFrame"? 轨内帧,"durationInFrames"? 生长帧数,easing?}（描边从无到有生长；d / draw 只对 path 生效，写在别的形状上会 warning 说明已忽略）'
         + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve|wipeLeft|wipeRight|clock|flipX",fromTrackId,toTrackId,startFrame,durationInFrames,easing?,softness? 0-1,direction?:"left|right|up|down"}（作用的两轨必须重叠；wipeLeft/wipeRight = 硬边擦除推进，clock = 扇形扫描，flipX = 横向翻面；三期加 softness>0 = 软边渐变擦除，只对 wipe 生效，0.2-0.45 是可用区间；direction 只对 slide/wipe 生效）'
         + '\n  · audioViz（音频可视化，柱高由真实振幅驱动、逐帧确定）：{id,type:"audioViz",src,startFrame,durationInFrames,bars? 1-128(缺省 24),mode? "bars|mirror|line"(缺省 bars),gain? 0-4(缺省 1.6),heightPercent? (0,100](缺省 30),position? "bottom|top"(缺省 bottom),color?,smoothing? 0-0.9(三期，帧间指数平滑),gradient?{from,to}(三期，柱体渐变)}；src 同源约束同上，track 放数组靠后（后写在上层）'
-        + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1},"fadeInSeconds"?,"fadeOutSeconds"?,"duck"?{amount? 0-1}}（三期：淡入淡出 + 字幕在屏时 BGM 压到 amount 倍，前后各 6 帧过渡）'
+        + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","voiceOver"?[{"src":"<资产 URL>","startFrame"? 0,"volume"? 0-1}],"mix":{"bgmVolume":0-1,"voiceVolume":0-1},"fadeInSeconds"?,"fadeOutSeconds"?,"duck"?{amount? 0-1}}（三期：淡入淡出 + 字幕在屏时 BGM 压到 amount 倍，前后各 6 帧过渡。**O-10 多句旁白用 `voiceOver` 数组**，按 startFrame 落到时间轴——不要自己用 ffmpeg 拼一条长音轨；`voiceOverUrl` 只用于单句，两者互斥）'
         + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'
         + '\n- meta 里还可写（三期）：look?{contrast?(缺省 1),saturation?(1),brightness?(1),temperature? -1~1,vignette? 0-1,grain? 0-1} = **全片统一调色**（暗角 0.3-0.4 + 颗粒 0.12-0.2 + 对比 1.06 是最省事的一次观感升级）；lint?:"off" 关闭编排体检提示。'
         + '\n\n素材引用约束：只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或**位于本项目资产目录内**的绝对路径，禁止一切外链；'
@@ -2518,6 +2541,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '素材缺失或不可用会**直接拒绝渲染**，不会静默出片。'
         + 'video / image 轨的 id 必须是该素材对应的**画布节点 id**（成片血缘据此生成，别填 t0 这类占位）。'
         + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正；**校正后若排布不再自洽（相邻轨不再重叠 / 转场失效）会连同明细直接拒收**——按报错里的真值重排轨道与转场窗口后重试，不要原样重试。'
+        + '\n\n分辨率口径：宿主会核对 video 轨素材的**真实像素**，低于成片输出时给「[分辨率] … 上采样约 N×」warning —— 那意味着细节在出片时已经丢了。看到就换更高档重出素材（video_composite 传 resolution:"736p" ⇒ 1280×736），或把成片分辨率降到与素材匹配；不要靠改 manifest 的 meta.width/height 掩盖（放大后只会更糊）。'
         + '\n\n返回里除 url / 时长 / 分辨率外还有（三期）：frames[] = 渲后抽帧（4 张均匀 + 转场中点，上限 8）——**先看这几张图再向用户汇报**，字压边 / 元素出画 / 转场叠影只能在这上面看出来；report{} = 质量档 / 帧数 / 总耗时 / 每帧耗时 / 编码耗时 / 字节 / 码率 / 抽帧数 / 编排体检命中（lint[]）。'
         + '\nwarnings 里会出现「[编排体检 ML-xx] …」——这是**只提示不拒收**的观感体检（同帧入场 / 有进无出 / 动画过短 / 位移用 linear / 转场太短 / 静态占比过高 / 字幕超行等）。看到就照建议改，别当成渲染失败。'
         + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
@@ -2527,7 +2551,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         quality: {
           type: 'string' as const,
           enum: ['draft', 'standard', 'high'] as const,
-          description: '可选：渲染质量档。draft = 半分辨率 + 低码率 + 不抢主线程（迭代预览，跳过渲染前预览闸门，快 2.5×+）；standard = 与原来完全一致（缺省）；high = 高码率 + 短关键帧（交付/发布）',
+          description: '可选：渲染质量档。draft = 半分辨率 + 低码率 + 不抢主线程（迭代预览，跳过渲染前预览闸门，快 2.5×+）；**草稿会就地替换上一版草稿**（画布上只保留一个「草稿成片」预览节点，反复迭代不堆卡），定稿后渲 standard/high 才进版本链留档。standard = 与原来完全一致（缺省）；high = 高码率 + 短关键帧（交付/发布）',
         },
       },
       output: { schema: resultSchema, render: renderComposeResult },
@@ -2637,6 +2661,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
           ...reconciled.warnings,
+          // O-12：素材真实像素 vs 成片分辨率（上采样 = 细节在出片时就没了）。
+          // 放在 reconciled 之后：判的是**真正要渲染的**那份排布。
+          ...checkManifestResolution(renderManifest, pre.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
           ...job.warnings,
         ]
@@ -2677,7 +2704,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n- facts：{"facts":[{"claim":"…","source":"https://…","status":"verified|pending"}]}（搜索核实所得，搜不到标 pending，**不虚构**）'
         + '\n- visual：{"tokens":[{"k":"色彩","v":"…"}]}（5 项 tokens：色彩/光线/材质/镜头语汇/节奏，= Look 卡前置）'
         + '\n- narration：{"lines":[{"id":"V1","text":"…","duration":2.5,"shotRef":"S1-Sh1"}]}（**旁白只在这里写一次**，分镜按句号引用）'
-        + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词）'
+        + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","facesVisible"? true,"backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词。**`facesVisible:false` 只给微距 / 背影 / 空镜**：它会让 `qc_shot` 跳过外貌核对，不要拿它掩盖「该露脸却没露脸」）'
         + '\n- characters：[{"id":"C1","label":"ROLE A","name":"苏婉","tags":["女","26岁"],"profile":{"temperament":"…","face":"…","costume":"…"},"palette":{"base":"…","accent":"…"},"appearsIn":["S1"],"gen":{"lockedPrompt":"英文冻结主体段","negativePrompt":"…"}}]（profile 人读；gen 机读、要落画布，**lockedPrompt 必填**）'
         + '\n- sound：{"bgm":{"bpm":52,"lufs":-16,"sidechain":"1.5–3kHz 避让人声"},"sfx":["雨声床"]}'
         + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending","ref":{"kind":"canvasNode|file","id":"…"}}]}（**只存引用不存副本**）'

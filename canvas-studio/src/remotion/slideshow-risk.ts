@@ -5,7 +5,7 @@
  * 产物 score ≥ 60 → 给用户可见 warning（并入 `ComposeToolResult.warnings`），**不阻断**渲染。
  */
 
-import type { CompositionManifest, CompositionTrack } from './manifest.js'
+import { hasVoiceOverAudio, type CompositionManifest, type CompositionTrack } from './manifest.js'
 
 /** 评分维度；`weight` 之和为 100。 */
 export interface SlideshowRiskDimension {
@@ -120,7 +120,8 @@ export function scoreSlideshowRisk(manifest: CompositionManifest): SlideshowRisk
 
   const fadeOnly = transitionTracks.length === 0 || transitionTracks.every((t) => t.effect === 'fade')
   const requiredShots = durationSec >= 60 ? 5 : 3
-  const hasVoiceOver = typeof manifest.audio?.voiceOverUrl === 'string' && manifest.audio.voiceOverUrl.length > 0
+  // O-10：单轨与多轨旁白同一判定（`hasVoiceOverAudio` 是唯一实现）。
+  const hasVoiceOver = hasVoiceOverAudio(manifest.audio)
   const rhythmTracks = manifest.tracks.filter(
     (t) => (t.type === 'video' || t.type === 'image' || t.type === 'textCard') && durationOf(t) < duration,
   )

@@ -14,6 +14,7 @@
  */
 
 import type { CompositionManifest, CompositionTrack, ShapeTrack } from './manifest.js'
+import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
 
 export interface MotionLintIssue {
   /** `ML-01` … `ML-12`。 */
@@ -223,15 +224,16 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
     }
   }
 
-  // ML-06：转场窗口太短。
+  // ML-06：转场窗口太短。下限与 `startAfter` 的重叠提示同源（`MIN_VISIBLE_OVERLAP_FRAMES`）：
+  // 写 `gapFrames:-4` 造出的 4 帧重叠，正是这条规则要报的「看不见」。
   for (const track of transitionTracks) {
     if (track.type !== 'transition') continue
-    if (track.durationInFrames < 6) {
+    if (track.durationInFrames < MIN_VISIBLE_OVERLAP_FRAMES) {
       push({
         code: 'ML-06',
         at: track.id,
         message: `转场「${track.id}」只有 ${track.durationInFrames} 帧`,
-        hint: '低于 6 帧肉眼几乎看不见；建议 12–20 帧。',
+        hint: `低于 ${MIN_VISIBLE_OVERLAP_FRAMES} 帧肉眼几乎看不见；建议 12–20 帧。用 startAfter 叠化时把 gapFrames 设成与转场时长同值（如 -12）。`,
       })
     }
   }

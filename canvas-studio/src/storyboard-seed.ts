@@ -57,7 +57,17 @@ export const SHOT_TEXT_LABELS = {
   audio: '声音',
   narration: '旁白',
   prompt: '英文 prompt',
+  face: '面部',
 } as const
+
+/**
+ * O-11：分镜卡上「本镜不呈现面部」的标记文案。
+ *
+ * `qc_shot` 用它在**不读 storyboard 文件**的前提下拿到 `facesVisible:false`
+ * （卡是 seed 按 shot 生成的，标记随卡走；agent 手改卡文本也能改）。
+ * 桌面侧 `storyboard-render` 也复用它做展示，避免两处各写一遍。
+ */
+export const SHOT_NO_FACE_MARKER = '无（不做外貌核对）'
 
 /** 单行文本兜底（空值 → `—`，让卡面不留空白也不误导）。 */
 function orDash(value: string): string {
@@ -76,6 +86,10 @@ export function shotCardText(mirror: number, shot: StoryboardSections['04_storyb
   ]
   if (shot.narrationRef !== undefined && shot.narrationRef !== '') {
     lines.push(`【${SHOT_TEXT_LABELS.narration}】${shot.narrationRef}`)
+  }
+  // O-11：只在不看脸时多一行（默认形态与老卡逐字节一致）。
+  if (shot.facesVisible === false) {
+    lines.push(`【${SHOT_TEXT_LABELS.face}】${SHOT_NO_FACE_MARKER}`)
   }
   if (shot.promptEn !== undefined && shot.promptEn.trim() !== '') {
     lines.push(`【${SHOT_TEXT_LABELS.prompt}】${shot.promptEn}`)

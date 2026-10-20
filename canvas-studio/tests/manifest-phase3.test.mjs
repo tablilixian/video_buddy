@@ -144,7 +144,7 @@ test('startAfter：与 startFrame 互斥（同时给 ⇒ 拒收）', () => {
   )
 })
 
-test('startAfter：trackId 缺失 / gapFrames 非法 ⇒ 拒收（引用顺序由 normalize 阶段判）', () => {
+test('startAfter：trackId 缺失 / gapFrames 非整数 ⇒ 拒收（引用顺序由 normalize 阶段判）', () => {
   assert.match(
     errorsOf(base({
       tracks: [
@@ -161,8 +161,17 @@ test('startAfter：trackId 缺失 / gapFrames 非法 ⇒ 拒收（引用顺序�
         { id: 'b', type: 'textCard', variant: 'title', text: 'B', startAfter: { trackId: 'a', gapFrames: 1.5 }, durationInFrames: 60 },
       ],
     })),
-    /startAfter\.gapFrames 必须是 >= 0 的整数/,
+    /startAfter\.gapFrames 必须是整数/,
   )
+  // O-08：负值合法（= 与引用轨重叠），校验层必须放行 —— 这里不能用 errorsOf
+  // （它断言「必须被拒收」），直接看 ok。
+  const negative = validateManifest(base({
+    tracks: [
+      { id: 'a', type: 'textCard', variant: 'title', text: 'A', startFrame: 0, durationInFrames: 60 },
+      { id: 'b', type: 'textCard', variant: 'title', text: 'B', startAfter: { trackId: 'a', gapFrames: -12 }, durationInFrames: 60 },
+    ],
+  }))
+  assert.deepEqual(negative.errors, [], negative.errors.join('；'))
 })
 
 // ───────────────────────── W2-3 / W2-4 / W2-5 ─────────────────────────

@@ -13,6 +13,38 @@
 > 零改写（迁移脚本带 CV 号守恒 + 内容子串守恒断言）。新增条目请同时补 §4.1 索引行 + 本文件小节。
 
 ---
+#### CV-350 · render_composition 抽帧与报告进结果文本（REQ-034 O-01）
+
+- **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：schema 里早就有 `frames[]` / `report{}`，工具描述也承诺「先看这几张图再汇报」，但 `renderComposeResult` 只拼 `url + 纳入段数 + 音轨 + warnings` ⇒ **模型读不到**，于是自己去 `ls assets`、翻 `/tmp`、再用 ffmpeg 重抽 9 张。真机证据：`assets/` 里 14:38:31 一次性落 8 张 png，与 `pickSampleFrames`「4 均匀 + 转场中点，上限 8」完全吻合 —— 能力早就在跑，只差最后一步递给模型。修法：新增 `formatRenderReport()`（零值项省略），`renderComposeResult` 补两段 —— 逐行 `- 第 N 帧: <url>`；一行 `渲染报告：quality= · N 帧 · X.Xs · msPerFrame= · encodeMs · x.xxMB · Nkbps · warm=`。`compose_video` 无这两个字段时**整段跳过**（老调用方文本逐字符不变）。
+- **涉及文件**：`src/host-tools.ts` / `tests/render-tool-contract.test.mjs`
+- **落地/验收**：提交 `6bf3e7ca4f`。守卫 3 条（每个抽帧 url + 帧号 + 张数 / report 六项 / 无字段时不冒空段）；**反向变异**（`frames` 置空 + report 不拼）⇒ 2 条真红。**真机验收通过**（2026-10-20）。
+
+#### CV-351 · ML-10 动效覆盖口径修正（素材驱动片恒误报）
+
+- **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：连续 **7 次**渲染都报「动效覆盖仅占轨道总时长的 2%」。原分母 = 全部轨（bg 600 + 三镜 465 + 波形 600 + 文字卡 656 ≈ 2321），分子只累加 `animate/exit/fade/draw` ≈ 116 ⇒ 恒 5%。真正危害不是这一次误报，而是**一条永远为真的提示会训练 agent 无视整份体检**（下次真出 ML-02 也会一起跳过）。最终口径：**`video` 轨按「自己就在动」计入分子+分母**；分母只排除「自身无 `animate`/`exit` 的常驻装饰轨」（满画布 `shape` / 整片长 `audioViz`）。总纲原文的「分母排除 video」实测仍误报（剩文字卡 656 分母、17.7% < 30%），已按实测修订；「video 占比 > 40% 直接不判」在新口径下恒被前面吃掉、测不出差异 ⇒ **删掉，不留死分支**。
+- **涉及文件**：`src/remotion/motion-lint.ts` / `tests/remotion-motion-lint.test.mjs`
+- **落地/验收**：提交 `6bf3e7ca4f`。**双向断言**：真机样本 45% ⇒ 不报；同一样本删掉 video 轨 ⇒ 6.7% ⇒ 仍报。**反向变异**（常驻装饰轨重新计入分母）⇒ 红。**真机验收通过**（2026-10-20）。
+
+#### CV-352 · 形状 box 中心语义统一与契约修正
+
+- **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：契约文档写 `box:{x:0,y:0,w:100,h:100}` 并称「铺满全屏」，而 `Shape.tsx` 是 `left/top` + `translate(-50%,-50%)` ⇒ **x/y 是形状中心**，`0,0` 只铺左上四分之一（实测同帧 `crop=8:8` 均值：`(20,20)` 处 `4 2 0` vs `33 15 8`）。agent 照抄 ⇒ 片头卡大面积纯黑，白跑 2 次渲染 + 一轮取色排查 + 一次 VL 误判。修法：示例改 `50,50,100,100` 并写明「`x`/`y` 是中心，`w`/`h` 是宽高」；新增 `boxStyle()` / `boxToRect()` 收敛这套几何（`Shape.tsx` 两处改用它，**CSS 输出逐字符不变、老 manifest 逐像素不变**）；`render_composition` 工具描述同步。
+- **涉及文件**：`src/remotion/shape-geometry.ts` / `src/remotion/components/Shape.tsx` / `skills/code-driven-explainer/references/manifest-contract.md` / `src/host-tools.ts` / `tests/remotion-shape-box.test.mjs`
+- **落地/验收**：提交 `6bf3e7ca4f`。守卫 5 条（`50,50,100,100` 矩形 = 全画布 / `0,0` 只占四分之一 / 文档示例串 / 工具描述串 / `boxStyle` 输出含 translate）；**反向变异**（示例改回 `0,0`）⇒ 红。**真机验收通过**（2026-10-20）。
+
+#### CV-353 · skill 第 8 步补配音决策（REQ-034 O-14）
+
+- **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：真机用户第一句反馈就是「除了音效，没有听到念台词的声音」，TTS 直到第 88 次调用才出现 —— 多 1 轮渲染 + 3 次 TTS + 3 次重做 ≈ **30 分钟**。根因：`write_script` 第 8 步只讲对白怎么写进提示词，**没有一步决定「谁把它念出来」**。修法：第 8 步补「**有字幕/台词就必须定配音**」—— 逐步确认下用 `ask_user_choice` 问「是否需要配音（推荐：需要）」；放手跑按形态默认（对白片必配、纯图文卡不配）；结论写进 `narration` / `sound`。
+- **涉及文件**：`skills/canvas-studio-creation/SKILL.md` / `tests/skill-discipline.test.mjs`
+- **落地/验收**：提交 `6bf3e7ca4f`。守卫 4 条（含「有字幕/台词就必须定配音」「是否需要配音」「放手跑按形态默认」「写进 narration/sound」）+ **11KB 体积硬闸首次编码成测试**（实测 11,145B ≤ 11,264B）。**真机验收通过**（2026-10-20）。
+
 #### CV-316 · 登录 P2.2：聊天也判登录（未登录不得给 LLM 发消息）
 
 - **状态**：已完成·桌面验收通过（2026-10-15）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

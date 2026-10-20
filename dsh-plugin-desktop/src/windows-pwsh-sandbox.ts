@@ -3,7 +3,9 @@
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { win32 } from 'node:path'
-import type { ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { Volatile } from '@deepseek-ai/cordis'
+import { createVolatile, updateVolatile } from '@deepseek-ai/cosmokit'
+import type { ShellExecSpec } from '@deepseek-ai/dsh-shell'
 import { SandboxPwshExecutor } from '@deepseek-ai/dsh-pwsh-sandbox'
 import type { Config as PwshConfig } from '@deepseek-ai/dsh-pwsh-local'
 
@@ -56,9 +58,12 @@ export function desktopWindowsPwshConfig(
   platform: NodeJS.Platform,
   exists: (path: string) => boolean = existsSync,
 ): PwshConfig {
-  if (config.pwshPath !== undefined && config.pwshPath.length > 0) return config
+  const declared = config.pwshPath.get()
+  if (declared !== undefined && declared.length > 0) return config
   const pwshPath = desktopWindowsPwshPath(env, platform, exists)
-  return pwshPath === undefined ? config : { ...config, pwshPath }
+  if (pwshPath === undefined) return config
+  updateVolatile(config.pwshPath as Volatile<unknown>, createVolatile(pwshPath) as Volatile<unknown>)
+  return config
 }
 
 /**
@@ -108,14 +113,10 @@ export class DesktopWindowsPwshSandbox extends SandboxPwshExecutor {
     })
   }
 
-  protected override async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
-    const adapted = this.adapt(spec, argv)
-    return super.runArgv(adapted.spec, adapted.argv)
-  }
-
-  protected override startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
-    const adapted = this.adapt(spec, argv)
-    return super.startArgv(adapted.spec, adapted.argv)
+  protected override argv(spec: ShellExecSpec): string[] {
+    const adapted = this.adapt(spec, super.argv(spec))
+    spec.env = adapted.spec.env
+    return [...adapted.argv]
   }
 }
 

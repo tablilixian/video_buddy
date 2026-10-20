@@ -742,8 +742,8 @@ corepack yarn dist:win-portable
 3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
 4. ✅ **Desktop 宿主迁移完成**（`2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`，宿主 `tsc` 41 → 0）；测试与客户端面留待 P3/P4（见 F.5「已知后续」）。
 5. ✅ **P3 完成**（`086b57f0e4` 机械层 / `7eb14f5a12` desktop 框架 / `180c93e50f` canvas 客户端）。三包 host+client+native-ui+remotion 共 7 套配置全 0，bundle 全构建通过。**仅测试配置仍红**（属 P4：desktop 47+8、market 10）。
-6. P4 patch 重做。
-7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 后。
+6. ✅ **P4-a 测试改写完成**（`2e44947117`）。4 套测试配置 desktop 47+8 / market 10 → 全 0，`corepack yarn typecheck` 三包 11 套配置全绿。**P4-b patch 重做未开始**（15 个，见 F.7）。
+7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P4-b 后。
 
 ### F.5 Desktop 宿主迁移（2026-10-20，已完成宿主侧，提交 `2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`）
 
@@ -820,4 +820,54 @@ corepack yarn dist:win-portable
 
 **口径**：本阶段只保证逻辑正确 + 零类型错误，功能测试统一压到 P5 之后跑。
 
+### F.7 P4-a 测试改写与 P4-b patch 体检（2026-10-20）
 
+#### F.7.1 P4-a 结果（提交 `2e44947117`）
+
+三包 4 套测试配置全 0，`corepack yarn typecheck` 11 套配置通过：
+
+| 配置 | 入口 | 改前 | 改后 |
+| --- | --- | ---: | ---: |
+| `dsh-plugin-desktop/tsconfig.tests.json` | `tsc -p` | 47 | **0** |
+| `dsh-plugin-desktop/tsconfig.tests.client.json` | `tsc -p` | 8 | **0** |
+| `dsh-community-market/tsconfig.tests.json` | `tsc -p` | 10 | **0** |
+| `canvas-studio` 3 套 + desktop host/client/native-ui 4 套 | —— | 0 | 0 |
+
+**改写模式（按红量排序）**：
+
+1. **配置交付模型整体换血**（`plugin.spec.ts` 22 条，占全部错误的 1/3）。`settings.register({ validate })` 消失 ⇒ 插件改为 `settings.configure({ auto: false }, fiber)` + 收 `Volatile<T>` 形参；测试新增 `configFixture()` 持有可变 state，13 处 `apply(ctx, config)` → `apply(ctx, configRef)`。校验断言改走 `internal/config` 瀑布。
+2. **`SettingsScope` → `ConfigForm`**：`set`/`unset` 返回 `Promise<boolean>`（Host 受理与否，不再是 `void`），新增 `mutate(ops, expectedRevision?)`，快照**删掉 `mode` 字段**。market 的 4 个 spec 用本项目自己的 `MarketSettingsStore`。
+3. **`dsh-settings-file` 整包删除**：market pnpm 集成 spec 原本写 yaml 再读回，改为直接桩 `ctx.provide('settings', { mutate })` + `ctx.provide('loader', { locate })`。
+4. **改名/签名漂移**：`JobSnapshot`→`JobView`（`output` 变 `{total, earliest}`、`reported` 消失、事件走 `events.subscribe` 的 `settled` 载荷）；`resolveApiKey`→`resolveAuth`+`prepareExtensions`；`PwshConfig` 全 `Volatile` 化；`onExpiry`/`terminalType`/`SubprocessHandle.control` 新必填；`useSessions`/`useWorkspaces`→`usePanelInfo`；`installDesktopLayout` 返回 `void`（cleanup 由 `ctx.effect` 持有）；`SessionSeq` 品牌类型；`restore()` 3→5 参；`breakdown.messageTokens` 嵌进 `breakdown.breakdown`。
+
+**唯一删除的 spec**：`client-runtime-startup-restore.spec.ts`。它测的是已删包 `dsh-client-runtime` 的 `SessionRuntime`/`WorkspaceRuntime` 启动恢复，而 0.2.1 把这段搬进了上游 `ui-session`/`ui-workspace` ⇒ **被测对象在本仓已不存在**，不是"改不动就删"。
+
+**意图性断言更新**：token-meter 的 `contextBreakdown.stateVersion` 3→6 是**跟踪上游前进**，不是修测试。
+
+#### F.7.2 P4-b patch 体检（15 个版本锁 patch 逐个对账 0.2.1 实际产物）
+
+结论先给：**15 个里只有 3 个需要真正重做**。4 个已被上游吸收（删除）、1 个缩到三分之一、7 个可从参考仓库直接移植。
+
+| # | patch | 0.2.1 实测 | 处置 |
+| --- | --- | --- | --- |
+| 1 | `dsh-client-runtime@0.1.1-rc.2` | 包已删。启动恢复被上游重写为 `watchNavigation()`：`initial` 状态机等 `workspaces.phase` **与** `sessions.phase` **双 ready** 才 `restoreSelection()`，被 patch 的"列表未就绪就清 selection"路径不复存在 | **删** |
+| 2 | `dsh-host-apiproxy-model-modalities` | 包已不存在（拆分/改名）。`inputModalities` 已是上游一等公民：`dsh-llm-deepseek` 的 catalog schema 声明、`dsh-api-session-controller` 与 `dsh-subagent` 消费（拒收无视觉模型收图）、`dsh-session-persistence-jsonl` 透传。`modelCatalogModelSchema` 已无此符号 | **删** |
+| 3 | `dsh-client-ui-settings-models` | 上游已自带候选过滤：`candidateQuery` / `visibleCandidates` / `allVisibleCandidatesPicked`，语义与本 patch 一致 | **删** |
+| 4 | `dsh-client-ui-trajectory` | 上游 zh 字典已补全，并把硬编码 `Thinking` 改成 `t("record.thinking")`（zh = "思考"）—— 与本 patch 同解 | **删** |
+| 5 | `dsh-token-meter` | breakdown 侧钳位已上游化（`withTotals()` 双 `Math.max(0, …)`，`stateVersion` 已到 6）；**但 `contextPressure` 的 `surfaceTokens: next.surfaceTokens + fold.deltaTokens` 仍未钳位** | **缩为 1/3**：只补 pressure 的 `Math.max(0, …)` + `stateVersion` 5→6 |
+| 6 | `dsh-agent-loop`（空 tool name 守卫） | 未吸收（`hasEmptyToolCallName` 计 0） | **重做** |
+| 7 | `dsh-llm-deepseek`（空 id/name 守卫） | `translate` 已整体重写（现签名 `translate(events, model)`，全文无 `callId` 字段），patch 目标行消失 | **重做**（重新定位到 `startBlock`/`deltaChunk`） |
+| 8 | `dsh-client-ui-workspace`（`data-dsh-workspace-drop-target`） | 未吸收，**且本项目 `client-workspace-folder-drop` 依赖该属性** ⇒ 丢了就是功能回归 | **重做（功能性）** |
+| 9-15 | `dsh-app-boot`、`dsh-client-ui-directory-picker-browse`、`dsh-host-directory-picker-browse`、`dsh-sandbox-windows-acl`、`dsh-subprocess-local`、`dsh-web-app`、`dsh@` | 参考仓库 `../dsh-desktop/patches/` 均有同名 `@0.2.1-rc.2` 版本 | **移植（7 个）** |
+
+与版本无关、无需改动：`app-builder-lib@26.15.7`、`open@11.0.1`（参考仓库同名保留）。
+
+**方法学**：patch 是"对上游构建产物打补丁"，所以 0.2.1 里能不能重做，判据只有一个 —— **去 `node_modules/@deepseek-ai/<pkg>/lib/` 里看那行还在不在**。`stateVersion` 是否前进则用来区分"上游自己改了"与"上游吸收了我的改动"。本轮的 4 个"删"全部由此坐实，可省掉 ~1300 行手工重做。
+
+**P4-b 入口 checklist（下次开工直接照此办）**：
+
+1. 删 `patches/` 里 #1-#4 四个文件；#5 重写成 @0.2.1-rc.2 精简版。
+2. 从 `../dsh-desktop/patches/` 复制 7 个 `@0.2.1-rc.2` patch，逐个 `diff` 确认它们确实对应我们的意图（**不能盲拷**：同名不代表同内容）。
+3. #7 `dsh-llm-deepseek` 先读新的 `startBlock()` 再决定守卫位置。
+4. root `package.json` 的 `resolutions` 按新文件名重挂（P1 已全部出栈）。
+5. `corepack yarn install` 后跑 `git diff --stat` 确认每个 patch 真被应用（`resolutions` 写错时 pnpm 会静默跳过）。

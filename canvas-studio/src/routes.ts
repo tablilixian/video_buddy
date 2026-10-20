@@ -37,6 +37,10 @@ import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { cancelRenderJob, commitRenderJob, listRenderJobViews, pendingRenderJobFor, recordRenderSample, reportRenderJobProgress, type RenderJobReport } from './remotion/render-job.js'
+// REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
+import { renderHostHtml } from './render-host/page.js'
+import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
+import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHost } from './render-host/window.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
@@ -300,6 +304,13 @@ const ROUTE_REMOTION_GRAIN = '/canvas-studio/remotion/grain'
 // 以**同源** `@font-face` 注入 —— 跨源会静默 404 → 回退系统字体 → 中文观感事故
 //（devdoc §8.3 第 4 条标红项），勿改成别的域或改走 base64 内联。
 const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
+// REQ-034 · O-05：RenderHost 隐藏渲染窗口的三条路由（页面 / bundle / 自报状态）。
+// 页面与 bundle 由**隐藏窗口自己**加载，不给外部浏览器用 ⇒ 仍然只认 loopback authority。
+const ROUTE_RENDER_HOST = '/canvas-studio/render-host'
+const ROUTE_RENDER_HOST_JS = '/canvas-studio/render-host.js'
+const ROUTE_RENDER_HOST_STATUS = '/canvas-studio/render-host/status'
+/** 页面 bundle 与 routes.js 同级（tsdown 的第二个 entry 产出 `lib/render-host.js`）。 */
+const RENDER_HOST_BUNDLE_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'render-host.js')
 const MAX_BODY_BYTES = 16 * 1024 * 1024
 /** 参考视频上限：短参考片为主，128MB 已远超风格采样所需（上传与拆分共用）。 */
 const MAX_VIDEO_BODY_BYTES = 128 * 1024 * 1024
@@ -3156,6 +3167,75 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       }
     }}),
 
+    // ── REQ-034 · O-05：RenderHost 页面 / bundle / 自报状态 ──
+    // 页面只被隐藏窗口加载；`no-store` 是因为 bundle 名不变、构建后会换内容，
+    // 缓存住会让「改了代码但窗口还是老的」这种问题查半天。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'render host page only supports GET' })
+        return
+      }
+      res.setHeader('content-type', 'text/html; charset=utf-8')
+      res.setHeader('cache-control', 'no-store')
+      res.setHeader('x-content-type-options', 'nosniff')
+      res.statusCode = 200
+      res.end(renderHostHtml())
+    }}),
+
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_JS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'render host bundle only supports GET' })
+        return
+      }
+      try {
+        const data = await readFile(RENDER_HOST_BUNDLE_FILE)
+        res.setHeader('content-type', 'text/javascript; charset=utf-8')
+        res.setHeader('cache-control', 'no-store')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        // 没构建过（或产物被清掉）时要给出**可操作**的提示，而不是一个空白 404。
+        sendJson(res, 503, { error: 'render host bundle missing — 先跑一次 tsdown 构建' })
+      }
+    }}),
+
+    // 自报状态：页面每拍报一次；GET 供验收/调试读（含生命周期快照，判断窗口是否还活着）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_STATUS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method === 'GET') {
+        sendJson(res, 200, {
+          report: lastRenderHostReport() ?? null,
+          lifecycle: renderHostSnapshot() ?? null,
+        })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'render host status requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      try {
+        const body = await readJson(req, controller.signal)
+        const report = recordRenderHostReport(body)
+        touchRenderHost()
+        sendJson(res, 200, { ok: true, state: report.state })
+      } catch (cause) {
+        sendRouteFailure(res, cause, 400, '渲染窗口状态上报失败。')
+      }
+    }}),
+
     // ── REQ-034 · R1：随包中文字体子集只读面 ──
     // 与 style-demos 同口径：loopback authority + 单段文件名白名单（`^[a-z0-9-]+\.woff2$`
     // 天然挡掉 `..`、子目录与扩展名伪装）+ join/startsWith 兜底防穿越；静态不可变 ⇒ 强缓存。
@@ -3302,9 +3382,18 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       sendJson(res, 404, { error: 'unknown auth action' })
     }}),
   ]
+  // REQ-034 · O-05：S1 阶段用显式开关拉起隐藏窗口 —— 验收时人工打开页面看它自报 idle，
+  // 不必先等 O-06 的派单链路。默认关闭，生产路径零变化。
+  if (process.env.CANVAS_STUDIO_RENDER_HOST === '1') {
+    ensureRenderHost({
+      url: `http://127.0.0.1:${String(expectedPort)}${ROUTE_RENDER_HOST}`,
+      log: (message) => { ctx.logger.info(message) },
+    })
+  }
   return () => {
     // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
     stopLoopback()
+    disposeRenderHost('plugin-dispose')
     for (const dispose of routes) dispose()
   }
 }

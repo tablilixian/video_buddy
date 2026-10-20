@@ -20,5 +20,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/client/**", "src/remotion/components/**"]
+  "exclude": ["src/client/**", "src/remotion/components/**", "src/render-host/main.ts"]
 }

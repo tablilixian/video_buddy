@@ -352,6 +352,8 @@
 
 ### 5.5 P3：客户端侧迁移
 
+> 实测签名与执行记录见 **F.6**（本节的 1-4 项已按实际 API 校正并落地 P3-a）。
+
 1. **ClientContext**
    - 19 个 `src` 文件改为 `import type { Context as ClientContext } from '@deepseek-ai/cordis'`；
    - 删除 `dsh.client.inject` 中的旧包名，改为对应服务包。
@@ -721,9 +723,10 @@ corepack yarn dist:win-portable
 | --- | ---: | --- |
 | `canvas-studio`（host） | 0 | ✅ 宿主侧已清零 |
 | `dsh-community-market`（host） | 0 | ✅ 宿主侧已清零（`cf41e64cc7`） |
-| `canvas-studio`（client） | 约 60+ | 均为 `@deepseek-ai/dsh-client-runtime/client` 删除的级联（`TS2307` + 由此产生的隐式 any）；属 P3，需切到 `cordis` + `dsh-client-store` |
-| `dsh-community-market`（client） | 约 30+ | `dsh-client-runtime/client` 删除级联 + `dsh-client-ui-primitives` 图标改名（`Icon*Outline16/14` → `Icon*OutlineMedium`）+ 槽位 props（`useStore`/`actions`）变更；属 P3 |
+| `canvas-studio`（client） | 63 | 60 处是「当前会话」状态迁移（`ISessions.open/clear`、`SessionListState`、`UiSession.current` 全部消失）；余 3 处零散。见 F.6 |
+| `dsh-community-market`（client） | 0 | ✅ `086b57f0e4` |
 | `dsh-plugin-desktop`（host） | 0 | ✅ 宿主侧已清零（见 F.5；`d669deafaa` 等） |
+| `dsh-plugin-desktop`（client） | 3 | `AdvancedFrame` 结构性改写（slot `conversation`→`main`、`details`→`rightbar`、`useSessions`→`usePanelInfo`）+ `DesktopLayoutService` 补 5 个 `ILayout` 成员。见 F.6 |
 
 **Settings 模型的关键事实（P2 依据）**：
 
@@ -738,7 +741,7 @@ corepack yarn dist:win-portable
 2. ✅ **Market 宿主 settings 迁移完成**（`cf41e64cc7`）；客户端级联错误待 P3。
 3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
 4. ✅ **Desktop 宿主迁移完成**（`2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`，宿主 `tsc` 41 → 0）；测试与客户端面留待 P3/P4（见 F.5「已知后续」）。
-5. P3 客户端迁移（canvas + market + desktop）：`client-runtime` → `cordis` + `dsh-client-store`；`dsh-client-ui-primitives` 图标改名；槽位 props（`useStore`/`actions`）改写；含各 package.json 的 `dsh.client.inject` 中已删除的 `@deepseek-ai/dsh-client-runtime`。**此步完成前三个 workspace 的 client typecheck 无法清零。**
+5. 🔶 **P3-a 机械层已完成（`086b57f0e4`）**：`client-runtime` 拆除、图标改名、`inject`/`external` 清理、缺失依赖补齐。剩余为结构性改造（P3-b/c/d），见 F.6。
 6. P4 patch 重做。
 7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 后。
 
@@ -759,5 +762,36 @@ corepack yarn dist:win-portable
 - `settings.yaml` 现由上游 `SettingsForms.importLegacyDocument` 在首启重命名为 `.imported`；desktop 的 wizard/迁移若依赖该文件将失效，需将 setup wizard 与 browser-access 迁移改写到 `ctx.settings.update('desktop-shell', …)`。
 - desktop 客户端设置面（`DesktopSettingsSection`）仍引用旧 ns `dsh-desktop`；新 ns = entry id `desktop-shell`，属 P3 客户端迁移。
 - `tsconfig.tests.json` 仍缺 `dsh-client-runtime`（已删，P3）与引用已删 `dsh-settings-file` 的测试；`tests/plugin.spec.ts`/`profile.spec.ts`/`windows-pwsh-sandbox.spec.ts`/`client-desktop-settings.spec.ts` 断言的是旧 API，需随 P3/P4 一并改写。
+
+### F.6 P3 客户端迁移（2026-10-20，P3-a 已完成，提交 `086b57f0e4`）
+
+**已核实的三处映射**（原方案 §5.5 只给了方向，这里是实测签名）：
+
+| 旧 | 新归属 | 语义 |
+| --- | --- | --- |
+| `ClientContext`（`dsh-client-runtime/client`） | `@deepseek-ai/cordis` | 纯类型 re-export，零改动 |
+| `defineStore` / `EngineStoreHandle` / `EngineStoreInstance` | `@deepseek-ai/dsh-client-store` | 纯换 import |
+| `ISessions` | `@deepseek-ai/dsh-api-session-controller/client` | 类型来源变了，**方法集也变了**（见下） |
+| `SettingsScope.bind({ namespace })` | `ctx.configForms.get(entryId)` | 同形：`getSnapshot().value` / `subscribe()` / `set()` 一一对应，**调用点零改动** |
+| `ctx.conversationEvents` | `ctx.uiConversation.events` | 服务改名 |
+| `ChatNodeViewProps`（`ui-conversation/client`） | `dsh-client-ui-chat/client` | 类型搬家；`ChatNodeViewProps` = `ChatNodeOwnerProps + 标准 props + ChatNodeInjected` |
+| `Icon*Outline16` / `Icon*Outline14` | `Icon*OutlineRegular` / `Icon*OutlineMedium` | 0.2.1 **删了**这两个导出（不是我们想换）；尺寸仍走 `size` prop，`16→Regular`(1px)、`14→Medium`(1.3px) |
+
+**P3-a 实测红量**：canvas client 373 → **63**、market 25 → **0**、desktop 12 → **3**；四套 host/remotion 配置维持 0。
+
+**P3-a 的机理性发现**：canvas 373 个错误里 350 是 `TS7006`，全部级联于 9 个 `TS2307`。拆掉 `client-runtime` 后真实改动点只有 ~23 处。⇒ 这类「一个包删除炸出几百个错」的局面，**永远先做 import 层机械替换再评估**，不要按错误数排期。
+
+**补齐的依赖（全部 `0.2.1-rc.2`）**：canvas 6 个（`dsh-client-store`、`dsh-api-session-controller`、`dsh-api-workspace-controller`、`dsh-client-ui-settings`、`dsh-client-ui-renderer`、`dsh-client-ui-chat`）；market 1 个（`dsh-client-ui-renderer`）；desktop 3 个（`dsh-api-workspace-controller`、`lexical`、`@types/mdast`）。
+其中 `lexical` / `@types/mdast` 是**上游 d.ts 引用了但没声明**的洞（上游 `ui-conversation` 只把它们放在自己的 devDependencies）。
+
+**剩余 66 个（P3-b/c/d），全是结构性改造，改名过不去**：
+
+1. **「当前会话」在 0.2.1 没有公开 API**（canvas 60 处）。`SessionListState` 只剩 `ids/byId/phase`；`ISessions` 没有 `open()`/`clear()`；`UiSession.current` 与 `ui-workspace.selection` 都是 private。替代路径：导航全归 `ctx.uiWorkspace`（`startSession(workspaceId)` / `connectWorkspace()→Promise<SessionId>` / `openSession(target)`），当前会话由插件自持。
+2. **desktop `AdvancedFrame` 结构性改写**：slot `conversation`→`main`、`details`→`rightbar`、`useSessions`→`usePanelInfo`。参照物是 `../dsh-desktop` 的 0.2.1 跑通版。
+3. **`DesktopLayoutService` 补 `ILayout` 5 成员**：`panelInfo` / `selectPanel` / `beginNavigation` / `openRightbar` / `closeRightbar`（纯接口实现，无行为变化）。
+
+**新发现的坑（原方案未记）**：`dsh-plugin-desktop/tsconfig.tests.json` 有 3 个错误来自**上游自己的 d.ts** —— `dsh-session-projection/lib/types/index.d.ts:150` 的泛型约束洞。不是我们的代码，P4 单列一条（patch 上游 或 局部 `skipLibCheck`）。
+
+**口径**：本阶段只保证逻辑正确 + 零类型错误，功能测试统一压到 P5 之后跑。
 
 

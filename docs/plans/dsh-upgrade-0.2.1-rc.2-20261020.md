@@ -699,14 +699,31 @@ corepack yarn dist:win-portable
 - 因此不能用「重装回调」同步派生状态，改为监听 `ctx.on('loader/volatile-update', ...)` 触发 `syncErrorVisibility` / `syncDramaAuthRequired` / `onStorageRootMaybeChanged`（参考上游 `llm-deepseek/src/host.ts:57`、`speech-to-text/src/index.ts:50`）。
 - schema 放置约束：`app-boot/src/config-schema/projector.ts:133` 禁止 volatile 嵌套 volatile；对象级 volatile 下**子字段不得再标 volatile**（canvas 子字段均未标，合法）。
 
+### F.3.1 Market 宿主 settings 迁移（2026-10-20，已完成，提交 `cf41e64cc7`）
+
+| 项 | 结果 |
+| --- | --- |
+| `source-store.ts` | 删除 `SettingsScope` 导入，改为本包自持的 `MarketSettingsStore` 契约（`get()` / `update(patch)` 两个方法，与 dsh-settings 解耦） |
+| `host/routes.ts` | `MARKET_SETTINGS_NAMESPACE` 改为纯字符串（= entry id `dsh-community-market`）；`SETTINGS_SCHEMA` → 导出 `MarketSettingsConfig`（对象级 `.volatile()`）；`registerMarketSettings(ctx, config)` 读 `config.get()`、写经 `ctx.settings.mutate(ns, ops)`（ns 由 `ctx.get('loader').locate(ctx.fiber)` 取得） |
+| `index.ts` | 导出 `Config = MarketSettingsConfig`；`apply(ctx, config)` |
+| 测试 | `market-settings-persistence.spec.ts` 依赖的 `dsh-settings-file`/`settings.register` 已被删除，重写为适配器契约测试（volatile + stub `ctx.settings.mutate`） |
+| 错误 | market 宿主 `4 → 0`（`tsc -p tsconfig.json` 通过） |
+
+### F.3.2 依赖一致性缺口（P1 遗留，重要）
+
+- **现象**：上游 0.2.1 的客户端包 `.d.ts` 引用了若干**新包**（`dsh-client-store`、`dsh-plugin-manager`、`dsh-plugin-market`、`dsh-subagent`、`dsh-api-job-controller`、`dsh-api-session-controller`、`dsh-api-terminal-controller`、`dsh-api-workspace-controller`、`dsh-api-workspace-files`、`dsh-command-feedback`、`dsh-client-shortcuts`、`dsh-package-manifest`、`dsh-util-code-language`、`dsh-jobs`、`dsh-workspace`、`dsh-host-directory-picker`、`@types/mdast`），但这些包**既未声明为 dependencies 也未声明为 peerDependencies** —— 上游靠 pnpm workspace 的物理共存解决。
+- **影响**：Yarn `node-modules` 隔离下它们不入目录 ⇒ `TS2307 Cannot find module`。P1 只做了「删除 8 个消失包 + 升级版本」，未做「补齐 0.2.1 新增包」。
+- **处置**：已在 `dsh-community-market` 补入上述包（`0.2.1-rc.2`，devDependencies；`@types/mdast@^4.0.4`）。**desktop / canvas 需按各自 typecheck 报出的缺失清单同样补齐**（见 F.4）。
+
 剩余（Settings 模型迁移，见下）：
 
 | workspace | 剩余错误 | 内容 |
 | --- | ---: | --- |
 | `canvas-studio`（host） | 0 | ✅ 宿主侧已清零 |
+| `dsh-community-market`（host） | 0 | ✅ 宿主侧已清零（`cf41e64cc7`） |
 | `canvas-studio`（client） | 约 60+ | 均为 `@deepseek-ai/dsh-client-runtime/client` 删除的级联（`TS2307` + 由此产生的隐式 any）；属 P3，需切到 `cordis` + `dsh-client-store` |
-| `dsh-community-market` | 4 | `SettingsScope`/`settingsNamespace` 导入消失、`SettingsForms.register` 消失 |
-| `dsh-plugin-desktop` | 41 | Settings API、`ProfileTemplate`/`patchPaths`/`skippedBundles`、`dsh-settings-file` 替代、Job API、pwsh sandbox、`webServer.port` 等 |
+| `dsh-community-market`（client） | 约 30+ | `dsh-client-runtime/client` 删除级联 + `dsh-client-ui-primitives` 图标改名（`Icon*Outline16/14` → `Icon*OutlineMedium`）+ 槽位 props（`useStore`/`actions`）变更；属 P3 |
+| `dsh-plugin-desktop`（host） | 41 | Settings API（`SettingsForms.get/register`、`settingsNamespace`、`settings/updated` 事件）、`ProfileTemplate`/`patchPath`/`skippedBundles`、`JobSnapshot`/`onJobDone`、pwsh sandbox override、`number \| undefined` 等 |
 
 **Settings 模型的关键事实（P2 依据）**：
 
@@ -717,11 +734,12 @@ corepack yarn dist:win-portable
 
 ### F.4 待办清单（按优先级）
 
-1. ✅ **Canvas 宿主 settings 迁移完成**（`d72e73437c`，`tsc -p tsconfig.json` 通过）；剩余客户端级联错误待 P3。
-2. Market 宿主 4 项（settings：`SettingsScope`/`settingsNamespace` 导入消失、`SettingsForms.register` 消失）。
-3. Desktop 41 项按根因分组处理（Settings / profile / jobs / pwsh sandbox）。
-4. P3 客户端迁移（19 文件 `client-runtime` → `cordis` + `dsh-client-store`）；含 `canvas-studio/package.json` 的 `dsh.client.inject` 中已删除的 `@deepseek-ai/dsh-client-runtime`；此步完成前 canvas client typecheck 无法清零。
-5. P4 patch 重做。
-6. 补跑 canvas 自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 客户端迁移后。
+1. ✅ **Canvas 宿主 settings 迁移完成**（`d72e73437c`）；客户端级联错误待 P3。
+2. ✅ **Market 宿主 settings 迁移完成**（`cf41e64cc7`）；客户端级联错误待 P3。
+3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
+4. Desktop 宿主 41 项按根因分组处理（Settings / profile / jobs / pwsh sandbox / port）。
+5. P3 客户端迁移（canvas + market + desktop）：`client-runtime` → `cordis` + `dsh-client-store`；`dsh-client-ui-primitives` 图标改名；槽位 props（`useStore`/`actions`）改写；含各 package.json 的 `dsh.client.inject` 中已删除的 `@deepseek-ai/dsh-client-runtime`。**此步完成前三个 workspace 的 client typecheck 无法清零。**
+6. P4 patch 重做。
+7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 后。
 
 

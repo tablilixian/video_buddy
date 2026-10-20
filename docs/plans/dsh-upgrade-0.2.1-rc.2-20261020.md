@@ -723,7 +723,7 @@ corepack yarn dist:win-portable
 | `dsh-community-market`（host） | 0 | ✅ 宿主侧已清零（`cf41e64cc7`） |
 | `canvas-studio`（client） | 约 60+ | 均为 `@deepseek-ai/dsh-client-runtime/client` 删除的级联（`TS2307` + 由此产生的隐式 any）；属 P3，需切到 `cordis` + `dsh-client-store` |
 | `dsh-community-market`（client） | 约 30+ | `dsh-client-runtime/client` 删除级联 + `dsh-client-ui-primitives` 图标改名（`Icon*Outline16/14` → `Icon*OutlineMedium`）+ 槽位 props（`useStore`/`actions`）变更；属 P3 |
-| `dsh-plugin-desktop`（host） | 41 | Settings API（`SettingsForms.get/register`、`settingsNamespace`、`settings/updated` 事件）、`ProfileTemplate`/`patchPath`/`skippedBundles`、`JobSnapshot`/`onJobDone`、pwsh sandbox override、`number \| undefined` 等 |
+| `dsh-plugin-desktop`（host） | 0 | ✅ 宿主侧已清零（见 F.5；`d669deafaa` 等） |
 
 **Settings 模型的关键事实（P2 依据）**：
 
@@ -737,9 +737,27 @@ corepack yarn dist:win-portable
 1. ✅ **Canvas 宿主 settings 迁移完成**（`d72e73437c`）；客户端级联错误待 P3。
 2. ✅ **Market 宿主 settings 迁移完成**（`cf41e64cc7`）；客户端级联错误待 P3。
 3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
-4. Desktop 宿主 41 项按根因分组处理（Settings / profile / jobs / pwsh sandbox / port）。
+4. ✅ **Desktop 宿主迁移完成**（`2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`，宿主 `tsc` 41 → 0）；测试与客户端面留待 P3/P4（见 F.5「已知后续」）。
 5. P3 客户端迁移（canvas + market + desktop）：`client-runtime` → `cordis` + `dsh-client-store`；`dsh-client-ui-primitives` 图标改名；槽位 props（`useStore`/`actions`）改写；含各 package.json 的 `dsh.client.inject` 中已删除的 `@deepseek-ai/dsh-client-runtime`。**此步完成前三个 workspace 的 client typecheck 无法清零。**
 6. P4 patch 重做。
 7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 后。
+
+### F.5 Desktop 宿主迁移（2026-10-20，已完成宿主侧，提交 `2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`）
+
+决策（延续 §10）：**把 desktop 持久设置折叠进 `desktop-shell` 插件 Config**，设置存于 profile patch（entry id = `desktop-shell`），旧 `settings.yaml` 的 `dsh-desktop` section 作为一次性迁移来源。desktop 宿主 `tsc -p tsconfig.json` 由 **41 → 0**。
+
+| 模块 | 提交 | 内容 |
+| --- | --- | --- |
+| pwsh sandbox | `2d827d4503` | 0.2.1 以单个 `protected argv(spec)` 取代 `runArgv`/`startArgv`；`PwshConfig.pwshPath` 变为 `Volatile<string>`。ACL trampoline 改经 `argv()`，runner-only env 写回 spec；`pwshPath` 经 `createVolatile`/`updateVolatile` 提交 |
+| ProfileTemplate | `f6f7812337` | `PROFILE_TEMPLATES[x]` 由裸 bundle 列表改为 `ProfileTemplate{ bundles }`；`desktop-plugins.ts`/`profile-manager.ts` 读 `.bundles` |
+| notifications | `e70f4d19bb` | 通知设置折叠为插件 volatile Config（entry id `desktop-notifications`）；移除 `settings.register`；`jobs.onJobDone` → `jobs.events.subscribe({ owners: 'all' })`，只上报未 `awaited` 的 `settled` 事件；`JobSnapshot` 类型消失，改用 `JobView` |
+| shell settings | `d669deafaa` | `Config extends DesktopSettings` 且对象级 `.volatile()`；`apply(ctx, configValue)` 取启动快照；`ctx.settings.configure({ auto: false }, ctx.fiber)`；写经 `ctx.settings.update(entryId, patch)`（entryId 由 `loader.locate(ctx.fiber)`）；跨字段校验改经 `ctx.on('internal/config', …)` waterfall；重启检测改监听 `loader/volatile-update`；theme/locale 经 `ctx.settings.describe()` + `settings/document-updated`；`ctx.webServer.port` 补 `?? DESKTOP_DEFAULT_WEB_PORT` |
+
+**profile.ts 启动设置来源变更**：不再组合 `dsh-settings-file` 的 `settings` 行、不再 `healProfilesModuleFallback`（改用 `removeLinkProjections(profileDir)`）。启动 `mode/port/...` 改从组合后的 `desktop-shell` 行 config 读取（`readDesktopStartupSettings(rowConfig(shellRow))`）。`settings.yaml` 路径仅保留给 setup wizard / browser-access 迁移 / recovery 窗口（`PreparedDesktopProfile.settingsDocument`）。
+
+**已知后续（P2 收尾 / P3 前）**：
+- `settings.yaml` 现由上游 `SettingsForms.importLegacyDocument` 在首启重命名为 `.imported`；desktop 的 wizard/迁移若依赖该文件将失效，需将 setup wizard 与 browser-access 迁移改写到 `ctx.settings.update('desktop-shell', …)`。
+- desktop 客户端设置面（`DesktopSettingsSection`）仍引用旧 ns `dsh-desktop`；新 ns = entry id `desktop-shell`，属 P3 客户端迁移。
+- `tsconfig.tests.json` 仍缺 `dsh-client-runtime`（已删，P3）与引用已删 `dsh-settings-file` 的测试；`tests/plugin.spec.ts`/`profile.spec.ts`/`windows-pwsh-sandbox.spec.ts`/`client-desktop-settings.spec.ts` 断言的是旧 API，需随 P3/P4 一并改写。
 
 

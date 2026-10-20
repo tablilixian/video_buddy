@@ -723,10 +723,10 @@ corepack yarn dist:win-portable
 | --- | ---: | --- |
 | `canvas-studio`（host） | 0 | ✅ 宿主侧已清零 |
 | `dsh-community-market`（host） | 0 | ✅ 宿主侧已清零（`cf41e64cc7`） |
-| `canvas-studio`（client） | 63 | 60 处是「当前会话」状态迁移（`ISessions.open/clear`、`SessionListState`、`UiSession.current` 全部消失）；余 3 处零散。见 F.6 |
+| `canvas-studio`（client） | 0 | ✅ `180c93e50f`（63 → 0；会话/导航/槽位/设置四类改造，见 F.6） |
 | `dsh-community-market`（client） | 0 | ✅ `086b57f0e4` |
 | `dsh-plugin-desktop`（host） | 0 | ✅ 宿主侧已清零（见 F.5；`d669deafaa` 等） |
-| `dsh-plugin-desktop`（client） | 3 | `AdvancedFrame` 结构性改写（slot `conversation`→`main`、`details`→`rightbar`、`useSessions`→`usePanelInfo`）+ `DesktopLayoutService` 补 5 个 `ILayout` 成员。见 F.6 |
+| `dsh-plugin-desktop`（client） | 0 | ✅ `7eb14f5a12`（`ILayout` 全实现 + 帧改 `main`/`rightbar`，见 F.6） |
 
 **Settings 模型的关键事实（P2 依据）**：
 
@@ -741,7 +741,7 @@ corepack yarn dist:win-portable
 2. ✅ **Market 宿主 settings 迁移完成**（`cf41e64cc7`）；客户端级联错误待 P3。
 3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
 4. ✅ **Desktop 宿主迁移完成**（`2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`，宿主 `tsc` 41 → 0）；测试与客户端面留待 P3/P4（见 F.5「已知后续」）。
-5. 🔶 **P3-a 机械层已完成（`086b57f0e4`）**：`client-runtime` 拆除、图标改名、`inject`/`external` 清理、缺失依赖补齐。剩余为结构性改造（P3-b/c/d），见 F.6。
+5. ✅ **P3 完成**（`086b57f0e4` 机械层 / `7eb14f5a12` desktop 框架 / `180c93e50f` canvas 客户端）。三包 host+client+native-ui+remotion 共 7 套配置全 0，bundle 全构建通过。**仅测试配置仍红**（属 P4：desktop 47+8、market 10）。
 6. P4 patch 重做。
 7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 后。
 
@@ -763,7 +763,7 @@ corepack yarn dist:win-portable
 - desktop 客户端设置面（`DesktopSettingsSection`）仍引用旧 ns `dsh-desktop`；新 ns = entry id `desktop-shell`，属 P3 客户端迁移。
 - `tsconfig.tests.json` 仍缺 `dsh-client-runtime`（已删，P3）与引用已删 `dsh-settings-file` 的测试；`tests/plugin.spec.ts`/`profile.spec.ts`/`windows-pwsh-sandbox.spec.ts`/`client-desktop-settings.spec.ts` 断言的是旧 API，需随 P3/P4 一并改写。
 
-### F.6 P3 客户端迁移（2026-10-20，P3-a 已完成，提交 `086b57f0e4`）
+### F.6 P3 客户端迁移（2026-10-20，**已完成**：`086b57f0e4` + `7eb14f5a12` + `180c93e50f`）
 
 **已核实的三处映射**（原方案 §5.5 只给了方向，这里是实测签名）：
 
@@ -790,7 +790,33 @@ corepack yarn dist:win-portable
 2. **desktop `AdvancedFrame` 结构性改写**：slot `conversation`→`main`、`details`→`rightbar`、`useSessions`→`usePanelInfo`。参照物是 `../dsh-desktop` 的 0.2.1 跑通版。
 3. **`DesktopLayoutService` 补 `ILayout` 5 成员**：`panelInfo` / `selectPanel` / `beginNavigation` / `openRightbar` / `closeRightbar`（纯接口实现，无行为变化）。
 
-**新发现的坑（原方案未记）**：`dsh-plugin-desktop/tsconfig.tests.json` 有 3 个错误来自**上游自己的 d.ts** —— `dsh-session-projection/lib/types/index.d.ts:150` 的泛型约束洞。不是我们的代码，P4 单列一条（patch 上游 或 局部 `skipLibCheck`）。
+**P3-b/c/d 的落地结论（上面三条的最终形态，含与原判断的偏差）**：
+
+1. **「当前会话」的官方读法找到了**：不是「自己记账」，而是**主视图引用计数**。上游 `packages/client/ui-layout/src/client/DocumentTitle.tsx` 用
+   `Object.values(state.byId).find(s => (s.retainedBy.mainView ?? 0) > 0)?.id`
+   取当前会话 —— 这条口径落进 `canvas-studio/src/client/current-session.ts`（唯一实现），18 处读取全部改走它。`recentWorkspaceId`（同级被删）改由「最近更新的非空会话反推它所属 workspace」，语义与原实现同源。
+2. **`clear()` 没有替代品，是「不需要」**：`openSession` / `startSession` 本身就是选择替换，所以 4 处 `sessionSvc.clear()` 直接删除，不补等价调用。
+3. **槽位搬迁不止 desktop**：canvas 的 `root` 子槽同样必须从 `conversation`+`details` 换成 `main`(keyed)+`rightbar`，否则 `'conversation'` 已不在 `keyof SlotMap` 里（首屏会空白）。canvas 的 `StudioFrame` 改渲染 `main` 且 `entryKey` 恒为保留键 `'conversation'`；`rightbar` 只声明不渲染（与 0.1.x 只声明 `details` 而不渲染同款处理）。
+4. **`ChatNodeDataMap` 搬家**：canvas 原来在 `@deepseek-ai/dsh-client-ui-conversation/client` 上扩充 `ChatNodeDataMap`，0.2.1 这个表随 Chat 层搬到 **`dsh-client-ui-chat/client`**；不改目标模块，节点 `data` 会静默退化成 `never`（表现为一串「Property X does not exist on type 'never'」）。
+5. **`ComposerAttachment` 拆成两支**：只有 `kind: 'image'` 带 `previewUrl`，`kind: 'file'` 没有（选中即上传，无本地预览）。预览改走 `kind` 判别 + `URL.createObjectURL`（卸载即 revoke），不能无条件读 `previewUrl`。
+6. **`root` 槽不得由消费包重新声明**：canvas 旧代码在 `SlotMap` 里声明了窄版 `'root'`（owner 恒空），与上游 ui-layout 的 `RootOwnerProps` 冲突（TS2717）。删掉本地声明后，根槽 hooks（`useSessions` / `usePanelInfo`）才拿得到。
+
+**保留的刻意偏差（P5 需人工确认）**：
+
+- `installDesktopLayout` **没有**照搬上游参考实现的 `sidebar.left.toggle` 快捷键注册。我们的 desktop 与上游同处一个 bundle，重复注册同一 command id 有抛错风险，而本阶段跑不了运行时验证。⇒ P5 首屏验收时确认侧栏折叠快捷键是否还有注册者。
+- `StudioLayoutController` 的 `openRightbar` / `closeRightbar` 保持空实现：画布自持 `root`，但不渲染右栏列（与 0.1.x 同为 no-op）。
+
+**新发现的坑（原方案未记）**：`dsh-plugin-desktop/tsconfig.tests.json` 有 3 个错误来自**上游自己的 d.ts** —— `dsh-session-projection/lib/types/index.d.ts:150` 的泛型约束洞。处置：与 client 配置一致，`tsconfig.tests.json` 也加 `skipLibCheck`（`tsconfig.json` 宿主配置保持严格，它本来就是 0 错）。同类洞还有 ui-workspace 的 `'workspace.toast'`（见 P3-b 提交说明）。
+
+**P3 出口实测（2026-10-20）**：
+
+| 配置 | host | client | 其它 |
+| --- | ---: | ---: | --- |
+| `canvas-studio` | 0 | 0 | remotion 0 |
+| `dsh-community-market` | 0 | 0 | — |
+| `dsh-plugin-desktop` | 0 | 0 | native-ui 0 |
+
+三包 `tsdown` bundle 全部构建通过。**未清的只剩测试配置**（属 P4）：desktop `tsconfig.tests.json` 47、`tsconfig.tests.client.json` 8、market `tsconfig.tests.json` 10 —— 全部是断言旧 API 的 spec，需随 P4 一并改写；本阶段按约定**不跑**任何测试。
 
 **口径**：本阶段只保证逻辑正确 + 零类型错误，功能测试统一压到 P5 之后跑。
 

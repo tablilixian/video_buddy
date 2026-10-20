@@ -684,17 +684,27 @@ corepack yarn dist:win-portable
 
 已完成：
 
-| 项 | 结果 |
-| --- | --- |
-| `ctx.webServer.port` 语义修复 | `canvas-studio/src/routes.ts` 与 `dsh-community-market/src/host/routes.ts` 把 `const expectedPort = ctx.webServer.port` 改为惰性读取 `(): number \| undefined => ctx.webServer.port`，调用点改为 `expectedPort()`；helper 签名与 `expectedPort` 字段放宽为 `number \| undefined`（`studioAuthority`/`marketRequestAllowed` 对 `undefined` 天然返回 false） |
-| Canvas 缺失依赖补齐 | `canvas-studio/package.json` 补 `dsh-attachment`、`dsh-credentials`、`dsh-ptc-runtime`、`dsh-sandbox`、`dsh-settings`（原依赖 hoist 巧合，未显式声明） |
-| 错误下降 | canvas `86 → 8`；market `14 → 4` |
+| 项 | 结果 | 提交 |
+| --- | --- | --- |
+| `ctx.webServer.port` 语义修复 | `canvas-studio/src/routes.ts` 与 `dsh-community-market/src/host/routes.ts` 把 `const expectedPort = ctx.webServer.port` 改为惰性读取 `(): number \| undefined => ctx.webServer.port`，调用点改为 `expectedPort()`；helper 签名与 `expectedPort` 字段放宽为 `number \| undefined`（`studioAuthority`/`marketRequestAllowed` 对 `undefined` 天然返回 false） | `d72e73437c` |
+| Canvas 缺失依赖补齐 | `canvas-studio/package.json` 补 `dsh-attachment`、`dsh-credentials`、`dsh-ptc-runtime`、`dsh-sandbox`、`dsh-settings`（原依赖 hoist 巧合，未显式声明） | `d72e73437c` |
+| **Canvas 宿主 settings 迁移（Option A，见下）** | `host-config.ts` 去掉 `settingsNamespace`，schema 整棵 `.volatile()`；`index.ts` 导出 `Config = CanvasStudioConfig`、`apply(ctx, config)` 经 `config.get()` 读当前值、移除 `installSettingsSection`、`ctx.settings.configure({ auto: false }, ctx.fiber)` 关闭自动页、监听 `loader/volatile-update` 同步派生状态；`createStudioTools` 端口改 getter；四个 prompt helper 复用 `Pick<Context, 'systemPrompt' \| 'on'>` | `d72e73437c` |
+| 错误下降 | canvas 宿主 `86 → 0`（`tsc -p tsconfig.json` 通过）；market `14 → 4` | |
+
+**Canvas 宿主 settings 迁移要点（Option A，已落地）**：
+
+- Cordis 从模块**命名导出**读取 `Config`：`canvas-studio/src/index.ts` 现导出 `Config = CanvasStudioConfig`，函数式 `apply(ctx, config)` 的第二参即校验后的 Config 值。
+- 采用**对象级 `.volatile()`**（`z.object({...}).volatile()`）：`isVolatilePath` 视「祖先 volatile」下所有字段可编辑，且 `volatileForm` 返回整棵 plain schema；运行时值为 `Volatile<CanvasStudioConfig | undefined>`，`config.get()` 返回已填默认值的普通对象。
+- 关键机制（已核对源码）：Loader 对 **volatile-only** 配置变更走 `_commitVolatile()` → `updateVolatile(ref, source)` **原地更新、不重启插件**（`cordis-plugin-loader/src/config/entry.ts:145-191`）；普通字段变更才 `fiber.update()` 重启。
+- 因此不能用「重装回调」同步派生状态，改为监听 `ctx.on('loader/volatile-update', ...)` 触发 `syncErrorVisibility` / `syncDramaAuthRequired` / `onStorageRootMaybeChanged`（参考上游 `llm-deepseek/src/host.ts:57`、`speech-to-text/src/index.ts:50`）。
+- schema 放置约束：`app-boot/src/config-schema/projector.ts:133` 禁止 volatile 嵌套 volatile；对象级 volatile 下**子字段不得再标 volatile**（canvas 子字段均未标，合法）。
 
 剩余（Settings 模型迁移，见下）：
 
 | workspace | 剩余错误 | 内容 |
 | --- | ---: | --- |
-| `canvas-studio` | 8 | `settingsNamespace`→`SettingsNamespace`；`installSettingsSection` 在 0.2.1 已被移除，需按新 `SettingsForms` 模型重写（`settingsNamespace('canvas-studio')` 命名空间注册 → 插件 Config + `ctx.settings.configure`）；`systemPrompt` 注册 helper 的 `Context` 形状；1 处 `number \| undefined`；1 处隐式 any |
+| `canvas-studio`（host） | 0 | ✅ 宿主侧已清零 |
+| `canvas-studio`（client） | 约 60+ | 均为 `@deepseek-ai/dsh-client-runtime/client` 删除的级联（`TS2307` + 由此产生的隐式 any）；属 P3，需切到 `cordis` + `dsh-client-store` |
 | `dsh-community-market` | 4 | `SettingsScope`/`settingsNamespace` 导入消失、`SettingsForms.register` 消失 |
 | `dsh-plugin-desktop` | 41 | Settings API、`ProfileTemplate`/`patchPaths`/`skippedBundles`、`dsh-settings-file` 替代、Job API、pwsh sandbox、`webServer.port` 等 |
 
@@ -707,11 +717,11 @@ corepack yarn dist:win-portable
 
 ### F.4 待办清单（按优先级）
 
-1. **Canvas 是核心**：重写 `canvas-studio` 的 settings 接线，使画布功能可用（canvas 剩余 8 → 0，并跑 canvas 自身的 typecheck/build/verify:loader/test:smoke 链）。
-2. `canvas-studio/package.json` 的 `dsh.client.inject` 仍含已删除的 `@deepseek-ai/dsh-client-runtime`，需在客户端迁移（P3）一并改。
+1. ✅ **Canvas 宿主 settings 迁移完成**（`d72e73437c`，`tsc -p tsconfig.json` 通过）；剩余客户端级联错误待 P3。
+2. Market 宿主 4 项（settings：`SettingsScope`/`settingsNamespace` 导入消失、`SettingsForms.register` 消失）。
 3. Desktop 41 项按根因分组处理（Settings / profile / jobs / pwsh sandbox）。
-4. Market 4 项（settings）。
-5. P3 客户端迁移（19 文件 `client-runtime` → `cordis` + `dsh-client-store`）。
-6. P4 patch 重做。
+4. P3 客户端迁移（19 文件 `client-runtime` → `cordis` + `dsh-client-store`）；含 `canvas-studio/package.json` 的 `dsh.client.inject` 中已删除的 `@deepseek-ai/dsh-client-runtime`；此步完成前 canvas client typecheck 无法清零。
+5. P4 patch 重做。
+6. 补跑 canvas 自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P3 客户端迁移后。
 
 

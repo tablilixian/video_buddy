@@ -1,4 +1,3 @@
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { CatalogSnapshot } from '../contracts/generated/catalog-snapshot.js'
 import { validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogSourceStore, LocalSourceRecord } from '../contracts/types.js'
@@ -21,6 +20,18 @@ export interface MarketSettingsDocument {
 }
 
 /**
+ * Minimal settings-store contract the catalog source store depends on.
+ *
+ * 0.2.1 起 `@deepseek-ai/dsh-settings` 不再导出 `SettingsScope`：插件配置改由 Loader
+ * 注入的 Config（对象级 volatile）+ `ctx.settings.mutate` 读写。此处只保留本包所需的
+ * 读写面，由 Host 侧 `registerMarketSettings` 实现，从而与 dsh-settings 解耦。
+ */
+export interface MarketSettingsStore {
+  get(): MarketSettingsDocument
+  update(patch: Partial<MarketSettingsDocument>): Promise<void>
+}
+
+/**
  * Reconcile legacy multi-enabled settings into the single active-source model.
  * The first enabled record by user order wins. An all-disabled registry keeps
  * its explicit no-selection state.
@@ -37,7 +48,7 @@ export function normalizeActiveSourceRecords(
 }
 
 export class SettingsCatalogSourceStore implements CatalogSourceStore {
-  constructor(private readonly scope: SettingsScope<MarketSettingsDocument>) {}
+  constructor(private readonly scope: MarketSettingsStore) {}
 
   async load(): Promise<readonly LocalSourceRecord[]> {
     const records = [...this.scope.get().sources]

@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
 import {
+  type MarketSettingsConfigValue,
+  MarketSettingsConfig,
   registerMarketRoutes,
   registerMarketSettings,
   type MarketDesktopPlugins,
@@ -17,6 +19,9 @@ import {
 export const name = 'community-market'
 export const inject = ['webServer', 'settings']
 
+/** Plugin Config schema（0.2.1）：Loader 读取本命名导出并在装载/变更时校验注入。 */
+export const Config = MarketSettingsConfig
+
 interface DesktopProfilesCapability {
   readonly current: MarketDesktopProfile
 }
@@ -31,8 +36,8 @@ const npmRegistryHttp = createRestrictedHttpClient({
   syntheticProxyHostnames: ['registry.npmjs.org'],
 })
 
-export function apply(ctx: Context): void {
-  const scope = registerMarketSettings(ctx)
+export function apply(ctx: Context, config: MarketSettingsConfigValue): void {
+  const scope = registerMarketSettings(ctx, config)
   let installService: MarketInstallService | undefined
   let desktopActions: DesktopActionsCapability | undefined
   let desktopPlugins: MarketDesktopPlugins | undefined

@@ -1,40 +1,10 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
-import z from '@deepseek-ai/schemastery'
-import { afterEach, describe, expect, it } from 'vitest'
+import type { Context } from '@deepseek-ai/cordis'
+import { createVolatile, updateVolatile, type Volatile } from '@deepseek-ai/cosmokit'
+import { describe, expect, it } from 'vitest'
 import { DSH_1024STORE_ADAPTER_ID, DSH_1024STORE_PROVIDER_ID } from '../src/adapters/dsh-1024store.js'
 import { SettingsCatalogSourceStore, type MarketSettingsDocument } from '../src/catalog/source-store.js'
 import type { LocalSourceRecord } from '../src/contracts/index.js'
-import { registerMarketSettings } from '../src/host/routes.js'
-
-const cleanups: Array<() => Promise<void>> = []
-
-afterEach(async () => {
-  while (cleanups.length > 0) await cleanups.pop()!()
-})
-
-async function temporarySettingsFile(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-market-settings-'))
-  cleanups.push(async () => { await rm(dir, { recursive: true, force: true }) })
-  return join(dir, 'settings.yaml')
-}
-
-async function bootMarketSettings(path: string) {
-  const ctx = new Context()
-  await ctx.plugin(FileSettingsProvider, { path, watch: false })
-  let disposed = false
-  const dispose = async () => {
-    if (disposed) return
-    disposed = true
-    await ctx.fiber.dispose()
-  }
-  cleanups.push(dispose)
-  return { ctx, scope: registerMarketSettings(ctx), dispose }
-}
+import { registerMarketSettings, type MarketSettingsConfigValue } from '../src/host/routes.js'
 
 const source: LocalSourceRecord = {
   sourceRecordId: '018f1f77-a5c4-7b73-a9ae-0242ac120002',
@@ -46,33 +16,48 @@ const source: LocalSourceRecord = {
   order: 0,
 }
 
-const SiblingSchema = z.object({ label: z.string().default('default') })
-const SIBLING_NAMESPACE = settingsNamespace('market-persistence-fixture')
+interface Mutation {
+  readonly field: string
+  readonly value: unknown
+}
 
-describe('community market file-backed settings', () => {
-  it('restores sources in a new Host context', async () => {
-    const path = await temporarySettingsFile()
-    const first = await bootMarketSettings(path)
+/** Minimal Context stand-in exposing only the surfaces `registerMarketSettings` touches. */
+function fakeContext(config: Volatile<MarketSettingsDocument | undefined>) {
+  const mutations: Mutation[] = []
+  const ctx = {
+    get: (name: string) => (name === 'loader' ? { locate: () => 'dsh-community-market' } : undefined),
+    settings: {
+      mutate: async (_ns: string, ops: readonly { op: 'set'; path: readonly string[]; value: unknown }[]) => {
+        for (const op of ops) {
+          mutations.push({ field: op.path[0]!, value: op.value })
+          updateVolatile(config, createVolatile({ ...config.get(), [op.path[0]!]: op.value }))
+        }
+      },
+    },
+  }
+  return { ctx: ctx as unknown as Context, mutations, config: config as MarketSettingsConfigValue }
+}
 
-    await first.scope.replace({ sources: [source] })
-    await first.dispose()
+describe('community market settings store', () => {
+  it('round-trips sources through the catalog source store', async () => {
+    const { ctx, config } = fakeContext(createVolatile<MarketSettingsDocument | undefined>({ sources: [] }))
+    const store = new SettingsCatalogSourceStore(registerMarketSettings(ctx, config))
 
-    const second = await bootMarketSettings(path)
-    expect(second.scope.get()).toEqual({ sources: [source] } satisfies MarketSettingsDocument)
+    await store.save([source])
+    expect(await store.load()).toEqual([{ ...source, enabled: true, order: 0 }])
   })
 
-  it('preserves another plugin namespace while persisting market settings', async () => {
-    const path = await temporarySettingsFile()
-    const first = await bootMarketSettings(path)
-    const firstSibling = first.ctx.settings.register(SIBLING_NAMESPACE, SiblingSchema)
-    await firstSibling.update({ label: 'retained across restart' })
+  it('persists sources via ctx.settings.mutate under the loader entry id', async () => {
+    const { ctx, config, mutations } = fakeContext(createVolatile<MarketSettingsDocument | undefined>({ sources: [] }))
+    const scope = registerMarketSettings(ctx, config)
 
-    await new SettingsCatalogSourceStore(first.scope).save([source])
-    await first.dispose()
+    await scope.update({ sources: [source] })
+    expect(mutations).toEqual([{ field: 'sources', value: [source] }])
+    expect(scope.get()).toEqual({ sources: [source] } satisfies MarketSettingsDocument)
+  })
 
-    const second = await bootMarketSettings(path)
-    const secondSibling = second.ctx.settings.register(SIBLING_NAMESPACE, SiblingSchema)
-    expect(secondSibling.get()).toEqual({ label: 'retained across restart' })
-    expect(second.scope.get()).toEqual({ sources: [source] } satisfies MarketSettingsDocument)
+  it('falls back to an empty source list when the config is unset', () => {
+    const { ctx, config } = fakeContext(createVolatile<MarketSettingsDocument | undefined>(undefined))
+    expect(registerMarketSettings(ctx, config).get()).toEqual({ sources: [] })
   })
 })

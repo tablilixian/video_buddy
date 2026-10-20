@@ -3,7 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BlockList, isIP } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { CatalogSourceManifest } from '../contracts/index.js'
 import { parseCatalogSnapshot, parseCatalogSource, validateLocalSourceRecords } from '../contracts/validate.js'
 import type { CatalogHttpClient } from '../contracts/types.js'
@@ -40,14 +41,15 @@ import {
 import { DSHFIND_ADAPTER_ID, DSHFIND_HOSTNAME } from '../adapters/dshfind.js'
 import { assertStandardSourceTrustRoot } from '../adapters/standard-http.js'
 import { BUILT_IN_PROVIDERS, DefaultCatalogService, type CatalogFetchScope, type CatalogFullIndex } from '../catalog/service.js'
-import { SettingsCatalogSourceStore, type MarketCatalogCache, type MarketSettingsDocument } from '../catalog/source-store.js'
+import { SettingsCatalogSourceStore, type MarketCatalogCache, type MarketSettingsDocument, type MarketSettingsStore } from '../catalog/source-store.js'
 import { MARKET_MEDIA_ASSET_REF_PATTERN } from '../media/ref.js'
 import { createRestrictedImageFetcher } from '../media/restricted-image.js'
 import { createMarketMediaService } from '../media/service.js'
 import { MarketInstallError, type MarketInstallService } from '../install/service.js'
 import { manualInstallHints } from '../install/manual.js'
 
-export const MARKET_SETTINGS_NAMESPACE = settingsNamespace('dsh-community-market')
+// 0.2.1：命名空间即 Loader entry id（本插件在 profile 中的 id 为包名）。
+export const MARKET_SETTINGS_NAMESPACE = 'dsh-community-market'
 const SOURCE_SCHEMA = z.object({
   sourceRecordId: z.string().required(),
   registrationKind: z.union(['user-added', 'built-in'] as const).required(),
@@ -59,7 +61,13 @@ const SOURCE_SCHEMA = z.object({
   enabled: z.boolean().required(),
   order: z.number().required(),
 })
-const SETTINGS_SCHEMA = z.object({
+/**
+ * Market 插件的 Config schema（0.2.1：作为模块命名导出 `Config`，由 Loader 校验注入）。
+ *
+ * 对象级 `.volatile()`：使 sources / catalogCache 均可经 `ctx.settings` 编辑且写入时
+ * 原地更新（不重启插件）。
+ */
+export const MarketSettingsConfig = z.object({
   sources: z.array(SOURCE_SCHEMA).default([]),
   catalogCache: z.object({
     version: z.number().step(1),
@@ -72,7 +80,10 @@ const SETTINGS_SCHEMA = z.object({
     expiresAt: z.string(),
     providerRevision: z.string(),
   }).default(undefined as never),
-}) as unknown as z<MarketSettingsDocument>
+}).volatile()
+
+/** Market 插件 Config 值类型：对象级 volatile 包装后的运行时形态。 */
+export type MarketSettingsConfigValue = Volatile<MarketSettingsDocument | undefined>
 
 const ROUTE_STATE = '/api/community-market/state'
 const ROUTE_SOURCES = '/api/community-market/sources'
@@ -556,7 +567,7 @@ export async function readStandardSourceManifest(
 }
 
 async function mutateSources(
-  scope: SettingsScope<MarketSettingsDocument>,
+  scope: MarketSettingsStore,
   mutation: MarketSourceMutation,
   signal: AbortSignal,
   onUnavailable?: (sourceRecordId: string) => void,
@@ -639,7 +650,7 @@ async function mutateSources(
 }
 
 export function createMarketSourceMutator(
-  scope: SettingsScope<MarketSettingsDocument>,
+  scope: MarketSettingsStore,
   onUnavailable?: (sourceRecordId: string) => void,
   readManifest?: (manifestUrl: string, signal: AbortSignal) => Promise<CatalogSourceManifest>,
 ): (
@@ -659,7 +670,7 @@ export function createMarketSourceMutator(
 
 export function registerMarketRoutes(
   ctx: Context,
-  scope: SettingsScope<MarketSettingsDocument>,
+  scope: MarketSettingsStore,
   installProvider?: MarketInstallServiceProvider,
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
@@ -1190,8 +1201,21 @@ export function registerMarketRoutes(
   }
 }
 
-export function registerMarketSettings(ctx: Context): SettingsScope<MarketSettingsDocument> {
-  return ctx.settings.register(MARKET_SETTINGS_NAMESPACE, SETTINGS_SCHEMA, { applies: 'live' })
+/**
+ * Bind the market settings store to the plugin's loader-injected Config.
+ *
+ * 0.2.1：读写改为「读 Config 的 volatile 引用 + 经 `ctx.settings.mutate` 写回 profile patch」。
+ * 写入走 volatile-only 快照提交（原地 `updateVolatile`，不重启本插件）。
+ */
+export function registerMarketSettings(ctx: Context, config: MarketSettingsConfigValue): MarketSettingsStore {
+  return {
+    get: () => (config.get() as MarketSettingsDocument | undefined) ?? { sources: [] },
+    update: async (patch) => {
+      const ns = ctx.get('loader')?.locate(ctx.fiber)
+      if (ns === undefined) throw new Error('dsh-community-market: settings are not writable without a loader entry')
+      await ctx.settings.mutate(ns, Object.entries(patch).map(([field, value]) => ({ op: 'set', path: [field], value })))
+    },
+  }
 }
 
 export const marketRoutes = {

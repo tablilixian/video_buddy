@@ -3,7 +3,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
 import type { DesktopClientEnvironment } from './environment.ts'
 import { DesktopLayoutState } from './layout-state.ts'
-import { provideDesktopLayout } from './layout-service.ts'
+import { installDesktopLayout } from './layout-service.ts'
 import { installDesktopOwnedStyles } from './styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
@@ -13,11 +13,10 @@ export function applyAdvancedShell(ctx: ClientContext, environment: DesktopClien
     throw new Error(`dsh-plugin-desktop: advanced shell received mode ${JSON.stringify(environment.mode)}`)
   }
 
-  const desktopLayout = new DesktopLayoutState()
-  ctx.effect(
-    () => provideDesktopLayout(ctx, desktopLayout),
-    'desktop: layout service',
+  const desktopLayout = new DesktopLayoutState(
+    id => ctx.slots.entries('main').some(entry => entry.options.key === id),
   )
+  installDesktopLayout(ctx, desktopLayout)
 
   ctx.effect(() => {
     document.body.dataset.dshDesktopMode = 'advanced'

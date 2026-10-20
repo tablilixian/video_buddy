@@ -3,12 +3,30 @@ import type {} from './contracts.ts'
 import type { DesktopLayoutState } from './layout-state.ts'
 
 /**
- * Provide the Desktop-owned layout service for one plugin-fiber lifetime.
+ * Install the layout selected by Advanced or Extended profile composition.
+ *
+ * Desktop replaces the official layout owner, so it must also satisfy the
+ * upstream `ILayout` face: publish its panel selection to the root slot hooks
+ * and retire a selected main panel once its registration disappears.
+ *
  * @param ctx - active browser Cordis context.
  * @param layout - desktop-owned layout implementation.
- * @returns disposer for the service registration.
  */
-export function provideDesktopLayout(ctx: ClientContext, layout: DesktopLayoutState): () => void {
-  const dispose = ctx.reflect.provide('layout', layout)
-  return () => { void dispose() }
+export function installDesktopLayout(ctx: ClientContext, layout: DesktopLayoutState): void {
+  if (ctx.reflect.get('layout', false) !== undefined) {
+    throw new Error('dsh-plugin-desktop: advanced and extended modes require exclusive layout ownership')
+  }
+
+  ctx.effect(() => {
+    const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo: layout.panelInfo } })
+    const dispose = ctx.reflect.provide('layout', layout)
+    const disposePanels = ctx.slots.subscribe('main', () => layout.retainMainPanels())
+    layout.retainMainPanels()
+    return () => {
+      layout.dispose()
+      disposePanels()
+      disposePanelInfo()
+      void dispose()
+    }
+  }, 'desktop: layout service')
 }

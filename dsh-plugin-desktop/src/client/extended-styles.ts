@@ -84,7 +84,7 @@ body[data-dsh-desktop-mode="extended"] .dshDesktopConversationSurface {
   background: var(--dsw-alias-bg-base);
   background-clip: padding-box;
 }
-body[data-dsh-desktop-mode="extended"] .dshDesktopDetailsSurface {
+body[data-dsh-desktop-mode="extended"] .dshDesktopRightbarSurface {
   box-sizing: border-box;
   border-top: 1px solid var(--dsw-alias-border-l1);
 }

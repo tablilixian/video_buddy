@@ -14,17 +14,16 @@ import type { DesktopClientEnvironment } from './environment.ts'
 import { DesktopFrameTitlebar } from './ExtendedTitlebar.tsx'
 import { installExtendedStyles } from './extended-styles.ts'
 import { DesktopLayoutState } from './layout-state.ts'
-import { provideDesktopLayout } from './layout-service.ts'
+import { installDesktopLayout } from './layout-service.ts'
 import { installDesktopOwnedStyles } from './styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
 /** Own the extended root/sidebar surface without reusing enhanced-mode chrome. */
 function applyExtendedOwnedShell(ctx: ClientContext, _environment: DesktopClientEnvironment): void {
-  const desktopLayout = new DesktopLayoutState()
-  ctx.effect(
-    () => provideDesktopLayout(ctx, desktopLayout),
-    'desktop: extended layout service',
+  const desktopLayout = new DesktopLayoutState(
+    id => ctx.slots.entries('main').some(entry => entry.options.key === id),
   )
+  installDesktopLayout(ctx, desktopLayout)
 
   ctx.effect(
     () => installDesktopOwnedStyles(),

@@ -5,7 +5,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { installSettingsSection } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { ProjectRegistry } from './projects.js'
@@ -27,8 +28,8 @@ import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './err
 import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
 import './errors/catalog.js'
 import {
-  CANVAS_STUDIO_NS,
   CanvasStudioConfig,
+  type CanvasStudioConfigValue,
   DEFAULT_DRAMA_API_BASE,
   DEFAULT_DRAMA_API_KEY_REF,
   DEFAULT_FAL_API_KEY_REF,
@@ -46,8 +47,14 @@ export const name = 'canvas-studio'
 /** Services required by the host plugin. */
 export const inject = ['webServer', 'tools', 'skills', 'settings', 'systemPrompt']
 
+/**
+ * Plugin Config schema（0.2.1）：Loader 读取本命名导出，在装载/变更时校验并注入
+ * `apply` 的第二参；运行时值经 `config.get()` 读取。
+ */
+export const Config = CanvasStudioConfig
+
 /** Host plugin body: the project registry, its routes, the media tools, and the creation skill. */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 开发模式显式声明一次（设计文档 §8）：默认关闭——打包后的应用不设 NODE_ENV，
   // 若沿用「非 production 即开发」会让 `[dev]` 细节随错误文案露给用户。
   setDevMode(resolveDevModeFromProcess())
@@ -83,7 +90,9 @@ export function apply(ctx: Context): void {
     // REQ-021：自动测试入口默认关闭（开关只控制可见性，无定时/自动触发）。
     testMode: false,
   }
-  let source: () => CanvasStudioConfig = () => base
+  // 0.2.1：配置由 Loader 经 Config schema 注入；字段为对象级 volatile，`get()` 读当前值。
+  // base 仅作 schema 未解析出值时的兜底（正常路径下 schema default 已填满全部字段）。
+  const source = (): CanvasStudioConfig => config.get() ?? base
   // CV-234：把设置里的「错误可见性」同步到 error-system 的**进程级**标志 ——
   // 受众路由（routeError）与「要不要画红标」（codeIsUserFacing）读的都是它。
   // 读 live source ⇒ 设置页一改就生效，不需要重启。
@@ -149,15 +158,25 @@ export function apply(ctx: Context): void {
   // P2：Drama 鉴权闸与 Supabase 配置联动（live 读取）—— 配置了 Supabase（默认
   // 即配置）= 消耗型 Drama 请求要求登录；清空 supabaseUrl = 回到免登录旧行为。
   // 实现见 auth-session.ts（generate.ts 的 requireDramaAuth 读同一开关）。
-  // 声明必须**先于** installSettingsSection：setSource 回调可能在装载期同步触发。
+  // 声明必须先于下面注册 volatile 更新监听（回调可能在装载/更新期同步触发）。
   const syncDramaAuthRequired = (): void => {
     setDramaAuthRequired(source().supabaseUrl.trim() !== '')
   }
-  installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
-    setSource: (current) => { source = current; syncErrorVisibility(); syncDramaAuthRequired(); onStorageRootMaybeChanged() },
-    onChange: () => { syncErrorVisibility(); syncDramaAuthRequired(); onStorageRootMaybeChanged() },
+  // 0.2.1 设置页策略：Canvas 有自定义客户端设置页（SettingsModal），故关闭自动生成页，
+  // 避免与自定义页重复。`auto` 默认 true。
+  ctx.effect(
+    () => ctx.settings.configure({ auto: false }, ctx.fiber),
+    'canvas-studio: settings page policy',
+  )
+  // 0.2.1：Config 为对象级 volatile ⇒ 设置写入走 Loader 的 volatile-only 快照提交
+  // （`updateVolatile` 原地更新，**不重启本插件**）。因此不能靠重装回调刷新派生状态，
+  // 需监听 `loader/volatile-update` 手动同步：错误可见性、Drama 鉴权闸、资产库根失效。
+  ctx.on('loader/volatile-update', () => {
+    syncErrorVisibility()
+    syncDramaAuthRequired()
+    onStorageRootMaybeChanged()
   })
-  // 无条件首次同步一次：上面两个回调**是否在装载期被调用属框架内部行为**，不能当
+  // 无条件首次同步一次：监听回调**是否在装载期被调用属框架内部行为**，不能当
   // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
   syncErrorVisibility()
   syncDramaAuthRequired()
@@ -192,7 +211,7 @@ export function apply(ctx: Context): void {
   // 再经 `tools/execute` 中间件把码写进结果，使其能穿过 tool/result 抵达客户端。
   registerStudioToolErrorBoundary(ctx)
   ctx.effect(() => {
-    const disposers = createStudioTools(registry, ctx.webServer.port, cfg, library)
+    const disposers = createStudioTools(registry, () => ctx.webServer.port, cfg, library)
       .map((definition) => wrapStudioToolDefinition(definition))
       .map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }

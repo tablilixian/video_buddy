@@ -369,7 +369,7 @@ interface StudioRequestContext {
   readonly origin: string | undefined
   readonly host: string | undefined
   readonly secFetchSite?: string | undefined
-  readonly expectedPort: number
+  readonly expectedPort: number | undefined
 }
 
 /** The request's local authority when it arrives from the loopback device. */
@@ -393,7 +393,7 @@ function studioAuthority(context: StudioRequestContext): URL | undefined {
   return authority
 }
 
-function requestContext(req: IncomingMessage, expectedPort: number): StudioRequestContext {
+function requestContext(req: IncomingMessage, expectedPort: number | undefined): StudioRequestContext {
   const secFetchSite = req.headers['sec-fetch-site']
   return {
     remoteAddress: req.socket.remoteAddress,
@@ -404,11 +404,11 @@ function requestContext(req: IncomingMessage, expectedPort: number): StudioReque
   }
 }
 
-function requestAllowed(req: IncomingMessage, expectedPort: number): boolean {
+function requestAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
   return studioAuthority(requestContext(req, expectedPort)) !== undefined
 }
 
-function mutationAllowed(req: IncomingMessage, expectedPort: number): boolean {
+function mutationAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
   const context = requestContext(req, expectedPort)
   const authority = studioAuthority(context)
   if (authority === undefined || context.origin === undefined) return false
@@ -651,7 +651,7 @@ function asLibMediaArray(value: unknown): LibMedia[] | undefined {
  * @returns the route disposer (all registered routes).
  */
 export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, library: AssetLibrary): () => void {
-  const expectedPort = ctx.webServer.port
+  const expectedPort = (): number | undefined => ctx.webServer.port
   // REQ-005 v1.3（变体 A）：启动清扫 —— 回收上一次会话遗留的无人认领 draft 目录。
   // fire-and-forget：清扫失败不影响任何路由；结果只落日志。
   // CV-292：走 sweepOnceForCurrentRoot（按 root 键控、每进程每根至多一次）—— 这一拍
@@ -692,7 +692,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
   }
   const routes = [
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECTS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -706,7 +706,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       if (req.method === 'DELETE') {
-        if (!mutationAllowed(req, expectedPort)) {
+        if (!mutationAllowed(req, expectedPort())) {
           sendJson(res, 403, { error: 'canvas-studio delete requires a local same-origin DELETE' })
           return
         }
@@ -739,7 +739,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       if (req.method === 'PATCH') {
-        if (!mutationAllowed(req, expectedPort)) {
+        if (!mutationAllowed(req, expectedPort())) {
           sendJson(res, 403, { error: 'canvas-studio project move requires a local same-origin PATCH' })
           return
         }
@@ -772,7 +772,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'project changes require a local same-origin POST' })
         return
       }
@@ -825,11 +825,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 无请求体（POST + same-origin 仅为对齐变更面安全口径）；不认领、不登记，
     // registry 无记录 —— 未被认领的目录由启动清扫回收。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECT_DRAFT, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'draft landing requires a local same-origin POST' })
         return
       }
@@ -846,7 +846,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // （`img_*`），直接当参考会 500（CV-155 实测）—— 可用句柄要靠解析链现造并回写源节点。
     // **逐项 try/catch**：一次选 5 张、坏了 1 张，只该坏那一张，不能整批失败。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RESOLVE_REFS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -854,7 +854,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         sendJson(res, 405, { error: 'resolve-refs requires POST' })
         return
       }
-      if (!mutationAllowed(req, expectedPort)) {
+      if (!mutationAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio resolve-refs requires a local same-origin request' })
         return
       }
@@ -893,7 +893,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // DELETE removes (its projects fall back to ungrouped). Reads need loopback
     // authority; mutations add the same-origin check used by the project routes.
     ctx.webServer.register({ kind: 'exact', path: ROUTE_GROUPS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -910,7 +910,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         sendJson(res, 405, { error: 'groups route requires GET/POST/PATCH/DELETE' })
         return
       }
-      if (!mutationAllowed(req, expectedPort)) {
+      if (!mutationAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio group changes require a local same-origin request' })
         return
       }
@@ -964,7 +964,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // Host calls Drama Backend, downloads the asset, writes it to the project's
     // assets/ directory, and returns the webServer-hosted URL.
     ctx.webServer.register({ kind: 'exact', path: ROUTE_GENERATE, handler: async (req, res) => {
-      if (!mutationAllowed(req, expectedPort)) {
+      if (!mutationAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio generate requires a local same-origin POST' })
         return
       }
@@ -1023,7 +1023,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // （后端同步单任务 + 660s 截止只剩 60s 余量 ⇒ 重叠一次就误报「生成超时」）。
     // 只读 ⇒ 走 requestAllowed（不要求 same-origin）：无 body、无副作用、不改盘。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_GENERATE_QUEUE, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -1045,7 +1045,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 快照组装（storageInfoSnapshot）永不抛错的纪律在模块内成立，这里的 catch
     // 只是 HTTP 面的最后一道兜底。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_STORAGE_INFO, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -1066,7 +1066,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // loopback + same-origin requests are allowed, and path traversal is
     // blocked by verifying the resolved path stays under the project assets dir.
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_ASSETS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -1074,7 +1074,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         sendJson(res, 405, { error: 'assets only support GET' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
       // CR-002：decodeURIComponent 对 malformed 编码（如 %zz）会抛 URIError——
       // 必须放进 try，否则 handler 直接 reject、响应悬空。
       let relative = ''
@@ -1150,17 +1150,17 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     //   GET    /library/:assetId/:file → 媒体文件（字符集 + 目录前缀双校验）
     // 只读走 requestAllowed；写走 mutationAllowed（同源 + pathname '/'，与项目/分组面一致）。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_LIBRARY, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
       const method = req.method ?? 'GET'
       const isRead = method === 'GET' || method === 'HEAD'
-      if (!isRead && !mutationAllowed(req, expectedPort)) {
+      if (!isRead && !mutationAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio library changes require a local same-origin request' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
       // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError，必须进 try。
       let relative = ''
       try {
@@ -1358,7 +1358,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             sendJson(res, 400, { error: '非法的资产 id' })
             return
           }
-          const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+          const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
           const name = requestUrl.searchParams.get('name') ?? ''
           const label = requestUrl.searchParams.get('label') ?? undefined
           if (name.length === 0) {
@@ -1519,11 +1519,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // CV-243：资产废料 GC——打开项目时客户端自动调（fire-and-forget），这里同时
     // 是手动兜底入口。幂等：重复调用无害（没有可回收的就没有动作）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSET_GC, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'asset gc requires a local same-origin POST' })
         return
       }
@@ -1549,7 +1549,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
 
     // CV-246：生成产物历史——GET 列表（含已删条目，客户端按 deletedAt 过滤展示）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSET_HISTORY, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -1574,11 +1574,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // CV-246：历史面板删除——两段式：仍被画布引用 → 409 拒绝（防断链）；否则
     // 移入 .trash + 登记表标 deletedAt，物理清交给打开项目 GC（与 CV-243 同语义）。
     ctx.webServer.register({ kind: 'exact', path: `${ROUTE_ASSET_HISTORY}/delete`, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'history delete requires a local same-origin POST' })
         return
       }
@@ -1663,11 +1663,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // generationPrompt + 物理删 + 标 deletedAt」。写盘合并为**一次** writeCanvas
     // （逐条删会 N 次全量重写画布，节点多时很慢）。
     ctx.webServer.register({ kind: 'exact', path: `${ROUTE_ASSET_HISTORY}/prune-retired`, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'history prune requires a local same-origin POST' })
         return
       }
@@ -1748,7 +1748,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 的 8 张风格 demo），只读 GET + loopback authority；文件名单段 kebab + .gif，
     // join + startsWith 防穿越。静态不变资源用强缓存（与项目资产 no-store 不同）。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_STYLE_DEMOS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -1756,7 +1756,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         sendJson(res, 405, { error: 'style-demos only support GET' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
       // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError——放进 try，
       // 避免 handler 直接 reject、响应悬空。
       let file = ''
@@ -1793,11 +1793,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 收成一条是因为 WebServer 只支持 exact/prefix（**无 `:id` 参数位**）；一条 prefix
     // 内部分派比注册七八条 exact 更省心，也不会出现 exact 与 prefix 互相遮蔽。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_STORYBOARD, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
       // decodeURIComponent 对 malformed 编码会抛 URIError —— 必须进 try（CR-002）。
       let tail = ''
       try {
@@ -1813,7 +1813,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       // ── 写类：/archive | /restore | /rename | /land ──
       const action = parts.length === 1 ? parts[0] : undefined
       if (action !== undefined && STORYBOARD_WRITE_ACTIONS.has(action)) {
-        if (!mutationAllowed(req, expectedPort)) {
+        if (!mutationAllowed(req, expectedPort())) {
           sendJson(res, 403, { error: 'canvas-studio storyboard changes require a local same-origin request' })
           return
         }
@@ -1991,12 +1991,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // canvas survives a restart (plan §7.7). Reads require loopback authority;
     // writes add the same-origin check used by the project routes.
     ctx.webServer.register({ kind: 'exact', path: ROUTE_CANVAS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
       if (req.method === 'GET') {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         if (!projectId) {
           sendJson(res, 400, { error: '缺少 projectId' })
@@ -2012,7 +2012,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'canvas changes require a local same-origin POST' })
         return
       }
@@ -2086,12 +2086,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // (skills.json); POST replaces the whole roster (activate / deactivate are
     // client-side diffs against this face, so the API stays idempotent).
     ctx.webServer.register({ kind: 'exact', path: ROUTE_ACTIVE_SKILLS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
       if (req.method === 'GET') {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         if (!projectId) {
           sendJson(res, 400, { error: '缺少 projectId' })
@@ -2105,7 +2105,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'active-skills changes require a local same-origin POST' })
         return
       }
@@ -2170,11 +2170,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // `ctx.skills.snapshot({ cwd })` 回答「哪些真的生效了」。只看后者会让「被同名
     // 内置顶掉的用户 skill 从广场消失」—— 而那正是最需要展示给用户看的冲突态。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_SKILLS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
       const action = requestUrl.pathname.slice(ROUTE_SKILLS.length)
 
       if (req.method === 'GET') {
@@ -2207,7 +2207,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
 
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort) || !SKILL_WRITE_ACTIONS.has(action)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort()) || !SKILL_WRITE_ACTIONS.has(action)) {
         sendJson(res, 405, { error: 'skill changes require a local same-origin POST' })
         return
       }
@@ -2327,12 +2327,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // (mode + approval state); POST applies user actions (approve / reject /
     // setMode) so the approval bar and mode toggle drive the Host-side gate.
     ctx.webServer.register({ kind: 'exact', path: ROUTE_WORKFLOW, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
       if (req.method === 'GET') {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         if (!projectId) {
           sendJson(res, 400, { error: '缺少 projectId' })
@@ -2349,7 +2349,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'workflow changes require a local same-origin POST' })
         return
       }
@@ -2426,11 +2426,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 覆盖写 `<projectDir>/test-report.md` —— 报告与项目同目录（拍板②），验收方
     // 直接读盘；增量更新由客户端每检查点后重发全量 markdown，Host 不做合并。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_TEST_REPORT, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'test-report requires a local same-origin POST' })
         return
       }
@@ -2478,11 +2478,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 在读流阶段拒绝超限（413）与未知扩展（400）。成功回 { url, assetFile } ——
     // 与 /upload 同构；**不调用 promoteAssetFile**（§5.4 惰性提升）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_MEDIA, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'upload-media requires a local same-origin POST' })
         return
       }
@@ -2499,7 +2499,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       res.once('close', onResponseClose)
       let name = ''
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         name = requestUrl.searchParams.get('name') ?? ''
         if (projectId === null || projectId.length === 0) {
@@ -2555,11 +2555,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // DEPRECATED（CV-241 §6.5）：JSON+base64 旧入口，保留一版兼容热更新/旧客户端；
     // 新代码请走 /canvas-studio/upload-media (octet-stream)。确认零调用后下一批删除。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'upload requires a local same-origin POST' })
         return
       }
@@ -2613,11 +2613,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // assets 落盘」（毫秒级），返回同源 url 与磁盘文件名——发送不再被 Drama
     // 公网上传阻塞。Drama 提升走 /canvas-studio/promote（后台 / 生成时惰性兜底）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_LOCAL, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'upload-local requires a local same-origin POST' })
         return
       }
@@ -2666,11 +2666,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 提升段：读项目 assets 已落盘字节 → 统一上传端点拿 filename。后台
     // 预热与 @ref 惰性兜底共用；Host 侧 per-asset in-flight 去重防并发重复上传。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROMOTE, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'promote requires a local same-origin POST' })
         return
       }
@@ -2711,11 +2711,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 序列，固定 96 桶）。ffmpeg 解码失败 / ffmpeg 缺失 → 400 带中文错误，
     // 客户端（use-waveform.ts）静默退回确定性降级公式 —— 波形是装饰性信息。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_WAVEFORM, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'waveform requires a local same-origin POST' })
         return
       }
@@ -2760,11 +2760,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 动因：上传即抽帧会一次刷出 N 张帧图 + 便签；且视频不落节点 ⇒ 既不能播放，
     // 也当不了参考视频（CV-226 已接通 video1..3）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_VIDEO, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'video upload requires a local same-origin POST' })
         return
       }
@@ -2780,7 +2780,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         const name = requestUrl.searchParams.get('name') ?? ''
         if (projectId === null || projectId.length === 0) {
@@ -2815,11 +2815,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // **不删原视频**：它是画布上的正式节点；派生失败只清理本次新抽的帧。
     // 抽帧依据见 `video-style.ts` 的 planFrameTimes（短片每 2s 一帧、>16s 改全片均匀取 8 帧）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_SPLIT_VIDEO, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'video split requires a local same-origin POST' })
         return
       }
@@ -2870,11 +2870,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // id）；Host 统一转码 → concat 拼接 → 可选 BGM 混音 → 落 assets 根目录
     // export-<uuid>.mp4，返回同源 URL + 成片时长，由 P9.3 前端回写画布节点。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_COMPOSE, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'compose requires a local same-origin POST' })
         return
       }
@@ -2936,7 +2936,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 宿主建单（工具 `render_composition`）→ 画布客户端轮询取单 → CSR 渲染 → 回写/撤单。
     // 三条都是「本机回环」面：pending 是只读 GET；commit / cancel 是写类 POST（同源校验）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_PENDING, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -2945,7 +2945,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         // O-06：`owner` 决定「谁在取单」。缺省 `client` = 三期之前的老行为（旧客户端不带参数也照跑）。
         const owner: RenderExecutor = requestUrl.searchParams.get('owner') === 'host' ? 'render-host' : 'client'
         const projectId = requestUrl.searchParams.get('projectId')
@@ -2970,7 +2970,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // ⚠️ 产品侧**当前没有调用方**（客户端取单已由 pending 按队列屏蔽，队列深度对它无决策价值）——
     // 这条是给诊断 / 将来的进度面板用的观测面（`curl` 可查），不要"看到没人调"就删掉。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_JOBS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -2979,7 +2979,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const projectId = requestUrl.searchParams.get('projectId')
         if (!res.destroyed) {
           sendJson(res, 200, { jobs: listRenderJobViews(projectId === null || projectId.length === 0 ? undefined : projectId) })
@@ -2992,11 +2992,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 二期 1b：客户端上报渲染进度（JSON `{jobId, progress}`，progress 0–1，客户端已节流）。
     // 幂等：单不存在 / 已结算 / 未在渲染 → `applied: false`，一律 200（不制造假错误）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_PROGRESS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'remotion progress requires a local same-origin POST' })
         return
       }
@@ -3019,11 +3019,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 客户端回写成片：octet-stream 原始 mp4 字节 + `warnings`（URL 编码 JSON 字符串数组，
     // 可选）。宿主落盘 + 探测真值后结算等待中的工具调用。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_COMMIT, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'remotion commit requires a local same-origin POST' })
         return
       }
@@ -3039,7 +3039,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
         const jobId = requestUrl.searchParams.get('jobId')
         if (jobId === null || jobId.length === 0) {
           sendJson(res, 400, { error: '缺少 jobId' })
@@ -3074,11 +3074,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 客户端撤单：`failed=1` + `reason` = 渲染失败（CS-RENDER-002）；否则视为主动取消
     //（CS-GEN-207）。工单不存在 / 已结算属幂等成功（可能刚超时），一律回 200。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_CANCEL, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'remotion cancel requires a local same-origin POST' })
         return
       }
@@ -3120,11 +3120,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 三期 W6-1：客户端回写一张抽帧（octet-stream PNG + `jobId` / `frame` query）。
     // 幂等：工单不存在 / 已结算 → `{ok:true, url:null}`（不制造假错误）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_SAMPLE, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'remotion sample requires a local same-origin POST' })
         return
       }
@@ -3132,7 +3132,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       const onAbort = (): void => controller.abort()
       req.once('aborted', onAbort)
       try {
-        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
         const jobId = requestUrl.searchParams.get('jobId')
         const frameRaw = Number(requestUrl.searchParams.get('frame') ?? '0')
         if (jobId === null || jobId.length === 0) {
@@ -3155,7 +3155,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
 
     // 三期 W2-4：颗粒 tile（只读静态 PNG；内容不变 ⇒ 强缓存）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_GRAIN, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -3179,7 +3179,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 页面只被隐藏窗口加载；`no-store` 是因为 bundle 名不变、构建后会换内容，
     // 缓存住会让「改了代码但窗口还是老的」这种问题查半天。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -3195,7 +3195,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     }}),
 
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_JS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -3218,7 +3218,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
 
     // 自报状态：页面每拍报一次；GET 供验收/调试读（含生命周期快照，判断窗口是否还活着）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_STATUS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -3229,7 +3229,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         })
         return
       }
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'render host status requires a local same-origin POST' })
         return
       }
@@ -3250,7 +3250,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 与 style-demos 同口径：loopback authority + 单段文件名白名单（`^[a-z0-9-]+\.woff2$`
     // 天然挡掉 `..`、子目录与扩展名伪装）+ join/startsWith 兜底防穿越；静态不可变 ⇒ 强缓存。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_REMOTION_FONTS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
@@ -3258,7 +3258,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         sendJson(res, 405, { error: 'remotion fonts only support GET' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
       // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError —— 必须进 try，
       // 否则 handler 直接 reject、响应悬空。
       let file = ''
@@ -3294,11 +3294,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 取走即清）/ session（POST，client 推送最新会话）/ video（GET，登录弹窗循环视频）。
     // session 与 loopback 是写类动作（POST + 同源校验）；video 是只读静态资产。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_AUTH, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
       const tail = requestUrl.pathname.slice(ROUTE_AUTH.length).replace(/^\/+/, '')
       if (tail === 'video') {
         if (req.method !== 'GET') {
@@ -3318,7 +3318,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       if (tail === 'loopback') {
-        if (!mutationAllowed(req, expectedPort)) {
+        if (!mutationAllowed(req, expectedPort())) {
           sendJson(res, 403, { error: 'canvas-studio auth changes require a local same-origin request' })
           return
         }
@@ -3346,7 +3346,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       if (tail === 'session') {
-        if (!mutationAllowed(req, expectedPort)) {
+        if (!mutationAllowed(req, expectedPort())) {
           sendJson(res, 403, { error: 'canvas-studio auth changes require a local same-origin request' })
           return
         }
@@ -3397,7 +3397,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
   // `=1` 时额外在启动阶段就拉起（S1 人工验收要看 `/render-host/status` 自报 idle，等不到派单）。
   if (process.env.CANVAS_STUDIO_RENDER_HOST !== '0') {
     const launchRenderHost = (): boolean => ensureRenderHost({
-      url: `http://127.0.0.1:${String(expectedPort)}${ROUTE_RENDER_HOST}`,
+      url: `http://127.0.0.1:${String(expectedPort())}${ROUTE_RENDER_HOST}`,
       log: (message) => { ctx.logger.info(message) },
       onLost: (reason) => {
         // 崩溃 / 无响应 / 被关：主进程立刻知道，比 30s 看门狗早得多。

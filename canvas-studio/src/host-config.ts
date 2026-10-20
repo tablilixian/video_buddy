@@ -8,7 +8,7 @@
  *
  * 同一命名空间字符串 'canvas-studio' 在 Host 注册、客户端卡片两侧共用。
  */
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET, type BrandPresetId } from './brand.js'
 import { DEFAULT_RESOLUTION } from './config.js'
@@ -18,8 +18,13 @@ import { DEFAULT_RESOLUTION } from './config.js'
 import { FALLBACK_ASPECT_RATIO } from './studio-defaults.js'
 import type { VideoResolution } from './providers/types.js'
 
-/** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
-export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio')
+/**
+ * 设置命名空间（= Loader entry id，客户端卡片与 Host 两侧共用同一字符串）。
+ *
+ * 0.2.1 起命名空间由 Loader entry id 决定，不再需要 settingsNamespace() 构造：
+ * 本插件在 profile 里的 entry id 就是 'canvas-studio'，故此处只是同一字符串的具名常量。
+ */
+export const CANVAS_STUDIO_NS = 'canvas-studio'
 
 /** Drama Backend API 基址默认值（WL 自架后端）。 */
 export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082'
@@ -143,8 +148,14 @@ export interface CanvasStudioConfig {
   testMode: boolean
 }
 
-/** Canvas Studio 设置 schema（注册进 settings 服务，作为组装 base 层）。 */
-export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
+/**
+ * Canvas Studio 设置 schema（作为插件 Config 导出，由 Loader 校验并注入）。
+ *
+ * 整棵对象标 `.volatile()`：0.2.1 起只有 volatile 节点下的字段允许经 settings 编辑，
+ * 对象级 volatile 让全部字段可编辑，同时运行时经 `config.get()` 读到当前值。
+ * 类型上 Config 值 = `Volatile<CanvasStudioConfig | undefined>`（见 registry 的运行时注入）。
+ */
+export const CanvasStudioConfig = z.object({
   dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
   dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
   falApiKey: z.string().role('credential-ref').default(DEFAULT_FAL_API_KEY_REF),
@@ -187,4 +198,7 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
 
   // 测试（REQ-021）：默认关闭 —— 日常用户界面上不出现自动测试入口。
   testMode: z.boolean().default(false),
-})
+}).volatile()
+
+/** 插件 Config 值类型：对象级 volatile 包装后的运行时形态。 */
+export type CanvasStudioConfigValue = Volatile<CanvasStudioConfig | undefined>

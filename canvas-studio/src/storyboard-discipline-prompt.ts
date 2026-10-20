@@ -19,6 +19,7 @@
  *
  * 注意：文本中不得出现 `{{variable}}` —— renderPrompt 对未知引用会直接抛错。
  */
+import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectRegistry } from './projects.js'
 import { loadStoryboard } from './storyboard-store.js'
 import type { StoryboardDocument } from './contracts/storyboard.js'
@@ -109,10 +110,7 @@ export async function refreshStoryboardDisciplineCache(
  * 注册故事版纪律小节 + `agent/created` 缓存预热。
  * @returns 联合 disposer（同时移除小节与事件监听）。
  */
-export function registerStoryboardDisciplinePrompt(ctx: {
-  systemPrompt: { section(section: { name: string; order: number; text: string | ((context: unknown) => string) }): () => void }
-  on(event: 'agent/created', listener: (payload: { agent: { session?: { header?: { cwd?: string } } } }) => void): () => void
-}, registry: ProjectRegistry): () => void {
+export function registerStoryboardDisciplinePrompt(ctx: Pick<Context, 'systemPrompt' | 'on'>, registry: ProjectRegistry): () => void {
   const disposeSection = ctx.systemPrompt.section({
     name: STORYBOARD_DISCIPLINE_SECTION_NAME,
     order: STORYBOARD_DISCIPLINE_SECTION_ORDER,
@@ -129,6 +127,7 @@ export function registerStoryboardDisciplinePrompt(ctx: {
   })
   const disposeListener = ctx.on('agent/created', ({ agent }) => {
     void refreshStoryboardDisciplineCache(registry, agent?.session?.header?.cwd)
+    return undefined
   })
   return () => { disposeSection(); disposeListener() }
 }

@@ -23,6 +23,7 @@
  *
  * 注意：文本中不得出现 `{{variable}}`——renderPrompt 对未知引用会直接抛错。
  */
+import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectRegistry } from './projects.js'
 import { CREATION_SKILL_NAME } from './skills/routing-prompt.js'
 import { getSkillEntry } from './skill-catalog.js'
@@ -164,10 +165,7 @@ export function invalidateActiveSkillsPromptCache(): void {
  * 注册激活集小节 + `agent/created` 缓存预热。
  * @returns 联合 disposer（同时移除小节与事件监听）。
  */
-export function registerActiveSkillsPrompt(ctx: {
-  systemPrompt: { section(section: { name: string; order: number; text: string | ((context: unknown) => string) }): () => void }
-  on(event: 'agent/created', listener: (payload: { agent: { session?: { header?: { cwd?: string } } } }) => void): () => void
-}, registry: ProjectRegistry): () => void {
+export function registerActiveSkillsPrompt(ctx: Pick<Context, 'systemPrompt' | 'on'>, registry: ProjectRegistry): () => void {
   const disposeSection = ctx.systemPrompt.section({
     name: ACTIVE_SKILLS_SECTION_NAME,
     order: ACTIVE_SKILLS_SECTION_ORDER,
@@ -184,6 +182,7 @@ export function registerActiveSkillsPrompt(ctx: {
   })
   const disposeListener = ctx.on('agent/created', ({ agent }) => {
     void refreshActiveSkillsPromptCache(registry, agent?.session?.header?.cwd)
+    return undefined
   })
   return () => { disposeSection(); disposeListener() }
 }

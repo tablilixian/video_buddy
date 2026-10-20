@@ -471,7 +471,7 @@ function renderShotList(_args: unknown, value: unknown): ContentBlock[] {
 async function runTextAutoFix(
   registry: ProjectRegistry,
   projectId: string,
-  port: number,
+  port: () => number | undefined,
   original: GenerateResult,
   originalPrompt: string,
   quotedTexts: readonly string[],
@@ -480,7 +480,7 @@ async function runTextAutoFix(
 ): Promise<GenerateResult> {
   try {
     // 1) 把原图产物 URL 上传到 Drama Backend 拿可用句柄（产物名不可直接入参，CV-155）
-    const uploadedFilename = await uploadImage(original.url!, signal, port, registry)
+    const uploadedFilename = await uploadImage(original.url!, signal, port(), registry)
     await backfillUploadFilename(registry, projectId, original.url!, uploadedFilename)
     // 2) 构造修复 prompt（CV-218：从**原 prompt** 抽「文字规格段 + 逐字约束段」）。
     //    原 prompt 是修复 prompt 的最佳来源 —— 丢位置线索正是「武仔 → 武传」仍错
@@ -1395,7 +1395,10 @@ export interface StudioRuntimeConfig {
  *   会让旧缓存覆盖另一侧的新条目；测试直连缺省时自建（库链路只在 `lib:` 引用
  *   时才触达）。
  */
-export function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig, library: AssetLibrary = new AssetLibrary()) {
+export function createStudioTools(registry: ProjectRegistry, port: number | (() => number | undefined), cfg?: StudioRuntimeConfig, library: AssetLibrary = new AssetLibrary()) {
+  // 0.2.1：Host 侧 `webServer.port` 在 listen 前为 `undefined`，而工具在装配期即注册；
+  // 故生产路径传 getter（执行时读取最新端口），测试仍可直接传 number。
+  const portOf = typeof port === 'function' ? port : (): number => port
   // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
   // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
   if (cfg !== undefined) setRuntimeConfig(cfg)
@@ -1455,7 +1458,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const autoFixEnabled = a.autoFixText !== false && !routedToTextRender
         const decision = autoFixEnabled ? shouldAutoFixText(a.prompt) : { needsFix: false, quotedTexts: [] }
         if (decision.needsFix && result.nodeId !== undefined && result.url !== undefined) {
-          result = await runTextAutoFix(registry, projectId, port, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
+          result = await runTextAutoFix(registry, projectId, portOf, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
         }
         // 创意先行：storyboardRef 命中时把本图引用回写进故事板（覆盖层即刻可见）。
         // 回写用**最终**产物节点（auto-fix 会换新节点）；失败降级为附注，不阻断生成。
@@ -1786,7 +1789,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       async execute(args, exec) {
         const a = args as { imageUrl: string }
-        const filename = await uploadImage(a.imageUrl, exec.signal, port, registry)
+        const filename = await uploadImage(a.imageUrl, exec.signal, portOf(), registry)
         // CV-031b：画布资产重上传后回写 filename，保住 filename→节点 的血缘反查。
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await backfillUploadFilename(registry, projectId, a.imageUrl, filename)

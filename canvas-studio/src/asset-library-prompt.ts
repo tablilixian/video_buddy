@@ -13,6 +13,7 @@
  * 注意：文本中不得出现 `{{variable}}`——renderPrompt 对未知引用直接抛错，
  * 因此名称/别名/描述等用户输入要先过 `safePromptText` 去花括号。
  */
+import type { Context } from '@deepseek-ai/cordis'
 import type { AssetLibrary } from './asset-library.js'
 import type { LibraryAsset } from './contracts/asset-library.js'
 import { LIB_CATEGORIES, LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
@@ -89,10 +90,7 @@ export function cachedAssetLibrarySectionText(): string {
  * 注册资产库小节 + `agent/created` 缓存预热。
  * @returns 联合 disposer（同时移除小节与事件监听）。
  */
-export function registerAssetLibraryPrompt(ctx: {
-  systemPrompt: { section(section: { name: string; order: number; text: string | ((context: unknown) => string) }): () => void }
-  on(event: 'agent/created', listener: (payload: { agent?: { session?: { header?: { cwd?: string } } } }) => void): () => void
-}, library: AssetLibrary): () => void {
+export function registerAssetLibraryPrompt(ctx: Pick<Context, 'systemPrompt' | 'on'>, library: AssetLibrary): () => void {
   const disposeSection = ctx.systemPrompt.section({
     name: ASSET_LIBRARY_SECTION_NAME,
     order: ASSET_LIBRARY_SECTION_ORDER,
@@ -104,6 +102,7 @@ export function registerAssetLibraryPrompt(ctx: {
   })
   const disposeListener = ctx.on('agent/created', () => {
     void refreshAssetLibraryPromptCache(library)
+    return undefined
   })
   return () => { disposeSection(); disposeListener() }
 }

@@ -325,7 +325,7 @@ export interface MarketRequestContext {
   readonly origin: string | undefined
   readonly host: string | undefined
   readonly secFetchSite?: string | undefined
-  readonly expectedPort: number
+  readonly expectedPort: number | undefined
 }
 
 function marketAuthority(context: MarketRequestContext): URL | undefined {
@@ -363,7 +363,7 @@ export function marketMutationAllowed(context: MarketRequestContext): boolean {
   }
 }
 
-function requestContext(req: IncomingMessage, expectedPort: number): MarketRequestContext {
+function requestContext(req: IncomingMessage, expectedPort: number | undefined): MarketRequestContext {
   const secFetchSite = req.headers['sec-fetch-site']
   return {
     remoteAddress: req.socket.remoteAddress,
@@ -374,11 +374,11 @@ function requestContext(req: IncomingMessage, expectedPort: number): MarketReque
   }
 }
 
-function requestAllowed(req: IncomingMessage, expectedPort: number): boolean {
+function requestAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
   return marketRequestAllowed(requestContext(req, expectedPort))
 }
 
-function mutationAllowed(req: IncomingMessage, expectedPort: number): boolean {
+function mutationAllowed(req: IncomingMessage, expectedPort: number | undefined): boolean {
   return marketMutationAllowed({
     ...requestContext(req, expectedPort),
   })
@@ -664,7 +664,7 @@ export function registerMarketRoutes(
   desktopActionsProvider?: MarketDesktopActionsProvider,
   desktopPluginsProvider?: MarketDesktopPluginsProvider,
 ): () => void {
-  const expectedPort = ctx.webServer.port
+  const expectedPort = (): number | undefined => ctx.webServer.port
   const generationController = new AbortController()
   const store = new SettingsCatalogSourceStore(scope)
   const media = createMarketMediaService({
@@ -731,7 +731,7 @@ export function registerMarketRoutes(
   const routes = [
     ctx.webServer.register({ kind: 'exact', path: ROUTE_STATE, handler: async (_req, res) => {
       if (generationController.signal.aborted) return
-      if (!requestAllowed(_req, expectedPort)) {
+      if (!requestAllowed(_req, expectedPort())) {
         sendJson(res, 403, { error: 'market request authority rejected' })
         return
       }
@@ -752,7 +752,7 @@ export function registerMarketRoutes(
       }
     }}),
     ctx.webServer.register({ kind: 'exact', path: ROUTE_CATALOG, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'market request authority rejected' })
         return
       }
@@ -881,7 +881,7 @@ export function registerMarketRoutes(
       }
     }}),
     ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSETS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
+      if (!requestAllowed(req, expectedPort())) {
         sendJson(res, 403, { error: 'market request authority rejected' })
         return
       }
@@ -930,7 +930,7 @@ export function registerMarketRoutes(
       }
     }}),
     ctx.webServer.register({ kind: 'exact', path: ROUTE_SOURCES, handler: async (req, res) => {
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'source changes require a local same-origin POST' })
         return
       }
@@ -953,7 +953,7 @@ export function registerMarketRoutes(
   if (desktopActionsProvider !== undefined) {
     routes.push(
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPEN_TERMINAL, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
           sendJson(res, 405, { error: 'opening DSH Terminal requires a local same-origin POST' })
           return
         }
@@ -981,7 +981,7 @@ export function registerMarketRoutes(
   if (installProvider !== undefined) {
     routes.push(
       ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLABLE, handler: async (req, res) => {
-        if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
+        if (req.method !== 'GET' || !requestAllowed(req, expectedPort())) {
           sendJson(res, 405, { error: 'market installable catalog requires a local GET' })
           return
         }
@@ -1065,7 +1065,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_INSTALLATIONS, handler: async (req, res) => {
-        if (req.method !== 'GET' || !requestAllowed(req, expectedPort)) {
+        if (req.method !== 'GET' || !requestAllowed(req, expectedPort())) {
           sendJson(res, 405, { error: 'market installations require a local GET' })
           return
         }
@@ -1082,7 +1082,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_PREVIEW, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
           sendJson(res, 405, { error: 'market package previews require a local same-origin POST' })
           return
         }
@@ -1115,7 +1115,7 @@ export function registerMarketRoutes(
         }
       }}),
       ctx.webServer.register({ kind: 'exact', path: ROUTE_OPERATION_EXECUTE, handler: async (req, res) => {
-        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
           sendJson(res, 405, { error: 'market package execution requires a local same-origin POST' })
           return
         }
@@ -1142,7 +1142,7 @@ export function registerMarketRoutes(
   }
   if (desktopActionsProvider !== undefined) {
     routes.push(ctx.webServer.register({ kind: 'exact', path: ROUTE_REQUEST_RESTART, handler: async (req, res) => {
-      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
         sendJson(res, 405, { error: 'requesting a restart requires a local same-origin POST' })
         return
       }

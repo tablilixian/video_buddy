@@ -83,8 +83,33 @@ describe('desktop renderer boot health', () => {
     dispose()
   })
 
-  it('does not send a late report after the renderer generation is disposed', async () => {
+  /**
+   * 回归：inject 凑不齐时 `loader.await()` 永不 resolve。
+   * 修复前这条路径一个上报都发不出去，宿主只能按 30s 超时合成
+   * `plugins: []`，恢复窗口上显示 `Unknown client plugin`（看不出是谁）。
+   * 修复后必须在宿主门限之前发出报告，并点名卡住的插件。
+   */
+  it('names the stuck plugins when the Loader never settles', async () => {
     vi.useFakeTimers()
+    const loader = {
+      await: vi.fn(() => new Promise<void>(() => {})),
+      * entries() {
+        yield { options: { name: 'dsh-plugin-desktop' }, fiber: { state: 0 } }
+        yield { options: { name: 'canvas-studio' }, fiber: { state: 2 } }
+      },
+    }
+
+    const report = rendererBootReport(loader)
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    await expect(report).resolves.toEqual({
+      status: 'failed',
+      plugins: ['dsh-plugin-desktop'],
+      error: 'The client Loader did not settle within 20000ms; the plugins below never reached the active state.',
+    })
+  })
+
+  it('does not send a late report after the renderer generation is disposed', async () => {    vi.useFakeTimers()
     let settle!: () => void
     const loader = {
       await: vi.fn(() => new Promise<void>((resolve) => { settle = resolve })),

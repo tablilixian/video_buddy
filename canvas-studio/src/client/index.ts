@@ -76,25 +76,47 @@ import { CanvasStudioError, asCanvasError, isDevMode, resolveDevModeFromProcess,
 import '../errors/catalog.js'
 
 /**
- * Services required before the studio frame can mount.
+ * 座位一（顶层）：**只够提供 `layout` 服务**的最小依赖。
+ *
+ * 0.2.1 把 `layout` 变成了 ui-workspace 的硬依赖：`dsh-client-ui-workspace@0.2.1`
+ * 的 inject 是 `[slots, sessions, workspaces, locale, remote, remote.directoryPicker,
+ * layout, shortcuts, remoteAccess]`（0.1.1 是 `[slots, sessions, workspaces, locale,
+ * connection]`，**没有** `layout`）；`dsh-client-ui-conversation@0.2.1` 又要求
+ * `uiWorkspace`。而桌面的 `ui-layout` 行被 cordis.patch.yml 关掉，`layout` 只能由
+ * 本包用 `ctx.reflect.provide('layout', …)` 提供。
+ *
+ * 所以：只要把 `uiWorkspace` / `uiConversation` 写进**顶层** inject，依赖图就成环
+ *
+ *     canvas-studio → uiWorkspace → layout → canvas-studio（apply 里才 provide）
+ *
+ * Cordis 的 fiber 仅在 inject 全部就绪时才执行 apply（cordis/lib/index.js 的
+ * `_refresh`：任一依赖缺位即 epoch=INACTIVE，见 `_checkImpl`）。环上的两个 fiber
+ * 互等，谁都进不了 ACTIVE(2) ⇒ `root` 槽永不注册 ⇒ 桌面只剩 framed shell 底座 +
+ * 恢复模式按钮（2026-10-21 实测）。因此顶层只声明 `slots`，主插件改由
+ * `ctx.inject()` 起子 fiber（座位二，见 `STUDIO_CLIENT_INJECT`）—— 子 fiber 的
+ * inject 只在父 apply 执行后才开始等待，此时 `layout` 已经提供。
+ *
+ * 同一坑的老版本（0.1.x，2026-08-31 实测）：`conversation` 服务经 ui-conversation
+ * → layout 也成环，故它一直不在 inject 里（官方 ui-commands / ui-model-selection
+ * 同样在调用处惰性取）。
+ */
+export const inject = ['slots']
+
+/**
+ * 座位二：StudioFrame 主插件要求的全部服务（原顶层清单，语义不变）。
  *
  * 注意：`tools` 是 Host 专属服务，客户端没有该服务。媒体生成工具已在 Host
  * 侧（`src/host-tools.ts`）注册，客户端只负责 UI、项目/工作区绑定，以及
  * 通过 `conversationEvents` 捕获工具产物到画布 store（P4），并把画布节点
  * 持久化到 Host（P4+ 重启恢复）。`sessions` 用于打断当前会话的生成回合。
+ *
+ * 设置弹窗经 StudioFrame 复用本 ctx，所以这里必须列出设置面实际用到的服务 ——
+ * DSH Cordis 为隔离 inject：未声明的服务在 ctx 上不可访问，否则取 settingsScope /
+ * connection 会抛 "service not found"。`conversation` 仍**不能**加进来（见上）。
  */
-// 注意：设置弹窗经 StudioFrame 复用本 ctx，因此本插件必须声明它实际用到的全部
-// 服务。DSH Cordis 为隔离 inject：未在列表中声明的服务在 ctx 上不可访问，否则
-// 设置弹窗取 settingsScope / connection 会在桌面启动阶段抛 "service not found"。
-// 但 `conversation` **绝不能**出现在这个数组里。它是 ui-conversation 包提供的
-// 服务，而 ui-conversation 的 inject 里有 `layout` —— 本 profile 下 `layout` 由
-// canvas-studio 用 `ctx.reflect.provide('layout', …)` 提供。一旦本插件 inject
-// `conversation`，依赖图就成环（studio → conversation → layout → studio），loader
-// 里三个 entry 的 fiber 永远进不了 ACTIVE，桌面启动直接报
-// 「Renderer boot failed for 3 plugin(s)」（2026-08-31 实测）。官方插件
-// （ui-commands、ui-model-selection）也都是在调用处 `ctx.get('conversation')`
-// 惰性取服务，不在 inject 里声明。
-export const inject = ['slots', 'workspaces', 'uiWorkspace', 'uiConversation', 'sessions', 'connection', 'configForms', 'theme']
+export const STUDIO_CLIENT_INJECT = [
+  'slots', 'workspaces', 'uiWorkspace', 'uiConversation', 'sessions', 'connection', 'configForms', 'theme',
+]
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
 const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -163,26 +185,21 @@ function seedNodes(): StudioCanvasNode[] {
 }
 
 /**
- * Client plugin body: provide the standard ctx.layout contract (owned by the
- * disabled ui-layout row) and register the studio frame into the runtime's
- * built-in root slot, declaring the standard child seats so the upstream
- * sidebar/conversation/details plugins keep their registration paths.
+ * 客户端插件入口 —— 只做两件「顺序敏感」的事，然后退场。
  *
- * Project switching binds the conversation to the project's workspace: each
- * project owns one workspace registered at its disk directory, and opening a
- * project connects (reusing a blank session) and navigates to it. The canvas
- * nodes for that project are loaded (and, with `?cs-dev-seed=1`, seeded) here.
+ * 1. 座位一：先把 `layout` 服务提供出去。上游 0.2.1 的 ui-workspace 与
+ *    ui-conversation 都等这个服务，而本文件顶层 inject 只有 `slots`，所以这段
+ *    代码在 `slots` 就绪后就跑（不必等任何 ui 服务）。
+ * 2. 座位二：把真正的 StudioFrame 主插件挂成子 fiber，由它自己等 ui 服务。
+ *
+ * 顺序不能换：先 provide 再起子 fiber，否则子 fiber 的 `uiWorkspace` 永远不会
+ * 就绪（环，见文件顶部 `inject` 注释）。
  * @param ctx - active browser Cordis context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.logger.info('canvas-studio client v2 loaded')
-  // 开发模式显式声明一次（设计文档 §8）：客户端与 Host 各设一次。默认关闭 ——
-  // 渲染进程若没有 process（打包后），resolveDevModeFromProcess() 返回 false，
-  // 于是错误文案不会带上 `[dev]` 内部细节。
-  setDevMode(resolveDevModeFromProcess())
-  // The desktop advanced shell owns the root slot with its own children
-  // declarations; the studio frame is a compatibility-mode surface, so the
-  // desktop's advanced frame keeps the desktop presentation unchanged.
+  // advanced 模式下桌面自己提供 layout + root（installDesktopLayout 要求独占
+  // layout 所有权，见 dsh-plugin-desktop/src/client/layout-service.ts:16），
+  // 本包必须整体退场 —— 判据要在 provide 之前，否则会与桌面抢同一个服务名。
   const params = new URLSearchParams(window.location.search)
   if (params.get('dsh-desktop-mode') === 'advanced') {
     ctx.logger.warn(
@@ -190,11 +207,57 @@ export function apply(ctx: ClientContext): void {
     )
     return
   }
-  const devSeed = params.get('cs-dev-seed') === '1'
   // 主面板注册表查询：`main` 是 keyed 槽，entryKey 即 panelId。
   const layout = new StudioLayoutController(
     id => ctx.slots.entries('main').some(entry => entry.options.key === id),
   )
+  ctx.effect(
+    () => ctx.reflect.provide('layout', layout),
+    'canvas-studio: layout service seat (before uiWorkspace)',
+  )
+  // 同一个实例也作为 StudioFrame 的注入面（contracts.ts 的 `layout: ILayout`）。
+  let framed = false
+  ctx.inject(STUDIO_CLIENT_INJECT, studioCtx => {
+    framed = true
+    studioClient(studioCtx, layout)
+  })
+  // 自检（2026-10-21）：座位二迟迟不激活时把「缺哪个服务」写进 console。
+  // 0.2.x 的 inject 变更只会让 fiber 静默 pending（页面空白、无异常栈），
+  // 没有这条日志就只能靠 CDP 反查 —— 一次终端回执即可定位。
+  // `strict=false` 读的是「有没有提供方」，区分「压根没人提供」与「提供方自己还 pending」。
+  ctx.effect(() => {
+    const timer = setTimeout(() => {
+      if (framed) return
+      const absent = STUDIO_CLIENT_INJECT.filter(name => ctx.reflect.get(name, false) === undefined)
+      ctx.logger.warn(
+        'canvas-studio: studio frame still pending after 10s; not provided at all: '
+        + `${absent.join(', ') || '(none — a provider is itself pending, check its own inject)'}`,
+      )
+    }, 10_000)
+    return () => { clearTimeout(timer) }
+  }, 'canvas-studio: pending seat self-check')
+}
+
+/**
+ * Client plugin body: register the studio frame into the runtime's built-in root
+ * slot, declaring the standard child seats so the upstream
+ * sidebar/conversation/details plugins keep their registration paths.
+ *
+ * Project switching binds the conversation to the project's workspace: each
+ * project owns one workspace registered at its disk directory, and opening a
+ * project connects (reusing a blank session) and navigates to it. The canvas
+ * nodes for that project are loaded (and, with `?cs-dev-seed=1`, seeded) here.
+ * @param ctx - active browser Cordis context (子 fiber，inject = STUDIO_CLIENT_INJECT).
+ * @param layout - 座位一已提供的 layout 实例（同一个对象，别在此再 new 一个）。
+ */
+function studioClient(ctx: ClientContext, layout: StudioLayoutController): void {
+  ctx.logger.info('canvas-studio client v2 loaded')
+  // 开发模式显式声明一次（设计文档 §8）：客户端与 Host 各设一次。默认关闭 ——
+  // 渲染进程若没有 process（打包后），resolveDevModeFromProcess() 返回 false，
+  // 于是错误文案不会带上 `[dev]` 内部细节。
+  setDevMode(resolveDevModeFromProcess())
+  const params = new URLSearchParams(window.location.search)
+  const devSeed = params.get('cs-dev-seed') === '1'
   // 唯一的 store 实例：apply 世界（workspace 订阅、capture 回调、openProject）
   // 与 React 组件（经 inject hooks 舱的 useStudio）读写同一个实例。不能再把
   // store 座位交给框架 —— 框架会按 handle×scopeKey 再 create() 一个独立实例，
@@ -2039,7 +2102,7 @@ export function apply(ctx: ClientContext): void {
 
 
   ctx.effect(() => {
-    const disposeService = ctx.reflect.provide('layout', layout)
+    // layout 服务已在入口的座位一里提供（早于 uiWorkspace 激活，见上方 apply）。
     const disposeRegistration = ctx.slots.register({
       name: 'root',
       children: {
@@ -2684,7 +2747,6 @@ export function apply(ctx: ClientContext): void {
     } as never, StudioFrame)
     return () => {
       disposeRegistration()
-      void disposeService()
     }
-  }, 'canvas-studio: layout service + studio root frame')
+  }, 'canvas-studio: studio root frame')
 }

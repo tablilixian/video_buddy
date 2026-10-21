@@ -1,0 +1,42 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -447,7 +447,7 @@
+ */
+ const contextPressureProjectionDefinition = {
+ 	key: "contextPressure",
+-	stateVersion: 5,
++	stateVersion: 6,
+ 	stateSchema: contextPressureStateSchema,
+ 	init: () => ({ surfaceTokens: 0 }),
+ 	apply: (state, event) => {
+@@ -475,7 +475,7 @@
+ 		}
+ 		if (fold.deltaTokens !== 0) next = {
+ 			...next,
+-			surfaceTokens: next.surfaceTokens + fold.deltaTokens
++			surfaceTokens: Math.max(0, next.surfaceTokens + fold.deltaTokens)
+ 		};
+ 		if (state.claim === void 0 && fold.claim === void 0) return next;
+ 		const { claim: _expired, ...withoutClaim } = next;
+diff --git a/lib/types/usage-projection.js b/lib/types/usage-projection.js
+--- a/lib/types/usage-projection.js
++++ b/lib/types/usage-projection.js
+@@ -140,7 +140,7 @@
+  */
+ export const contextPressureProjectionDefinition = {
+     key: 'contextPressure',
+-    stateVersion: 5,
++    stateVersion: 6,
+     stateSchema: contextPressureStateSchema,
+     init: () => ({ surfaceTokens: 0 }),
+     apply: (state, event) => {
+@@ -166,7 +166,7 @@
+             }
+         }
+         if (fold.deltaTokens !== 0) {
+-            next = { ...next, surfaceTokens: next.surfaceTokens + fold.deltaTokens };
++            next = { ...next, surfaceTokens: Math.max(0, next.surfaceTokens + fold.deltaTokens) };
+         }
+         // A defined fold.claim is always freshly built, so presence decides claim
+         // bookkeeping: no claim before or after this event leaves `next` as is.

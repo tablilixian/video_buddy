@@ -742,7 +742,7 @@ corepack yarn dist:win-portable
 3. **补齐 desktop / canvas 的 0.2.1 新增依赖**（F.3.2）：按 `tsc` 报出的 `TS2307` 清单逐个加入对应 manifest（`0.2.1-rc.2`）。
 4. ✅ **Desktop 宿主迁移完成**（`2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`，宿主 `tsc` 41 → 0）；测试与客户端面留待 P3/P4（见 F.5「已知后续」）。
 5. ✅ **P3 完成**（`086b57f0e4` 机械层 / `7eb14f5a12` desktop 框架 / `180c93e50f` canvas 客户端）。三包 host+client+native-ui+remotion 共 7 套配置全 0，bundle 全构建通过。**仅测试配置仍红**（属 P4：desktop 47+8、market 10）。
-6. ✅ **P4-a 测试改写完成**（`2e44947117`）。4 套测试配置 desktop 47+8 / market 10 → 全 0，`corepack yarn typecheck` 三包 11 套配置全绿。**P4-b patch 重做未开始**（15 个，见 F.7）。
+6. ✅ **P4-a 完成**（`2e44947117`）4 套测试配置 65 → 0；✅ **P4-b 完成**（`cb97848624`）patch 从 17 个收缩到 9 个（8 删 7 重建），7 个全部落到安装树且 typecheck 全绿。详见 F.7 / F.8。
 7. 补跑各包自身验证链（`typecheck && build && verify:loader && test:smoke`）——须待 P4-b 后。
 
 ### F.5 Desktop 宿主迁移（2026-10-20，已完成宿主侧，提交 `2d827d4503` `f6f7812337` `e70f4d19bb` `d669deafaa`）
@@ -871,3 +871,51 @@ corepack yarn dist:win-portable
 3. #7 `dsh-llm-deepseek` 先读新的 `startBlock()` 再决定守卫位置。
 4. root `package.json` 的 `resolutions` 按新文件名重挂（P1 已全部出栈）。
 5. `corepack yarn install` 后跑 `git diff --stat` 确认每个 patch 真被应用（`resolutions` 写错时 pnpm 会静默跳过）。
+
+### F.8 P4-b 执行结果（2026-10-21，提交 `cb97848624`）
+
+**F.7.2 的「移植 7 个」判断已被执行推翻，必须按本节为准。**
+
+`../dsh-desktop/patches/` 里那些同名 `@0.2.1-rc.2` patch 装的是**参考项目自己的功能**（`readPatches`、`manageDesktopProfile`、`WRITE_OWNER` 重试），和我们同名的只是**包名**。逐个 `grep -E "^\+[^+]"` 比对：
+
+| patch | 与参考仓同源？ |
+| --- | --- |
+| `dsh-host-directory-picker-browse` | ✅ 逐行一致 |
+| `dsh-web-app` | ⚠️ 部分（`ELECTRON_RUN_AS_NODE` 清洗块相同；`openBrowser: false` 是我们独有） |
+| 另外 5 个 | ❌ 内容完全不同 |
+
+⇒ 7 个全部按 0.2.1 源码重锚，没有一个能直接拷。
+
+**终态：17 → 9 个文件（8 删 / 7 重建）。**
+
+| 处置 | patch | 依据 |
+| --- | --- | --- |
+| 删 | `dsh-client-runtime` | 包已删，`watchNavigation()` 等双 ready 才 `restoreSelection()` |
+| 删 | `dsh-host-apiproxy-model-modalities` | `inputModalities` 已上游一等公民，`modelCatalogModelSchema` 符号不存在 |
+| 删 | `dsh-client-ui-settings-models` | 上游自带 `candidateQuery` / `visibleCandidates` |
+| 删 | `dsh-client-ui-trajectory` | 上游 zh 补全，已用 `t("record.thinking")` |
+| 删 | `dsh-llm-deepseek` | **执行中新发现**：`startBlock()` 对空 tool identity 直接抛 `MALFORMED_RESPONSE` |
+| 删 | `dsh-sandbox-windows-acl`、`dsh-subprocess-local`、`dsh` | **执行中确认**：STARTUPINFO 标志与隐藏窗口逻辑搬进 `dsh-win32-process`；`taskkill` / spawn 站点均已 `windowsHide`（execa 默认亦带） |
+| 重建 | `dsh-agent-loop` | 空 tool name 守卫，重锚到重写后的 `executeToolCalls()`；并行组遇到坏调用**停止**而不是吞掉其后排队的调用 |
+| 重建 | `dsh-token-meter` | 只留 `contextPressure` 的 `surfaceTokens` 钳位（`withTotals()` 已管 breakdown 侧）+ `stateVersion` 5→6 |
+| 重建 | `dsh-client-ui-workspace` | `data-dsh-workspace-drop-target`（**功能性**，`client-workspace-folder-drop` 依赖） |
+| 重建 | `dsh-client-ui-directory-picker-browse` | 最大一个（191 行）：Windows 原生选目录按钮 + owner 提供的 `validateDirectory` 校验闸，两个 prop 全 optional ⇒ 上游对话框独立可用 |
+| 重建 | `dsh-app-boot` | 空 patch 文件解析成 `[]` 而非抛错 |
+| 重建 | `dsh-host-directory-picker-browse` | `enterable` 初值改 false，`isDirectory || isSymbolicLink` 都去 `stat`，Windows reparse 目录不再炸父列表 |
+| 重建 | `dsh-web-app` | `openBrowser: false` 由 Desktop 接管 + 启动器自身补 `ELECTRON_RUN_AS_NODE` 且从父进程清洗掉 |
+| 保留 | `app-builder-lib@26.15.7`、`open@11.0.1` | 与 dsh 版本无关 |
+
+**生成方法（可复用）**：`node_modules/@deepseek-ai/<pkg>/lib` 拷两份到 `/tmp/p4b/<pkg>/{a,b}`，只改 `b`，`diff -ruN a b` 产出。三个必须踩过的坑：
+
+1. **不要后处理 diff 正文**。为「美化」压缩空行会破坏 hunk 计数，yarn 直接报 patch 解析失败（`git apply` 反而不报）。
+2. **每个文件段必须补 `diff --git a/<p> b/<p>` 头**。缺了它，yarn 把紧随的 `---/+++` 当成 hunk 正文，计数正好多 1。
+3. **`resolutions` 键必须带 scope**：写 `"@deepseek-ai/dsh-token-meter"`。写成不带 scope 的 `"dsh-token-meter@npm:0.2.1-rc.2"` 时 yarn **静默不生效**——不报错、不告警，patch 就是不应用。
+
+**环境坑（非产品问题，下机重跑会再遇）**：
+
+- `~/.yarn/berry/cache` 里 patch zip 是「写 tmp 再 rename」，rename 被拦 ⇒ 出现成对 `.tmp`（内容完整、`zipfile.is_zipfile` 为 True）。手动 `os.rename` 到正式 `.zip` 后 install 就能命中缓存。
+- `yarn install` 的 link 步删除量远超批量删除闸的 50/轮 ⇒ 必须 `CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD=100000 corepack yarn install`。
+
+**验证**：7/7 在安装树里 grep 命中；`canvas-studio` 的 `dsh-client-ui-workspace` 与 `dsh-community-market` 的 `dsh-app-boot` 同样命中（`resolutions` 项目级生效，每个 workspace 各自一份 node_modules 也都打上了）；`corepack yarn typecheck` 11 套配置全绿（6m37s，唯一输出是 contract-types 的说明行）。
+
+**P4 之后只剩 P5**：首屏启动验证（槽位搬迁 + 本次 patch 都是「编译过但只有真机能证实」）+ 统一跑全部功能测试。

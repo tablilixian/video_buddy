@@ -422,6 +422,29 @@ export class ElectronShellGeneration {
     }
 
     try {
+      // 0.2.1 browser auth preflight: mint the session cookie in this
+      // renderer's session before the parameter URL loads. The token-exchange
+      // redirect drops query params, so the window itself must load the clean
+      // `spec.url` — same split as upstream desktop. This fetch must run
+      // BEFORE installRendererAccessHeader: that webRequest filter strips the
+      // capability header from any request without a renderer webContentsId,
+      // and a main-process session.fetch has none, so the explicit header
+      // would be removed and the Desktop WebServer fence would return 403.
+      const authenticated = await window.webContents.session.fetch(spec.authenticationUrl, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow',
+        cache: 'no-store',
+        headers: {
+          [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+        },
+      })
+      await authenticated.body?.cancel()
+      if (authenticated.status !== 200) {
+        throw new Error(
+          `dsh-plugin-desktop: browser authentication failed with HTTP ${String(authenticated.status)}`,
+        )
+      }
       removeRendererAccessHeader = installRendererAccessHeader(
         window,
         origin,

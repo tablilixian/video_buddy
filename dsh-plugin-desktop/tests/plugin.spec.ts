@@ -171,12 +171,22 @@ function createHarness(
     },
     settings,
     logger: { warn: vi.fn(), error: vi.fn() },
+    connection: {
+      authenticatedUrl: (url: string) => `${url}${url.includes('?') ? '&' : '?'}token=test-launch-token`,
+    },
     get: vi.fn((key: unknown) => {
       if (String(key) === 'desktopRuntime') return runtime
       if (String(key) === 'desktopBrowserAccess') return browserAccess
       if (String(key) === 'settings') return settings
       if (String(key) === 'loader') return { locate: () => DESKTOP_SETTINGS_ENTRY_ID }
+      if (String(key) === 'connection') return ctx.connection
       return () => {}
+    }),
+    inject: vi.fn((names: readonly string[], register: (scoped: never) => unknown) => {
+      // Real cordis hands the callback a scoped Context; required services are
+      // read off it as properties (ctx.connection). Mirror that shape.
+      const scoped = Object.fromEntries(names.map(name => [name, (ctx.get as (key: unknown) => unknown)(name)]))
+      return register(scoped as never)
     }),
     effect: vi.fn((register: () => unknown) => register()),
     on: vi.fn((event: string, listener: (...args: never[]) => unknown) => {
@@ -273,6 +283,19 @@ describe('desktop Host plugin', () => {
     stderr.mockRestore()
   })
 
+  it('schedules a clean parameter URL plus the launch-token authenticationUrl for the 0.2.1 cookie preflight', () => {
+    const harness = createHarness()
+    apply(harness.ctx, harness.configRef)
+    const shell = harness.shell()
+    expect(shell).toBeDefined()
+    const url = new URL(shell!.url)
+    expect(url.searchParams.get('token')).toBeNull()
+    expect(url.searchParams.get('dsh-desktop-mode')).toBeDefined()
+    const auth = new URL(shell!.authenticationUrl)
+    expect(auth.searchParams.get('token')).toBe('test-launch-token')
+    expect(auth.pathname).toBe('/')
+  })
+
   it('builds the loopback root with validated renderer mode and platform markers', () => {
     const url = new URL(desktopRendererUrl(43120, 'advanced', 'darwin', '2.0.3'))
     expect(url.origin).toBe('http://127.0.0.1:43120')
@@ -325,6 +348,7 @@ describe('desktop Host plugin', () => {
     expect(harness.shell()).toEqual(expect.objectContaining({
       mode: 'compatibility',
       url: 'http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=2.0.0&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36',
+      authenticationUrl: 'http://127.0.0.1:43120?token=test-launch-token',
       productName: 'VideoBuddy',
       windowTitle: 'VideoBuddy',
       rendererAccessHeader: {

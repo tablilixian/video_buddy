@@ -24,8 +24,13 @@
       name: dsh-web-search-tinyfish
       config:
         apiKeyEnv: TINYFISH_API_KEY
+    # 2026-10-21: disabled — dsh-free-search@0.4.28 still imports the removed
+    # 0.1.x `SettingsProvider` export from dsh-settings@0.2.1, so the hybrid
+    # entry fails to import and takes the whole shell down. Re-enable after
+    # upgrading dsh-free-search to a 0.2.x-compatible release.
     - id: web-search-hybrid
       name: dsh-web-search-hybrid
+      disabled: true
       config:
         apiKeyEnv: TINYFISH_API_KEY
         bingMarket: zh-CN
@@ -50,20 +55,13 @@
     surfaceContext: true
     trustedHosts: []
 
-# Route the web seam's search and fetch to the hybrid provider so a fresh
-# install works without any API key: search runs the keyless free-engine chain
-# (Bing zh-CN → DDG lite → DDG html, from dsh-free-search) and fetch uses the
-# built-in keyless HTTP retrieval. When a TINYFISH_API_KEY is stored (web
-# settings page), the same provider upgrades to the TinyFish search/fetch APIs
-# per call — no restart needed. Overrides the base bundle's `searchProvider`/
-# `fetch` rows by id; last write wins per row. The TinyFish plugin stays
-# registered above for its settings surface and provides the keyed backend;
-# dsh-free-search is a library dependency of the hybrid plugin, so its engine
-# functions are reused without a standalone provider row.
+# 2026-10-21: back on the base bundle's defaults (deepseek-official search /
+# keyless HTTP fetch) while web-search-hybrid is disabled — the `hybrid`
+# provider names would resolve against an entry that no longer mounts.
 - id: web
   config:
-    searchProvider: hybrid
-    fetchProvider: hybrid
+    searchProvider: deepseek-official
+    fetchProvider: http
 
 # Enable the web_fetch tool (base bundle ships it disabled, deferring SSRF protection).
 - id: tool-web

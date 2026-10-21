@@ -148,16 +148,21 @@ try {
         register() { return () => {} },
       })
       host.provide('webRuntime', {})
+      // 0.2.1 browser auth: the desktop shell preflight-fetches the
+      // authenticationUrl (origin + launch token) to mint the session cookie;
+      // production provides this via dsh-base's client-connection row, which
+      // mounts before the Desktop layer.
+      host.provide('connection', {
+        authenticatedUrl: url => `${url}${url.includes('?') ? '&' : '?'}token=loader-smoke-launch-token`,
+      })
       host.provide('appExit', () => {})
       host.provide('settings', {
-        register() {
-          return {
-            get: () => ({ mode: 'compatibility' }),
-            watch: () => () => {},
-            update: async () => {},
-            replace: async () => {},
-          }
-        },
+        get: () => ({ mode: 'compatibility' }),
+        describe: () => [],
+        watch: () => () => {},
+        update: async () => {},
+        replace: async () => {},
+        configure: () => () => {},
       })
     },
     prepared.bareModuleBaseUrl,
@@ -182,6 +187,9 @@ try {
   const expectedUrl = `http://127.0.0.1:43120/?dsh-desktop-mode=compatibility&dsh-desktop-platform=darwin&dsh-desktop-version=${PRODUCT_VERSION}&dsh-desktop-material=transparent&dsh-desktop-titlebar-inset=36`
   if (mountedSpec?.url !== expectedUrl) {
     throw new Error(`desktop plugin produced an unexpected renderer URL: ${String(mountedSpec?.url)}`)
+  }
+  if (mountedSpec?.authenticationUrl !== 'http://127.0.0.1:43120?token=loader-smoke-launch-token') {
+    throw new Error(`desktop plugin produced an unexpected authentication URL: ${String(mountedSpec?.authenticationUrl)}`)
   }
   if (mountedSpec?.rendererAccessHeader !== BROWSER_ACCESS.rendererHeader) {
     throw new Error('desktop plugin did not preserve the launcher browser capability')

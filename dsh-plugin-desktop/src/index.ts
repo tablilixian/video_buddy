@@ -14,6 +14,7 @@ import {
   type ThemeSettings,
 } from '@deepseek-ai/dsh-client-ui-theme'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
   handleRendererBootRequest,
@@ -83,7 +84,7 @@ export const name = 'desktop-shell'
 
 /** Services required before the shell can register its renderer generation. */
 /** Services required by the desktop shell; `desktopRuntime` is probed, not required. */
-export const inject = ['webServer', 'webRuntime', 'appExit', 'settings']
+export const inject = ['webServer', 'appExit', 'settings', 'connection']
 
 /** Standard settings namespace shared by tray and configuration surfaces. */
 export const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
@@ -376,6 +377,15 @@ export function apply(ctx: Context, configValue: ConfigValue): void {
   })
   ctx.effect(
     () => {
+      // 0.2.1 browser auth: the served index mints its session cookie only
+      // from a root URL carrying the connection launch token, and the token
+      // exchange redirects to a clean `./` that drops every query param —
+      // including the `dsh-desktop-*` markers the client needs. So the window
+      // loads the clean parameter URL while the shell preflight fetches
+      // `authenticationUrl` (origin + token) to mint the cookie into the
+      // renderer session first (same split as upstream desktop). `connection`
+      // is declared in the plugin-level inject, so by apply time the service
+      // is mounted.
       const material = effectiveDesktopWindowMaterial(
         config.mode,
         runtime.platform,
@@ -383,18 +393,20 @@ export function apply(ctx: Context, configValue: ConfigValue): void {
         config.windowsMaterial,
         runtime.windowsBuild,
       )
+      const url = desktopRendererUrl(
+        activePort,
+        config.mode,
+        runtime.platform,
+        runtime.updates.currentVersion,
+        material,
+        runtime.windowsBuild,
+      )
       return runtime.schedule({
         ...config,
         material,
         ...(runtime.windowsBuild === undefined ? {} : { windowsBuild: runtime.windowsBuild }),
-        url: desktopRendererUrl(
-          activePort,
-          config.mode,
-          runtime.platform,
-          runtime.updates.currentVersion,
-          material,
-          runtime.windowsBuild,
-        ),
+        url,
+        authenticationUrl: ctx.connection.authenticatedUrl(new URL(url).origin),
         rendererAccessHeader: browserAccess.rendererHeader,
         // CV-060：用户可见的产品名统一为 VideoBuddy（托盘 tooltip / 应用菜单等
         // 消费点）。注意 main.ts 的 PRODUCT_NAME 保持 'DSH Desktop' 不动 —— 它

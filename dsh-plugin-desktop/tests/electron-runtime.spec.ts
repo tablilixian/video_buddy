@@ -109,7 +109,11 @@ const electron = vi.hoisted(() => {
   }
   const webContents = {
     id: 73,
-    session: { webRequest },
+    session: {
+      webRequest,
+      // 0.2.1 browser-auth preflight; the real session mints the cookie.
+      fetch: vi.fn(async () => ({ status: 200, body: { cancel: async () => {} } })),
+    },
     closeDevTools: vi.fn(() => { devToolsOpened = false }),
     executeJavaScript: vi.fn(async (_code: string, _userGesture?: boolean) => null as string | null),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -293,6 +297,7 @@ const spec: DesktopShellSpec = {
   minWidth: 900,
   minHeight: 640,
   url: 'http://127.0.0.1:43120/',
+  authenticationUrl: 'http://127.0.0.1:43120/?token=spec-launch-token',
   rendererAccessHeader: {
     name: 'x-dsh-desktop-renderer',
     value: Buffer.alloc(32, 9).toString('base64url'),

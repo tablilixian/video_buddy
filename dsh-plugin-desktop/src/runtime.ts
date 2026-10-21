@@ -139,6 +139,8 @@ export interface DesktopShellSpec extends DesktopWindowConfig {
   windowsBuild?: number
   /** Unmodified Web root served by the active DSH profile. */
   url: string
+  /** Connection launch-token URL (origin only) preflighted to mint the 0.2.1 browser session cookie. */
+  authenticationUrl: string
   /** Ephemeral capability attached by Electron to this renderer generation's requests. */
   rendererAccessHeader: DesktopRendererAccessHeader
   /** Native application and tray label. */

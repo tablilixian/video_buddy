@@ -16,9 +16,11 @@ export interface TinyFishProviderOptions {
 }
 /** The TinyFish-backed search provider. */
 export declare class TinyFishSearchProvider implements WebSearchProvider {
-    private readonly options;
+    private readonly readOptions;
     readonly id = "tinyfish";
-    constructor(options: TinyFishProviderOptions);
+    constructor(readOptions: () => TinyFishProviderOptions);
+    /** Options are read per call so a settings edit takes effect without a restart. */
+    private get options();
     available(): boolean;
     search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;
     private apiKey;
@@ -26,9 +28,11 @@ export declare class TinyFishSearchProvider implements WebSearchProvider {
 }
 /** The TinyFish-backed fetch provider. */
 export declare class TinyFishFetchProvider implements WebFetchProvider {
-    private readonly options;
+    private readonly readOptions;
     readonly id = "tinyfish";
-    constructor(options: TinyFishProviderOptions);
+    constructor(readOptions: () => TinyFishProviderOptions);
+    /** Options are read per call so a settings edit takes effect without a restart. */
+    private get options();
     available(): boolean;
     fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult>;
     private apiKey;

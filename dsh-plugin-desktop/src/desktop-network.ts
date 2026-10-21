@@ -1,5 +1,6 @@
 /** Desktop ordinary-browser access and listener exposure preferences. */
 
+import { networkInterfaces } from 'node:os'
 import type { Config as WebServerConfig } from '@deepseek-ai/dsh-host-webserver'
 import type { DesktopShellMode } from './runtime.ts'
 
@@ -61,6 +62,24 @@ export function desktopLoopbackBrowserUrl(port: number): string {
 }
 
 /** Marker-free URLs advertised for the Web runtime's startup-sampled LAN addresses. */
+/**
+ * Advertiseable LAN addresses of this host.
+ *
+ * 0.2.1 dropped the `webRuntime` service that used to publish these, so the
+ * Desktop enumerates them itself. IPv4 only: a bare IPv6 literal needs brackets
+ * inside the URL and `desktopLanBrowserUrls` interpolates the host verbatim.
+ */
+export function desktopLanAddresses(): readonly string[] {
+  const addresses: string[] = []
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.internal || entry.family !== 'IPv4') continue
+      addresses.push(entry.address)
+    }
+  }
+  return Object.freeze(addresses)
+}
+
 export function desktopLanBrowserUrls(port: number, addresses: readonly string[]): readonly string[] {
   return Object.freeze(addresses.map(address => `http://${address}:${String(port)}/`))
 }

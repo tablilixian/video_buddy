@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
+  bundlePatchPaths,
   composeEntries,
   initProfile,
   loadOptionalPatches,
@@ -18,6 +19,7 @@ import {
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
+  type ProfileContext,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -197,6 +199,9 @@ export function readDesktopShellMode(config: unknown): DesktopShellMode {
   return readDesktopStartupSettings(config).mode
 }
 
+/** Rows 0.2.1 mounts for a Desktop-named profile that this launcher opts out of. */
+const UPSTREAM_PRODUCT_ANALYTICS_ROW_IDS = ['desktop-product-telemetry', 'product-analytics'] as const
+
 /** Resolve the public Web template once and reject an incompatible DSH release. */
 function requiredWebBundles(): string[] {
   const template = PROFILE_TEMPLATES.web
@@ -218,6 +223,12 @@ export interface PreparedDesktopProfile {
   bareModuleBaseUrl: string
   /** Complete ordered patch list for this desktop generation. */
   patches: PatchOptions[]
+  /**
+   * Profile facts the bundled plugins gate on. Several 0.2.1 rows are disabled by
+   * `!!js "!ctx.get('profileContext')"`, so mounting without it silently drops the
+   * settings service and everything that waits on it.
+   */
+  profileContext: ProfileContext
   /** Optional Client UI entries skipped because this profile cannot resolve them. */
   skippedOptionalEntries: SkippedOptionalEntry[]
   /** Persisted shell mode applied after every user-owned patch. */
@@ -466,18 +477,21 @@ function loadRecoveryFilteredProfile(
         || (bundleManifest as { name?: unknown }).name !== DESKTOP_MARKET_IDENTITIES.dshMarket.packageName)) {
         throw new Error(`${BIN_NAME}: selected dshmarket bundle has an invalid package identity`)
       }
-      const declared = bundleManifest !== null && typeof bundleManifest === 'object'
-        ? (bundleManifest as { dsh?: { bundle?: { patch?: unknown } } }).dsh?.bundle?.patch
+      // 0.2.1 lets a bundle declare an ordered list of patch files as well as a
+      // single one; `dsh-web-app` now ships five layers. `bundlePatchPaths`
+      // normalizes both forms and owns the "neither string nor list" error.
+      const dshBundle = bundleManifest !== null && typeof bundleManifest === 'object'
+        ? (bundleManifest as { dsh?: { bundle?: unknown } }).dsh?.bundle
         : undefined
-      if (typeof declared !== 'string' || declared.length === 0) {
+      if (dshBundle === undefined) {
         throw new Error(`${BIN_NAME}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
       }
-      const patchPath = join(packageDir, declared)
+      const patchPaths = bundlePatchPaths(packageDir, dshBundle as Parameters<typeof bundlePatchPaths>[1])
       layers.push({
         packageName,
         packageDir,
-        patchPaths: [patchPath],
-        patches: loadOverlayPatches(BIN_NAME, patchPath),
+        patchPaths,
+        patches: patchPaths.flatMap(file => loadOverlayPatches(BIN_NAME, file)),
       })
     } catch (cause) {
       if (!isDshMarket) throw cause
@@ -979,6 +993,18 @@ export function prepareDesktopProfile(
   if ((telemetryDisabled ?? '') !== '' && rows.has('session-telemetry-otel')) {
     patches.push({ id: 'session-telemetry-otel', disabled: true })
   }
+  // 0.2.1 mounts its Desktop product analytics for every profile literally named
+  // `desktop` and reports to DeepSeek's collector by default. This launcher takes
+  // no part in that collection, and the exporter additionally requires the
+  // upstream Electron shell's DSH_CLIENT_VERSION, which we never provide. Both
+  // rows stay off after every bundle and user layer.
+  for (const id of UPSTREAM_PRODUCT_ANALYTICS_ROW_IDS) {
+    if (rows.has(id)) patches.push({ id, disabled: true })
+  }
+  // `dsh-base` enables HMR as soon as `profileContext` exists, and its service
+  // refuses to start without `--expose-internals`. Hot reloading profile modules
+  // is a development convenience this launcher never offers, so keep it off.
+  if (rows.has('hmr')) patches.push({ id: 'hmr', disabled: true })
   const desktopShell = rows.get('desktop-shell')
   if (desktopShell === undefined) {
     throw new Error(`${BIN_NAME}: desktop profile has no desktop-shell row`)
@@ -998,6 +1024,17 @@ export function prepareDesktopProfile(
   return {
     homeDir: home,
     profile,
+    profileContext: {
+      name: profileName,
+      dir: profile.dir,
+      patchPath: profile.patchPath,
+      installAnchor: INSTALL_ANCHOR,
+      startedBundles: profile.layers.map(layer => layer.packageName),
+      cwd: process.cwd(),
+      home,
+      overlays: [],
+      telemetryDisabledEnv: telemetryDisabled,
+    },
     rootConfig,
     bareModuleBaseUrl,
     patches: structuredClone(patches),

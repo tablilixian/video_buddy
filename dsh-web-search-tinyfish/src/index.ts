@@ -4,10 +4,9 @@
  * @module dsh-web-search-tinyfish
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-web'
 import { TinyFishFetchProvider, TinyFishSearchProvider, TINYFISH_PROVIDER_ID } from './provider.js'
@@ -24,25 +23,27 @@ export const inject = ['web']
 
 const DEFAULT_API_KEY_ENV = 'TINYFISH_API_KEY'
 
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
+/** Plugin config; 0.2.1 delivers each field as a volatile reference. */
 export interface Config {
   /** Literal TinyFish API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
-  apiKey?: string
+  apiKey: Volatile<string | undefined>
   /** Credential reference resolved for each call; defaults to `TINYFISH_API_KEY`. */
-  apiKeyEnv?: string
+  apiKeyEnv: Volatile<string>
 }
 
-export const Config: z<Config> = z.object({
-  apiKey: z.string().role('secret'),
-  apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
+export const Config = z.object({
+  apiKey: z.string().role('secret').volatile(),
+  apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV).volatile(),
 })
 
 /** Settings namespace carrying this provider's key reference. */
-export const WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE = settingsNamespace('web-search-tinyfish')
+export const WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE = 'web-search-tinyfish'
 
+/** Resolve the currently authoritative section into one set of provider options. */
 function resolveOptions(ctx: Context, config: Config): TinyFishProviderOptions {
-  const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV)
-  const literalApiKey = config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined
+  const apiKeyEnv = credentialRef(config.apiKeyEnv.get() ?? DEFAULT_API_KEY_ENV)
+  const literal = config.apiKey.get()
+  const literalApiKey = literal !== undefined && literal.length > 0 ? literal : undefined
   return {
     resolveApiKey: async () => {
       if (literalApiKey !== undefined) return literalApiKey
@@ -57,15 +58,8 @@ function resolveOptions(ctx: Context, config: Config): TinyFishProviderOptions {
 
 /** Register the TinyFish search and fetch providers with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {
-  let current: () => Config = () => config
-  installSettingsSection(ctx, WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE, Config, config, {
-    setSource: (source) => {
-      current = source
-    },
-    // The registration carries no resolved value: the provider resolves the key per call.
-    onChange: () => {},
-  })
-  const options = resolveOptions(ctx, current())
+  // The section is re-read per call, so a settings edit needs no restart.
+  const options = () => resolveOptions(ctx, config)
   ctx.web.registerSearchProvider(new TinyFishSearchProvider(options))
   ctx.web.registerFetchProvider(new TinyFishFetchProvider(options))
 }

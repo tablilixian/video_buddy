@@ -12,10 +12,14 @@ const FETCH_ENDPOINT = 'https://api.fetch.tinyfish.ai';
 const USER_AGENT = 'deepseek-harness/0.0.1';
 /** The TinyFish-backed search provider. */
 export class TinyFishSearchProvider {
-    options;
+    readOptions;
     id = TINYFISH_PROVIDER_ID;
-    constructor(options) {
-        this.options = options;
+    constructor(readOptions) {
+        this.readOptions = readOptions;
+    }
+    /** Options are read per call so a settings edit takes effect without a restart. */
+    get options() {
+        return this.readOptions();
     }
     available() {
         // Pinned selection requires available()===true; the actual key check happens at call time.
@@ -97,10 +101,14 @@ export class TinyFishSearchProvider {
 }
 /** The TinyFish-backed fetch provider. */
 export class TinyFishFetchProvider {
-    options;
+    readOptions;
     id = TINYFISH_PROVIDER_ID;
-    constructor(options) {
-        this.options = options;
+    constructor(readOptions) {
+        this.readOptions = readOptions;
+    }
+    /** Options are read per call so a settings edit takes effect without a restart. */
+    get options() {
+        return this.readOptions();
     }
     available() {
         return true;

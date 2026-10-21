@@ -46,6 +46,7 @@ import type {
 import { FileExporter } from './file-exporter.ts'
 import { name as DESKTOP_SHELL_NAME, type DesktopSettings } from './index.ts'
 import {
+  desktopLanAddresses,
   desktopLanBrowserUrls,
   desktopLoopbackBrowserUrl,
 } from './desktop-network.ts'
@@ -844,6 +845,7 @@ async function start(): Promise<void> {
       prepared.patches,
       async (hostCtx) => {
         generation.bindHost(hostCtx)
+        hostCtx.provide('profileContext', prepared.profileContext)
         hostCtx.effect(
           () => releasePnpmRuntime,
           'dsh-plugin-desktop: packaged pnpm runtime PATH',
@@ -930,11 +932,10 @@ async function start(): Promise<void> {
           },
           readMarket,
           readWeb: () => {
-            const webRuntime = hostCtx.get('webRuntime')
-            if (webRuntime === undefined) throw new Error(`${BIN_NAME}: Web runtime is unavailable`)
+            const port = hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT
             return {
-              localUrl: desktopLoopbackBrowserUrl(hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT),
-              lanUrls: desktopLanBrowserUrls(hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT, webRuntime.lanAddresses),
+              localUrl: desktopLoopbackBrowserUrl(port),
+              lanUrls: desktopLanBrowserUrls(port, desktopLanAddresses()),
             }
           },
           selectMarket: async provider => desktopMarketSnapshotWithEffective(
@@ -976,9 +977,16 @@ async function start(): Promise<void> {
       throw cause
     })
     generation.bindHost(ctx)
-    const readLogLevel = (): DesktopSettings['logLevel'] =>
-      (ctx.settings.describe().find(row => row.ns === DESKTOP_SHELL_NAME)?.value as DesktopSettings | undefined)?.logLevel ?? 'info'
+    // `settings` is provided by a profile plugin, so it is still absent while this
+    // bootstrap runs. Read it defensively and pick the configured threshold up as
+    // soon as the service lands, rather than waiting for the first document edit.
+    const readLogLevel = (): DesktopSettings['logLevel'] => {
+      const settings = ctx.get('settings')
+      if (settings === undefined) return 'info'
+      return (settings.describe().find(row => row.ns === DESKTOP_SHELL_NAME)?.value as DesktopSettings | undefined)?.logLevel ?? 'info'
+    }
     fileExporter?.setThreshold(readLogLevel())
+    ctx.inject(['settings'], () => { fileExporter?.setThreshold(readLogLevel()) })
     ctx.on('settings/document-updated', (namespace) => {
       if (namespace !== DESKTOP_SHELL_NAME) return
       fileExporter?.setThreshold(readLogLevel())

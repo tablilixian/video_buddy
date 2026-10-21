@@ -5,7 +5,6 @@
  */
 import z from '@deepseek-ai/schemastery';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
 import { TinyFishFetchProvider, TinyFishSearchProvider } from './provider.js';
 export { TinyFishFetchProvider, TinyFishSearchProvider, TINYFISH_PROVIDER_ID } from './provider.js';
@@ -15,14 +14,16 @@ export const name = 'web-search-tinyfish';
 export const inject = ['web'];
 const DEFAULT_API_KEY_ENV = 'TINYFISH_API_KEY';
 export const Config = z.object({
-    apiKey: z.string().role('secret'),
-    apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
+    apiKey: z.string().role('secret').volatile(),
+    apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV).volatile(),
 });
 /** Settings namespace carrying this provider's key reference. */
-export const WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE = settingsNamespace('web-search-tinyfish');
+export const WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE = 'web-search-tinyfish';
+/** Resolve the currently authoritative section into one set of provider options. */
 function resolveOptions(ctx, config) {
-    const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV);
-    const literalApiKey = config.apiKey !== undefined && config.apiKey.length > 0 ? config.apiKey : undefined;
+    const apiKeyEnv = credentialRef(config.apiKeyEnv.get() ?? DEFAULT_API_KEY_ENV);
+    const literal = config.apiKey.get();
+    const literalApiKey = literal !== undefined && literal.length > 0 ? literal : undefined;
     return {
         resolveApiKey: async () => {
             if (literalApiKey !== undefined)
@@ -38,15 +39,8 @@ function resolveOptions(ctx, config) {
 }
 /** Register the TinyFish search and fetch providers with `ctx.web`. */
 export function apply(ctx, config) {
-    let current = () => config;
-    installSettingsSection(ctx, WEB_SEARCH_TINYFISH_SETTINGS_NAMESPACE, Config, config, {
-        setSource: (source) => {
-            current = source;
-        },
-        // The registration carries no resolved value: the provider resolves the key per call.
-        onChange: () => { },
-    });
-    const options = resolveOptions(ctx, current());
+    // The section is re-read per call, so a settings edit needs no restart.
+    const options = () => resolveOptions(ctx, config);
     ctx.web.registerSearchProvider(new TinyFishSearchProvider(options));
     ctx.web.registerFetchProvider(new TinyFishFetchProvider(options));
 }

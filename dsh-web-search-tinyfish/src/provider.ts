@@ -63,7 +63,12 @@ interface TinyFishFetchResponse {
 export class TinyFishSearchProvider implements WebSearchProvider {
   readonly id = TINYFISH_PROVIDER_ID
 
-  constructor(private readonly options: TinyFishProviderOptions) {}
+  constructor(private readonly readOptions: () => TinyFishProviderOptions) {}
+
+  /** Options are read per call so a settings edit takes effect without a restart. */
+  private get options(): TinyFishProviderOptions {
+    return this.readOptions()
+  }
 
   available(): boolean {
     // Pinned selection requires available()===true; the actual key check happens at call time.
@@ -146,7 +151,12 @@ export class TinyFishSearchProvider implements WebSearchProvider {
 export class TinyFishFetchProvider implements WebFetchProvider {
   readonly id = TINYFISH_PROVIDER_ID
 
-  constructor(private readonly options: TinyFishProviderOptions) {}
+  constructor(private readonly readOptions: () => TinyFishProviderOptions) {}
+
+  /** Options are read per call so a settings edit takes effect without a restart. */
+  private get options(): TinyFishProviderOptions {
+    return this.readOptions()
+  }
 
   available(): boolean {
     return true

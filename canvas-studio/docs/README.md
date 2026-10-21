@@ -49,7 +49,7 @@
 | **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件统一上传：单按钮自动分类 + 本地落盘 + 惰性 promote | ✅ CV-241 桌面验收通过 |
 | [plans/REQ-003-交接提示词.md](./plans/REQ-003-交接提示词.md) | REQ-003 会话交接（一次性） | 交接工件 |
 | [plans/draft-to-final-resolution.md](./plans/draft-to-final-resolution.md) | 草稿 → 正式版分辨率工作流 | CV-190 仅设计（CV-190a 已落地） |
-| [plans/harness-upgrade-feasibility.md](./plans/harness-upgrade-feasibility.md) | 上游 harness 升级可行性（pin 在 dsh-v0.1.1-rc.2） | 待拍板 |
+| [plans/harness-upgrade-feasibility.md](./plans/harness-upgrade-feasibility.md) | 上游 harness 升级可行性（pin 在 dsh-v0.1.1-rc.2） | 🗄️ **已过时（被取代）**：项目已于 2026-10-21 升到 0.2.1-rc.2，"暂缓升级"结论已推翻 |
 | [plans/video-provider-abstraction.md](./plans/video-provider-abstraction.md) | 视频供应商抽象层（registry/selection/capability） | 已落地（§0.1 状态行滞后于 §0.3 执行日志） |
 | [lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md) | Lobby 布局 + 技能广场 + skill 激活链路 | Phase A-D 已落地；首页形态已被 REQ-005（CV-257）取代，见头部说明 |
 | [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升 8 项决策对比 | ✅ 已拍板并基本全部落地（决策稿存档） |

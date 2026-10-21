@@ -1,6 +1,6 @@
 # DSH 上游升级方案：0.1.1-rc.2 → 0.2.1-rc.2
 
-> 文档状态：**草案 v1，待审核**
+> 文档状态：**执行中（P0–P4 已完成，仅 P5 残留测试与合入 `dev` 待办）**；D1–D7 已于 2026-10-20 拍板（见 §10），P0–P4 执行记录见附录 F。
 > 编制日期：2026-10-20
 > 适用仓库：`video_buddy`（DSH Desktop 2.0.4）
 > 影响范围：根 workspace、`dsh-plugin-desktop`、`canvas-studio`、`dsh-community-market`、`dsh-web-search-*`、上游子模块 pin

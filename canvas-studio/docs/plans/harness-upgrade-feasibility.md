@@ -1,6 +1,8 @@
 # harness 升级可行性研究（dsh-v0.1.1-rc.2 → 最新）
 
 > 状态：研究完成，结论已被 **REQ-007 吸收**（tracking.md）——2026-09-29 产品拍板**暂缓升级、等 DSH stable**；升级可行性评估即本文（跨 7136 commits、补丁存活率 6/15 等结论已录入 REQ-007 条目）。2026-10-06 收口注记。
+>
+> ⚠️ **本文已过时（被取代）**：项目已于 2026-10-20~21 实际完成 dsh `0.1.1-rc.2 → 0.2.1-rc.2` 升级（方案见根仓 `docs/plans/dsh-upgrade-0.2.1-rc.2-20261020.md`，交接见 `docs/plans/handoff-2026-10-21-0.2.1-residuals.md`）。原"暂缓升级 / 推荐 0.1.2-rc.1"结论已被推翻，文中以 0.1.2-rc.1 / 0.1.3-alpha.1 为基准的 API 核对（如 `conversationEvents`→`uiConversation`、`settingsScope`→`configForms`）也已随 0.2.1 实际迁移而过时。
 > 日期：2026-09-07
 > 本地镜像：`/Users/wl/Desktop/job/learn/deepseek-harness`（已 fetch 至 origin/master）
 > 关联：`docs/plans/attachment-divert-no-fork.md`（无 fork divert 方案）、`docs/archive/harness-fork-maintenance.md`

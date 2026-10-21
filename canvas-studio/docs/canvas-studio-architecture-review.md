@@ -7,6 +7,8 @@
 >
 > ⚠️ **本文件曾被外部覆盖过一次（2026-10-11 21:56）——§6 整章与后续回写丢失，此处为完整重建版。**
 > 若你的编辑器里还开着旧缓冲，请先关闭/丢弃再打开，否则会把这次重建再覆盖掉。
+>
+> 📌 **版本说明（2026-10-21 补）**：本报告基线为 dsh `0.1.1-rc.2`（审查日 2026-10-11）。2026-10-20~21 项目已升级到 `0.2.1-rc.2`，客户端/宿主 API 有破坏性变更：旧 `conversationEvents` 服务 → `uiConversation`；`settingsScope` → `configForms`；`@deepseek-ai/dsh-client-runtime` 包已**删除**（客户端 `Context` 改从 `@deepseek-ai/cordis` 引入）。本报告第 578 行等处引用的旧 `inject` 数组与旧包名属 0.1.x 现状，0.2.1 已不再适用，请以升级方案 `docs/plans/dsh-upgrade-0.2.1-rc.2-20261020.md` 为准。
 
 ---
 

@@ -1,0 +1,20 @@
+diff --git a/lib/index.js b/lib/index.js
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -786,7 +786,15 @@
+ 				attributes: {}
+ 			}).url : internal.resolveSync(loaderName, baseUrl, {}).url;
+ 		} catch {
+-			return;
++			if (expectedPackageName === void 0) return;
++			try {
++				return {
++					path: createRequire(new URL("package.json", baseUrl)).resolve(`${expectedPackageName}/package.json`),
++					packageName: expectedPackageName
++				};
++			} catch {
++				return;
++			}
+ 		}
+ 		return this.nearestPackage(moduleUrl, expectedPackageName);
+ 	}

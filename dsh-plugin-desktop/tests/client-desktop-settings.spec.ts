@@ -412,12 +412,14 @@ describe('Desktop settings Slot registration', () => {
       set: vi.fn(async (_field: string, _value: unknown) => true),
       unset: vi.fn(async (_field: string) => true),
     } satisfies ConfigForm<unknown>
-    const bind = vi.fn(() => scope)
+    const get = vi.fn(() => scope)
     const register = vi.fn(() => () => {})
     const inject = vi.fn((_name: string, mount: () => unknown) => mount())
     const localeRegister = vi.fn(() => () => {})
     const ctx = {
-      settingsScope: { bind },
+      // 0.2.1：applyDesktopSettings 通过 configForms.get 绑定两个 Host 命名空间
+      // （不再走 0.1.x 的 settingsScope 孤儿）。
+      configForms: { get },
       locale: {
         bind: (namespace: string) => (key: string) => `${namespace}:${key}`,
         register: localeRegister,
@@ -434,8 +436,8 @@ describe('Desktop settings Slot registration', () => {
       micaSupported: false,
     })
 
-    expect(bind).toHaveBeenNthCalledWith(1, { namespace: DESKTOP_SHELL_SETTINGS_NAMESPACE })
-    expect(bind).toHaveBeenNthCalledWith(2, { namespace: DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE })
+    expect(get).toHaveBeenNthCalledWith(1, DESKTOP_SHELL_SETTINGS_NAMESPACE)
+    expect(get).toHaveBeenNthCalledWith(2, DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE)
     expect(inject).toHaveBeenCalledWith('settings.section', expect.any(Function))
     expect(inject).toHaveBeenCalledWith('settings.action', expect.any(Function))
     const [options, component] = register.mock.calls[0] as unknown as [

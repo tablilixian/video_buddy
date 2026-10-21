@@ -38,11 +38,10 @@ let nativeThemeSource = 'system'
 const trayItems = []
 
 try {
-  writeFileSync(join(home, 'settings.yaml'), [
-    'dsh-desktop:',
-    '  mode: advanced',
-    'agent-presets:',
-    '  default: minimal',
+  writeFileSync(join(home, 'cordis.patch.yml'), [
+    '- id: desktop-shell',
+    '  config:',
+    '    mode: advanced',
     '',
   ].join('\n'))
   const prepared = prepareDesktopProfile('1', home, 'win32')
@@ -129,6 +128,7 @@ try {
     patches,
     async (host) => {
       host.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot([]))
+      host.provide('profileContext', prepared.profileContext)
       host.provide('desktopBrowserAccess', BROWSER_ACCESS)
       host.provide('desktopRuntime', runtime)
       host.provide('desktopPnpmBootstrap', {
@@ -222,7 +222,7 @@ try {
   if (nativeThemeSource !== 'system') {
     throw new Error(`desktop plugin produced an unexpected native theme source: ${nativeThemeSource}`)
   }
-  const desktopSettings = ctx.settings.get(DESKTOP_SETTINGS_NAMESPACE)
+  const desktopSettings = ctx.settings.describe().find(row => row.ns === 'desktop-shell')?.value
   if (desktopSettings?.mode !== 'advanced') {
     throw new Error('assembled Host settings are missing the advanced dsh-desktop mode')
   }
@@ -237,14 +237,28 @@ try {
   if (profileMenu?.submenu?.()[0]?.label() !== 'desktop') {
     throw new Error('assembled desktop profile is missing the active profile tray submenu')
   }
-  const response = await fetch(expectedUrl, {
+  await new Promise(resolve => setTimeout(resolve, 500))
+  const authentication = await fetch(mountedSpec.authenticationUrl, {
+    redirect: 'manual',
     headers: {
       [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
     },
   })
+  const sessionCookie = authentication.headers.getSetCookie()
+    .map(value => value.split(';', 1)[0])
+    .find(value => value?.startsWith('dsh-auth-'))
+  if (authentication.status !== 303 || sessionCookie === undefined) {
+    throw new Error(`assembled Web authentication returned HTTP ${String(authentication.status)}`)
+  }
+  const response = await fetch(expectedUrl, {
+    headers: {
+      [BROWSER_ACCESS.rendererHeader.name]: BROWSER_ACCESS.rendererHeader.value,
+      cookie: sessionCookie,
+    },
+  })
   const html = await response.text()
   if (response.status !== 200) {
-    throw new Error(`assembled Web root returned HTTP ${String(response.status)}`)
+    throw new Error(`assembled Web root returned HTTP ${String(response.status)}: ${html.slice(0, 200)}`)
   }
   const bootMatch = html.match(/(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\]) = (\{.*?\})<\/script>/u)
   if (bootMatch?.[1] === undefined) {
@@ -258,7 +272,7 @@ try {
     '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-client-ui-directory-picker-browse',
   ]) {
-    if (!ids.has(id)) throw new Error(`assembled advanced Web graph is missing ${id}`)
+    if (!ids.has(id)) throw new Error(`assembled advanced Web graph is missing ${id}: ${[...ids].sort().join(', ')}`)
   }
   for (const id of [
     '@deepseek-ai/dsh-client-ui-layout',

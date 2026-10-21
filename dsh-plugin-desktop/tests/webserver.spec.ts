@@ -69,12 +69,12 @@ async function requestUpgrade(
 }
 
 describe('Desktop WebServer port policy', () => {
-  it('accepts the explicit all-interfaces LAN bind', async () => {
+  it('rejects the wildcard bind 0.2.1 refuses to expose', async () => {
     const context = new Context()
     contexts.push(context)
 
-    await context.plugin(DesktopWebServer, { host: '0.0.0.0', port: 0 })
-    expect(context.get('webServer')?.host).toBe('0.0.0.0')
+    await expect(context.plugin(DesktopWebServer, { host: '0.0.0.0', port: 0 }))
+      .rejects.toThrow(/unspecified|wildcard/u)
   })
 
   it('increments only after the requested loopback bind reports EADDRINUSE', async () => {

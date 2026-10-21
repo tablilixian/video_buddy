@@ -46,6 +46,10 @@ function takeDefaultProfile(environment: NodeJS.ProcessEnv): string | undefined 
  * Enter the packaged DSH CLI without any plugin-install transaction wrapper.
  * Manual plugin commands and Market operations rely on unified checkpoints.
  */
+type DshCliModule = {
+  runCli?: (options: { manageDesktopProfile?: boolean }) => Promise<void>
+}
+
 export async function runDesktopDshCli(
   environment: NodeJS.ProcessEnv = process.env,
   load: (url: string) => Promise<unknown> = url => import(url),
@@ -57,7 +61,11 @@ export async function runDesktopDshCli(
     ? argv.slice(2)
     : withDefaultDesktopProfile(argv.slice(2), profileName)
   argv.splice(2, argv.length - 2, ...withoutForwardedDesktopPnpmPolicy(selected))
-  await load(DSH_ENTRY_URL)
+  const module = await load(DSH_ENTRY_URL) as DshCliModule
+  if (typeof module.runCli !== 'function') {
+    throw new Error('dsh-desktop: packaged dsh CLI does not export runCli')
+  }
+  await module.runCli({ manageDesktopProfile: true })
 }
 
 function isDirectExecution(): boolean {

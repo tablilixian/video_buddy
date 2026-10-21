@@ -46,7 +46,6 @@ import type {
 import { FileExporter } from './file-exporter.ts'
 import { name as DESKTOP_SHELL_NAME, type DesktopSettings } from './index.ts'
 import {
-  desktopLanAddresses,
   desktopLanBrowserUrls,
   desktopLoopbackBrowserUrl,
 } from './desktop-network.ts'
@@ -933,9 +932,12 @@ async function start(): Promise<void> {
           readMarket,
           readWeb: () => {
             const port = hostCtx.webServer.port ?? DESKTOP_DEFAULT_WEB_PORT
+            const host = hostCtx.webServer.host
             return {
               localUrl: desktopLoopbackBrowserUrl(port),
-              lanUrls: desktopLanBrowserUrls(port, desktopLanAddresses()),
+              lanUrls: host === '127.0.0.1'
+                ? []
+                : desktopLanBrowserUrls(port, [host]),
             }
           },
           selectMarket: async provider => desktopMarketSnapshotWithEffective(

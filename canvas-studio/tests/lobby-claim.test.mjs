@@ -93,10 +93,11 @@ test('Client：落点幂等 + 强制重建 + 两条触发路径必须都在', ()
   assert.match(INDEX, /if \(current !== undefined && current\.cwd === dir\) return/,
     '落点必须幂等短路（订阅反复触发零成本）')
   assert.match(INDEX, /ctx\.workspaces\.create\(\{ path: dir \}\)/, '落点必须绑 draft workspace')
-  assert.match(INDEX, /ctx\.workspaces\.startSession\(workspace\.workspaceId\)/, '落点必须起会话（宿主卡活跃的前提）')
+  assert.match(INDEX, /ctx\.uiWorkspace\.startSession\(workspace\.workspaceId\)/, '落点必须起会话（宿主卡活跃的前提）')
   assert.match(INDEX, /const maybeDraftLanding = /, '启动订阅路径的落点守卫必须存在')
   assert.match(INDEX, /void ensureDraftLanding\(\)\s*\n\s*\}/, 'goHome 必须触发落点')
-  assert.match(INDEX, /baselinesReady\)? return/, '落点守卫必须等基线就绪（否则启动瞬间误建）')
+  assert.match(INDEX, /getSnapshot\(\)\.phase !== 'ready'\) return/,
+    '落点守卫必须等基线就绪（0.2.1 用 phase === ready 取代 baselinesReady）')
 })
 
 test('E-2（R-P2-02 履约）：启动即置位首页，画布只在显式 openProject 时载入', () => {
@@ -111,7 +112,7 @@ test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → �
   // lobby 判定：基线就绪且当前会话不映射任何项目。基线未就绪时不得误判
   //（resolveActiveProjectId 那时恒 null，会把项目内发送误判成首页发送）。
   // CV-297：结构改为「先取 active 再判 null」，并插入错位防护分支 —— 本用例随新结构更新。
-  assert.match(INDEX, /if \(ctx\.workspaces\.list\.getSnapshot\(\)\.baselinesReady\) \{/,
+  assert.match(INDEX, /if \(ctx\.workspaces\.list\.getSnapshot\(\)\.phase === 'ready'\) \{/,
     'lobby 判定必须带基线就绪前提 —— 否则启动瞬间会误认领')
   assert.match(INDEX, /const active = resolveActiveProjectId\(\)/, '必须先取激活项目 id')
   assert.match(INDEX, /if \(active === null\) return claimAndSend\(args\)/, '无选中项目必须走认领')
@@ -157,9 +158,9 @@ test('CV-294（方案 A）：认领改名后必须重建会话绑定，首句改
   // 重建链（openProject 同款三步）：按新目录建 workspace → connect 取新会话 → open。
   assert.match(claimBody, /ctx\.workspaces\.create\(\{ path: project\.dir \}\)/,
     '必须按改名后的目录建 workspace（cwd 不 resolve 的旧绑定救不回来）')
-  assert.match(claimBody, /await ctx\.workspaces\.connectWorkspace\(workspace\.workspaceId\)/,
+  assert.match(claimBody, /await ctx\.uiWorkspace\.connectWorkspace\(workspace\.workspaceId\)/,
     '必须 connectWorkspace 拿新会话 id（旧落点会话 cwd 失效，复用扫描必然落空）')
-  assert.match(claimBody, /sessionSvc\.open\(newId\)/, '新会话必须 open 成为当前（宿主卡显示它）')
+  assert.match(claimBody, /ctx\.uiWorkspace\.openSession\(newId\)/, '新会话必须 open 成为当前（宿主卡显示它）')
   // 首句必须发到新会话：args[0] 换成 binding.session —— 旧 session 的 cwd 已断。
   assert.match(claimBody, /args = \[binding\.session, args\[1\], args\[2\], args\[3\], args\[4\]\]/,
     '放行前必须把首句的 session 换成新会话（旧 session cwd 指着已 rename 的路径）')

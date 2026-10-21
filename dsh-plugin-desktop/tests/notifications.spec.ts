@@ -169,13 +169,6 @@ describe('desktop notifications Host plugin', () => {
     expect(name).toBe('desktop-notifications')
     expect(inject).toEqual(['desktopRuntime'])
     expect(String(DESKTOP_NOTIFICATIONS_SETTINGS_NAMESPACE)).toBe('dsh-desktop-notifications')
-    expect(DesktopNotificationSettingsSchema({} as DesktopNotificationSettings)).toEqual({
-      enabled: true,
-      notifyOnTurnCompletion: true,
-      notifyOnTurnFailure: true,
-      notifyOnJobCompletion: true,
-      notifyOnJobFailure: true,
-    })
     // 0.2.1：开关是插件 Config，Loader 装载时校验并注入；不再有 scope 注册。
     expect(DesktopNotificationSettingsSchema({} as DesktopNotificationSettings).get()).toEqual({
       enabled: true,

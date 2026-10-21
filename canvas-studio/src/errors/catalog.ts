@@ -792,6 +792,20 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'settings-conflict',
     recoveryHint: '刷新页面重新加载配置后再保存。',
   },
+  {
+    // 布局服务越权：调用方让画布切到一个未注册的主面板。画布自持 root，只承载
+    // 「对话」这一个面板；把面板 id 混进注册表之外的值属于接线错误，不是用户
+    // 可恢复的状态 —— 统一收敛成结构化错误，禁止裸抛（error-system 守卫要求）。
+    code: 'CS-LAYOUT-001',
+    module: 'LAYOUT',
+    severity: 'S2',
+    audience: ['developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: '无法切换到该面板：面板未注册。',
+    devMessage: 'layout.selectPanel: main panel "{panelId}" is not registered',
+    recoveryHint: '检查主面板注册表与调用方的 id 是否一致。',
+  },
   // ── REQ-001 全局资产库（LIB） ─────────────────────────────────────────────
   {
     // 句柄解析 / 详情 / 更新 / 删除的第一失败点：`lib:<id>` 的 id 在库里查不到

@@ -223,9 +223,9 @@ const STUDIO_STYLES = `
 
 /* ==================== CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾） ====================
  *
- * 宿主 .scrollBody（ConversationRoot.module.css:230-249）无条件写
+ * 宿主 .scrollBody（ConversationRoot.module.css:401-415）无条件写
  *   overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable;
- * 且 hero 态再补一条（同文件 :361-364）：
+ * 且 hero 态再补一条（同文件 :548-552）：
  *   .root[data-phase='hero'] .scrollBody { justify-content: center; overflow-y: auto; }
  * 于是右缘那条竖线有**两条来路**，只看其一必然漏：
  *   ① scrollbar-gutter: stable —— 语义是「即便当前不需要滚动也预留油槽」，
@@ -236,8 +236,10 @@ const STUDIO_STYLES = `
  * 上一版只改了 ① 的 scrollbar-gutter，真机截图证明线还在 —— 因为那条
  * 是 ②。这次两条路一起收。
  *
- * 覆盖点用 data-conversation-scroll（ConversationRoot.tsx:189 挂在 .scrollBody 上的
- * 稳定钩子）。**只收 hero / settling 两态的滚动条 chrome，不动 overflow，也不动
+ * 覆盖点用 data-conversation-scroll（0.2.1 起挂在 ConversationContent.tsx:198
+ * 的 .scrollBody 上）。相位钩子有两套：main 变体的 data-phase 在
+ * ConversationMainPanel.tsx:46 的 .root 上，embedded 变体的 data-content-phase 在
+ * ConversationContent.tsx:196 的 .body 上 —— 两套都要覆盖，否则嵌入态规则是死的。**只收 hero / settling 两态的滚动条 chrome，不动 overflow，也不动
  * active 态**：
  *   · hero / settling = 「还没开始对话」的居中舞台，没有任何 transcript 需要读，
  *     油槽与滑块的唯一可见效果就是右缘那条没意义的竖线；收掉 chrome 后滚轮/键盘
@@ -253,13 +255,17 @@ const STUDIO_STYLES = `
  * （不写 -ms-overflow-style：Electron 只跑 Chromium，那条是 IE 遗留，留着还会让
  * 「本规则不得出现 overflow 字样」的守卫误报。） */
 .csChat [data-phase='hero'] [data-conversation-scroll],
-.csChat [data-phase='settling'] [data-conversation-scroll] {
+.csChat [data-phase='settling'] [data-conversation-scroll],
+.csChat [data-content-phase='hero'] [data-conversation-scroll],
+.csChat [data-content-phase='settling'] [data-conversation-scroll] {
   scrollbar-gutter: auto;
   scrollbar-width: none;
 }
 
 .csChat [data-phase='hero'] [data-conversation-scroll]::-webkit-scrollbar,
-.csChat [data-phase='settling'] [data-conversation-scroll]::-webkit-scrollbar {
+.csChat [data-phase='settling'] [data-conversation-scroll]::-webkit-scrollbar,
+.csChat [data-content-phase='hero'] [data-conversation-scroll]::-webkit-scrollbar,
+.csChat [data-content-phase='settling'] [data-conversation-scroll]::-webkit-scrollbar {
   width: 0;
   height: 0;
 }

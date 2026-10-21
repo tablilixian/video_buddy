@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   formatRecoveryPluginRemoveFailure,
@@ -93,7 +94,9 @@ describe('pre-Host recovery plugin uninstall command', () => {
     const base = fixture('')
     const require = createRequire(import.meta.url)
     const dshManifestPath = require.resolve('@deepseek-ai/dsh/package.json')
-    const dshBootstrapPath = join(dirname(dshManifestPath), 'lib', 'bin.js')
+    const dshBinUrl = pathToFileURL(join(dirname(dshManifestPath), 'lib', 'bin.js')).href
+    const dshBootstrapPath = join(dirname(base.profileDir), 'desktop-cli.mjs')
+    writeFileSync(dshBootstrapPath, `import { runCli } from ${JSON.stringify(dshBinUrl)}\nawait runCli({ manageDesktopProfile: true })\n`)
     const systemBin = join(dirname(base.profileDir), 'system-bin')
     const selectedMarker = join(dirname(base.profileDir), 'selected-pnpm.txt')
     const packagedScript = join(base.pnpmBinDir, 'packaged-pnpm.cjs')

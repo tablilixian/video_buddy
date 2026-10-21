@@ -32,7 +32,7 @@ function replaceEvent(seq: number, start: number, end: number, text = '.'): Sess
       // 折叠，两个投影都不读 source，所以用用户来源造事件即可。
       source: { kind: 'user' },
     }),
-    surfaceOp: { op: 'replace', start: start as SessionSeq, end: end as SessionSeq },
+    surfaceOp: { op: 'replace', startSeq: start as SessionSeq, endSeq: end as SessionSeq },
     sourceEventSeqs: [start as SessionSeq, end as SessionSeq],
   } as unknown as SessionEvent
 }
@@ -45,7 +45,7 @@ describe('token-meter negative projection recovery', () => {
     // 的负值修复 patch 尚未按新产物重做（P4-b）。断言改成「任何旧于当前版本的
     // checkpoint 都必须被丢弃」，语义与原 patch 的防线一致。
     expect(contextBreakdownProjectionDefinition.stateVersion).toBe(6)
-    expect(contextPressureProjectionDefinition.stateVersion).toBe(5)
+    expect(contextPressureProjectionDefinition.stateVersion).toBe(6)
 
     const restored = ctx.sessionProjections.restore({
       contextBreakdown: {
@@ -89,7 +89,7 @@ describe('token-meter negative projection recovery', () => {
       },
     })
     expect(restored.checkpoint.contextPressure).toMatchObject({
-      ver: 5,
+      ver: 6,
       seq: -1,
       val: { surfaceTokens: 0 },
     })

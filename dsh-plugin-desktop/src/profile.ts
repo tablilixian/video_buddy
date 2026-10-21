@@ -1,8 +1,7 @@
 /** Compatibility profile composition over the official Web bundle and user plugins. */
 
-import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -83,13 +82,14 @@ const SUBPROCESS_ROW_ID = 'subprocess'
 const UPSTREAM_SUBPROCESS_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
 const DESKTOP_WINDOWS_SUBPROCESS_ROW_ID = 'desktop-windows-subprocess'
 const DESKTOP_WINDOWS_SUBPROCESS_PACKAGE = 'dsh-plugin-desktop/windows-subprocess'
-const AGENT_PRESETS_ROW_ID = 'agent-presets'
 const DEFAULT_DESKTOP_SHELL_MODE: DesktopShellMode = 'compatibility'
 const DEFAULT_DESKTOP_PORT = DESKTOP_DEFAULT_WEB_PORT
 const DESKTOP_WEB_SERVER_ROW_ID = 'desktop-webserver'
 const DESKTOP_WEB_SERVER_PACKAGE = 'dsh-plugin-desktop/webserver'
 const DESKTOP_SHELL_ROW_ID = 'desktop-shell'
 const DESKTOP_SHELL_PACKAGE = 'dsh-plugin-desktop'
+const AGENT_PRESET_REGISTRY_ROW_ID = 'agent-preset-registry'
+const AGENT_PRESET_REGISTRY_PACKAGE = '@deepseek-ai/dsh-agent-preset-registry'
 const DESKTOP_SETTINGS_NAMESPACE = 'dsh-desktop'
 const UI_LAYOUT_PACKAGE = '@deepseek-ai/dsh-client-ui-layout'
 const UI_SIDEBAR_PACKAGE = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -512,14 +512,6 @@ function loadRecoveryFilteredProfile(
   }
 }
 
-/** Resolve the agent presets shipped by the matching dsh CLI dependency. */
-export function shippedPresetRoot(moduleUrl: string = import.meta.url): string {
-  const require = createRequire(moduleUrl)
-  return unpackedAsarPath(
-    join(dirname(require.resolve('@deepseek-ai/dsh/package.json')), 'config', 'agent-presets'),
-  )
-}
-
 /** Read a row's object config without trusting arbitrary YAML values. */
 function rowConfig(row: EntryOptions | undefined): Record<string, unknown> {
   const config = row?.config
@@ -856,6 +848,18 @@ export function prepareDesktopProfile(
       openBrowser: false,
     },
   })
+  const presetRegistry = rows.get(AGENT_PRESET_REGISTRY_ROW_ID)
+  if (presetRegistry?.name !== AGENT_PRESET_REGISTRY_PACKAGE) {
+    throw new Error(`${BIN_NAME}: desktop profile has no agent preset registry row`)
+  }
+  patches.push({
+    id: AGENT_PRESET_REGISTRY_ROW_ID,
+    config: {
+      ...rowConfig(presetRegistry),
+      // Desktop keeps the focused minimal preset as the session default.
+      default: 'minimal',
+    },
+  })
   if (mode === 'advanced' || mode === 'extended') {
     for (const [id, packageName] of [
       ['ui-layout', UI_LAYOUT_PACKAGE],
@@ -871,14 +875,6 @@ export function prepareDesktopProfile(
       { id: 'ui-sidebar', disabled: false },
       { id: 'ui-conversation', disabled: false },
     )
-  }
-  const presets = rows.get(AGENT_PRESETS_ROW_ID)
-  if (presets !== undefined) {
-    const config = {
-      ...rowConfig(presets),
-      roots: [{ path: shippedPresetRoot(), trust: 'system' }],
-    }
-    patches.push({ id: AGENT_PRESETS_ROW_ID, config })
   }
   const webserver = rows.get('webserver')
   if (webserver === undefined) {

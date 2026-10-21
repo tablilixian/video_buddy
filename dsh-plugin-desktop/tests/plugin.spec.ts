@@ -21,6 +21,7 @@ import {
 } from '../src/directory-picker-contract.ts'
 import type { DesktopRuntime, DesktopShellSpec } from '../src/runtime.ts'
 import { createDesktopBrowserAccess } from '../src/desktop-browser-access.ts'
+import { desktopWebServerHost } from '../src/desktop-network.ts'
 import { RENDERER_BOOT_REPORT_PATH, type RendererBootReport } from '../src/renderer-boot-contract.ts'
 
 /** Loader entry id the desktop shell's settings are keyed by in 0.2.1. */
@@ -241,9 +242,9 @@ function createHarness(
 
 describe('desktop Host plugin', () => {
   it('defaults to compatibility mode and validates both schemas', () => {
-    expect(Config({} as DesktopConfig)).toEqual(config)
-    expect(Config({ mode: 'advanced' } as DesktopConfig)).toEqual({ ...config, mode: 'advanced' })
-    expect(DesktopSettingsSchema({} as DesktopSettings)).toEqual({
+    expect(Config({} as DesktopConfig).get()).toEqual(config)
+    expect(Config({ mode: 'advanced' } as DesktopConfig).get()).toEqual({ ...config, mode: 'advanced' })
+    expect(DesktopSettingsSchema({} as DesktopSettings).get()).toEqual({
       mode: 'compatibility',
       macosMaterial: 'transparent',
       windowsMaterial: 'acrylic',
@@ -251,6 +252,10 @@ describe('desktop Host plugin', () => {
       openBrowser: false,
       networkExposure: 'loopback',
       logLevel: 'info',
+      width: 1280,
+      height: 840,
+      minWidth: 900,
+      minHeight: 640,
     })
     expect(() => DesktopSettingsSchema({ port: -1 } as DesktopSettings)).toThrow()
     expect(() => DesktopSettingsSchema({ port: 1.5 } as DesktopSettings)).toThrow()
@@ -575,7 +580,7 @@ describe('desktop Host plugin', () => {
 
   it('requires the Web carrier host to match the configured exposure', () => {
     const harness = createHarness()
-    Object.assign(harness.ctx.webServer, { host: '0.0.0.0' })
+    Object.assign(harness.ctx.webServer, { host: desktopWebServerHost('lan') })
 
     expect(() => apply(harness.ctx, harness.configRef)).toThrow('does not match networkExposure')
 

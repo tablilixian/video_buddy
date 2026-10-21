@@ -51,9 +51,22 @@ export function parseDesktopNetworkExposure(value: unknown): DesktopNetworkExpos
   throw new Error('dsh-plugin-desktop: dsh-desktop.networkExposure must be "loopback" or "lan"')
 }
 
-/** Project a persisted exposure preference into the supported WebServer host literal. */
-export function desktopWebServerHost(exposure: DesktopNetworkExposure): WebServerConfig['host'] {
-  return exposure === 'lan' ? '0.0.0.0' : '127.0.0.1'
+/**
+ * Project a persisted exposure preference into one concrete bind literal.
+ *
+ * 0.2.1 rejects the wildcard address, so LAN exposure binds the first
+ * non-internal IPv4 interface instead of every interface at once.
+ */
+export function desktopWebServerHost(
+  exposure: DesktopNetworkExposure,
+  addresses: readonly string[] = desktopLanAddresses(),
+): WebServerConfig['host'] {
+  if (exposure === 'loopback') return '127.0.0.1'
+  const address = addresses[0]
+  if (address === undefined) {
+    throw new Error('dsh-plugin-desktop: LAN exposure requires a concrete IPv4 interface')
+  }
+  return address
 }
 
 /** Marker-free URL suitable for an ordinary local browser. */

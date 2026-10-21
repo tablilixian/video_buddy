@@ -1,5 +1,6 @@
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout, MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { throwError } from '../error-system.js'
 
 /**
  * Studio-owned implementation of the standard panel-action face.
@@ -36,7 +37,7 @@ export class StudioLayoutController implements ILayout {
   /** Select a registered global panel, or return to the Conversation. */
   selectPanel(panelId: MainPanelId | null): void {
     if (panelId !== null && !this.hasMainPanel(panelId)) {
-      throw new Error(`layout.selectPanel: main panel "${panelId}" is not registered`)
+      throwError('CS-LAYOUT-001', { panelId })
     }
     this.navigation.abort()
     if (this.panelSnapshot.activePanelId === panelId) return

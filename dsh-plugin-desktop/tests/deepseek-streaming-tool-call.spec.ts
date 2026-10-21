@@ -21,36 +21,34 @@ describe('DeepSeek streaming tool calls', () => {
     vi.unstubAllGlobals()
   })
 
-  it('keeps the first non-empty id and name when continuation deltas contain empty strings', async () => {
+  it('keeps the streamed tool identity across partial JSON deltas', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => sseResponse([
+      // 0.2.1 的 DeepSeek Messages 协议：tool 身份只出现在 content_block_start，
+      // 后续增量只带 input_json_delta —— 不再有「续传 delta 里的空 id/name」这种形状。
+      { type: 'message_start', message: { usage: { input_tokens: 10 } } },
       {
-        choices: [{
-          delta: {
-            tool_calls: [{
-              index: 0,
-              id: 'call_web_search',
-              type: 'function',
-              function: { name: 'web_search', arguments: '{"query":' },
-            }],
-          },
-        }],
+        type: 'content_block_start',
+        index: 0,
+        content_block: {
+          type: 'tool_use',
+          id: 'call_web_search',
+          name: 'web_search',
+          input: {},
+        },
       },
       {
-        choices: [{
-          delta: {
-            tool_calls: [{
-              index: 0,
-              id: '',
-              function: { name: '', arguments: '"AI news today"}' },
-            }],
-          },
-        }],
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"query":' },
       },
       {
-        choices: [{ delta: {}, finish_reason: 'tool_calls' }],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '"AI news today"}' },
       },
-      '[DONE]',
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
+      { type: 'message_stop' },
     ])))
 
     const connection = resolveAdapterOptions({
@@ -86,6 +84,16 @@ describe('DeepSeek streaming tool calls', () => {
         },
       }],
     })) chunks.push(chunk)
+
+    const streamed = chunks.filter(chunk => chunk.type === 'tool-call-delta')
+    expect(streamed).toHaveLength(3)
+    expect(streamed[0]).toMatchObject({
+      id: 'call_web_search',
+      name: 'web_search',
+      argumentsDelta: '',
+    })
+    expect(streamed.slice(1).map(chunk => (chunk as { id?: string }).id))
+      .toEqual(['call_web_search', 'call_web_search'])
 
     expect(chunks.find(chunk => chunk.type === 'block-end')).toMatchObject({
       block: {

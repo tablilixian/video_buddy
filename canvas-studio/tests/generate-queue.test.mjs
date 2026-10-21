@@ -322,7 +322,7 @@ test('Host 注册只读的队列快照端点', () => {
   const at = src.indexOf('path: ROUTE_GENERATE_QUEUE')
   assert.ok(at >= 0, 'R 常量声明了但没人 register')
   const block = src.slice(at, at + 800)
-  assert.match(block, /requestAllowed\(req, expectedPort\)/, '只读端点的准入用 requestAllowed')
+  assert.match(block, /requestAllowed\(req, expectedPort(?:\(\))?\)/, '只读端点的准入用 requestAllowed')
   assert.ok(!block.includes('mutationAllowed'), '队列快照是只读的，不该要求同源 POST')
   assert.match(block, /req\.method !== 'GET'/, '队列快照只接受 GET')
   assert.match(block, /generateQueueSnapshot\(\)/, '必须下发真实快照而不是空对象')

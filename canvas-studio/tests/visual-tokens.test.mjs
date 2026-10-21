@@ -798,10 +798,13 @@ const HOST_INJECTED_DATA_ATTRS = new Set([
   // 'conversation.input.model'）。与 data-phase 同类：由宿主写入、本仓 tsx 里没有
   // 字面量，但确实是真实 DOM。它的价值在于用**槽身份**代替哈希类名选中宿主内部节点。
   'data-slot',
-  // CV-260：宿主对话滚动容器的稳定钩子（ConversationRoot.tsx:189 挂在 .scrollBody
-  // 上，值恒为空串）。同样由宿主写入 —— 它让我们能覆盖 scrollbar-gutter 而不用去
-  // 碰上游的哈希类名。
+  // CV-260：宿主对话滚动容器的稳定钩子（0.2.1 起挂在 ConversationContent.tsx:198
+  // 的 .scrollBody 上，值恒为空串）。同样由宿主写入 —— 它让我们能覆盖
+  // scrollbar-gutter 而不用去碰上游的哈希类名。
   'data-conversation-scroll',
+  // 0.2.1：embedded 变体的相位钩子（ConversationContent.tsx:196 的 .body）。main
+  // 变体仍用 data-phase；嵌入态只写 data-content-phase —— 两套都由宿主写入。
+  'data-content-phase',
 ])
 
 /**
@@ -994,14 +997,25 @@ test('CV-262 守卫：幽灵滚动条 —— hero/settling 收 chrome、保留 o
     '不得写不分 phase 的 .csChat [data-conversation-scroll] 规则 —— active 态的 gutter 保护要原样留给宿主')
 
   // 覆盖点必须是上游真实还在的钩子（不然又是一条「不报错、什么都不发生」的死规则）。
-  const root = readHost('ui-conversation/src/client/skeleton/ConversationRoot.tsx')
-  if (root === null) return // submodule 未就绪：只跑上面的规则断言，不假绿
-  assert.match(root, /data-conversation-scroll/,
+  // 0.2.1 把内容拆到 ConversationContent，相位钩子分两处：main 变体在
+  // ConversationMainPanel 的 .root[data-phase]，embedded 变体在 Content 的
+  // .body[data-content-phase]。两边都要盯，且我们的规则也要两套都覆盖。
+  const content = readHost('ui-conversation/src/client/skeleton/ConversationContent.tsx')
+  if (content === null) return // submodule 未就绪：只跑上面的规则断言，不假绿
+  assert.match(content, /data-conversation-scroll/,
     '上游 .scrollBody 必须仍挂 data-conversation-scroll —— 钩子没了这条规则就是死的')
-  assert.match(root, /css\.scrollBody/,
+  assert.match(content, /css\.scrollBody/,
     '上游仍须用 .scrollBody 装滚动容器（宿主那份 scrollbar-gutter: stable 是我们的覆盖对象）')
-  assert.match(root, /data-phase=\{phase\}/,
+  assert.match(content, /data-content-phase=\{phase\}/,
+    '嵌入变体的 .body 必须仍挂 data-content-phase —— embedded 覆盖点靠它限定 phase')
+  const main = readHost('ui-conversation/src/client/skeleton/ConversationMainPanel.tsx')
+  if (main === null) return
+  assert.match(main, /data-phase=\{phase\}/,
     '上游 .root 必须仍挂 data-phase —— phase 限定（hero/settling）是本次修法的前提')
+  assert.ok(STYLES_SRC.includes(".csChat [data-content-phase='hero'] [data-conversation-scroll]"),
+    'embedded 变体也必须覆盖 data-content-phase=hero —— 只写 data-phase 在嵌入态是死规则')
+  assert.ok(STYLES_SRC.includes(".csChat [data-content-phase='settling'] [data-conversation-scroll]"),
+    'embedded 变体也必须覆盖 data-content-phase=settling')
 
   // ③ 根因也要在上游源码里成立：hero 态确实有 overflow-y: auto，否则这条规则是安慰剂。
   const rootCss = readHost('ui-conversation/src/client/skeleton/ConversationRoot.module.css')

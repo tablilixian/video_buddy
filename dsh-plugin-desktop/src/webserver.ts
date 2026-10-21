@@ -52,9 +52,6 @@ export class DesktopWebServer extends WebServer {
   private readonly desktopConfig: Config
 
   constructor(ctx: ConstructorParameters<typeof WebServer>[0], config: Config) {
-    if (config.host !== '127.0.0.1' && config.host !== '0.0.0.0') {
-      throw new Error('dsh-plugin-desktop: Desktop WebServer requires a supported host')
-    }
     super(ctx, config)
     this.desktopConfig = config
   }

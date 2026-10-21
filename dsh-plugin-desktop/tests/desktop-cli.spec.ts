@@ -30,6 +30,7 @@ describe('packaged dsh bootstrap', () => {
       KEEP: 'value',
     }
     const argv = ['/Applications/DSH Desktop', '/app.asar/lib/desktop-cli.js', '--dump-config']
+    const runCli = vi.fn(async () => {})
     const load = vi.fn(async (url: string) => {
       expect(environment).toEqual({ KEEP: 'value' })
       expect(argv).toEqual([
@@ -40,15 +41,18 @@ describe('packaged dsh bootstrap', () => {
         '--dump-config',
       ])
       expect(url).toMatch(/\/node_modules\/@deepseek-ai\/dsh\/lib\/bin\.js$/u)
+      return { runCli }
     })
 
     await runDesktopDshCli(environment, load, argv)
 
     expect(load).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledOnce()
+    expect(runCli).toHaveBeenCalledWith({ manageDesktopProfile: true })
   })
 
   it('leaves the release-age policy to the final pnpm shim exactly once', async () => {
-    const load = vi.fn(async () => {})
+    const load = vi.fn(async () => ({ runCli: async () => {} }))
     const defaulted = [
       '/Applications/DSH Desktop',
       '/app.asar/lib/desktop-cli.js',

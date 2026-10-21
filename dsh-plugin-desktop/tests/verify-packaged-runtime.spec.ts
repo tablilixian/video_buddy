@@ -252,9 +252,9 @@ describe('packaged desktop runtime verification', () => {
     const runtimeContext = context('/build', 'win32')
     const unpackedRoot = resolvePackagedUnpackedRoot(runtimeContext)
     const requiredPresetEntries = [
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/agent.cordis.yml',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/cordis-plugin-development/SKILL.md',
-      'node_modules/@deepseek-ai/dsh/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-preset/skills/cordis-plugin-development/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-agent-preset/skills/editing-cordis-compositions/SKILL.md',
+      'node_modules/@deepseek-ai/dsh-web-app/presets/minimal.patch.yml',
     ]
 
     for (const missing of requiredPresetEntries) {

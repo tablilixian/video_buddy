@@ -18,7 +18,7 @@ type ExecuteToolCalls = (
         finish(exec: unknown, result: unknown): unknown
       }
     }
-    agentLoop: { config: { maxParallelToolCalls: number } }
+    agentLoop: { config: { maxParallelToolCalls: { get: () => number } } }
   },
   turn: number,
   step: number,
@@ -94,7 +94,7 @@ describe('empty tool-call handling', () => {
         },
       },
       agentLoop: {
-        config: { maxParallelToolCalls: 1 },
+        config: { maxParallelToolCalls: { get: () => 1 } },
       },
     }, 1, 1, [
       {
@@ -135,15 +135,10 @@ describe('empty tool-call handling', () => {
         turn: 1,
         step: 1,
         message: {
-          role: 'user',
+          role: 'tool',
           content: [{
-            type: 'tool-result',
-            toolCallId: '',
-            isError: true,
-            content: [{
-              type: 'text',
-              text: expect.stringContaining('empty tool name'),
-            }],
+            type: 'text',
+            text: expect.stringContaining('empty tool name'),
           }],
         },
       },
@@ -156,9 +151,7 @@ describe('empty tool-call handling', () => {
       data: {
         message: {
           content: [{
-            content: [{
-              text: expect.stringContaining('Start a new session'),
-            }],
+            text: expect.stringContaining('Start a new session'),
           }],
         },
       },

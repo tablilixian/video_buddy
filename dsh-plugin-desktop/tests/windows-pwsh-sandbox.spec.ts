@@ -1,4 +1,6 @@
 import type { Config as PwshConfig } from '@deepseek-ai/dsh-pwsh-local'
+import { createVolatile } from '@deepseek-ai/cosmokit'
+import type { Volatile } from '@deepseek-ai/cordis'
 import type { ShellExecSpec } from '@deepseek-ai/dsh-shell'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -28,19 +30,13 @@ function shellSpec(env?: Record<string, string>): ShellExecSpec {
   }
 }
 
-/** A settings-runtime live config reference, editable the way the loader commits one. */
-interface LiveRef<T> {
-  get: () => T
-  set: (next: T) => void
-}
-
-function live<T>(value: T): LiveRef<T> {
-  let current = value
-  return { get: () => current, set: (next) => { current = next } }
+/** A settings-runtime live config reference the loader can commit into. */
+function live<T>(value: T): Volatile<T> {
+  return createVolatile(value) as Volatile<T>
 }
 
 /** A plugin config whose fields are live references, as dsh 0.2.1 hands them to the executor. */
-function pwshConfig(pwshPath: LiveRef<string | undefined>, cwd = 'C:\\workspace'): PwshConfig {
+function pwshConfig(pwshPath: Volatile<string | undefined>, cwd = 'C:\\workspace'): PwshConfig {
   return {
     cwd: live<string | undefined>(cwd),
     timeoutMs: live(120_000),

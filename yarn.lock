@@ -1657,6 +1657,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/dsh-client-modules@patch:@deepseek-ai/dsh-client-modules@npm%3A0.2.1-rc.2#./patches/dsh-client-modules@0.2.1-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.2.1-rc.2
+  resolution: "@deepseek-ai/dsh-client-modules@patch:@deepseek-ai/dsh-client-modules@npm%3A0.2.1-rc.2#./patches/dsh-client-modules@0.2.1-rc.2.patch::version=0.2.1-rc.2&hash=0f2c00&locator=deepseek-harness-desktop%40workspace%3A."
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.5
+  checksum: 10c0/6d792c29a0b21c48306f72f1ebe6bc90d9b3010288b5eb3da70d1f8ccc7f2d80faec417a164ad6ea6738eabbed211939ef242cf82cb54001bfb365454a106fa7
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/dsh-client-product-analytics@npm:0.2.1-rc.2":
   version: 0.2.1-rc.2
   resolution: "@deepseek-ai/dsh-client-product-analytics@npm:0.2.1-rc.2"
@@ -7887,6 +7896,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@remotion/media@patch:@remotion/media@npm%3A4.0.535#./patches/@remotion-media@4.0.535.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 4.0.535
+  resolution: "@remotion/media@patch:@remotion/media@npm%3A4.0.535#./patches/@remotion-media@4.0.535.patch::version=4.0.535&hash=5eddbc&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    mediabunny: "npm:1.61.3"
+    remotion: "npm:4.0.535"
+    zod: "npm:4.5.4"
+  peerDependencies:
+    react: ">=16.8.0"
+    react-dom: ">=16.8.0"
+  checksum: 10c0/f1eb9e19ae8b7b9236a871c74b444446ad74c283e770383487fb3b6af594b200dfb46d1cda3d63e9450e33e7ec32fd155a1accebf487d8825b6c023cc21cf4f1
+  languageName: node
+  linkType: hard
+
 "@remotion/openai-whisper@npm:4.0.535":
   version: 4.0.535
   resolution: "@remotion/openai-whisper@npm:4.0.535"
@@ -9619,9 +9642,9 @@ __metadata:
   linkType: hard
 
 "adm-zip@npm:^0.6.0":
-  version: 0.6.0
-  resolution: "adm-zip@npm:0.6.0"
-  checksum: 10c0/440f37590c62255226f1db4cb1a5a618879347f5106ad5b9a24c67c20f9a54bd5b4efcd2b35af858e39c7885d05f4bd35f4c2f42378c98d13f779be380bc9ae4
+  version: 0.6.1
+  resolution: "adm-zip@npm:0.6.1"
+  checksum: 10c0/78233c6fbfd418dd605ef3c4c6a656406a49f81f716f2850d565f5e55915f18b99f4fdaf15436d77c73536da0915eeca33adab8055872a983b0ac7d07664cd25
   languageName: node
   linkType: hard
 
@@ -10349,12 +10372,14 @@ __metadata:
     "@types/react-dom": "npm:^18"
     "@types/subset-font": "npm:^2"
     ffmpeg-static: "npm:5.3.0"
+    immer: "npm:^10.1.1"
     react: "npm:18.3.1"
     react-dom: "npm:18.3.1"
     remotion: "npm:4.0.535"
     subset-font: "npm:2.9.0"
     tsdown: "npm:0.22.2"
     typescript: "npm:6.0.3"
+    zustand: "npm:~4.5.7"
   peerDependencies:
     "@deepseek-ai/cordis": 4.0.5
     "@deepseek-ai/dsh-client-ui-layout": 0.2.1-rc.2
@@ -10902,7 +10927,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"default-browser@npm:^5.4.0, default-browser@npm:^5.5.1":
+"default-browser@npm:^5.5.1":
   version: 5.5.1
   resolution: "default-browser@npm:5.5.1"
   dependencies:
@@ -11157,6 +11182,7 @@ __metadata:
     "@types/semver": "npm:^7.7.1"
     ajv: "npm:^8.20.0"
     ajv-formats: "npm:^3.0.1"
+    immer: "npm:^10.1.1"
     jsdom: "npm:29.1.1"
     json-schema-to-typescript: "npm:^15.0.4"
     react: "npm:18.3.1"
@@ -11167,6 +11193,7 @@ __metadata:
     typescript: "npm:6.0.3"
     vitest: "npm:4.1.8"
     yaml: "npm:^2.9.0"
+    zustand: "npm:~4.5.7"
   peerDependencies:
     "@deepseek-ai/cordis": 4.0.5
     "@deepseek-ai/dsh-agent": 0.2.1-rc.2
@@ -11264,9 +11291,12 @@ __metadata:
     "@deepseek-ai/dsh": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-agent": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-agent-default-model": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-agent-instructions": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-agent-preset-registry": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-anonymous-user-id": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-gateway": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-remotes": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-api-session-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-workspace-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-app-boot": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-atomic-write": "npm:0.2.1-rc.2"
@@ -11276,6 +11306,7 @@ __metadata:
     "@deepseek-ai/dsh-bash-local": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-brand": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-connection": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-client-file-upload": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-locale": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-modules": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-store": "npm:0.2.1-rc.2"
@@ -11298,15 +11329,22 @@ __metadata:
     "@deepseek-ai/dsh-command-feedback": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-commands": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-compaction": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-compaction-image-offload": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-cordis-client-runner": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-cordis-host-runner": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-credentials": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-deepseek-account": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-deepseek-llm-api-extensions": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-experimental-agent-team": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-experimental-speech-to-text": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-experimental-translator": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-experimental-worktree": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-file-reference": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-fs": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-fs-local": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-goal": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-home-paths": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-host-directory-picker": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-host-directory-picker-browse": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-host-directory-picker-native": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-host-plugin-inventory": "npm:0.2.1-rc.2"
@@ -11316,11 +11354,16 @@ __metadata:
     "@deepseek-ai/dsh-launch-environment": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-llm": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-llm-deepseek": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-llm-deepseek-api-key": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-llm-retry": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-mcp-client": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-message-feedback": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-native-command": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-otel": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-output-retention": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-permission-presets": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-plan-mode": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-plugin-manager": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-ptc-runtime": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-pwsh-local": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-pwsh-sandbox": "npm:0.2.1-rc.2"
@@ -11328,6 +11371,7 @@ __metadata:
     "@deepseek-ai/dsh-sandbox-local": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-sandbox-policy": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-sandbox-windows-acl": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-schedule": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-scope": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-sdk-protocol": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-session": "npm:0.2.1-rc.2"
@@ -11363,10 +11407,13 @@ __metadata:
     "@deepseek-ai/dsh-user-approval": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-user-questions": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-util-time": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-util-values": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-util-workspace-path": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-web": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-web-app": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-workflow": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-working-directory": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-workspace": "npm:0.2.1-rc.2"
     "@deepseek-ai/schemastery": "npm:^3.18.5"
     "@electron/asar": "npm:3.4.1"
     "@electron/rebuild": "npm:4.2.0"
@@ -11389,6 +11436,7 @@ __metadata:
     dshmarket: "npm:1.17.1"
     electron: "npm:43.4.0"
     electron-builder: "npm:26.15.7"
+    immer: "npm:^10.1.1"
     koffi: "npm:3.1.5"
     lexical: "npm:^0.49.0"
     lucide-react: "npm:^1.33.0"
@@ -11408,6 +11456,7 @@ __metadata:
     vite: "npm:8.2.1"
     vitest: "npm:4.1.8"
     yaml: "npm:^2.9.0"
+    zustand: "npm:~4.5.7"
   peerDependencies:
     electron: 43.4.0
   bin:
@@ -12910,6 +12959,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"immer@npm:^10.1.1":
+  version: 10.2.0
+  resolution: "immer@npm:10.2.0"
+  checksum: 10c0/35e66b0585b2aec4e85ae7a993f049405f170799ba89d79205bc3fdae2c5bdaa2b1d35f62803d8beee42b7e85c7f7315a6e93b6a5a510c5a46f03dbe63619e87
+  languageName: node
+  linkType: hard
+
 "import-fresh@npm:^3.3.0":
   version: 3.3.1
   resolution: "import-fresh@npm:3.3.1"
@@ -14264,26 +14320,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-native-custom-loader@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-native-custom-loader@npm:0.1.4"
-  checksum: 10c0/8459c17da5eb5db6ac28036bf2be08997eef4e1dc4b89915703055585eb9dd48a8533e8f0283cd3941444cce06500bd02adc8a8dc6ee14ddef55c412d033ea5a
-  languageName: node
-  linkType: hard
-
 "node-addon-native-custom-loader@npm:0.1.9":
   version: 0.1.9
   resolution: "node-addon-native-custom-loader@npm:0.1.9"
   checksum: 10c0/ae457716a00d3e47bb98a3b1c2603cf343587f1e8d4de0a3c5172edebf7c33764dbe0c3ea912c5792bf44012db7eb530a1c24792e0fe74e44c75c55067112c1a
-  languageName: node
-  linkType: hard
-
-"node-addon-require-builtin-darwin-arm64@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-darwin-arm64@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
@@ -14296,30 +14336,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-require-builtin-darwin-x64@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-darwin-x64@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=darwin & cpu=x64
-  languageName: node
-  linkType: hard
-
 "node-addon-require-builtin-darwin-x64@npm:0.1.9":
   version: 0.1.9
   resolution: "node-addon-require-builtin-darwin-x64@npm:0.1.9"
   dependencies:
     node-addon-native-custom-loader: "npm:0.1.9"
   conditions: os=darwin & cpu=x64
-  languageName: node
-  linkType: hard
-
-"node-addon-require-builtin-linux-arm64-gnu@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-linux-arm64-gnu@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=linux & cpu=arm64 & libc=glibc
   languageName: node
   linkType: hard
 
@@ -14341,15 +14363,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-require-builtin-linux-x64-gnu@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-linux-x64-gnu@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=linux & cpu=x64 & libc=glibc
-  languageName: node
-  linkType: hard
-
 "node-addon-require-builtin-linux-x64-gnu@npm:0.1.9":
   version: 0.1.9
   resolution: "node-addon-require-builtin-linux-x64-gnu@npm:0.1.9"
@@ -14368,30 +14381,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-require-builtin-win32-arm64-msvc@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-win32-arm64-msvc@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=win32 & cpu=arm64
-  languageName: node
-  linkType: hard
-
 "node-addon-require-builtin-win32-arm64-msvc@npm:0.1.9":
   version: 0.1.9
   resolution: "node-addon-require-builtin-win32-arm64-msvc@npm:0.1.9"
   dependencies:
     node-addon-native-custom-loader: "npm:0.1.9"
   conditions: os=win32 & cpu=arm64
-  languageName: node
-  linkType: hard
-
-"node-addon-require-builtin-win32-ia32-msvc@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-win32-ia32-msvc@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=win32 & cpu=ia32
   languageName: node
   linkType: hard
 
@@ -14404,15 +14399,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-require-builtin-win32-x64-msvc@npm:0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin-win32-x64-msvc@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-  conditions: os=win32 & cpu=x64
-  languageName: node
-  linkType: hard
-
 "node-addon-require-builtin-win32-x64-msvc@npm:0.1.9":
   version: 0.1.9
   resolution: "node-addon-require-builtin-win32-x64-msvc@npm:0.1.9"
@@ -14422,38 +14408,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-addon-require-builtin@npm:^0.1.4":
-  version: 0.1.4
-  resolution: "node-addon-require-builtin@npm:0.1.4"
-  dependencies:
-    node-addon-native-custom-loader: "npm:0.1.4"
-    node-addon-require-builtin-darwin-arm64: "npm:0.1.4"
-    node-addon-require-builtin-darwin-x64: "npm:0.1.4"
-    node-addon-require-builtin-linux-arm64-gnu: "npm:0.1.4"
-    node-addon-require-builtin-linux-x64-gnu: "npm:0.1.4"
-    node-addon-require-builtin-win32-arm64-msvc: "npm:0.1.4"
-    node-addon-require-builtin-win32-ia32-msvc: "npm:0.1.4"
-    node-addon-require-builtin-win32-x64-msvc: "npm:0.1.4"
-  dependenciesMeta:
-    node-addon-require-builtin-darwin-arm64:
-      optional: true
-    node-addon-require-builtin-darwin-x64:
-      optional: true
-    node-addon-require-builtin-linux-arm64-gnu:
-      optional: true
-    node-addon-require-builtin-linux-x64-gnu:
-      optional: true
-    node-addon-require-builtin-win32-arm64-msvc:
-      optional: true
-    node-addon-require-builtin-win32-ia32-msvc:
-      optional: true
-    node-addon-require-builtin-win32-x64-msvc:
-      optional: true
-  checksum: 10c0/5a11f6190fa65fefab15a453e0d621cc9895fc4be8be4054e1a698896eacfbd78919278f1772fe6ba7d8410076dcd5ac9b00495aac0f2c3c522ee887b9114b6a
-  languageName: node
-  linkType: hard
-
-"node-addon-require-builtin@npm:^0.1.9":
+"node-addon-require-builtin@npm:^0.1.4, node-addon-require-builtin@npm:^0.1.9":
   version: 0.1.9
   resolution: "node-addon-require-builtin@npm:0.1.9"
   dependencies:
@@ -14721,17 +14676,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"open@npm:11.0.1":
-  version: 11.0.1
-  resolution: "open@npm:11.0.1"
+"open@npm:11.0.4, open@npm:^11.0.0":
+  version: 11.0.4
+  resolution: "open@npm:11.0.4"
   dependencies:
-    default-browser: "npm:^5.4.0"
+    default-browser: "npm:^5.5.1"
     define-lazy-prop: "npm:^3.0.0"
     is-in-ssh: "npm:^1.0.0"
     is-inside-container: "npm:^1.0.0"
-    powershell-utils: "npm:^0.2.0"
+    powershell-utils: "npm:^0.2.1"
     wsl-utils: "npm:^1.0.0"
-  checksum: 10c0/fd650ac10806a06bfe197af0ef143cd2a3127294721524972f04377fb1144da5e32a2d0507497e214385981ec5b6b4b43210e22d7ef22bc45c390771d80658a5
+  checksum: 10c0/5be0a902323ea9266cf7323edf8d714b516f739519485e98b2508e38e1ffe6f98e3426aeb182fc88239bf98777258b27abbfe5cb1938bff8dbccec2fd603aca5
   languageName: node
   linkType: hard
 
@@ -14746,9 +14701,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"open@npm:^11.0.2":
+"open@patch:open@npm%3A11.0.4#./patches/open@11.0.4.patch::locator=deepseek-harness-desktop%40workspace%3A.":
   version: 11.0.4
-  resolution: "open@npm:11.0.4"
+  resolution: "open@patch:open@npm%3A11.0.4#./patches/open@11.0.4.patch::version=11.0.4&hash=c5fcbe&locator=deepseek-harness-desktop%40workspace%3A."
   dependencies:
     default-browser: "npm:^5.5.1"
     define-lazy-prop: "npm:^3.0.0"
@@ -14756,21 +14711,7 @@ __metadata:
     is-inside-container: "npm:^1.0.0"
     powershell-utils: "npm:^0.2.1"
     wsl-utils: "npm:^1.0.0"
-  checksum: 10c0/5be0a902323ea9266cf7323edf8d714b516f739519485e98b2508e38e1ffe6f98e3426aeb182fc88239bf98777258b27abbfe5cb1938bff8dbccec2fd603aca5
-  languageName: node
-  linkType: hard
-
-"open@patch:open@npm%3A11.0.1#./patches/open@11.0.1.patch::locator=deepseek-harness-desktop%40workspace%3A.":
-  version: 11.0.1
-  resolution: "open@patch:open@npm%3A11.0.1#./patches/open@11.0.1.patch::version=11.0.1&hash=c5fcbe&locator=deepseek-harness-desktop%40workspace%3A."
-  dependencies:
-    default-browser: "npm:^5.4.0"
-    define-lazy-prop: "npm:^3.0.0"
-    is-in-ssh: "npm:^1.0.0"
-    is-inside-container: "npm:^1.0.0"
-    powershell-utils: "npm:^0.2.0"
-    wsl-utils: "npm:^1.0.0"
-  checksum: 10c0/933246cc069d9354799a3bcb55ec57e7ce1b2da419fdb820afbea4fde4ff977b4eb550489196560bc729f34e721beb258a9c20166889bdb34113d7ba13e6cc7d
+  checksum: 10c0/c7baa72a2f5109ece05beea07118628cabe30a7cb60e677f34512ad58c47b7d1e423d7347c4aaadc03454eceee158acd4721b9dd5a8219aeac1fdac5e06c22c7
   languageName: node
   linkType: hard
 
@@ -15204,13 +15145,6 @@ __metadata:
   version: 0.1.0
   resolution: "powershell-utils@npm:0.1.0"
   checksum: 10c0/a64713cf3583259c9ed6be211c06b4b19e8608bcb0f7f6287ffac0a95b8c7582b6b662eea0e201fd659492c8e9f9c5fd0bfc4579645c5add9c1a600075621c95
-  languageName: node
-  linkType: hard
-
-"powershell-utils@npm:^0.2.0":
-  version: 0.2.0
-  resolution: "powershell-utils@npm:0.2.0"
-  checksum: 10c0/0fa649e933800f33276262646cfb0d2ffcdfdb6a68ff80f5ab66e33c3197d3edf022e774502d5e458aee683702994e6d201fda85958c3cb7ccc413e0746b4373
   languageName: node
   linkType: hard
 
@@ -17148,10 +17082,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^7.11.0, undici@npm:^7.24.4, undici@npm:^7.25.0, undici@npm:^7.27.2, undici@npm:^7.29.0":
+"undici@npm:^7.11.0, undici@npm:^7.24.4, undici@npm:^7.25.0, undici@npm:^7.27.2":
   version: 7.29.0
   resolution: "undici@npm:7.29.0"
   checksum: 10c0/85ea96e91e7f3de24de678cbbc54230fdd641a3b0643005f2aef044af1f1a2db8fbecb88b28e6fa78bb41ffeafda4479b57075b6b6ab92beac4b7b5ab53f9b10
+  languageName: node
+  linkType: hard
+
+"undici@npm:^7.29.0":
+  version: 7.30.1
+  resolution: "undici@npm:7.30.1"
+  checksum: 10c0/c838089b010e8e28a9a5358d4bf4621e0c8d7bb70058b23e819667349c4c0b6791a7c8bc9bbe94ff0923db132faae0d9d9592b9743eda4f2b49466fa57482213
   languageName: node
   linkType: hard
 
@@ -17248,6 +17189,15 @@ __metadata:
   bin:
     update-browserslist-db: cli.js
   checksum: 10c0/5c0769472715b57371208c3146cc07a4f0917c1d18cc34f60325bc4234f4a28f332e50b99f675999ff311315231ff19beb22a815dfe04ccc1e798e1d389514d7
+  languageName: node
+  linkType: hard
+
+"use-sync-external-store@npm:^1.2.2":
+  version: 1.7.0
+  resolution: "use-sync-external-store@npm:1.7.0"
+  peerDependencies:
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/6bae7cb778ce611131ec830c4e469fbc2872acefc25d2e4cf1c28b8628690689770742a9f2f0642c95134f9c77041fee60f0352f81ca43f96643b0ed01774726
   languageName: node
   linkType: hard
 
@@ -17844,5 +17794,25 @@ __metadata:
   version: 4.6.7
   resolution: "zod@npm:4.6.7"
   checksum: 10c0/4ce2eb14034317b7254e347ca37b5ad591cf8333147030cf05b9b5d31692d45073f7f2747aa50cf8c6b29012194d2b22978cecc89969cf34a0d18e89d0ee7d7b
+  languageName: node
+  linkType: hard
+
+"zustand@npm:~4.5.7":
+  version: 4.5.7
+  resolution: "zustand@npm:4.5.7"
+  dependencies:
+    use-sync-external-store: "npm:^1.2.2"
+  peerDependencies:
+    "@types/react": ">=16.8"
+    immer: ">=9.0.6"
+    react: ">=16.8"
+  peerDependenciesMeta:
+    "@types/react":
+      optional: true
+    immer:
+      optional: true
+    react:
+      optional: true
+  checksum: 10c0/55559e37a82f0c06cadc61cb08f08314c0fe05d6a93815e41e3376130c13db22a5017cbb0cd1f018c82f2dad0051afe3592561d40f980bd4082e32005e8a950c
   languageName: node
   linkType: hard

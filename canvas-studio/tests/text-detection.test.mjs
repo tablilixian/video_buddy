@@ -200,6 +200,6 @@ test('接线：runTextAutoFix 必须收下原 prompt，并从它构造修复 pro
 test('接线：image_generate 调用点必须把 a.prompt 传进去（漏传 = 退回字符清单形态）', () => {
   assert.match(
     HOST_TOOLS_CODE,
-    /runTextAutoFix\(registry, projectId, port, result, a\.prompt, decision\.quotedTexts/,
+    /runTextAutoFix\(registry, projectId, portOf, result, a\.prompt, decision\.quotedTexts/,
   )
 })

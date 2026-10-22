@@ -11,7 +11,6 @@ import { RailStrip } from './RailStrip.js'
 import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
 import { AutoTestPanel } from './AutoTestPanel.js'
-import { FirstRunSettings, isCanvasStudioOnboarded } from './FirstRunSettings.js'
 import { ModeSwitch } from './ModeSwitch.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 // CV-334 · B3.3：渲染前只读预览的闸门状态（轻量模块 —— 播放器本体在
@@ -609,18 +608,30 @@ export function StudioFrame(props: StudioFrameProps) {
   const [loginOpen, setLoginOpen] = useState(false)
   useEffect(() => {
     const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
-    initAuthStore({
-      supabaseUrl: scope.getSnapshot().value?.supabaseUrl ?? '',
-      supabasePublishableKey: scope.getSnapshot().value?.supabasePublishableKey ?? '',
-    })
+    // 0.2.1 起 `ctx.configForms` 的首帧是 `{ status: 'loading', value: undefined }`，
+    // 远端 mirror 要等 `get()` 后异步就绪。挂载时直接读快照会把空串当成「未配置
+    // Supabase」→ 登录入口永久降级成「本地模式」；必须等 ready 再初始化。
+    const applyConfig = (): void => {
+      const snapshot = scope.getSnapshot()
+      if (snapshot.status !== 'ready') return
+      initAuthStore({
+        supabaseUrl: snapshot.value?.supabaseUrl ?? '',
+        supabasePublishableKey: snapshot.value?.supabasePublishableKey ?? '',
+      })
+    }
+    applyConfig()
+    const unsubscribe = scope.subscribe(applyConfig)
     installAuthVisibilityPush()
     // P2 401 自愈链：CS-AUTH-001 续期失败 / 未登录时从这里弹登录窗（桥见 auth-store）。
     setLoginPromptHandler(() => { setLoginOpen(true) })
-    return () => { setLoginPromptHandler(null) }
-    // 仅挂载时初始化一次；设置页改 Supabase 配置需要重载页面生效（默认值即用，罕见手改）。
+    return () => {
+      unsubscribe()
+      setLoginPromptHandler(null)
+    }
+    // client 是模块级单例：已就绪后改 Supabase 配置仍需重载页面生效。
   }, [settingsScope])
-  // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。
-  const [showFirstRun, setShowFirstRun] = useState<boolean>(() => !isCanvasStudioOnboarded())
+  // 首启不弹设置页：首启直接进入创作台，引导后续按需以可关闭的提示补上。
+  // FirstRunSettings 组件与其 localStorage 标记保留，供以后的手动入口复用。
   // REQ-005 / CV-256：首页创作台预选的分组 —— v1.3 变体 A 下规格行**没有分组**
   //（§3.4 拍板：默认未分组，事后左栏拖拽调组），该 state 随 LobbyComposer 退役；
   // 左栏入口的 goHome() 保留（回首页仍是唯一新建入口）。
@@ -3027,13 +3038,6 @@ export function StudioFrame(props: StudioFrameProps) {
       )}
       {/* P1 登录闭环：登录弹窗（左渠道右视频）；开合只由左下角入口驱动。 */}
       {loginOpen && <LoginModal onClose={() => { setLoginOpen(false) }} />}
-      {showFirstRun && (
-        <FirstRunSettings
-          settingsScope={settingsScope}
-          getDirectoryPicker={getDirectoryPicker}
-          onComplete={() => { setShowFirstRun(false) }}
-        />
-      )}
       {/* CV-196：放手跑的切换确认。文案必须写清「代价」而不是复述按钮名 ——
           换个说法但不说会发生什么，等于多一次点击、没多一分知情。 */}
       {pendingAutoMode && (

@@ -101,11 +101,17 @@ const localState = stateBlock('local', `
           ${entry('订阅', RESERVED)}${themeGroup()}${helpGroup()}${settingsEntry()}
         </div>`)
 
-// 未登录：账号体系已配置但没登录。用户条整体是「登录 / 注册」，**不渲染面板**。
+// 未登录：账号体系已配置但没登录。用户条整体是「登录 / 注册」，**不渲染面板**；
+// 设置入口用独立齿轮保留（面板随身份信息一起隐藏，不能把设置也带走）。
 const signedOutState = stateBlock('signed-out', `
-        <button type="button" class="csUserBar csUserBarSignin">
-          <span class="csUserBarSigninLabel">登录 / 注册</span>
-        </button>`)
+        <div class="csUserSigninRow">
+          <button type="button" class="csUserBar csUserBarSignin">
+            <span class="csUserBarSigninLabel">登录 / 注册</span>
+          </button>
+          <button type="button" class="csUserSettingsBtn" aria-label="设置" title="设置">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.2.62.76 1.05 1.42 1.09H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z" /></svg>
+          </button>
+        </div>`)
 
 // 已登录：夹具身份（演示账号）——明确是夹具，不是某个真人。
 const signedInState = stateBlock('signed-in', `
@@ -286,10 +292,11 @@ const html = `<!doctype html>
     if (shown.length === 1 && expect !== undefined) {
       var root = shown[0]
       if (expect.kind === 'signin') {
-        /* 未登录：只准有「登录 / 注册」按钮，不许有用户条，也不许有面板 ——
+        /* 未登录：只准有「登录 / 注册」入口 + 设置齿轮，不许有用户条，也不许有面板 ——
            此前那条面板会拿假身份填头部（未登录却顶着别人的名字 + 假 UID）。 */
-        check('未登录态只有登录入口，没有用户条 / 面板',
+        check('未登录态只有登录入口与设置齿轮，没有用户条 / 面板',
           elIn(root, '.csUserBarSignin') !== null &&
+          elIn(root, '.csUserSettingsBtn') !== null &&
           elIn(root, 'button.csUserBar:not(.csUserBarSignin)') === null &&
           elIn(root, '.csUserPanel') === null)
       } else {

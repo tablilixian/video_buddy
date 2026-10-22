@@ -165,13 +165,29 @@ export function UserCard(props: UserCardProps): ReactElement {
       {/* P1 登录闭环：未登录态 → 用户条切换为「登录」入口（面板不渲染）。
           signing-in 也走这里（弹窗自己显示进度，用户条保持登录入口可再点）。 */}
       {signedOut && (
-        <button
-          type="button"
-          className="csUserBar csUserBarSignin"
-          onClick={() => { onOpenLogin?.() }}
-        >
-          <span className="csUserBarSigninLabel">登录 / 注册</span>
-        </button>
+        <div className="csUserSigninRow">
+          <button
+            type="button"
+            className="csUserBar csUserBarSignin"
+            onClick={() => { onOpenLogin?.() }}
+          >
+            <span className="csUserBarSigninLabel">登录 / 注册</span>
+          </button>
+          {/* 未登录态不渲染用户面板（面板是身份/账号信息，未登录没有可显示的内容），
+              但设置入口不能随面板一起消失 —— 用独立齿轮按钮承接。 */}
+          <button
+            type="button"
+            className="csUserSettingsBtn"
+            aria-label="设置"
+            title="设置"
+            onClick={onOpenSettings}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3.2" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.64 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.2.62.76 1.05 1.42 1.09H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z" />
+            </svg>
+          </button>
+        </div>
       )}
       {/* 未登录态**不渲染面板**：用户条本身就是「登录 / 注册」入口，再补一个只写着
           「去登录」的面板等于两套入口。此前这里有一条面板分支，头部填的是假身份

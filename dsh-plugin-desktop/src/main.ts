@@ -96,13 +96,7 @@ import {
   completeOrSkipDesktopSetupWizard,
   readDesktopSetupWizardState,
 } from './setup-wizard-state.ts'
-import {
-  migrateDesktopBrowserAccessSettings,
-  readDesktopSetupWizardSettings,
-  updateDesktopSetupWizardSettings,
-} from './setup-wizard-settings.ts'
-import type { DesktopSetupWizardResult } from './setup-wizard-contract.ts'
-import { DesktopSetupWizardWindow } from './setup-wizard-window.ts'
+import { migrateDesktopBrowserAccessSettings } from './setup-wizard-settings.ts'
 import {
   formatProfileMaterializationFailure,
   materializeProfile,
@@ -136,7 +130,6 @@ import {
   recoverOversizedSessionProjectionCache,
   type SessionProjectionCacheRecoveryResult,
 } from './session-projcache-recovery.ts'
-import { windowsSupportsMica } from './window-material.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
 const PRODUCT_NAME = 'VideoBuddy'
@@ -269,7 +262,6 @@ async function start(): Promise<void> {
   let logSink: LogFileSink | undefined
   let startupRecoveryController: DesktopStartupRecoveryController | undefined
   let startupRecoveryWindow: DesktopStartupRecoveryWindow | undefined
-  let setupWizardWindow: DesktopSetupWizardWindow | undefined
   let startupRecoveryConfigurationPaths: DesktopStartupRecoveryConfigurationPaths | undefined
   let profileCheckpoint: DesktopProfileCheckpoint | undefined
   let startupRecoveryProfileActions: DesktopStartupRecoveryProfileActions | undefined
@@ -428,10 +420,6 @@ async function start(): Promise<void> {
   }
 
   const showPreHostSurface = (): boolean => {
-    if (setupWizardWindow !== undefined) {
-      setupWizardWindow.show()
-      return true
-    }
     if (startupRecoveryWindow !== undefined) {
       startupRecoveryWindow.show()
       return true
@@ -695,62 +683,15 @@ async function start(): Promise<void> {
         preparationHooks,
       )
     }
+    // 首启不再弹原生 Setup Wizard：直接进入产品页，桌面配置由 bundle 默认值
+    // （兼容模式 / 材质关 / 仅本机 / 通知开）承接，后续可在「桌面设置」里调整。
+    // 这里静默记录 skipped，等价于用户点了向导里的「稍后再说」，避免每次启动重入。
     if (readDesktopSetupWizardState(marketUserDataDir, prepared.profile.dir) === undefined) {
-      const setupSettings = readDesktopSetupWizardSettings(prepared.settingsDocument)
-      setupWizardWindow = new DesktopSetupWizardWindow({
-        locale: desktopLocaleFromLanguageTag(app.getLocale()),
-        input: {
-          profileName: activeProfileName,
-          platform: runtime.platform,
-          micaSupported: process.platform === 'win32' && windowsSupportsMica(runtime.windowsBuild),
-          ...setupSettings,
-          market: marketSelection.requested,
-        },
-      })
-      let setupResult: DesktopSetupWizardResult
-      try {
-        setupResult = await setupWizardWindow.run()
-      } finally {
-        setupWizardWindow = undefined
-      }
-      if (setupResult.action === 'quit') {
-        startupRecoveryController?.dispose()
-        startupRecoveryController = undefined
-        await shutdown.request(0)
-        return
-      }
-      if (setupResult.action === 'skip') {
-        await completeOrSkipDesktopSetupWizard(
-          marketUserDataDir,
-          prepared.profile.dir,
-          'skipped',
-        )
-      } else {
-        await updateDesktopSetupWizardSettings(prepared.settingsDocument, {
-          mode: setupResult.selection.mode,
-          macosMaterial: setupResult.selection.macosMaterial,
-          windowsMaterial: setupResult.selection.windowsMaterial,
-          openBrowser: setupResult.selection.openBrowser,
-          networkExposure: setupResult.selection.networkExposure,
-          notifications: setupResult.selection.notifications,
-        })
-        await selectDesktopMarketProvider(marketUserDataDir, setupResult.selection.market)
-        marketSelection = readDesktopMarketStateForUserData(marketUserDataDir)
-        prepared = prepareDesktopProfile(
-          process.env.DSH_TELEMETRY_DISABLED,
-          homeDir,
-          process.platform,
-          activeProfileName,
-          pluginManagementStatePath,
-          marketSelection,
-          preparationHooks,
-        )
-        await completeOrSkipDesktopSetupWizard(
-          marketUserDataDir,
-          prepared.profile.dir,
-          'completed',
-        )
-      }
+      await completeOrSkipDesktopSetupWizard(
+        marketUserDataDir,
+        prepared.profile.dir,
+        'skipped',
+      )
     }
     if (profileCheckpoint === undefined) {
       try {

@@ -40,6 +40,7 @@ import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 // 0.2.1：当前会话 / 最近会话的唯一取数口径（选择状态在 0.2.1 已无公开 API）。
 import { currentSession as currentSessionOf, currentSessionId as currentSessionIdOf, recentSession as recentSessionOf } from './current-session.js'
+import { routeStudioSend } from '../lobby-route.js'
 import { frameSizeOf } from '../canvas-aspect.js'
 import { isReplayable } from '../node-params.js'
 // CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
@@ -765,8 +766,9 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   // 实例方法做运行时包装：它是附件提交唯一入口（ui-conversation service.ts 的
   // sendSession），唯一调用方 InputHub.sink 在调用时经 ctx.get('conversation')
   // 取单例再查方法，实例级包装即可拦截。升级韧性设计：
-  //   ① 特征检测——公开 facade（sendSession/draftImages/releaseDraftImages）
-  //      不匹配则不安装 + warn，行为静默退回原生，上游内部重构不会崩；
+  //   ① 特征检测——只有 `sendSession` 是硬前置（附件草稿 API 两代都认，缺失时只
+  //      降级附件改道）。**别再把可选能力写进安装闸**：0.2.1 换掉附件 API 名后，
+  //      旧写法让整个拦截（含首页认领）静默不装，首句永远成不了项目（2026-10-22）；
   //   ② rest args 透传——纯文本消息零开销直通，上游加参数不影响直通路径；
   //   ③ disposer 还原原方法——热重载/插件停用不留痕；
   //   ④ divert 失败回落原生 base64 路径（与原补丁语义一致）。
@@ -777,7 +779,16 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   ctx.effect(() => {
     type SubmitOutcomeLike = { kind: 'success' } | { kind: 'error' }
     type DraftAttachmentLike = { id: string; file: File }
-    /** 结构化 facade：不 import 上游内部类型，仅约束 wrapper 触碰的公开面。 */
+    /**
+     * 结构化 facade：不 import 上游内部类型，仅约束 wrapper 触碰的公开面。
+     *
+     * **dsh 0.2.1 换掉了附件草稿的公开面**：`draftImages` / `releaseDraftImages` 被
+     * `resolveDraftAttachments` / `releaseDraftAttachments`（+ 单个 `releaseDraftAttachment`）
+     * 取代。旧代码把这两个方法写进「安装前置条件」，于是升级后 `tryInstall` **直接放弃
+     * 安装** —— 首页认领与附件改道一起静默失效，行为退回原生发送：首句落进 `.draft-*`
+     * 目录、永远成不了项目（2026-10-22 真机「打完招呼还停在首页」，日志里零 claim 记录）。
+     * 现在只有 `sendSession` 是硬前置；附件 API 两代都认，缺失时**只降级附件改道**。
+     */
     type DivertConversation = {
       sendSession(
         session: unknown,
@@ -786,8 +797,16 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         mode: unknown,
         signal?: AbortSignal,
       ): Promise<SubmitOutcomeLike>
-      draftImages(ids: readonly string[]): readonly DraftAttachmentLike[]
-      releaseDraftImages(attachments: readonly { id: string }[]): void
+      /** 0.2.1：按 id 取草稿附件（image / file 两类）。 */
+      resolveDraftAttachments?(ids: readonly string[]): readonly DraftAttachmentLike[]
+      /** 0.1.x：只取图片草稿。 */
+      draftImages?(ids: readonly string[]): readonly DraftAttachmentLike[]
+      /** 0.2.1：批量释放草稿附件。 */
+      releaseDraftAttachments?(attachments: readonly { id: string }[]): void
+      /** 0.2.1：单个释放（批量方法缺失时的兜底）。 */
+      releaseDraftAttachment?(id: string): void
+      /** 0.1.x：批量释放图片草稿。 */
+      releaseDraftImages?(attachments: readonly { id: string }[]): void
     }
     let timer: ReturnType<typeof setInterval> | null = null
     let attempts = 0
@@ -807,20 +826,36 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         return
       }
       if (timer !== null) { clearInterval(timer); timer = null }
-      if (
-        typeof conversation.sendSession !== 'function'
-        || typeof conversation.draftImages !== 'function'
-        || typeof conversation.releaseDraftImages !== 'function'
-      ) {
-        ctx.logger.warn('canvas-studio: conversation sendSession facade not detected (upstream changed?), attachment divert disabled — native behavior preserved')
+      if (typeof conversation.sendSession !== 'function') {
+        ctx.logger.warn('canvas-studio: conversation.sendSession not detected (upstream changed?), lobby claim and attachment divert disabled — native behavior preserved')
         return
       }
+      // 附件草稿 API 两代都认（见 DivertConversation 注释）：缺失时只关掉附件改道，
+      // **首页认领照装** —— 一个可选能力不该把首句建项目的主链路一起拖死。
+      const resolveDrafts = (ids: readonly string[]): readonly DraftAttachmentLike[] => {
+        if (typeof conversation.resolveDraftAttachments === 'function') return conversation.resolveDraftAttachments(ids)
+        if (typeof conversation.draftImages === 'function') return conversation.draftImages(ids)
+        return []
+      }
+      const releaseDrafts = (attachments: readonly { id: string }[]): void => {
+        if (typeof conversation.releaseDraftAttachments === 'function') {
+          conversation.releaseDraftAttachments(attachments)
+          return
+        }
+        if (typeof conversation.releaseDraftImages === 'function') {
+          conversation.releaseDraftImages(attachments)
+          return
+        }
+        for (const attachment of attachments) conversation.releaseDraftAttachment?.(attachment.id)
+      }
+      const attachmentDivert = typeof conversation.resolveDraftAttachments === 'function'
+        || typeof conversation.draftImages === 'function'
       const original = conversation.sendSession
       /** 附件改道链路（CV-247 原逻辑，抽出复用）：纯文本直通，带图落盘 + @ref。 */
       const divertSend = (args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         const [session, text, attachmentIds, mode, signal] = args
-        if (attachmentIds.length === 0) return original.apply(conversation, args)
-        const attachments = conversation.draftImages(attachmentIds)
+        if (!attachmentDivert || attachmentIds.length === 0) return original.apply(conversation, args)
+        const attachments = resolveDrafts(attachmentIds)
         if (attachments.length === 0 || attachments.length !== attachmentIds.length) {
           return original.apply(conversation, args)
         }
@@ -833,7 +868,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
             // 与原补丁「草稿在 prompt 成功结算后才释放」语义一致。
             return original.call(conversation, session, divertedText, [], mode, signal)
               .then((result) => {
-                if (result.kind === 'success') conversation.releaseDraftImages(attachments)
+                if (result.kind === 'success') releaseDrafts(attachments)
                 return result
               })
           })
@@ -1022,27 +1057,24 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       }
 
       /**
-       * 首句撞上基线未就绪时**等**它，而不是直接放行原生发送。
+       * 等「承载这条消息的会话 cwd」就位（有界轮询）。
        *
-       * 基线（workspaces / sessions 的 phase）就绪前 `resolveActiveProjectId()` 恒
-       * null，所以那时无从判定 lobby；但旧写法是「不就绪 → 直接 divertSend」，结果
-       * 首句落进 `.draft-*` 目录后**永远不成项目**：侧栏始终「还没有项目」、agent
-       * 所有画布工具报「未绑定任何 Canvas Studio 项目」、布局停在首页。2026-10-22
-       * 真机实测（用户「打完招呼还停在这一页」，会话 cwd 停在 `.draft-202610-22113327`）。
-       *
-       * 改成有界等待：就绪后照常判定 —— 首页首句走认领，`select` + `adoptWorkflow`
-       * 会把布局带到故事板（`WORKFLOW_DEFAULT.state = 'storyboarding'`）；超时才退回
-       * 原生路径，并留下一条**能定位**的日志（旧路径这里完全静默）。
+       * 判据是**数据**（会话 cwd），不是基线 phase。phase 只是就绪代理量：一旦它在
+       * 真机上不是 `ready`（0.2.1 升级后实测 —— 门禁退化成「放行原生发送」），首句
+       * 就落进 `.draft-*` 目录后**永远不成项目**：侧栏一直「还没有项目」、agent 画布
+       * 工具全报「未绑定任何 Canvas Studio 项目」、布局停在首页（2026-10-22 用户原话
+       * 「打完招呼还停在上一页」，会话 cwd 停在 `.draft-202610-22113327`）。
+       * 路由规则见 `src/lobby-route.ts`；这里只负责拿到判定所需的 cwd。
        */
-      const BASELINE_WAIT_MS = 8000
-      const BASELINE_POLL_MS = 100
-      const waitForBaseline = async (): Promise<boolean> => {
-        const deadline = Date.now() + BASELINE_WAIT_MS
+      const ROUTE_WAIT_MS = 8000
+      const ROUTE_POLL_MS = 100
+      const waitForSessionCwd = async (): Promise<string | undefined> => {
+        const deadline = Date.now() + ROUTE_WAIT_MS
         for (;;) {
-          if (ctx.workspaces.list.getSnapshot().phase === 'ready'
-            && sessionSvc.list.getSnapshot().phase === 'ready') return true
-          if (Date.now() >= deadline) return false
-          await new Promise((resolve) => { setTimeout(resolve, BASELINE_POLL_MS) })
+          const cwd = currentSessionOf(sessionSvc.list.getSnapshot())?.cwd
+          if (cwd !== undefined && cwd !== '') return cwd
+          if (Date.now() >= deadline) return undefined
+          await new Promise((resolve) => { setTimeout(resolve, ROUTE_POLL_MS) })
         }
       }
 
@@ -1053,36 +1085,46 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         // **必须在 claimAndSend 之前**：否则未登录会先把首页 draft 目录认领成项目，
         // 有副作用了才被拒 —— 草稿与一个空项目双输。
         if (!requireSignIn()) return { kind: 'error' }
-        // 基线未就绪时不判定 lobby（`resolveActiveProjectId` 那时恒 null，会把项目内
-        // 发送误判成首页发送），也不能直接放行 —— 必须等，否则首句永远成不了项目。
-        if (!await waitForBaseline()) {
-          ctx.logger.warn('canvas-studio: workspace baseline stayed pending before the first send; project claim skipped, the message stays in the draft session')
-          return divertSend(args)
+        // 路由判定按**数据**（会话 cwd 的归属）而不是基线 phase —— phase 在真机上并
+        // 不可靠，判错一次就是「首句永远成不了项目」。规则见 src/lobby-route.ts。
+        const cwd = await waitForSessionCwd()
+        const projectDirs = storeInstance.getSnapshot().projects.map((entry) => entry.dir)
+        const homePinned = storeInstance.getSnapshot().homePinned
+        const route = routeStudioSend({ homePinned, cwd, projectDirs })
+        // 每次发送留一行路由决策：真机上客户端日志此前完全不可见，判定错在哪一环
+        //（cwd 归属 / 首页意图 / 基线未就位）只能靠猜。
+        ctx.logger.info(`canvas-studio: send routed '${route}' (cwd=${cwd ?? '-'}, projects=${projectDirs.length}, homePinned=${homePinned})`)
+        if (route === 'undetermined') {
+          // 判不出来时**静默放行是最坏选择**：消息落进草稿会话后，agent 的画布工具
+          // 全报「未绑定项目」，用户只看到一句「还没绑定项目」却不知道能怎么办。
+          // 退回 error 保草稿，并把原因放到统一错误面（可见、可重试）。
+          storeInstance.actions.setFailed('会话工作区还没准备好，请稍等一秒再发一次。')
+          ctx.logger.warn('canvas-studio: session cwd unavailable before send; project claim skipped, the message stays in the composer')
+          return { kind: 'error' }
         }
-        // CV-299 验收前修正：**首页意图优先**。`homePinned=true`（启动窗口 /
-        // 品牌区回首页）表示用户明确停在首页，此时即便残留会话的 cwd 仍映射到
-        // 某个老项目（宿主启动恢复会话，或 goHome 的 draft 落点异步未就位），
-        // 也绝不能把首句发进那个老项目 —— 必须走认领。否则老项目被误触发执行、
-        // 新项目没建、布局又因 homePinned 留在首页（2026-10-11 用户实测：
-        // 「新建项目闪一下又回首页，一个类似名字的老项目开始执行了」）。
-        // claimAndSend 自带 cwd 错位自愈（认领被拒 → 强制重建落点 → 新 cwd 重试）。
-        if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)
-        const active = resolveActiveProjectId()
-        if (active === null) return claimAndSend(args)
+        // 首页首句（含 CV-299 的首页意图优先：homePinned 时无视残留会话映射）→ 认领
+        // draft 目录为项目；`select` + `adoptWorkflow` 把布局同拍带到故事板
+        //（`WORKFLOW_DEFAULT.state = 'storyboarding'`）。
+        if (route === 'claim') return claimAndSend(args)
 
-        // CV-297：**会话与项目错位防护**。`resolveActiveProjectId` 优先返回手动选中
-        // 的项目，而真正承载这条消息的是 `sessions.current` —— 两者可能对不上（典型：
-        // 项目被删后残留的孤儿会话，cwd 指向已不存在的目录）。错位时消息发进孤儿会话
-        // ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落首页。
-        // 处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
-        const selected = storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
-        const sessions = sessionSvc.list.getSnapshot()
-        const current = currentSessionOf(sessions)
+        // 项目内发送：CV-297 **会话与项目错位防护**。`resolveActiveProjectId` 优先返回
+        // 手动选中的项目，而真正承载这条消息的是 `sessions.current` —— 两者可能对不上
+        //（典型：项目被删后残留的孤儿会话，cwd 指向已不存在的目录）。错位时消息发进
+        // 孤儿会话 ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落
+        // 首页。处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
+        const active = resolveActiveProjectId()
+        const selected = active === null
+          ? undefined
+          : storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
+        const current = currentSessionOf(sessionSvc.list.getSnapshot())
         if (selected !== undefined && current?.cwd !== undefined && current.cwd !== selected.dir) {
           return rebindAndSend(selected, args)
         }
         return divertSend(args)
       }
+      // 安装成功的留痕：真机上客户端日志此前完全不可见，于是「拦截没装上」与
+      // 「拦截装上了但判错分支」在日志里长得一模一样（2026-10-22 排查踩过）。
+      ctx.logger.info(`canvas-studio: conversation sendSession wrapped (lobby claim active, attachment divert ${attachmentDivert ? 'active' : 'unavailable'})`)
       installed = { conversation, original }
     }
     timer = setInterval(tryInstall, 500)

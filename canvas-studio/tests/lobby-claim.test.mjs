@@ -108,39 +108,45 @@ test('E-2（R-P2-02 履约）：启动即置位首页，画布只在显式 openP
     '置位必须先于「sync canvas to active workspace」effect 注册——晚于它就拦不住启动期 workspace/会话恢复的自动 select')
 })
 
-test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → 错位重建 → 成功放行）', () => {
-  // 2026-10-22 真机修正：基线未就绪时**不能直接放行**。放行的后果是首句落进
-  // `.draft-*` 目录后永远不成项目 —— 侧栏一直「还没有项目」、agent 所有画布工具
-  // 报「未绑定任何 Canvas Studio 项目」、布局停在首页（用户原话「打完招呼还停在
-  // 这一页」）。改为有界等待：就绪后照常判定（首页首句走认领 → 布局进故事板），
-  // 超时才退回原生发送，且必须留一条可定位的日志（旧写法这里完全静默）。
-  assert.match(INDEX, /if \(!await waitForBaseline\(\)\) \{/,
-    'lobby 判定前必须有基线等待闸 —— 未就绪直接放行会让首句永远成不了项目')
-  assert.match(INDEX, /const waitForBaseline = async \(\): Promise<boolean> => \{/,
-    '基线等待必须是有界轮询（不能无上限阻塞输入）')
-  assert.match(INDEX, /phase === 'ready'\s*\n\s*&& sessionSvc\.list\.getSnapshot\(\)\.phase === 'ready'\) return true/,
-    '等待必须同时覆盖 workspaces 与 sessions 基线（认领要用当前会话 cwd）')
-  assert.match(INDEX, /const BASELINE_WAIT_MS = \d+/,
+test('Client：sendSession 路由（数据判定 → 认领 → 错位重建 → 成功放行）', () => {
+  // 2026-10-22 真机修正（第二版）：判据从「基线 phase 是否 ready」换成**数据** ——
+  // 承载这条消息的会话 cwd 是否已经属于某个项目。phase 只是就绪代理量：真机上它
+  // 一旦不是 ready，旧门禁就退化成「放行原生发送」，首句落进 `.draft-*` 目录后
+  // 永远不成项目（侧栏一直「还没有项目」、agent 画布工具全报「未绑定任何项目」、
+  // 布局停在首页）。规则本身是纯函数，行为断言在 tests/lobby-route.test.mjs。
+  assert.match(INDEX, /import \{ routeStudioSend \} from '\.\.\/lobby-route\.js'/,
+    '路由判定必须走纯函数模块 —— 判据要能单测，不能只活在 sendSession 的 if 里')
+  assert.match(INDEX, /const route = routeStudioSend\(\{ homePinned, cwd, projectDirs \}\)/,
+    '必须按「cwd 归属 + 首页意图」判定路由')
+  assert.match(INDEX, /const ROUTE_WAIT_MS = \d+/,
     '等待上限必须是具名常量（可读、可调，别散落魔数）')
-  assert.match(INDEX, /if \(Date\.now\(\) >= deadline\) return false[\s\S]{0,160}setTimeout\(resolve, BASELINE_POLL_MS\)/,
-    '等待必须是有界轮询：到点返回 false，否则按固定间隔轮询（既不能忙等，也不能无限等）')
-  const waitAt = INDEX.indexOf('if (!await waitForBaseline())')
+  assert.match(INDEX, /const waitForSessionCwd = async \(\): Promise<string \| undefined> => \{/,
+    '必须等「会话 cwd」就位（不是等 phase）—— 认领要用它')
+  assert.match(INDEX, /const cwd = currentSessionOf\(sessionSvc\.list\.getSnapshot\(\)\)\?\.cwd/,
+    '等待的判据必须是数据：当前会话 cwd')
+  assert.match(INDEX, /if \(Date\.now\(\) >= deadline\) return undefined[\s\S]{0,120}setTimeout\(resolve, ROUTE_POLL_MS\)/,
+    '等待必须是有界轮询：到点返回 undefined，否则按固定间隔轮询（不忙等、不无限等）')
+  // 判不出来时必须**显式**处置：静默放行正是「首句永不成项目」的原路径。
+  const undeterminedAt = INDEX.indexOf("if (route === 'undetermined')")
+  const claimAt2 = INDEX.indexOf("if (route === 'claim')")
+  assert.ok(undeterminedAt !== -1 && claimAt2 > undeterminedAt,
+    '判定分支必须存在，且 undetermined 在 claim 之前')
+  const undetermined = INDEX.slice(undeterminedAt, claimAt2)
+  assert.match(undetermined, /return \{ kind: 'error' \}/,
+    '判不出来必须返回 error 保草稿（宿主保留草稿，用户可重发）')
+  assert.doesNotMatch(undetermined, /divertSend\(/,
+    '判不出来绝不能原生放行 —— 那正是首句落进 draft 目录永不认领的原路径')
+  assert.match(undetermined, /setFailed\(/,
+    '判不出来必须进统一错误面（可见、可重试），不能只写一条看不见的客户端日志')
+  assert.match(INDEX, /if \(route === 'claim'\) return claimAndSend\(args\)/,
+    '首页首句 / 首页意图必须走认领')
+  // 认领不得再依赖 phase（历史故障形态：phase 不是 ready 就放行原生）。
+  assert.doesNotMatch(INDEX, /phase === 'ready'[\s\S]{0,200}claimAndSend\(args\)/,
+    '认领不得再挂在基线 phase 上 —— phase 判错一次就是「首句永远成不了项目」')
+  const routeAt = INDEX.indexOf('const route = routeStudioSend(')
   const activeAt = INDEX.indexOf('const active = resolveActiveProjectId()')
-  assert.ok(waitAt !== -1 && activeAt > waitAt,
-    '等待闸必须在 resolveActiveProjectId 之前（先解析就先被基线未就绪骗成 null）')
-  assert.match(INDEX, /project claim skipped, the message stays in the draft session/,
-    '超时退回原生路径必须留日志 —— 否则「服务没起来」与「首句不建项目」在日志里无法区分')
-  assert.match(INDEX, /const active = resolveActiveProjectId\(\)/, '必须先取激活项目 id')
-  assert.match(INDEX, /if \(active === null\) return claimAndSend\(args\)/, '无选中项目必须走认领')
-  // CV-299 验收前修正：首页意图闸 —— homePinned 时无视残留 cwd/recentWorkspaceId
-  // 映射，强制走认领。缺了它，首页发送会被 recentWorkspaceId 回退劫持进老项目
-  //（rebind 建新会话 → 订阅 maybeDraftLanding 又拽回 draft → 乒乓循环，2026-10-11
-  // 用户实测：4 条消息 = 4 个散会话 + 4 个空 draft 会话）。闸必须在
-  // resolveActiveProjectId **之前**，否则先解析就先输了。
-  const gateAt = INDEX.indexOf('if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)')
-  const resolveAt = INDEX.indexOf('const active = resolveActiveProjectId()')
-  assert.ok(gateAt !== -1, '首页意图（homePinned）必须强制走认领')
-  assert.ok(gateAt < resolveAt, 'homePinned 闸必须在 resolveActiveProjectId 之前（先解析就先被劫持）')
+  assert.ok(routeAt !== -1 && activeAt > routeAt,
+    '路由判定必须在 resolveActiveProjectId 之前（后者依赖基线，先解析就先输）')
   // CV-297：错位防护必须有（孤儿会话防护的发送侧闸门）。
   assert.match(INDEX, /current\.cwd !== selected\.dir/, '错位判据必须比较「当前会话 cwd vs 选中项目目录」')
   assert.match(INDEX, /return rebindAndSend\(selected, args\)/, '错位时必须重建绑定再发')
@@ -355,4 +361,37 @@ test('删除当前项目落回首页：必须补 goHome 两件套（setHomePinne
   assert.ok(
     fallbackBody.slice(pinnedAt, pinnedAt + 400).includes('void ensureDraftLanding()'),
     '置 homePinned 之后必须重建首页落点（当前会话已被归档，不重绑 = inert 虚线卡）')
+})
+
+test('0.2.1 facade 兼容：附件草稿 API 换代不得拖死首页认领', () => {
+  // 真故障（2026-10-22）：dsh 0.2.1 把 `draftImages` / `releaseDraftImages` 换成
+  // `resolveDraftAttachments` / `releaseDraftAttachments`（+ 单个 releaseDraftAttachment），
+  // 而安装前置条件里写死了旧名 ⇒ `tryInstall` 直接 return，**拦截根本没装上**：
+  // 首页认领与附件改道一起静默失效，首句走原生发送落进 `.draft-*` 目录，永远成不了
+  // 项目（日志里零 claim 记录，用户只看到「打完招呼还停在首页」）。
+  // 教训：可选能力（附件改道）不得成为主链路（认领）的安装前置。
+  const facadeAt = INDEX.indexOf('type DivertConversation = {')
+  assert.ok(facadeAt !== -1, '找不到 facade 类型（结构变了就更新本守卫）')
+  const facade = INDEX.slice(facadeAt, INDEX.indexOf('let timer:', facadeAt))
+  for (const method of ['resolveDraftAttachments?', 'draftImages?', 'releaseDraftAttachments?', 'releaseDraftAttachment?', 'releaseDraftImages?']) {
+    assert.ok(facade.includes(method), `facade 必须声明 ${method}（两代 API 都认，且附件能力是可选的）`)
+  }
+  // 安装闸只准校验 sendSession；把任一代附件方法写成硬前置 = 主链路又会被拖死。
+  const gateAt = INDEX.indexOf('if (typeof conversation.sendSession !== \'function\')')
+  assert.ok(gateAt !== -1, '安装闸必须以 sendSession 为唯一硬前置')
+  const gate = INDEX.slice(gateAt, INDEX.indexOf('const resolveDrafts', gateAt))
+  assert.doesNotMatch(gate, /draftImages|releaseDraftImages|resolveDraftAttachments|releaseDraftAttachments/,
+    '附件草稿 API 不得出现在安装闸里 —— 缺失时应只降级附件改道')
+  // 两代适配必须有唯一实现，divertSend 不得直连旧名（0.2.1 上没有那些方法）。
+  assert.match(INDEX, /const resolveDrafts = \(ids: readonly string\[\]\): readonly DraftAttachmentLike\[\] => \{/,
+    '附件草稿解析必须走两代适配的唯一实现')
+  assert.match(INDEX, /const releaseDrafts = \(attachments: readonly \{ id: string \}\[\]\): void => \{/,
+    '附件草稿释放必须走两代适配的唯一实现')
+  const divertAt = INDEX.indexOf('const divertSend = (args: Parameters<DivertConversation')
+  const divert = INDEX.slice(divertAt, INDEX.indexOf('// ── REQ-005', divertAt))
+  assert.doesNotMatch(divert, /conversation\.(draftImages|releaseDraftImages)\(/,
+    'divertSend 不得直连 0.1.x 方法名（0.2.1 上 undefined ⇒ 抛错退回原生）')
+  assert.match(divert, /const attachments = resolveDrafts\(attachmentIds\)/, '必须经适配层取草稿')
+  assert.match(divert, /releaseDrafts\(attachments\)/, '必须经适配层释放草稿')
+  assert.match(divert, /!attachmentDivert \|\| attachmentIds\.length === 0/, '附件能力缺失时纯文本与附件消息都直通原生')
 })

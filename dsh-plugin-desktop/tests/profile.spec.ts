@@ -83,7 +83,7 @@ afterEach(() => {
 describe('desktop profile composition', {
   timeout: process.platform === 'win32' ? 10_000 : 5_000,
 }, () => {
-  it('keeps the upstream PowerShell-backed minimal preset for Windows', () => {
+  it('keeps the upstream PowerShell-backed shell rows of the canvas preset for Windows', () => {
     const home = temporaryHome()
     const prepared = prepareDesktopProfile(undefined, home, 'win32')
     const rows = composeEntries([prepared.patches])
@@ -92,6 +92,41 @@ describe('desktop profile composition', {
       name: '@deepseek-ai/dsh-tool-pwsh-persistent',
       disabled: { __jsExpr: "process.platform !== 'win32'" },
     }))
+  })
+
+  it('defaults sessions to a canvas preset that carries the skills and read tool Studio assumes', () => {
+    const home = temporaryHome()
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+    const rows = composeEntries([prepared.patches])
+
+    const registry = rows.find(row => row.id === 'agent-preset-registry')
+    expect(registry?.config).toEqual(expect.objectContaining({ default: 'canvas' }))
+
+    const presetRow = rows.find(row => row.id === 'preset-canvas')
+    expect(presetRow?.name).toBe('@deepseek-ai/dsh-agent-preset')
+    const preset = (presetRow?.config ?? {}) as {
+      id?: string
+      name?: string
+      plugins?: ProfileRow[]
+    }
+    expect(preset.id).toBe('canvas')
+    // A NAMED preset is classified as custom by the client, so the Coding Tools
+    // switch neither hides it nor reconciles the default back to `standard`.
+    expect(preset.name).toBe('Canvas Studio')
+
+    const plugins = preset.plugins ?? []
+    const pluginIds = plugins.map(plugin => plugin.id)
+    // 0.2.1 `minimal` mounts neither the catalog, nor the `skill` loader, and
+    // turns `read` off — a session under it cannot discover a single skill.
+    expect(pluginIds).toEqual(expect.arrayContaining(['skill-filesystem', 'tool-skill']))
+    expect(findNestedRow(plugins, 'tool-fs')?.config).toEqual(expect.objectContaining({
+      read: true,
+      write: false,
+      edit: false,
+    }))
+    // canvas-studio owns the Studio prompt sections; a `complete` persona would
+    // replace every one of them.
+    expect(pluginIds).not.toContain('persona')
   })
 
   it('adds the Web surface before third-party bundles and removes the launcher bundle duplicate', () => {

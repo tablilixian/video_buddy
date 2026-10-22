@@ -84,3 +84,110 @@
   disabled: true
 - id: desktop-product-telemetry
   disabled: true
+
+# ── the Canvas Studio agent preset ───────────────────────────────────────────
+#
+# 0.2.1 moved the whole agent plane behind presets: `dsh-web-app` disables the
+# host `tool-fs` / `skill-filesystem` / `tool-skill` rows and every session
+# mounts one preset instead. Desktop pointed the registry at the upstream
+# `minimal` preset, which ships WITHOUT a skill catalog, without the `skill`
+# loader and with `read` switched off — so a Studio session could not see any
+# skill at all (the model fell back to `find`/`grep` over the filesystem) and
+# `minimal`'s `persona complete: true` replaced every prompt section
+# canvas-studio registers, including its skill-routing directive.
+#
+# This preset is the product composition: `minimal`'s runtime (persistent shell
+# + compaction, unchanged so the Windows pwsh path keeps its upstream shape)
+# plus the three pieces Canvas Studio assumes — `read` for a skill's
+# `references/` (progressive disclosure), the filesystem skill provider, and
+# the `skill` loader together with its catalog. It deliberately mounts NO
+# `persona`: canvas-studio owns the Studio prompt sections, and a `complete`
+# persona would replace them again.
+#
+# `name` is set on purpose: the client classifies a named preset as custom, so
+# the Coding Tools switch neither hides it nor reconciles it back to `standard`.
+#
+# It is declared here rather than in a second `presets/*.patch.yml` because the
+# launcher materializes its profile layer from THIS file alone
+# (`materializeDesktopLayer` copies `cordis.patch.yml` verbatim and appends only
+# the computed rows) — a separate patch file would apply to the persisted
+# profile but not to the launcher's own view, and those two compositions must
+# stay identical.
+- insert:
+    - id: preset-canvas
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: canvas
+        name: Canvas Studio
+        description: >-
+          Video production agent for Canvas Studio: the Studio prompt sections,
+          its skill catalog and loader, read-only filesystem access for skill
+          references, and a persistent shell.
+        order: 0
+        plugins:
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+          - id: persistent-shell
+            name: cordis:group
+            group: true
+            isolate:
+              terminals: true
+            config:
+              - id: pty
+                name: '@deepseek-ai/dsh-terminal'
+              - id: terminal-bash
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+              - id: persistent-bash
+                name: '@deepseek-ai/dsh-tool-bash-persistent'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a bash shell
+                    * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+                    * Network access depends on the task environment. Prefer configured mirrors/proxies when they are available.
+                    * State is persistent across command calls and discussions with the user.
+                    * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
+                    * Please avoid commands that may produce a very large amount of output.
+                    * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
+              - id: terminal-pwsh
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  shellDialect: pwsh
+                  timeoutMs: 300000
+              - id: persistent-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a PowerShell shell
+                    * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+                    * You don't have access to the internet via this tool.
+                    * State is persistent across command calls and discussions with the user.
+                    * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
+                    * Please avoid commands that may produce a very large amount of output.
+                    * Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.

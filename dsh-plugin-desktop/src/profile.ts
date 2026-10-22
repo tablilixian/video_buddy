@@ -1025,8 +1025,14 @@ export function prepareDesktopProfile(
     id: AGENT_PRESET_REGISTRY_ROW_ID,
     config: {
       ...rowConfig(presetRegistry),
-      // Desktop keeps the focused minimal preset as the session default.
-      default: 'minimal',
+      // Desktop keeps its own `canvas` preset as the session default. 0.2.1
+      // moved the agent plane behind presets, and upstream `minimal` ships no
+      // skill catalog, no `skill` loader and no `read` — a Studio session under
+      // it cannot see a single skill and loses every prompt section
+      // canvas-studio registers. `canvas` is declared in this bundle's
+      // `cordis.patch.yml` (id `preset-canvas`) as a minimal runtime plus those
+      // three capabilities, with no `persona` so the Studio sections stand.
+      default: 'canvas',
     },
   })
   if (mode === 'advanced' || mode === 'extended') {

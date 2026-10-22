@@ -179,15 +179,21 @@ try {
     throw new Error('assembled Windows profile is missing the agent preset roster')
   }
   const presetIds = (await agentPresets.list()).map(preset => preset.id)
-  if (!presetIds.includes('minimal') || !presetIds.includes('standard')) {
+  if (!presetIds.includes('canvas') || !presetIds.includes('minimal') || !presetIds.includes('standard')) {
     throw new Error(`assembled Windows profile exposes unexpected presets: ${presetIds.join(', ')}`)
   }
-  if (agentPresets.defaultId !== 'minimal') {
+  if (agentPresets.defaultId !== 'canvas') {
     throw new Error(`assembled Windows profile selected unexpected default ${agentPresets.defaultId}`)
   }
-  const minimalPreset = await agentPresets.resolve('minimal')
-  if (minimalPreset.id !== 'minimal') {
-    throw new Error(`assembled Windows profile remapped minimal preset to ${minimalPreset.id}`)
+  // The audit reports every child as "never started" for every shipped preset in
+  // this headless smoke (no Agent binds a preset here), so a `broken` value is
+  // not a signal. What this gate CAN prove is that the Desktop profile declares
+  // the product preset and selects it by default; the composition itself
+  // (skill catalog, `skill` loader, `read`) is asserted by
+  // `tests/profile.spec.ts` over the same patch layers.
+  const canvasPreset = await agentPresets.resolve('canvas')
+  if (canvasPreset.id !== 'canvas') {
+    throw new Error(`assembled Windows profile remapped the canvas preset to ${canvasPreset.id}`)
   }
   const hostServiceProbe = ctx.get(HOST_SERVICE_PROBE_KEY)
   if (hostServiceProbe?.current?.name !== 'desktop'

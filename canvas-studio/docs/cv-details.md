@@ -43,7 +43,7 @@
 - **优先级**：P1
 - **详情**：方案 [DramaServer-管理面接口接入方案.md](./plans/DramaServer-管理面接口接入方案.md) P4。**0.2.1 重评估（2026-10-22）**：三 seam 全在（`ctx.get('configEditor')` 的 `entries()/edit()` 面、`credentials.set`、llm-pi-ai 监听 `internal/config` 行级热重放）→ **spike 免除、无需升级 DSH**（推翻原拍板 0.2-5 的升级前提）。**落码**：`src/gateway.ts` 纯函数（`gatewayProfile` 行生成 / `mergeGatewayConfig` 只动自己的行 + 用户 provider 保留 + 空目录移除防复活 / 指纹无变化不写 / `gateway-catalog.json` 目录缓存 0600 / `publishGatewayCredential`）；`src/index.ts` 装配 `applyGatewayConfig`/`reconcileGateway`（串行队列 + unavailable 不推进指纹）+ 启动期缓存恢复（一次性 3s 延迟重试）。路由 `canvas-studio-gateway`（displayName 'DramaServer'，`openai-completions`，baseURL `<businessApiBase>/v1/llm`），凭据 `CANVAS_STUDIO_GATEWAY_TOKEN` 随每次会话推送轮换。**背景**：宿主模型目录 `buildModelCatalog` 只列已注册 provider 且凭据解析失败的组整体剔除 → 本项是聊天「暂无可选模型」的唯一修复路径。
 - **涉及文件**：`src/gateway.ts`（新）/ `src/index.ts` / `tests/gateway.test.mjs`（新）
-- **落地/验收**：验证链四步全绿（gateway 测试 5 条全过；裸抛守卫拦下 2 处 `throw new Error` → 改状态返回）。**待桌面验收**：登录后设置 → 模型「DramaServer 官方模型」区块点亮（模型列表 + 设为默认）；聊天页模型选择器出现 DramaServer 组；`auth/sync` 在服务端产生用户 + 设备记录（后端确认）；L6：`DRAMA_ACCESS_TOKEN=… node scripts/live-e2e-management.mjs`（sync → models → 一次 chat/completions）。
+- **落地/验收**：验证链四步全绿（gateway 测试 5 条全过；裸抛守卫拦下 2 处 `throw new Error` → 改状态返回）。**⚠️ 桌面二轮实测（2026-10-22）修正落行路径**：configEditor.edit 的 Loader 全量重放被「2 entries did not activate」（hmr 缺 `--expose-internals` / product-telemetry 缺 `DSH_CLIENT_VERSION`，桌面壳历史遗留，与网关无关）整体拒绝并回滚 → 网关行无法落地，重放期插件反复重挂疑似引发窗口闪退观感。**改走 `settings.mutate`**（桌面「模型」页同一条写路径：llm-pi-ai 用户层 volatile 写 → volatile-update 热重注册，不做全量重放、不依赖其它 entry 激活状态），`mergeGatewayConfig` 随之退役（路径 op 取代整段合并）；编排层目录回调失败时清 `catalogFetchedAt` 允许下次推送重试。**待桌面验收**：登录后设置 → 模型「DramaServer 官方模型」区块点亮（模型列表 + 设为默认）；聊天页模型选择器出现 DramaServer 组；L6：`DRAMA_ACCESS_TOKEN=… node scripts/live-e2e-management.mjs`。
 
 #### CV-356 · 登录 bootstrap 管理面编排（方案 P2）
 
@@ -51,7 +51,7 @@
 - **优先级**：P1
 - **详情**：方案 P2。`src/account-state.ts` 模块级单例（与 auth-session.ts 同风格，deps 注入保可测）：routes.ts 的 auth/session 路由在 `setAuthSession` 后 fire-and-forget `notifyAuthSession(token)`（幂等去重：同 token + 目录 TTL 5min 内只发布凭据不重打接口；进行中复用同一 Promise），`clearAuthSession` 后 `notifyAuthCleared()`（reset；目录缓存与网关行保留，重登录即刷新）。错误策略对齐 api(10).md §6：401 静默（client 重推即重试）、403 置禁用态停止业务请求、429 按 `Retry-After` 退避（无头默认 30s）、503 固定退避、500 记日志不重试；bootstrap 失败不回滚登录态、不影响推送响应。启用闸 = `businessApiBase` 非空 && `supabaseUrl` 非空（live 读取）。
 - **涉及文件**：`src/account-state.ts`（新）/ `src/routes.ts` / `tests/account-state.test.mjs`（新，stub 全局 fetch）
-- **落地/验收**：验证链四步全绿；编排测试 6 条全过（幂等 / 401 / 429 窗口内零请求但凭据照发 / 403 禁用 / 未启用零请求 / reset）。**待桌面验收**：登录后 Host 日志出现「管理面 bootstrap 完成」；登出后再登录不重复登记设备。
+- **落地/验收**：验证链四步全绿；编排测试 6 条全过（幂等 / 401 / 429 窗口内零请求但凭据照发 / 403 禁用 / 未启用零请求 / reset）。**⚠️ 桌面首轮实测（2026-10-22）抓到回归**：`runBootstrap` 把 DeviceRegistry 的方法作为**裸引用**传给 DramaClient → 调用时 this 丢失 → `Cannot read private member #deviceId`，sync 从未发出（设备文件/目录/网关行全缺，官方区块仍「待接入」、聊天仍「暂无可选模型」）；修法 = 三 getter 包箭头函数，新增**真 DeviceRegistry 实例**回归守卫（fake 普通对象测不出 #私有成员问题）。**待桌面验收**：登录后 Host 日志出现「管理面 bootstrap 完成」；登出后再登录不重复登记设备。
 
 #### CV-355 · 管理面协议客户端与设备标识（方案 P1）
 

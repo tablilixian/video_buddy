@@ -6,8 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
-import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type { ConfigEditor } from '@deepseek-ai/dsh-config-editor'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { createRequire } from 'node:module'
@@ -32,8 +31,9 @@ import { installAccountState } from './account-state.js'
 import type { CatalogModel } from './drama-management.js'
 import {
   gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
-  mergeGatewayConfig, publishGatewayCredential, readGatewayCatalog,
-  writeGatewayCatalog, GATEWAY_SETTINGS_NS, type CredentialsSink, type GatewayRow,
+  publishGatewayCredential, readGatewayCatalog,
+  writeGatewayCatalog, GATEWAY_ROUTE_NAME, GATEWAY_SETTINGS_NS,
+  type CredentialsSink, type GatewayRow,
 } from './gateway.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
@@ -209,18 +209,34 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   const deviceRegistry = new DeviceRegistry(studioHome, appVersionOf())
   const credentialsSink = (): CredentialsSink | undefined => ctx.get('credentials') as CredentialsSink | undefined
 
-  // 网关行 reconcile：指纹无变化不写；串行队列防并发 edit；只动自己的行。
+  // 网关行 reconcile：走 `settings.mutate`（与桌面「模型」页同一条写路径——
+  // llm-pi-ai 命名空间的用户层 volatile 写，volatile-update 即热重注册，**不做
+  // 全量 profile 重放**，不依赖其它 entry 的激活状态）。指纹无变化不写；串行
+  // 队列防并发写；只动自己的行。
   let currentGateway: GatewayRow | null = gatewayRow(readGatewayCatalog(studioHome))
   let reconcileQueue: Promise<unknown> = Promise.resolve()
   const applyGatewayConfig = async (row: GatewayRow | null): Promise<'applied' | 'unchanged' | 'unavailable'> => {
-    const editor = ctx.get('configEditor') as ConfigEditor | undefined
-    if (editor === undefined) return 'unavailable'
-    const entry: Entry | undefined = editor.entries().find((candidate) => candidate.options.id === GATEWAY_SETTINGS_NS)
-    if (entry === undefined) return 'unavailable'
+    const settings = ctx.get('settings')
+    if (settings === undefined) return 'unavailable'
+    let revision: number
+    let existing: unknown
+    try {
+      const descriptor = settings.describe().find((candidate) => candidate.ns === GATEWAY_SETTINGS_NS)
+      if (descriptor === undefined) return 'unavailable'
+      revision = descriptor.revision
+      existing = gatewayProviderOf(descriptor.value as Record<string, unknown> | undefined)
+    } catch {
+      return 'unavailable'
+    }
     const profile = row === null ? null : gatewayProfile(row)
-    const existing = gatewayProviderOf(entry.options.config as Record<string, unknown> | undefined)
     if (profile === null ? existing === undefined : isDeepStrictEqual(existing, profile)) return 'unchanged'
-    await editor.edit(entry, (current) => mergeGatewayConfig(current as Record<string, unknown>, profile))
+    await settings.mutate(
+      GATEWAY_SETTINGS_NS,
+      profile === null
+        ? [{ op: 'unset', path: ['providers', GATEWAY_ROUTE_NAME] }]
+        : [{ op: 'set', path: ['providers', GATEWAY_ROUTE_NAME], value: profile }],
+      revision,
+    )
     return 'applied'
   }
   const reconcileGateway = (catalog: { apiBaseUrl: string; models: CatalogModel[] }): Promise<{ changed: boolean; models: number; unavailable?: boolean }> => {

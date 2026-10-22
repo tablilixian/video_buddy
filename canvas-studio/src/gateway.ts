@@ -9,8 +9,9 @@
  * 目录就缓存到 `<DSH_HOME>/canvas-studio/gateway-catalog.json`，下次启动据此生成
  * 路由；没登录过就没有 DramaServer 模型可选（其余功能不受影响）。
  *
- * 纯函数平移自 reelsbuddy-desktop `src/host/studio/gateway.ts`；configEditor 的
- * reconcile 装配在 `src/index.ts`（0.2.1 的 `entries()/edit()` 面）。
+ * 纯函数平移自 reelsbuddy-desktop `src/host/studio/gateway.ts`；落行走宿主
+ * `settings.mutate`（桌面「模型」页同一条写路径，llm-pi-ai volatile 热重注册），
+ * reconcile 装配在 `src/index.ts`。
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -60,25 +61,6 @@ export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/**
- * 把网关路由合并进 `llm-pi-ai` 的下一份配置：只替换 `canvas-studio-gateway`，
- * 用户自己新增的 provider 原样保留；`profile` 为 null 时只移除网关（防已下线
- * 模型复活）。`providers` 表被清空时连键一起删，不留空对象。
- */
-export function mergeGatewayConfig(
-  current: Record<string, unknown>,
-  profile: GatewayProviderProfile | null,
-): Record<string, unknown> {
-  const next = structuredClone(current)
-  const raw = next['providers']
-  const providers = isRecord(raw) ? structuredClone(raw) : {}
-  if (profile === null) delete providers[GATEWAY_ROUTE_NAME]
-  else providers[GATEWAY_ROUTE_NAME] = structuredClone(profile)
-  if (Object.keys(providers).length === 0) delete next['providers']
-  else next['providers'] = providers
-  return next
 }
 
 /** 读取一份配置里的网关路由对象；没有时返回 undefined。 */

@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   gatewayCatalogPath, gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
-  mergeGatewayConfig, publishGatewayCredential, readGatewayCatalog, writeGatewayCatalog,
+  publishGatewayCredential, readGatewayCatalog, writeGatewayCatalog,
   GATEWAY_CREDENTIAL_REF, GATEWAY_ROUTE_NAME,
 } from '../lib/gateway.js'
 
@@ -54,37 +54,10 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
   })
 })
 
-test('mergeGatewayConfig：只替换网关行，用户 provider 保留；移除与清空语义', () => {
-  const userConfig = {
-    providers: {
-      'my-local-llm': { api: 'openai-completions', baseURL: 'http://127.0.0.1:9100/v1', models: [{ id: 'q' }] },
-      [GATEWAY_ROUTE_NAME]: { baseURL: 'http://old/v1/llm' },
-    },
-  }
-  const profile = gatewayProfile(gatewayRow(catalogOf([modelOf('deepseek-flash')])))
-  const merged = mergeGatewayConfig(userConfig, profile)
-  // 用户 provider 原样保留（深拷贝，不改入参）。
-  assert.deepEqual(merged.providers['my-local-llm'], userConfig.providers['my-local-llm'])
-  assert.equal(merged.providers[GATEWAY_ROUTE_NAME].baseURL, 'http://business.test/v1/llm')
-  assert.equal(userConfig.providers[GATEWAY_ROUTE_NAME].baseURL, 'http://old/v1/llm')
-
-  // null = 只移除网关行。
-  const removed = mergeGatewayConfig(userConfig, null)
-  assert.equal(removed.providers[GATEWAY_ROUTE_NAME], undefined)
-  assert.ok(removed.providers['my-local-llm'])
-
-  // 移除后 providers 为空 → 连键一起删，不留空对象。
-  const emptied = mergeGatewayConfig({ providers: { [GATEWAY_ROUTE_NAME]: {} } }, null)
-  assert.equal(emptied.providers, undefined)
-
-  // 无 providers 键的配置也能安全合并。
-  const fresh = mergeGatewayConfig({}, profile)
-  assert.equal(fresh.providers[GATEWAY_ROUTE_NAME].api, 'openai-completions')
-})
-
 test('gatewayProviderOf + 指纹：无变化不写的判据', () => {
   const profile = gatewayProfile(gatewayRow(catalogOf([modelOf('deepseek-flash')])))
-  const config = mergeGatewayConfig({}, profile)
+  // settings.mutate 落行后的形状：providers 表下挂网关行。
+  const config = { providers: { [GATEWAY_ROUTE_NAME]: profile, 'my-local-llm': { api: 'openai-completions' } } }
   assert.equal(gatewayProviderOf(config), config.providers[GATEWAY_ROUTE_NAME])
   assert.equal(gatewayProviderOf(undefined), undefined)
 

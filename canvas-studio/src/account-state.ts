@@ -108,7 +108,14 @@ async function runBootstrap(d: AccountStateDeps, token: string): Promise<void> {
     catalogFetchedAt = Date.now()
     retryNotBefore = 0
     await d.onSessionToken(token)
-    await d.onCatalogChanged(models, d.businessApiBase())
+    try {
+      await d.onCatalogChanged(models, d.businessApiBase())
+    } catch (cause) {
+      // 目录与凭据已就绪，只是网关落行失败：允许下次会话推送重试（不清 bootstrappedToken）。
+      catalogFetchedAt = 0
+      d.log.warn(`[canvas-studio] 目录回调失败（下次推送重试）：${cause instanceof Error ? cause.message : String(cause)}`)
+      return
+    }
     d.log.info(`[canvas-studio] 管理面 bootstrap 完成：业务用户已同步，text 模型 ${models.length} 个`)
   } catch (cause) {
     if (cause instanceof ApiError) {

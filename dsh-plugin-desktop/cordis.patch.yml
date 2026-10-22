@@ -68,3 +68,19 @@
   config:
     fetch: true
     searchTimeoutMs: 60000
+
+# 2026-10-22: the two entries below never activate in this shell, and their
+# mere presence blocks EVERY profile-patch write (settings user-layer writes go
+# through ConfigEditor.reconcile, whose post-recompose check fails on ANY
+# inactive entry — `fatal load failure: dsh: warning: 2 entries did not
+# activate`). Disable them at the patch layer:
+#  - hmr demands `--expose-internals`, which the Electron main process never
+#    carries (upstream hands it to the host child process); desktop dev rebuilds
+#    explicitly and does not use host HMR.
+#  - desktop-product-telemetry reads `DSH_CLIENT_VERSION` from the shell env
+#    (unset here) and would report to the upstream DeepSeek OTel collector —
+#    VideoBuddy ships neither.
+- id: hmr
+  disabled: true
+- id: desktop-product-telemetry
+  disabled: true

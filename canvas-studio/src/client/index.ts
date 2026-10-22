@@ -41,6 +41,7 @@ import { StudioLayoutController } from './layout-controller.js'
 // 0.2.1：当前会话 / 最近会话的唯一取数口径（选择状态在 0.2.1 已无公开 API）。
 import { currentSession as currentSessionOf, currentSessionId as currentSessionIdOf, recentSession as recentSessionOf } from './current-session.js'
 import { routeStudioSend } from '../lobby-route.js'
+import { detachCallerSignal } from '../send-signal.js'
 import { frameSizeOf } from '../canvas-aspect.js'
 import { isReplayable } from '../node-params.js'
 // CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
@@ -906,6 +907,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
           )
           const project = await createStudioProjectClaimDir(name, dir, buildLobbyPlan(spec), spec.mode)
           await refreshProjects()
+          console.info(`canvas-studio: lobby claim created '${project.name}' (draft=${dir} -> ${project.dir})`)
           return project
         }
         /**
@@ -964,7 +966,16 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
           // **先 select 再重建**：重建触发的 workspaces/sessions 订阅里，
           // selectedProjectId 已落位才拦得住 maybeDraftLanding 把首页落点又建回去
           // （homePinned 也已随 select 清除，两道闸都得关上）。
+          // **信号解耦（2026-10-22 真机事故）**：下面这几步会把承载本消息的旧
+          // composer shell 拆掉 —— `openSession` 切走会话 + 归档旧会话 + 删旧
+          // workspace，旧 shell 的清理函数随即 `dispose()`→`onRelease()`→ abort
+          // 所有 detached 发送的控制器。手里这条 signal 因此**必然变 aborted**，
+          // 原样传给新会话的 session/prompt 会让网关立刻判 `gateway/cancelled`
+          //（表象：项目建出来了，首句却永远进不去，对话区空白）。故先快照一次
+          // 取消状态，切换之后用我们自己的信号（见 src/send-signal.ts）。
+          let detachedSignal: AbortSignal | undefined
           if (project.dir !== dir) {
+            detachedSignal = detachCallerSignal(args[4])
             try {
               // workspace.create 按 path 幂等复用（openProject 同款）。
               const workspace = await ctx.workspaces.create({ path: project.dir })
@@ -988,7 +999,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
               }
               const binding = sessionSvc.binding(newId)
               if (binding === undefined) throwError('CS-EFFECT-004', { detail: 'claimed session binding unavailable' })
-              args = [binding.session, args[1], args[2], args[3], args[4]]
+              args = [binding.session, args[1], args[2], args[3], detachedSignal]
             } catch (cause) {
               // 项目已登记（改名也已完成），但会话没绑上 —— 首页会话 cwd 断链，
               // 直接 error 保草稿；重发会撞「项目名已存在」走可见错误面，不产生重复项目。
@@ -1005,13 +1016,28 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
           syncHasConversation()
           // 首页暂存的素材并进正文（`@ref` 令牌），再走统一的附件改道放行 ——
           // 宿主草稿附件（图片）与暂存素材（四类）最后合成同一条消息。
-          const stashTokens = await landLobbyStash(project.id, args[4])
+          const stashTokens = await landLobbyStash(project.id, detachedSignal ?? args[4])
           if (stashTokens !== '') {
             const [session, text, attachmentIds, mode] = args
             const merged = text.trim() === '' ? stashTokens : `${text}\n${stashTokens}`
             args = [session, merged, attachmentIds, mode, args[4]]
           }
-          return divertSend(args)
+          // 切换过会话 → 整条剩余链路（含附件改道）都用解耦后的信号，别再摸旧 shell 的。
+          if (detachedSignal !== undefined) args = [args[0], args[1], args[2], args[3], detachedSignal]
+          let outcome: SubmitOutcomeLike
+          try {
+            outcome = await divertSend(args)
+          } catch (cause) {
+            // 发送链路上抛（网关取消 / 会话不可用）此前没有任何可见痕迹，用户只看到
+            // 一句 toast、日志里零行 —— 记下**我们发出的信号是否已中止**，这决定了
+            // 「是旧 composer 的取消漏进来了」还是「宿主侧拒绝」。
+            console.warn(`canvas-studio: lobby send threw (signalAborted=${String(args[4]?.aborted === true)}) ${cause instanceof Error ? cause.message : String(cause)}`)
+            throw cause
+          }
+          // 首句结算留痕：真机上「拦截没装上 / 路由判错 / 被网关取消」三种失败此前
+          // 长得一模一样（都只是「没反应」），只有这条能区分。
+          console.info(`canvas-studio: lobby send settled '${outcome.kind}' (project=${project.name}, switched=${String(detachedSignal !== undefined)})`)
+          return outcome
         }
         return once(true).finally(() => { claiming = false })
       }
@@ -1033,6 +1059,10 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         const previousId = currentSessionIdOf(before)
         const previous = previousId === undefined ? undefined : before.byId[previousId]
         const staleCwd = previous?.cwd
+        // 与 lobby 认领同一条坑：下面会 openSession + archiveSession，旧 composer shell
+        // 被拆时必然 abort 调用方信号 —— 原样透传 ⇒ 新会话的 prompt 立刻
+        // `gateway/cancelled`。见 src/send-signal.ts。
+        const detachedSignal = detachCallerSignal(args[4])
 
         const workspace = await ctx.workspaces.create({ path: project.dir })
         const newId = await ctx.uiWorkspace.connectWorkspace(workspace.workspaceId)
@@ -1052,7 +1082,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
 
         const binding = sessionSvc.binding(newId)
         if (binding === undefined) throwError('CS-EFFECT-004', { detail: 'rebind session binding unavailable' })
-        args = [binding.session, args[1], args[2], args[3], args[4]]
+        args = [binding.session, args[1], args[2], args[3], detachedSignal]
         return divertSend(args)
       }
 
@@ -1093,7 +1123,9 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         const route = routeStudioSend({ homePinned, cwd, projectDirs })
         // 每次发送留一行路由决策：真机上客户端日志此前完全不可见，判定错在哪一环
         //（cwd 归属 / 首页意图 / 基线未就位）只能靠猜。
-        ctx.logger.info(`canvas-studio: send routed '${route}' (cwd=${cwd ?? '-'}, projects=${projectDirs.length}, homePinned=${homePinned})`)
+        // 用 `console.info` 而不是 `ctx.logger`：后者不进 Electron 控制台（用户贴的
+        // 启动日志里一条都没有），排查时等于没有 —— 2026-10-22 为此白跑两轮。
+        console.info(`canvas-studio: send routed '${route}' (cwd=${cwd ?? '-'}, projects=${projectDirs.length}, homePinned=${homePinned})`)
         if (route === 'undetermined') {
           // 判不出来时**静默放行是最坏选择**：消息落进草稿会话后，agent 的画布工具
           // 全报「未绑定项目」，用户只看到一句「还没绑定项目」却不知道能怎么办。
@@ -1124,7 +1156,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       }
       // 安装成功的留痕：真机上客户端日志此前完全不可见，于是「拦截没装上」与
       // 「拦截装上了但判错分支」在日志里长得一模一样（2026-10-22 排查踩过）。
-      ctx.logger.info(`canvas-studio: conversation sendSession wrapped (lobby claim active, attachment divert ${attachmentDivert ? 'active' : 'unavailable'})`)
+      console.info(`canvas-studio: conversation sendSession wrapped (lobby claim active, attachment divert ${attachmentDivert ? 'active' : 'unavailable'})`)
       installed = { conversation, original }
     }
     timer = setInterval(tryInstall, 500)

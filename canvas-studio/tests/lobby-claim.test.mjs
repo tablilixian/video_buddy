@@ -184,8 +184,25 @@ test('CV-294（方案 A）：认领改名后必须重建会话绑定，首句改
     '必须 connectWorkspace 拿新会话 id（旧落点会话 cwd 失效，复用扫描必然落空）')
   assert.match(claimBody, /ctx\.uiWorkspace\.openSession\(newId\)/, '新会话必须 open 成为当前（宿主卡显示它）')
   // 首句必须发到新会话：args[0] 换成 binding.session —— 旧 session 的 cwd 已断。
-  assert.match(claimBody, /args = \[binding\.session, args\[1\], args\[2\], args\[3\], args\[4\]\]/,
-    '放行前必须把首句的 session 换成新会话（旧 session cwd 指着已 rename 的路径）')
+  // 第 5 个参数（调用方取消信号）**必须换成解耦后的信号**：切换会话 + 归档旧会话
+  // 会把承载这条消息的旧 composer shell 拆掉（shell.dispose → onRelease → abort），
+  // 原样透传 ⇒ 新会话的 prompt 第一次 await 前就被网关判 `gateway/cancelled`
+  //（2026-10-22 真机：项目建出来了，首句永远进不去，对话区空白）。
+  //
+  // 计数断言而不是 assert.match：认领分支与 CV-297 孤儿重绑**两条路径**都在这个
+  // 切片里，用 match 会被另一条的正确写法顶绿（反向变异实测过）。
+  const detachedSends = claimBody.match(/args = \[binding\.session, args\[1\], args\[2\], args\[3\], detachedSignal\]/g) ?? []
+  const rawSignals = claimBody.match(/args = \[binding\.session, args\[1\], args\[2\], args\[3\], args\[4\]\]/g) ?? []
+  assert.equal(detachedSends.length, 2,
+    '认领 + 孤儿重绑两条换会话路径都必须换掉旧 shell 的取消信号')
+  assert.equal(rawSignals.length, 0,
+    '不许把调用方的信号原样带进新会话（原样透传 = 首句必被 cancelled）')
+  // 顺序闸：解耦必须发生在「拆旧 shell」之前 —— 否则信号已经 abort，解耦也救不回来。
+  const detachAt = claimBody.search(/detachedSignal = detachCallerSignal\(args\[4\]\)/)
+  const teardownAt = claimBody.indexOf('ctx.uiWorkspace.openSession(newId)')
+  assert.ok(detachAt !== -1, '认领分支必须调用 detachCallerSignal（src/send-signal.ts）')
+  assert.ok(teardownAt !== -1 && detachAt < teardownAt,
+    '必须先解耦信号再切会话/归档旧会话（abort 一旦发出不可撤销）')
   // 顺序闸：先 select 再重建 —— 重建触发的 workspaces/sessions 订阅里，
   // selectedProjectId 已落位才拦得住 maybeDraftLanding 把首页落点又建回去。
   const selectAt = claimBody.indexOf('storeInstance.actions.select(project.id)')

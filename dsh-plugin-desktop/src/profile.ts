@@ -1,6 +1,6 @@
 /** Compatibility profile composition over the official Web bundle and user plugins. */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -403,7 +403,12 @@ function profileDependencyMigrationRequired(
   const manifest = readProfileManifest(BIN_NAME, profileDir)
   const hasDependencies = Object.keys(manifest.dependencies ?? {}).length > 0
   const modulesDir = join(profileDir, 'node_modules')
+  // The Desktop layer lives at `node_modules/<layer>` by contract, so a profile
+  // that never ran pnpm can still own a `node_modules` directory. Only real
+  // installed entries may decide that the hoisted layout needs migrating —
+  // otherwise every launch would re-run the packaged pnpm install.
   const hasModules = existsSync(modulesDir)
+    && readdirSync(modulesDir).some(entry => entry !== DESKTOP_LAYER_PACKAGE_NAME)
   if (!hasDependencies && !hasModules) return false
 
   let modulesCompatible = false

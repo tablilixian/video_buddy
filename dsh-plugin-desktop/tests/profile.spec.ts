@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -209,6 +209,23 @@ virtualStoreDirMaxLength: 120
     const prepared = prepareDesktopProfile(undefined, home, 'darwin')
 
     expect(prepared.requiresDependencyMigration).toBe(false)
+  })
+
+  // The Desktop layer is materialized at `node_modules/<layer>` on every boot.
+  // That directory must not make the profile look like it owns pnpm-managed
+  // modules, or every launch would re-run the packaged install.
+  it('does not treat the materialized Desktop layer as installed dependencies', () => {
+    const home = temporaryHome()
+    const dir = ensureDesktopProfile(home)
+    const layerDir = join(dir, 'node_modules', DESKTOP_LAYER_PACKAGE_NAME)
+    mkdirSync(layerDir, { recursive: true })
+    writeFileSync(join(layerDir, 'package.json'), '{"name":"dsh-desktop-layer"}\n')
+
+    const prepared = prepareDesktopProfile(undefined, home, 'darwin')
+
+    expect(prepared.requiresDependencyMigration).toBe(false)
+    // And the layer still survives composition, so the skip is not a free pass.
+    expect(existsSync(join(layerDir, 'cordis.patch.yml'))).toBe(true)
   })
 
   it('migrates a hoisted Profile dependency tree created by pnpm 9', () => {

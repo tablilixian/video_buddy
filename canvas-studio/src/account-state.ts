@@ -95,9 +95,11 @@ export function notifyAuthCleared(): void {
 async function runBootstrap(d: AccountStateDeps, token: string): Promise<void> {
   const client = new DramaClient({
     baseUrl: d.businessApiBase(),
-    deviceId: d.device.deviceId,
-    platform: d.device.platform,
-    appVersion: d.device.appVersion,
+    // 必须包一层箭头函数：DeviceRegistry 用 #私有成员，裸方法引用（`d.device.deviceId`）
+    // 调用时 this 丢失 → `Cannot read private member #deviceId`（2026-10-22 实测）。
+    deviceId: () => d.device.deviceId(),
+    platform: () => d.device.platform(),
+    appVersion: () => d.device.appVersion(),
   })
   try {
     await client.sync(token)

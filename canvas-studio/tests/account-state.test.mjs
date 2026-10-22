@@ -10,8 +10,12 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { installAccountState, notifyAuthSession, notifyAuthCleared, backoffMsOf } from '../lib/account-state.js'
 import { ApiError } from '../lib/drama-management.js'
+import { DeviceRegistry } from '../lib/device-registry.js'
 
 /** 等待条件成立（轮询，最多 500ms）——bootstrap 是 fire-and-forget，无 promise 可等。 */
 async function waitFor(predicate, what) {
@@ -81,6 +85,39 @@ test('bootstrap：成功一次完成 sync+models+回调；同 token TTL 内幂�
   } finally {
     stub.restore()
     notifyAuthCleared()
+  }
+})
+
+test('bootstrap：device 传真 DeviceRegistry 实例也不丢 this（#私有成员回归守卫）', async () => {
+  notifyAuthCleared()
+  const events = { catalogs: 0, deviceIds: [] }
+  installAccountState({
+    enabled: () => true,
+    businessApiBase: () => 'http://business.test',
+    // 真 registry：deviceId() 读 #私有成员 —— 裸方法引用会让这条测试当场爆
+    // 「Cannot read private member #deviceId」（2026-10-22 桌面实测的根因）。
+    device: new DeviceRegistry(join(tmpdir(), 'cs-acct-state-test'), '9.9.9'),
+    log: { info() {}, warn() {} },
+    onSessionToken: () => {},
+    onCatalogChanged: (models) => { events.catalogs = models.length; events.deviceIds.push('done') },
+  })
+  const stub = stubFetch(async (url, init) => {
+    if (String(url).includes('/v1/auth/sync')) {
+      events.deviceIds.push(JSON.parse(init.body).device.device_id)
+    }
+    return new Response(JSON.stringify(
+      String(url).includes('/v1/models') ? modelsOk : syncOk,
+    ), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  try {
+    notifyAuthSession('tok-registry')
+    await waitFor(() => events.catalogs > 0, 'bootstrap 完成')
+    const expected = new DeviceRegistry(join(tmpdir(), 'cs-acct-state-test'), '9.9.9').deviceId() // 同目录 → 同一 id
+    assert.equal(events.deviceIds[0], expected)
+  } finally {
+    stub.restore()
+    notifyAuthCleared()
+    rmSync(join(tmpdir(), 'cs-acct-state-test'), { recursive: true, force: true })
   }
 })
 

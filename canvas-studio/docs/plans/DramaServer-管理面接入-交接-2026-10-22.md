@@ -117,3 +117,16 @@ Electron 起不来：`EPERM unlink .../crash-evidence/.active-run.json.*`）。
 8. 「闪退」要分清主进程/渲染层：本轮主进程活着（行被移除导致窗口消失），别被表象带偏。
 9. 受管 shell 起不了 Electron（`EPERM unlink` 崩溃证据目录）；`verify-*.mjs` 也要
    `env -u NODE_OPTIONS`（brokered fs shim 会让 storage mkdir 报 `EPIPE`）。
+10. **桌面层不能被当成「已安装依赖」**（`1b6286711d` 修）：`profileDependencyMigrationRequired`
+    用 `existsSync(<profile>/node_modules)` 判断要不要跑 pnpm 迁移，而层就落在
+    `node_modules/dsh-desktop-layer` ⇒ 每个只物化过层、没跑过 pnpm 的 profile 每次启动
+    都重跑一次打包版 pnpm（沙箱里直接失败在 `migrating legacy Profile dependency layout`）。
+    判据已改为「node_modules 里存在非层条目」。
+    ⇒ **凡是在 profile 目录里新增固定子目录，都要回头检查有没有 `existsSync(dir)` 型判据会误读它。**
+11. 本机 Electron 无法 unlink 任何文件的真实机制（比第 9 条更准）：shell 被 toybox seatbelt
+    包裹，`rm` 能成功是因为它走 broker 代理删除；Electron 进程内的直接 `unlink` 一律 EPERM。
+    `dangerouslyDisableSandbox` 与 `open -n -a`（LaunchServices）都不解除。表现为启动走到
+    `connection` 插件时死在 `unlink ~/.videobuddy/.credentials.yaml.lock` —— **这是环境，不是产品缺陷**。
+    绕过 userData 侧崩溃证据可用 `--user-data-dir=/tmp/...` 直接调 Electron 二进制
+    （`node_modules/electron/dist/Electron.app/Contents/MacOS/Electron <main.js>`），
+    但凭证锁在 `~/.videobuddy` 下，绕不过。

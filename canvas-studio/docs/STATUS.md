@@ -3,7 +3,8 @@
 > **这是唯一事实来源。** 需求 / 缺陷 / 优化点的当前状态一律以本文件为准。
 > 其它文档（backlog、分析报告、设计稿）只保留**技术细节与决策过程**，状态一律引用本文件。
 >
-> **最近更新：2026-10-20**（**REQ-034 批次 A 完成并真机验收通过（CV-350~CV-353）** —— O-01 `render_composition` 的抽帧 url/帧号与渲染报告（`msPerFrame`/`quality`/`warm`）进结果文本；O-02 ML-10 口径改为「video 轨计入分子+分母，分母只排除自身无 animate/exit 的常驻装饰轨」（总纲原方案实测仍误报 17.7%）；O-03 `box` 中心语义收敛为 `boxStyle()`/`boxToRect()` + 契约示例改 `50,50,100,100`；O-14 skill 第 8 步补「有字幕/台词就必须定配音」，并把 11KB 体积硬闸首次编码成测试。提交 `6bf3e7ca4f`。详见 [cv-details.md](./cv-details.md)）
+> **最近更新：2026-10-22**（**CV-354 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计（待桌面验收）** —— 根因：0.2.1 升级删除 `connection.api` 门面，面板 `getModelApi`/`getCredentials` 恒取 undefined → 「模型」页签整页空白，SettingsModal 三处密钥保存/状态查询一并失效。修法：wire 面迁到 `remote.llm`/`remote.settings`/`remote.credentials` 命名空间服务（类型经 typert 合并面收窄，不手写签名）；面板按交互稿重排 —— 默认模型 → DramaServer 官方模型（只读，P4 落地前「待接入」暗态）→ 我的 Provider 折叠行（点「编辑」展开、同时只开一张，对齐官方）→ 折叠未用官方 → 自定义。目录纯函数抽 `src/model-directory.ts`（join/分区/摘要）带单测。验证链全绿。详见 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-20**（**REQ-034 批次 A 完成并真机验收通过（CV-350~CV-353）** —— O-01 `render_composition` 的抽帧 url/帧号与渲染报告（`msPerFrame`/`quality`/`warm`）进结果文本；O-02 ML-10 口径改为「video 轨计入分子+分母，分母只排除自身无 animate/exit 的常驻装饰轨」（总纲原方案实测仍误报 17.7%）；O-03 `box` 中心语义收敛为 `boxStyle()`/`boxToRect()` + 契约示例改 `50,50,100,100`；O-14 skill 第 8 步补「有字幕/台词就必须定配音」，并把 11KB 体积硬闸首次编码成测试。提交 `6bf3e7ca4f`。详见 [cv-details.md](./cv-details.md)）
 > **上一条 2026-10-18**（**CV-349 覆盖层主题随切换实时刷新（待桌面验收）** —— 用户在设置里切浅色/深色后，故事板覆盖层要关闭再打开才换色。根因：`ThemeRuntime` 不暴露 subscribe，宿主只在 `theme/change` 广播，而覆盖层色板写在 iframe URL 上、组件拿不到重渲染信号 ⇒ 不会重新加载。修法：注入面透出 `subscribeTheme`（宿主 `theme/change`），覆盖层用 `useSyncExternalStore` 订阅主题快照并据它派生 `sbLight`/容器色/iframe URL；新增接线守卫 2 例。详见 [changelog.md](./changelog.md)）
 > **上一条 2026-10-17**（**REQ-034 二期全量落码（待桌面验收）** —— 批次 1a/1b/2/3/4 与线外 D6 一次性落地，登记 **CV-338~CV-348** 共 11 条：A1 语义原语 `orbit`/`draw`/`shape:"path"`（位置来源三选一互斥）、1b 长片渲染队列（并发 1 · 上限 4 · FIFO · 超时从派发算）+ 进度通道、A2 `fx` 五式、A3 形状族、A4 四式转场、A5 `fitTextPolicy`+`fitOrKeep`（老 manifest 逐像素不变）、B1 `audioViz` 轨（`delayRender` 保确定性）、B2 渲染前探真时长、D2 失败分类仅 encode 重试、D6 旁白音轨判定（根因是 `compose.ts` 从不产出 voiceOver）。三级 `tsc` 全绿 + tsdown 通过 + 定向 **171** 断言全绿；**全量 `test:smoke` 本批未跑（用户定）**。详见 §4.1 与 [cv-details.md](./cv-details.md)）
 > **更早的变更记录**：2026-10 见 [`changelog.md`](./changelog.md)；2026-09 及更早归档在 [`archive/changelog-2026-09.md`](./archive/changelog-2026-09.md)；本 header 历史全文（2026-09 至 10-11 的逐条速记）见 [`archive/status-header-history.md`](./archive/status-header-history.md)。
@@ -52,7 +53,7 @@
 
 <!-- STATUS_SUMMARY_START -->
 | 已完成 | 144 | CV-001~004, CV-008~020, CV-022~035, CV-037, CV-038, CV-041, CV-044, CV-045, CV-061, CV-063, CV-068, CV-070, CV-072, CV-074, CV-076~078, CV-089, CV-094, CV-097~100, CV-109, CV-112, CV-114, CV-115, CV-119, CV-124, CV-125, CV-138~144, CV-146, CV-148, CV-149, CV-153, CV-155, CV-161, CV-162, CV-174, CV-176~179, CV-194, CV-204~206, CV-221, CV-222, CV-241~244, CV-246, CV-251~257, CV-259~272, CV-279~288, CV-293, CV-295~310, CV-313~316, CV-350~353 |
-| 已修复·待验收 | 150 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349 |
+| 已修复·待验收 | 151 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349, CV-354 |
 | 进行中 | 1 | CV-175 |
 | 已完成·待验收 | 2 | CV-049, CV-062 |
 | 待处理 | 16 | CV-005, CV-021, CV-039, CV-040, CV-042, CV-043, CV-047, CV-048, CV-053~055, CV-084, CV-085, CV-087, CV-090, CV-273 |
@@ -264,6 +265,7 @@
 | CV-351 | **已完成** | **P1** | ML-10 动效覆盖口径修正（素材驱动片） |
 | CV-352 | **已完成** | **P2** | 形状 box 中心语义统一与契约修正 |
 | CV-353 | **已完成** | **P2** | skill 第 8 步补配音决策 |
+| CV-354 | **已修复·待验收** | **P1** | 模型设置页 0.2.1 断线修复 + 官方区块 |
 | CV-338 | **已修复·待验收** | **P1** | orbit/draw 语义原语契约与校验 |
 | CV-339 | **已修复·待验收** | **P2** | 语义原语组件接线与 skill 同步 |
 | CV-340 | **已修复·待验收** | **P1** | 长片渲染队列与进度通道（D1） |

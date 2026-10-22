@@ -68,7 +68,7 @@ import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from '.
 import { classifyFile, type MediaKind } from '../media-extension.js'
 import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
-import type { CanvasStudioModelApi } from './contracts.js'
+import type { CanvasStudioCredentials, CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
 // P2 401 自愈链：登录态读取 / 静默续期 / 弹登录窗桥（实现见 auth-store.ts）。
 import { getAuthState, refreshAuthSessionSilently, requestLoginPrompt, requireSignIn } from './auth/auth-store.js'
@@ -116,6 +116,10 @@ export const inject = ['slots']
  */
 export const STUDIO_CLIENT_INJECT = [
   'slots', 'workspaces', 'uiWorkspace', 'uiConversation', 'sessions', 'connection', 'configForms', 'theme',
+  // 0.2.1 wire 面：模型设置 / 凭据走 `remote.<namespace>` 命名空间服务（与官方
+  // ui-settings-models 的 inject 同款）。等三个命名空间座位就绪后再装配，保证
+  // getModelApi 取到的对象方法齐全（只等 `remote` 根服务会在 mount 完成前拿到空面）。
+  'remote.llm', 'remote.settings', 'remote.credentials',
 ]
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
@@ -2722,10 +2726,16 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
           deactivateSkill,
           // 设置弹窗：绑定 'canvas-studio' 命名空间作用域 + 惰性凭据客户端。
           settingsScope: ctx.configForms,
-          getCredentials: () => ctx.get('connection')?.api?.credentials,
-          // 模型设置：惰性取 Host wire 接口（llm/settings/credentials 三域）。
+          // 0.2.1：凭据与模型设置走 `remote.<namespace>` 命名空间服务（子 fiber
+          // inject 已等三座位就绪）。旧 `connection.api` 门面已随 0.1.x 删除。
+          getCredentials: () => (ctx.get('remote.credentials') as CanvasStudioCredentials | undefined),
+          // 模型设置：惰性组装三域命名空间服务（llm/settings/credentials）。
           // 与桌面 dsh 原生「模型」设置共享同一份存储，状态对等。
-          getModelApi: () => (ctx.get('connection')?.api as unknown as CanvasStudioModelApi | undefined),
+          getModelApi: () => ({
+            llm: ctx.get('remote.llm'),
+            settings: ctx.get('remote.settings'),
+            credentials: ctx.get('remote.credentials'),
+          }) as CanvasStudioModelApi,
           // 资产库位置：复用 dsh 官方 client API `ctx.workspaces.pickDirectory()`，
           // 它在 macOS/Linux/Windows 都走宿主原生文件夹选择器（macOS→osascript、
           // Linux→Zenity/KDialog、Windows→IFileOpenDialog），返回的路径 dsh Host

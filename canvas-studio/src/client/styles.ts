@@ -1080,6 +1080,34 @@ const STUDIO_STYLES = `
   font-weight: 500;
   color: #fff;
 }
+/* 未登录态：登录按钮占满剩余宽度，右侧保留方形设置入口（设置不随用户面板消失）。 */
+.csUserSigninRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--cs-space-2, 8px);
+}
+.csUserSigninRow .csUserBarSignin {
+  flex: 1 1 auto;
+  width: auto;
+}
+.csUserSettingsBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 38px;
+  width: 38px;
+  padding: 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+.csUserSettingsBtn:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+}
 /* 已登录面板的「退出登录」行：与设置行同款布局，文字走次级色（破坏性弱提示）。 */
 .csUserSignout .csUserRowLabel {
   color: var(--dsw-alias-label-secondary);
@@ -5776,20 +5804,147 @@ button.csNodeHeadAlert:hover {
   gap: 12px;
 }
 
-.csModelCard {
+/* Provider 折叠行（对齐官方模型设置页：行头常显，点「编辑」展开，同时只展开一张） */
+.csModelRow {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.csModelRowHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.csModelRowHead:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csModelChev {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.csModelChevOpen {
+  transform: rotate(90deg);
+  color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csModelRowName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelRowSub {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* 行头凭据状态点：绿 = 引用的凭据已配置，红 = 引用存在但未配置 */
+.csModelKeyDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.csModelKeyDotOk {
+  background: var(--dsw-alias-state-success-primary, var(--dsw-alias-state-success-bg));
+}
+
+.csModelKeyDotMiss {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.csModelRowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* DramaServer 官方模型只读区块（管理面方案 P4：目录驱动的内置网关行） */
+.csModelOfficial {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid var(--dsw-alias-interactive-bg-active);
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.csModelCardHead {
+.csModelOfficialHead {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.csModelOfficialRefresh {
+  margin-left: auto;
+}
+
+.csModelList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.csModelItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.csModelItemCurrent {
+  border-color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csModelItemMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.csModelItemId {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-all;
+}
+
+.csModelBadgeBrand {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelBadgePending {
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .csModelCardTitle {

@@ -10331,6 +10331,7 @@ __metadata:
     "@deepseek-ai/cordis": "npm:4.0.5"
     "@deepseek-ai/dsh-agent": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-session-controller": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-api-settings-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-api-workspace-controller": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-atomic-write": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-attachment": "npm:0.2.1-rc.2"

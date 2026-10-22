@@ -37,6 +37,8 @@ import { ModelSettingsPanel } from './ModelSettingsPanel.js'
 import { fetchStudioStorageInfo, type StudioStorageInfo } from './api.js'
 import { clipboardResultMessage, copyTextToClipboard } from '../clipboard-copy.js'
 import { clipboardEnv } from './canvas/clipboard-env.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 export interface SettingsModalProps {
   /** 绑定 'canvas-studio' 命名空间的 settings 作用域（通用分区用）。 */
@@ -110,10 +112,10 @@ function GeneralSection(props: {
     const credentials = getCredentials()
     if (credentials === undefined) { setTinyfishCred(null); return }
     let cancelled = false
-    credentials.describe({ refs: [TINYFISH_REF] })
+    credentials.describe([TINYFISH_REF])
       .then((res) => {
         if (cancelled) return
-        const view = res.result.ok ? res.result.value.credentials[TINYFISH_REF] : null
+        const view = res.ok ? res.value[TINYFISH_REF] : null
         setTinyfishCred(view?.configured === true ? view : null)
       })
       .catch(() => { if (!cancelled) setTinyfishCred(null) })
@@ -126,10 +128,10 @@ function GeneralSection(props: {
     let cancelled = false
     const credentials = getCredentials()
     if (credentials === undefined) { setCredState(null); return }
-    credentials.describe({ refs: [ref] })
+    credentials.describe([ref])
       .then((res) => {
         if (cancelled) return
-        const view = res.result.ok ? res.result.value.credentials[ref] : null
+        const view = res.ok ? res.value[ref] : null
         setCredState(view?.configured === true ? view : null)
       })
       .catch(() => { if (!cancelled) setCredState(null) })
@@ -142,10 +144,10 @@ function GeneralSection(props: {
     let cancelled = false
     const credentials = getCredentials()
     if (credentials === undefined) { setFalCred(null); return }
-    credentials.describe({ refs: [ref] })
+    credentials.describe([ref])
       .then((res) => {
         if (cancelled) return
-        const view = res.result.ok ? res.result.value.credentials[ref] : null
+        const view = res.ok ? res.value[ref] : null
         setFalCred(view?.configured === true ? view : null)
       })
       .catch(() => { if (!cancelled) setFalCred(null) })
@@ -170,7 +172,8 @@ function GeneralSection(props: {
     setBusy(true)
     setError(null)
     try {
-      await credentials.set({ ref: value.dramaApiKey, value: keyInput })
+      const res = await credentials.set(value.dramaApiKey, keyInput)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
       setKeyInput('')
       setCredState({ configured: true, writable: true })
       setDramaSaved(true)
@@ -189,7 +192,8 @@ function GeneralSection(props: {
     setTinyfishBusy(true)
     setTinyfishError(null)
     try {
-      await credentials.set({ ref: TINYFISH_REF, value: tinyfishInput })
+      const res = await credentials.set(TINYFISH_REF, tinyfishInput)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
       setTinyfishInput('')
       setTinyfishCred({ configured: true, writable: true })
       setTinyfishSaved(true)
@@ -209,7 +213,8 @@ function GeneralSection(props: {
     setFalBusy(true)
     setFalError(null)
     try {
-      await credentials.set({ ref: value.falApiKey, value: falKeyInput })
+      const res = await credentials.set(value.falApiKey, falKeyInput)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
       setFalKeyInput('')
       setFalCred({ configured: true, writable: true })
       setFalSaved(true)

@@ -37,6 +37,14 @@
 - **涉及文件**：`src/remotion/shape-geometry.ts` / `src/remotion/components/Shape.tsx` / `skills/code-driven-explainer/references/manifest-contract.md` / `src/host-tools.ts` / `tests/remotion-shape-box.test.mjs`
 - **落地/验收**：提交 `6bf3e7ca4f`。守卫 5 条（`50,50,100,100` 矩形 = 全画布 / `0,0` 只占四分之一 / 文档示例串 / 工具描述串 / `boxStyle` 输出含 translate）；**反向变异**（示例改回 `0,0`）⇒ 红。**真机验收通过**（2026-10-20）。
 
+#### CV-354 · 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：用户报「设置 → 模型」页签整页空白（错误卡「连接服务不可用…」）。**根因**：2026-10-21 DSH 0.2.1 迁移（`086b57f0e4`）只迁了类型 seam，**漏了 wire 面**——0.2.1 删除 `connection.api` 门面（`ConnectionHandle` 仅剩 rpc/generation/state），wire 接口改为 `ctx.remote.<namespace>` 命名空间服务；面板 `getModelApi: () => ctx.get('connection')?.api` 恒为 undefined。** blast radius 比页签大**：同闭包的 `getCredentials` 同断 → SettingsModal 的 Drama/TinyFish/fal 三处密钥保存与状态查询全部失效。**修法**：① 子 fiber `STUDIO_CLIENT_INJECT` 补 `remote.llm`/`remote.settings`/`remote.credentials` 三座位（与官方 ui-settings-models 同款；只等 `remote` 根服务会在 mount 完成前拿到空面）；② contracts 的 `CanvasStudioModelApi`/`CanvasStudioCredentials` 改为 `TypertRemoteNamespaceMap` 索引收窄（**不手写方法签名防漂移**；类型来源 = `@deepseek-ai/dsh-llm/remote` + `@deepseek-ai/dsh-api-settings-controller/remote` 的生成投影，零运行时 import）；③ 面板调用迁移（`llm.providers({})` → `listProviders()`+`listConfigurableProviders()` 客户端并集、`settings.mutate` 位置参数、`credentials.describe` 64/批、冲突码 `settings-conflict` → `settings/conflict`）；④ 版面按交互稿（`docs/plans/model-settings-redesign-mockup.html`，用户已确认）重排：默认模型 → **DramaServer 官方模型只读区块**（识别 `canvas-studio-gateway` 行；P4 落地前「待接入」暗态占位，不伪造登录态/reserved 纪律）→ **我的 Provider 折叠行**（行头 = 名称+徽标+密钥状态点+模型摘要+设为默认/移除，点「编辑」展开、同时只展开一张，对齐官方行卡模式）→ 折叠未用官方 provider → 添加自定义。**拍板记录**（2026-10-22 与用户对齐）：官方区块独立呈现 / 只读+设默认（Host reconcile 会覆盖手改）/ 先修复+骨架占位（不与方案 P1–P4 捆绑）。目录纯函数抽 `src/model-directory.ts`（join/deriveKeyRef/asModelIds/分区/摘要/网关识别）。
+- **涉及文件**：`src/client/index.ts` / `src/client/contracts.ts` / `src/client/ModelSettingsPanel.tsx` / `src/client/SettingsModal.tsx` / `src/client/styles.ts` / `src/model-directory.ts`（新）/ `tests/model-directory.test.mjs`（新）/ `tsconfig.client.json` / `package.json`（+devDep `dsh-api-settings-controller`）
+- **落地/验收**：验证链四步全绿（typecheck / build / verify:loader / test:smoke 0 失败，新增 6 断言全过；裸抛守卫拦下 SettingsModal 3 处 `throw new Error` → 已改 `throwError('CS-CLIENT-ERR')`）。**待桌面验收**：模型页签出完整内容； Drama/TinyFish/fal key 保存与徽标恢复；官方区块「待接入」暗态可见；折叠行交互正常。注：P4 网关落地后官方区块自动点亮（读同一份 settings 存储，无需再改 UI）。
+
 #### CV-353 · skill 第 8 步补配音决策（REQ-034 O-14）
 
 - **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

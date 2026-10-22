@@ -2,24 +2,35 @@
  * Canvas Studio「模型」设置面板（provider 感知，完整功能）。
  *
  * 设计：不直接复用桌面 dsh 的 `ModelsSettingsStore` / `ModelsSection`（包内私有、
- * 不导出，且没有打开桌面设置页的命令），而是调用与 dsh **完全相同**的 Host wire
- * 接口（经 canvas-studio 已有的 `connection` 服务）：
- * - `llm.providers({})`            拉可配置 provider 目录（自部署 / OpenAI / DeepSeek / 自定义…）
- * - `settings.describe({})`        拉全量命名空间视图（含已解析值 + revision）
- * - `settings.mutate({...})`       写 provider profile（base URL / 模型清单 / apiKeyEnv）
- * - `credentials.set/describe`     密钥走凭据域，不落明文
+ * 不导出，且没有打开桌面设置页的命令），而是调用与桌面**完全相同**的 wire 接口
+ * （0.2.1 起 `remote.llm` / `remote.settings` / `remote.credentials` 命名空间服务，
+ * 经 canvas-studio 已有的注入面取得）：
+ * - `llm.listProviders()` + `llm.listConfigurableProviders()`   目录两路并集（joinProviderDirectory）
+ * - `settings.describe()` / `settings.mutate(ns, ops, rev)`     全量命名空间视图 / 路径编辑写回
+ * - `credentials.set/unset/describe`                            密钥走凭据域，不落明文
+ * - `llm.discoverModels(settingsNs, request)`                   端点模型发现
  *
  * 因此本面板与桌面原生「模型」设置共享同一份存储：在桌面设置里看到的配置，这里也能
  * 改；反之亦然。写入格式严格对齐 dsh（path ops + 派生凭据引用），不会损坏其它字段。
+ *
+ * 版面（2026-10 重设计，交互稿 docs/plans/model-settings-redesign-mockup.html）：
+ * 默认模型 → DramaServer 官方模型（只读区块，P4 落地前「待接入」暗态）→
+ * 我的 Provider（已配置行默认折叠、点「编辑」展开、同时只展开一张，对齐官方
+ * 模型设置页的行卡模式）→ 折叠未用官方 provider → 添加自定义 provider。
  */
 import {
   useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement,
 } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   CanvasStudioModelApi, CanvasStudioSettingsScope, ConfigurableProviderView,
   DiscoveredModelView, SettingsNamespaceView, SettingsPathOpView,
 } from './contracts.js'
+import {
+  asModelIds, deriveKeyRef, gatewayRowOf, joinProviderDirectory, partitionProviders,
+  summarizeModels, GATEWAY_PROVIDER_ID,
+} from '../model-directory.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
@@ -34,6 +45,8 @@ interface AgentModelConfig {
 const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 /** 自定义 provider 写入的命名空间（与 dsh CustomProviderCard 一致）。 */
 const CUSTOM_NS = 'llm-pi-ai'
+/** credentials.describe 单次批量上限（对齐官方 ModelsSettingsStore 的 64 分批）。 */
+const CRED_DESCRIBE_BATCH = 64
 
 export interface ModelSettingsPanelProps {
   /** 惰性取模型设置所需的 Host wire 接口。 */
@@ -42,7 +55,7 @@ export interface ModelSettingsPanelProps {
   settingsScope: CanvasStudioSettingsScope
 }
 
-// ---- 通用的安全取值 / 派生工具 ----
+// ---- 通用的安全取值工具 ----
 
 /** 沿路径安全读取嵌套值。 */
 function getAt(value: unknown, path: string[]): unknown {
@@ -63,23 +76,6 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-/** 把 profile.models（可能是字符串数组或 {id} 对象数组）规范成 id 字符串数组。 */
-function asModelIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((m) => {
-      if (typeof m === 'string') return m
-      if (m !== null && typeof m === 'object' && 'id' in m) return String((m as { id: unknown }).id)
-      return ''
-    })
-    .filter((s) => s.length > 0)
-}
-
-/** 派生 provider 的凭据引用（与 dsh deriveKeyRef 完全一致）。 */
-function deriveKeyRef(provider: string): string {
-  return `${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
-}
-
 interface ProviderDraft {
   displayName: string
   baseURL: string
@@ -93,6 +89,9 @@ function useScope<T>(scope: ConfigForm<T>) {
   const snapshot = useMemo(() => () => scope.getSnapshot(), [scope])
   return useSyncExternalStore(subscribe, snapshot)
 }
+
+/** 行头凭据状态点：有引用且已配置 → ok；有引用未配置 → miss；无引用不展示。 */
+type KeyDotState = 'ok' | 'miss' | 'none'
 
 /** 模型设置面板主体。 */
 export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement {
@@ -108,6 +107,8 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
   const [discovered, setDiscovered] = useState<Record<string, DiscoveredModelView[]>>({})
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [saveError, setSaveError] = useState<Record<string, string | null>>({})
+  // 我的 Provider 折叠行：当前展开编辑的 provider（同时只展开一张，对齐官方行卡模式）。
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   // 自定义 provider 表单态。
   const [customOpen, setCustomOpen] = useState(false)
@@ -130,7 +131,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
   const agentSnap = useScope(agentScope)
   const agentValue = agentSnap.value
 
-  /** 拉取 provider 目录 + 命名空间视图 + 密钥态。 */
+  /** 拉取目录两路 + 命名空间视图 + 密钥态（0.2.1 信封：`{ok, value | error}`）。 */
   const refresh = useCallback(async () => {
     const api = getModelApi()
     if (api === undefined) {
@@ -141,17 +142,19 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     setStatus('loading')
     setError(null)
     try {
-      const [provRes, setRes] = await Promise.all([
-        api.llm.providers({}),
-        api.settings.describe({}),
+      const [regRes, decRes, setRes] = await Promise.all([
+        api.llm.listProviders(),
+        api.llm.listConfigurableProviders(),
+        api.settings.describe(),
       ])
-      if (!provRes.result.ok) throwError('CS-CLIENT-ERR', { message: provRes.result.error.message })
-      if (!setRes.result.ok) throwError('CS-CLIENT-ERR', { message: setRes.result.error.message })
-      const provList = provRes.result.value.providers
-      const nsList = setRes.result.value.namespaces
+      if (!regRes.ok) throwError('CS-CLIENT-ERR', { message: regRes.error.message })
+      if (!decRes.ok) throwError('CS-CLIENT-ERR', { message: decRes.error.message })
+      if (!setRes.ok) throwError('CS-CLIENT-ERR', { message: setRes.error.message })
+      const rows = joinProviderDirectory(regRes.value, decRes.value)
+      const nsList = setRes.value.namespaces
       const draftMap: Record<string, ProviderDraft> = {}
       const refs: string[] = []
-      for (const p of provList) {
+      for (const p of rows) {
         if (!p.settingsNs) continue
         const ns = nsList.find((n) => n.ns === p.settingsNs)
         const profile = ns ? getAt(ns.value, p.settingsPath) : undefined
@@ -168,17 +171,19 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         if (keyRef) refs.push(keyRef)
       }
       let cm: Record<string, { configured: boolean; writable: boolean }> = {}
-      if (refs.length > 0) {
+      const uniqueRefs = [...new Set(refs)]
+      for (let i = 0; i < uniqueRefs.length; i += CRED_DESCRIBE_BATCH) {
         try {
-          const cRes = await api.credentials.describe({ refs })
-          cm = cRes.result.ok ? cRes.result.value.credentials ?? {} : {}
+          const cRes = await api.credentials.describe(uniqueRefs.slice(i, i + CRED_DESCRIBE_BATCH))
+          if (cRes.ok) cm = { ...cm, ...cRes.value }
         } catch {
           // 密钥态查询失败不阻塞面板，仅密钥已配置标记缺失。
+          break
         }
       }
-      setProviders(provList)
+      setProviders(rows)
       setNamespaces(nsList)
-      setWritable(setRes.result.value.writable)
+      setWritable(setRes.value.writable)
       setDrafts(draftMap)
       setCredMap(cm)
       setStatus('ready')
@@ -196,6 +201,14 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     const profile = ns ? getAt(ns.value, p.settingsPath) : undefined
     return { ns, profile: (profile !== null && typeof profile === 'object' ? profile : undefined) as Record<string, unknown> | undefined }
   }, [namespaces])
+
+  /** 行头凭据点状态（profile 里引用了凭据才算，自部署无鉴权行不展示）。 */
+  const keyDotOf = useCallback((p: ConfigurableProviderView): KeyDotState => {
+    const { profile } = profileOf(p)
+    if (!(profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)) return 'none'
+    const keyRef = profile.apiKeyEnv
+    return credMap[keyRef]?.configured === true ? 'ok' : 'miss'
+  }, [profileOf, credMap])
 
   /** 以补丁方式更新某 provider 的草稿（避免在 updater 内对可能为 undefined 的索引做展开）。 */
   const patchDraft = useCallback((provider: string, patch: Partial<ProviderDraft>) => {
@@ -223,7 +236,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     const ops: SettingsPathOpView[] = []
     if (profile === undefined) {
       // 首次创建整个 profile（某个需首次配置的休眠自部署 route）。
-      const value: Record<string, unknown> = {}
+      const value: Record<string, JsonValue> = {}
       if (draft.displayName) value.displayName = draft.displayName
       if (draft.baseURL) value.baseURL = draft.baseURL
       value.models = draft.models.map((id) => ({ id }))
@@ -257,13 +270,14 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     setSaveError((m) => ({ ...m, [p.provider]: null }))
     try {
       if (ops.length > 0) {
-        const res = await api.settings.mutate({ ns: p.settingsNs, ops, expectedRevision: ns.revision })
-        if (!res.result.ok) {
-          throwError(res.result.error.code === 'settings-conflict' ? 'CS-CLIENT-002' : 'CS-CLIENT-ERR', { message: res.result.error.code === 'settings-conflict' ? '配置已被其它改动覆盖，请刷新后重试' : res.result.error.message })
+        const res = await api.settings.mutate(p.settingsNs, ops, ns.revision)
+        if (!res.ok) {
+          throwError(res.error.code === 'settings/conflict' ? 'CS-CLIENT-002' : 'CS-CLIENT-ERR', { message: res.error.code === 'settings/conflict' ? '配置已被其它改动覆盖，请刷新后重试' : res.error.message })
         }
       }
       if (draft.keyDraft) {
-        await api.credentials.set({ ref: keyRef, value: draft.keyDraft })
+        const credRes = await api.credentials.set(keyRef, draft.keyDraft)
+        if (!credRes.ok) throwError('CS-CLIENT-ERR', { message: credRes.error.message })
       }
       await refresh()
     } catch (cause) {
@@ -283,12 +297,8 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     setBusy((b) => ({ ...b, [p.provider]: true }))
     setSaveError((m) => ({ ...m, [p.provider]: null }))
     try {
-      const res = await api.settings.mutate({
-        ns: p.settingsNs,
-        ops: [{ op: 'unset', path: [...p.settingsPath, 'apiKeyEnv'] }],
-        expectedRevision: ns.revision,
-      })
-      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
+      const res = await api.settings.mutate(p.settingsNs, [{ op: 'unset', path: [...p.settingsPath, 'apiKeyEnv'] }], ns.revision)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
       await refresh()
     } catch (cause) {
       setSaveError((m) => ({ ...m, [p.provider]: cause instanceof Error ? cause.message : '清除失败' }))
@@ -310,17 +320,22 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     setSaveError((m) => ({ ...m, [p.provider]: null }))
     try {
       if (keyRef) {
-        try { await api.credentials.unset({ ref: keyRef }) } catch { /* 密钥已不存在则忽略 */ }
+        try {
+          const credRes = await api.credentials.unset(keyRef)
+          // 清理失败不阻塞 provider 移除（密钥可能已不存在）。
+          if (!credRes.ok) console.warn(`canvas-studio: 清除密钥引用 ${keyRef} 失败（继续移除 provider）：${credRes.error.message}`)
+        } catch { /* 密钥已不存在则忽略 */ }
       }
-      const res = await api.settings.mutate({ ns: p.settingsNs, ops: [{ op: 'unset', path: [...p.settingsPath] }], expectedRevision: ns.revision })
-      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
+      const res = await api.settings.mutate(p.settingsNs, [{ op: 'unset', path: [...p.settingsPath] }], ns.revision)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
+      if (expanded === p.provider) setExpanded(null)
       await refresh()
     } catch (cause) {
       setSaveError((m) => ({ ...m, [p.provider]: cause instanceof Error ? cause.message : '移除失败' }))
     } finally {
       setBusy((b) => ({ ...b, [p.provider]: false }))
     }
-  }, [getModelApi, profileOf, refresh])
+  }, [getModelApi, profileOf, refresh, expanded])
 
   /** 从端点拉取该 provider 当前广告的模型清单。 */
   const discoverModels = useCallback(async (p: ConfigurableProviderView) => {
@@ -329,14 +344,13 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     const draft = drafts[p.provider]
     if (draft === undefined) return
     try {
-      const res = await api.llm.discoverModels({
-        settingsNs: p.settingsNs,
-        provider: p.provider,
+      const res = await api.llm.discoverModels(p.settingsNs, {
+        ...(p.provider ? { provider: p.provider } : {}),
         ...(draft.baseURL ? { baseURL: draft.baseURL } : {}),
         ...(draft.keyDraft ? { apiKey: draft.keyDraft } : {}),
       })
-      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
-      const models = res.result.value.models
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
+      const models = res.value
       setDiscovered((d) => ({ ...d, [p.provider]: models }))
     } catch (cause) {
       setSaveError((m) => ({ ...m, [p.provider]: `拉取模型失败：${cause instanceof Error ? cause.message : '未知错误'}` }))
@@ -366,15 +380,18 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     if (cBase.length === 0) { setCustomError('需填写 API 地址（Base URL）'); return }
     if (cModels.length === 0) { setCustomError('至少填写一个模型 id'); return }
     const keyRef = deriveKeyRef(cRoute)
-    const profile: Record<string, unknown> = { api: cProtocol, baseURL: cBase, models: cModels.map((id) => ({ id })) }
+    const profile: Record<string, JsonValue> = { api: cProtocol, baseURL: cBase, models: cModels.map((id) => ({ id })) }
     if (cName) profile.displayName = cName
     if (cKey) profile.apiKeyEnv = keyRef
     setCustomBusy(true)
     setCustomError(null)
     try {
-      const res = await api.settings.mutate({ ns: CUSTOM_NS, ops: [{ op: 'set', path: ['providers', cRoute], value: profile }], expectedRevision: ns.revision })
-      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
-      if (cKey) await api.credentials.set({ ref: keyRef, value: cKey })
+      const res = await api.settings.mutate(CUSTOM_NS, [{ op: 'set', path: ['providers', cRoute], value: profile }], ns.revision)
+      if (!res.ok) throwError('CS-CLIENT-ERR', { message: res.error.message })
+      if (cKey) {
+        const credRes = await api.credentials.set(keyRef, cKey)
+        if (!credRes.ok) throwError('CS-CLIENT-ERR', { message: credRes.error.message })
+      }
       setCRoute(''); setCName(''); setCBase(''); setCProtocol('openai-completions'); setCKey(''); setCModels([]); setCustomOpen(false)
       await refresh()
     } catch (cause) {
@@ -404,21 +421,18 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     return profile !== undefined
   })
 
-  // 精简模式：默认只展示 deepseek + 所有「已配置 / 自建 / 自定义」的 provider，
-  // 未使用的官方预置第三方（openai/anthropic/...）折叠进「显示全部」。不删除任何
-  // 配置，仅渲染层隐藏，随时可展开查看全部。注意不能拿 settingsPath 判定——
-  // pi-ai 目录给每个 provider 都派发 ['providers', <route>] 路径，恒非空。
-  const isCoreProvider = (p: ConfigurableProviderView): boolean => {
-    const { profile } = profileOf(p)
-    return p.provider === 'deepseek-official'
-      || p.declared === true
-      || p.active === true
-      || profile !== undefined
-  }
-  const coreProviders = providers.filter(isCoreProvider)
-  const foldedProviders = providers.filter((p) => !isCoreProvider(p))
-  // 展开「显示全部」时把被折叠的未用官方 provider 加回渲染视图。
-  const visibleProviders = showFolded ? providers : coreProviders
+  // 精简模式：deepseek 系 + 已配置/自建/自定义为核心行，其余折叠进「显示全部」。
+  // 注意不能拿 settingsPath 判定——目录给每个 provider 都派发 ['providers', <route>] 路径。
+  const { core: coreProviders, folded: foldedProviders } = partitionProviders(
+    providers.filter((p) => p.settingsNs !== ''),
+    (p) => profileOf(p).profile !== undefined,
+  )
+  const visibleProviders = showFolded ? providers.filter((p) => p.settingsNs !== '') : coreProviders
+
+  // DramaServer 官方网关行（P4 落地后由 Host 写入 llm-pi-ai；未落地 → 暗态占位）。
+  const gatewayRow = gatewayRowOf(providers)
+  const gatewayProfile = gatewayRow !== undefined ? profileOf(gatewayRow).profile : undefined
+  const gatewayModels = gatewayProfile !== undefined ? asModelIds(gatewayProfile.models) : []
 
   return (
     <div className="csModelPanel">
@@ -460,7 +474,55 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         <p className="csFieldHint">当前设置只读（宿主以只读方式挂载），保存按钮已禁用。</p>
       )}
 
-      {/* Provider 卡片列表（精简模式：deepseek + 已配置/自建；未用官方折叠） */}
+      {/* DramaServer 官方模型（只读区块：目录与凭据由 Host 网关维护，用户不可编辑） */}
+      <div className="csModelOfficial">
+        <div className="csModelOfficialHead">
+          <span className="csModelCardTitle">DramaServer 官方模型</span>
+          {gatewayRow !== undefined
+            ? <span className="csModelBadge csModelBadgeBrand">内置 · 只读</span>
+            : <span className="csModelBadge csModelBadgePending">待接入</span>}
+          {gatewayRow !== undefined && (
+            <button
+              type="button"
+              className="csFieldButton csModelOfficialRefresh"
+              onClick={() => { void refresh() }}
+            >刷新目录</button>
+          )}
+        </div>
+        {gatewayRow === undefined ? (
+          <p className="csFieldHint">
+            登录 VideoBuddy 账号后，此处将自动提供 DramaServer 官方模型目录（模型管理面接入中，无需手动配置）。
+          </p>
+        ) : gatewayModels.length === 0 ? (
+          <p className="csFieldHint">目录为空：尚未从 DramaServer 拉取到 text 模型，可点「刷新目录」重试。</p>
+        ) : (
+          <>
+            <p className="csFieldHint">
+              模型目录来自 DramaServer 管理面（/v1/models），凭据随登录自动轮换，不可手动编辑；可直接设为全局默认。
+            </p>
+            <div className="csModelList">
+              {gatewayModels.map((mid) => {
+                const isCur = agentValue.provider === GATEWAY_PROVIDER_ID && agentValue.model === mid
+                return (
+                  <div className={`csModelItem${isCur ? ' csModelItemCurrent' : ''}`} key={mid}>
+                    <span className="csModelItemMain">
+                      <span className="csModelItemId">{mid}{isCur && <span className="csModelBadge csModelBadgeBrand">当前默认</span>}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className={`csFieldButton${isCur ? '' : ' csModelPrimary'}`}
+                      disabled={isCur}
+                      onClick={() => setDefault(GATEWAY_PROVIDER_ID, mid)}
+                    >{isCur ? '默认中' : '设为默认'}</button>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Provider 折叠行列表（精简模式：deepseek + 已配置/自建；未用官方折叠） */}
       <div className="csModelProviders">
         {visibleProviders.length === 0 && <p className="csFieldHint">未检测到可配置的模型 provider。</p>}
         {visibleProviders.map((p) => {
@@ -474,138 +536,158 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
           const removable = ns !== undefined && p.settingsPath.length > 0
             && hasAt(ns.user, p.settingsPath) && !hasAt(ns.base, p.settingsPath)
           const isBusy = busy[p.provider] === true
+          const isCur = agentValue.provider === p.provider
+          const open = expanded === p.provider
+          const keyDot = keyDotOf(p)
           return (
-            <div className="csModelCard" key={p.provider}>
-              <div className="csModelCardHead">
-                <span className="csModelCardTitle">{draft.displayName || p.displayName}</span>
+            <div className={`csModelRow${open ? ' csModelRowOpen' : ''}`} key={p.provider}>
+              <div className="csModelRowHead" onClick={() => setExpanded(open ? null : p.provider)}>
+                <span className={`csModelChev${open ? ' csModelChevOpen' : ''}`} aria-hidden>▶</span>
+                <span className="csModelRowName">{draft.displayName || p.displayName}</span>
                 {p.active
                   ? <span className="csModelBadge csModelBadgeOn">已激活</span>
                   : <span className="csModelBadge">未激活</span>}
                 {p.declared === true && <span className="csModelBadge">自定义</span>}
-              </div>
-
-              <label className="csField">
-                <span className="csFieldLabel">展示名</span>
-                <input
-                  className="csFieldInput"
-                  value={draft.displayName}
-                  placeholder={p.displayName}
-                  disabled={isBusy || !writable}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { displayName: e.target.value })}
-                />
-              </label>
-
-              <label className="csField">
-                <span className="csFieldLabel">API 地址（Base URL）</span>
-                <input
-                  className="csFieldInput"
-                  value={draft.baseURL}
-                  placeholder="留空使用 provider 默认"
-                  spellCheck={false}
-                  disabled={isBusy || !writable}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { baseURL: e.target.value })}
-                />
-              </label>
-
-              <label className="csField">
-                <span className="csFieldLabel">
-                  {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
-                    ? `API Key（凭据引用 ${keyRef}${cred?.configured ? '，已配置' : '，未配置'}）`
-                    : 'API Key（未引用凭据：自部署无鉴权端点可留空直接使用）'}
-                </span>
-                <div className="csFieldRow">
-                  <input
-                    className="csFieldInput"
-                    type="password"
-                    placeholder={cred?.configured ? '已保存，留空不改；输入新值覆盖' : '需要鉴权时输入密钥后点保存'}
-                    value={draft.keyDraft}
-                    disabled={isBusy || !writable}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { keyDraft: e.target.value })}
+                {keyDot !== 'none' && (
+                  <span
+                    className={`csModelKeyDot${keyDot === 'ok' ? ' csModelKeyDotOk' : ' csModelKeyDotMiss'}`}
+                    title={keyDot === 'ok' ? `凭据引用 ${keyRef}，已配置` : `凭据引用 ${keyRef}，未配置`}
                   />
-                  {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 && cred?.configured !== true && (
-                    <button
-                      type="button"
-                      className="csFieldButton"
-                      disabled={isBusy || !writable}
-                      onClick={() => { void clearKeyRef(p) }}
-                    >清除引用</button>
-                  )}
-                </div>
-              </label>
-
-              {/* 模型清单编辑 */}
-              <div className="csField">
-                <span className="csFieldLabel">模型清单（留空 = 使用 provider 目录自带）</span>
-                {draft.models.map((mid, idx) => (
-                  <div className="csFieldRow" key={`${p.provider}-${idx}`}>
-                    <input
-                      className="csFieldInput"
-                      value={mid}
-                      spellCheck={false}
-                      disabled={isBusy || !writable}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { models: draft.models.map((m, i) => (i === idx ? e.target.value : m)) })}
-                    />
-                    <button
-                      type="button"
-                      className="csFieldButton"
-                      disabled={isBusy || !writable}
-                      onClick={() => patchDraft(p.provider, { models: draft.models.filter((_, i) => i !== idx) })}
-                    >删除</button>
-                  </div>
-                ))}
-                <div className="csFieldRow">
-                  <button
-                    type="button"
-                    className="csFieldButton"
-                    disabled={isBusy || !writable}
-                    onClick={() => patchDraft(p.provider, { models: [...draft.models, ''] })}
-                  >+ 添加模型</button>
-                  <button
-                    type="button"
-                    className="csFieldButton"
-                    disabled={isBusy || !writable}
-                    onClick={() => { void discoverModels(p) }}
-                  >从端点拉取</button>
-                </div>
-                {(discovered[p.provider]?.length ?? 0) > 0 && (
-                  <div className="csModelDiscovered">
-                    <span className="csFieldLabel">拉取到 {(discovered[p.provider] ?? []).length} 个模型：</span>
-                    <ul className="csModelDiscoveredList">
-                      {(discovered[p.provider] ?? []).map((m) => (
-                        <li key={m.id}>{m.id}{m.name ? `（${m.name}）` : ''}</li>
-                      ))}
-                    </ul>
-                    <button type="button" className="csFieldButton" disabled={isBusy} onClick={() => adoptDiscovered(p)}>采用清单</button>
-                  </div>
                 )}
-              </div>
-
-              {saveError[p.provider] !== null && saveError[p.provider] !== undefined && (
-                <p className="csFieldError" role="alert">{saveError[p.provider]}</p>
-              )}
-
-              <div className="csModelCardActions">
-                <button
-                  type="button"
-                  className="csFieldButton"
-                  disabled={isBusy || !writable}
-                  onClick={() => { void saveProvider(p) }}
-                >{isBusy ? '保存中…' : '保存'}</button>
+                <span className="csModelRowSub">{summarizeModels(draft.models)}</span>
                 <button
                   type="button"
                   className="csFieldButton csModelPrimary"
                   disabled={isBusy}
-                  onClick={() => setDefault(p.provider, draft.models[0] ?? agentValue.model)}
-                >设为默认</button>
+                  onClick={(e) => { e.stopPropagation(); setDefault(p.provider, draft.models[0] ?? agentValue.model) }}
+                >{isCur ? '默认中' : '设为默认'}</button>
                 {removable && (
                   <button
                     type="button"
                     className="csFieldButton csModelDanger"
                     disabled={isBusy || !writable}
-                    onClick={() => { void removeProvider(p) }}
+                    onClick={(e) => { e.stopPropagation(); void removeProvider(p) }}
                   >移除</button>
                 )}
+                <button
+                  type="button"
+                  className="csFieldButton"
+                  onClick={(e) => { e.stopPropagation(); setExpanded(open ? null : p.provider) }}
+                >{open ? '收起' : '编辑'}</button>
               </div>
+
+              {open && (
+                <div className="csModelRowBody">
+                  <label className="csField">
+                    <span className="csFieldLabel">展示名</span>
+                    <input
+                      className="csFieldInput"
+                      value={draft.displayName}
+                      placeholder={p.displayName}
+                      disabled={isBusy || !writable}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { displayName: e.target.value })}
+                    />
+                  </label>
+
+                  <label className="csField">
+                    <span className="csFieldLabel">API 地址（Base URL）</span>
+                    <input
+                      className="csFieldInput"
+                      value={draft.baseURL}
+                      placeholder="留空使用 provider 默认"
+                      spellCheck={false}
+                      disabled={isBusy || !writable}
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { baseURL: e.target.value })}
+                    />
+                  </label>
+
+                  <label className="csField">
+                    <span className="csFieldLabel">
+                      {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
+                        ? `API Key（凭据引用 ${keyRef}${cred?.configured ? '，已配置' : '，未配置'}）`
+                        : 'API Key（未引用凭据：自部署无鉴权端点可留空直接使用）'}
+                    </span>
+                    <div className="csFieldRow">
+                      <input
+                        className="csFieldInput"
+                        type="password"
+                        placeholder={cred?.configured ? '已保存，留空不改；输入新值覆盖' : '需要鉴权时输入密钥后点保存'}
+                        value={draft.keyDraft}
+                        disabled={isBusy || !writable}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { keyDraft: e.target.value })}
+                      />
+                      {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 && cred?.configured !== true && (
+                        <button
+                          type="button"
+                          className="csFieldButton"
+                          disabled={isBusy || !writable}
+                          onClick={() => { void clearKeyRef(p) }}
+                        >清除引用</button>
+                      )}
+                    </div>
+                  </label>
+
+                  {/* 模型清单编辑 */}
+                  <div className="csField">
+                    <span className="csFieldLabel">模型清单（留空 = 使用 provider 目录自带）</span>
+                    {draft.models.map((mid, idx) => (
+                      <div className="csFieldRow" key={`${p.provider}-${idx}`}>
+                        <input
+                          className="csFieldInput"
+                          value={mid}
+                          spellCheck={false}
+                          disabled={isBusy || !writable}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { models: draft.models.map((m, i) => (i === idx ? e.target.value : m)) })}
+                        />
+                        <button
+                          type="button"
+                          className="csFieldButton"
+                          disabled={isBusy || !writable}
+                          onClick={() => patchDraft(p.provider, { models: draft.models.filter((_, i) => i !== idx) })}
+                        >删除</button>
+                      </div>
+                    ))}
+                    <div className="csFieldRow">
+                      <button
+                        type="button"
+                        className="csFieldButton"
+                        disabled={isBusy || !writable}
+                        onClick={() => patchDraft(p.provider, { models: [...draft.models, ''] })}
+                      >+ 添加模型</button>
+                      <button
+                        type="button"
+                        className="csFieldButton"
+                        disabled={isBusy || !writable}
+                        onClick={() => { void discoverModels(p) }}
+                      >从端点拉取</button>
+                    </div>
+                    {(discovered[p.provider]?.length ?? 0) > 0 && (
+                      <div className="csModelDiscovered">
+                        <span className="csFieldLabel">拉取到 {(discovered[p.provider] ?? []).length} 个模型：</span>
+                        <ul className="csModelDiscoveredList">
+                          {(discovered[p.provider] ?? []).map((m) => (
+                            <li key={m.id}>{m.id}{m.name ? `（${m.name}）` : ''}</li>
+                          ))}
+                        </ul>
+                        <button type="button" className="csFieldButton" disabled={isBusy} onClick={() => adoptDiscovered(p)}>采用清单</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {saveError[p.provider] !== null && saveError[p.provider] !== undefined && (
+                    <p className="csFieldError" role="alert">{saveError[p.provider]}</p>
+                  )}
+
+                  <div className="csModelCardActions">
+                    <button
+                      type="button"
+                      className="csFieldButton"
+                      disabled={isBusy || !writable}
+                      onClick={() => { void saveProvider(p) }}
+                    >{isBusy ? '保存中…' : '保存'}</button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
@@ -621,7 +703,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
           >
             {showFolded
               ? `收起未使用的 provider（隐藏 ${foldedProviders.length} 个）`
-              : `显示全部 provider（共 ${providers.length} 个）`}
+              : `显示全部 provider（共 ${providers.filter((p) => p.settingsNs !== '').length} 个）`}
           </button>
         </div>
       )}
@@ -680,7 +762,8 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       <p className="csFieldHint">
         该配置与桌面「设置 → 模型」共享同一份存储；需要鉴权的服务商填 Base URL + Key，密钥只存凭据域不落明文。
         底层对任何端点都要求非空密钥：无鉴权自部署端点请在 API Key 填任意占位符（如 -），或在 settings.yaml
-        的该 provider 下加 headers: {'{'} authorization: unused {'}'}。
+        的该 provider 下加 headers: {'{'} authorization: unused {'}'}。DramaServer 官方区块为只读展示：
+        目录与凭据由登录态自动维护，无需手动填写。
       </p>
     </div>
   )

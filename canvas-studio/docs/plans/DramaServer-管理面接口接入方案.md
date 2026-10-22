@@ -1,10 +1,10 @@
 # DramaServer 管理面接口接入方案（auth/sync · models · credits/balance）
 
-> 状态：方案待评审（未开工）
-> 日期：2026-10-20
+> 状态：**已重新评估并开工（2026-10-22）**——P1 = CV-355、P2 = CV-356、P4 = CV-357；P3 的模型相关 UI 已随 CV-354 落地（官方区块识别网关行 + 待接入暗态），余额 chip / 业务用户展示等其余 UI 项随 credits 需求另排
+> 日期：2026-10-20（2026-10-22 按 DSH 0.2.1-rc.2 重新评估，见 §0.4）
 > 接口来源：《DramaServer 业务 API》（api(10).md，2026-10-19 版）：`POST /v1/auth/sync`、`GET /v1/models`、`GET /v1/credits/balance`
 > 参考实现：`/Users/wl/Desktop/job/reelsbuddy-desktop`（ADR-0002 已在 DSH 体系完整落地同一套接口）
-> 条目号：待分配（写号前按 AGENTS.md 先 grep `docs/`；下文以 **CV-DMA-*** 占位）
+> 条目号：P1/P2/P4 = CV-355/356/357（写号前已 grep `docs/`，无撞号；`CV-DMA-*` 占位作废）
 
 ## 0. 背景与已拍板决策
 
@@ -38,6 +38,21 @@
 - 金额固定 4 位小数（JSON number），展示不截断为整数。
 - 限流 600 次/分（IP + 用户），429 带 `Retry-After`；503 退避不高频重试；403 提示账号禁用并停止业务请求。
 - 401 = token 过期 → 静默丢弃本次，等 client `TOKEN_REFRESHED` 重推后重试（现有推送机制天然覆盖）。
+
+### 0.4 重新评估（2026-10-22，DSH 0.2.1-rc.2 已就位）
+
+背景：方案起草时本仓 pin 0.1.x-rc 线；此后 DSH 已整体升级 0.2.1-rc.2（2026-10-21 迁移，含 wire 面改版）。重新核对结论：
+
+| 项 | 0.1.x 时代的假设 | 0.2.1-rc.2 实测 | 结论 |
+| --- | --- | --- | --- |
+| `ctx.get('configEditor')` | 缺失，需升级 DSH（原拍板 0.2-5） | ✅ `dsh-config-editor@0.2.1-rc.2`：`entries()` / `edit(entry, change)`（校验 + 持久化 profile patch + Loader 重放），API 面与 reelsbuddy 用法一致 | **无需升级**，P4 直接落地 |
+| `ctx.credentials.set` | 仅用过 `.resolve` | ✅ `dsh-credentials` 抽象基类有 `set/unset/resolve` | 可用 |
+| llm-pi-ai 行热重放 | 待 spike | ✅ `llm-pi-ai/src/index.ts` 监听 `internal/config`，settings 变更自动重注册路由（同一 adapter 实例重注册） | 只写 `llm-pi-ai` 的 provider 行即可热生效 |
+| Spike（§4.0） | 先行探针 | **三 seam 全部存在，Spike 免除**，结论直接回填本表 | §4.0 关闭 |
+| 模型目录消费方 | 设置页官方区块（CV-354 已埋 `canvas-studio-gateway` 识别 + 待接入暗态） | 不变；P4 落地后官方区块与聊天模型选择器自动点亮，**零 UI 改动** | CV-354 与本方案闭环 |
+| 宿主目录构建链 | 聊天「暂无可选模型」根因（2026-10-22 用户实测两图） | `buildModelCatalog` 遍历已注册 provider 的 `listModels`，凭据解析失败的组整体剔除 | P4 是聊天可用的**唯一**路径（DeepSeek key 手配是临时替代） |
+
+范围调整：本轮落地 **P1 + P2 + P4**（用户拍板「重新评估后开发，把自有大模型配置连通」+ 真实链路验收）；P3 剩余 UI（余额 chip、业务用户展示）不在本轮。
 
 ---
 

@@ -3,7 +3,8 @@
 > **这是唯一事实来源。** 需求 / 缺陷 / 优化点的当前状态一律以本文件为准。
 > 其它文档（backlog、分析报告、设计稿）只保留**技术细节与决策过程**，状态一律引用本文件。
 >
-> **最近更新：2026-10-22**（**CV-354 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计（待桌面验收）** —— 根因：0.2.1 升级删除 `connection.api` 门面，面板 `getModelApi`/`getCredentials` 恒取 undefined → 「模型」页签整页空白，SettingsModal 三处密钥保存/状态查询一并失效。修法：wire 面迁到 `remote.llm`/`remote.settings`/`remote.credentials` 命名空间服务（类型经 typert 合并面收窄，不手写签名）；面板按交互稿重排 —— 默认模型 → DramaServer 官方模型（只读，P4 落地前「待接入」暗态）→ 我的 Provider 折叠行（点「编辑」展开、同时只开一张，对齐官方）→ 折叠未用官方 → 自定义。目录纯函数抽 `src/model-directory.ts`（join/分区/摘要）带单测。验证链全绿。详见 [cv-details.md](./cv-details.md)）
+> **最近更新：2026-10-22**（**CV-355~357 DramaServer 管理面 P1+P2+P4 落码，自有大模型打通聊天与设置页（待桌面验收/L6）** —— 按用户拍板对方案做了 0.2.1 重评估（§三 seam 全在：configEditor / credentials.set / llm-pi-ai 热重放，**无需升级 DSH**，spike 免除）。P1 `DramaClient`（auth/sync · models · credits）+ `device.json` 设备身份 + `businessApiBase` 设置项；P2 `account-state` 会话推送编排（幂等去重 / 401 静默 / 429 退避 / 403 禁用 / 失败不阻塞登录）；P4 网关：目录写 `canvas-studio-gateway` 行（configEditor 热生效）+ `CANVAS_STUDIO_GATEWAY_TOKEN` 凭据随 token 轮换 → 聊天模型选择器与设置页官方区块自动点亮。新增 4 个测试文件；验证链四步全绿；L6 脚本 `scripts/live-e2e-management.mjs` 已备。详见 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-22（上午）**（**CV-354 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计（待桌面验收）** —— 根因：0.2.1 升级删除 `connection.api` 门面，面板 `getModelApi`/`getCredentials` 恒取 undefined → 「模型」页签整页空白，SettingsModal 三处密钥保存/状态查询一并失效。修法：wire 面迁到 `remote.llm`/`remote.settings`/`remote.credentials` 命名空间服务（类型经 typert 合并面收窄，不手写签名）；面板按交互稿重排 —— 默认模型 → DramaServer 官方模型（只读，P4 落地前「待接入」暗态）→ 我的 Provider 折叠行（点「编辑」展开、同时只开一张，对齐官方）→ 折叠未用官方 → 自定义。目录纯函数抽 `src/model-directory.ts`（join/分区/摘要）带单测。验证链全绿。详见 [cv-details.md](./cv-details.md)）
 > **上一条 2026-10-20**（**REQ-034 批次 A 完成并真机验收通过（CV-350~CV-353）** —— O-01 `render_composition` 的抽帧 url/帧号与渲染报告（`msPerFrame`/`quality`/`warm`）进结果文本；O-02 ML-10 口径改为「video 轨计入分子+分母，分母只排除自身无 animate/exit 的常驻装饰轨」（总纲原方案实测仍误报 17.7%）；O-03 `box` 中心语义收敛为 `boxStyle()`/`boxToRect()` + 契约示例改 `50,50,100,100`；O-14 skill 第 8 步补「有字幕/台词就必须定配音」，并把 11KB 体积硬闸首次编码成测试。提交 `6bf3e7ca4f`。详见 [cv-details.md](./cv-details.md)）
 > **上一条 2026-10-18**（**CV-349 覆盖层主题随切换实时刷新（待桌面验收）** —— 用户在设置里切浅色/深色后，故事板覆盖层要关闭再打开才换色。根因：`ThemeRuntime` 不暴露 subscribe，宿主只在 `theme/change` 广播，而覆盖层色板写在 iframe URL 上、组件拿不到重渲染信号 ⇒ 不会重新加载。修法：注入面透出 `subscribeTheme`（宿主 `theme/change`），覆盖层用 `useSyncExternalStore` 订阅主题快照并据它派生 `sbLight`/容器色/iframe URL；新增接线守卫 2 例。详见 [changelog.md](./changelog.md)）
 > **上一条 2026-10-17**（**REQ-034 二期全量落码（待桌面验收）** —— 批次 1a/1b/2/3/4 与线外 D6 一次性落地，登记 **CV-338~CV-348** 共 11 条：A1 语义原语 `orbit`/`draw`/`shape:"path"`（位置来源三选一互斥）、1b 长片渲染队列（并发 1 · 上限 4 · FIFO · 超时从派发算）+ 进度通道、A2 `fx` 五式、A3 形状族、A4 四式转场、A5 `fitTextPolicy`+`fitOrKeep`（老 manifest 逐像素不变）、B1 `audioViz` 轨（`delayRender` 保确定性）、B2 渲染前探真时长、D2 失败分类仅 encode 重试、D6 旁白音轨判定（根因是 `compose.ts` 从不产出 voiceOver）。三级 `tsc` 全绿 + tsdown 通过 + 定向 **171** 断言全绿；**全量 `test:smoke` 本批未跑（用户定）**。详见 §4.1 与 [cv-details.md](./cv-details.md)）
@@ -29,8 +30,8 @@
 | `已分配·未登记` | 编号已在源码注释流通但 STATUS 无对应条目（记账缺口） | 补登条目或回收编号 |
 
 ### 编号规则
-- **当前水位**：2026-10-20 —— **CV-350~CV-353 REQ-034 批次 A 已完成（真机验收通过）**；前序 CV-349 覆盖层主题随切换实时刷新（待桌面验收）、CV-338~CV-348 REQ-034 二期全量落码、CV-337 motion 通用化、CV-336 多段关键帧插值修复、CV-334 帧级动画、CV-331~333 用户上传 skill 均待桌面验收；更早见 §4.1 索引表。
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-353**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
+- **当前水位**：2026-10-22 —— **CV-354~CV-357 已修复·待桌面验收**（CV-354 模型设置页 0.2.1 断线修复 + 重设计；CV-355~357 DramaServer 管理面 P1+P2+P4 落码，自有大模型接入聊天与设置页）；前序 CV-350~353 REQ-034 批次 A 已完成（真机验收通过）、CV-349、CV-338~CV-348 等均待桌面验收；更早见 §4.1 索引表。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-357**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - **条目详情**写在 [cv-details.md](./cv-details.md)（本表 §4.1 的详情层，按 CV 号 grep）、[canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目技术方案）与各分析文档中，**本表只管状态**。
 
@@ -53,7 +54,7 @@
 
 <!-- STATUS_SUMMARY_START -->
 | 已完成 | 144 | CV-001~004, CV-008~020, CV-022~035, CV-037, CV-038, CV-041, CV-044, CV-045, CV-061, CV-063, CV-068, CV-070, CV-072, CV-074, CV-076~078, CV-089, CV-094, CV-097~100, CV-109, CV-112, CV-114, CV-115, CV-119, CV-124, CV-125, CV-138~144, CV-146, CV-148, CV-149, CV-153, CV-155, CV-161, CV-162, CV-174, CV-176~179, CV-194, CV-204~206, CV-221, CV-222, CV-241~244, CV-246, CV-251~257, CV-259~272, CV-279~288, CV-293, CV-295~310, CV-313~316, CV-350~353 |
-| 已修复·待验收 | 151 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349, CV-354 |
+| 已修复·待验收 | 154 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349, CV-354~357 |
 | 进行中 | 1 | CV-175 |
 | 已完成·待验收 | 2 | CV-049, CV-062 |
 | 待处理 | 16 | CV-005, CV-021, CV-039, CV-040, CV-042, CV-043, CV-047, CV-048, CV-053~055, CV-084, CV-085, CV-087, CV-090, CV-273 |
@@ -266,6 +267,9 @@
 | CV-352 | **已完成** | **P2** | 形状 box 中心语义统一与契约修正 |
 | CV-353 | **已完成** | **P2** | skill 第 8 步补配音决策 |
 | CV-354 | **已修复·待验收** | **P1** | 模型设置页 0.2.1 断线修复 + 官方区块 |
+| CV-355 | **已修复·待验收** | **P1** | 管理面协议客户端与设备标识（P1） |
+| CV-356 | **已修复·待验收** | **P1** | 登录 bootstrap 管理面编排（P2） |
+| CV-357 | **已修复·待验收** | **P1** | DramaServer 模型网关接入 LLM（P4） |
 | CV-338 | **已修复·待验收** | **P1** | orbit/draw 语义原语契约与校验 |
 | CV-339 | **已修复·待验收** | **P2** | 语义原语组件接线与 skill 同步 |
 | CV-340 | **已修复·待验收** | **P1** | 长片渲染队列与进度通道（D1） |

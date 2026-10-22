@@ -6,9 +6,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
+import type { ConfigEditor } from '@deepseek-ai/dsh-config-editor'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { createRequire } from 'node:module'
+import { isDeepStrictEqual } from 'node:util'
 import { ProjectRegistry } from './projects.js'
 import { AssetLibrary } from './asset-library.js'
 import { registerStudioRoutes } from './routes.js'
@@ -23,6 +26,15 @@ import { registerActiveSkillsPrompt } from './active-skills-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
 import { setDramaAuthRequired } from './auth-session.js'
+// 管理面（方案 P1/P2/P4，CV-355/356/357）：设备身份 + 账号编排 + 模型网关。
+import { DeviceRegistry } from './device-registry.js'
+import { installAccountState } from './account-state.js'
+import type { CatalogModel } from './drama-management.js'
+import {
+  gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
+  mergeGatewayConfig, publishGatewayCredential, readGatewayCatalog,
+  writeGatewayCatalog, GATEWAY_SETTINGS_NS, type CredentialsSink, type GatewayRow,
+} from './gateway.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
 import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
@@ -30,6 +42,7 @@ import './errors/catalog.js'
 import {
   CanvasStudioConfig,
   type CanvasStudioConfigValue,
+  DEFAULT_BUSINESS_API_BASE,
   DEFAULT_DRAMA_API_BASE,
   DEFAULT_DRAMA_API_KEY_REF,
   DEFAULT_FAL_API_KEY_REF,
@@ -62,6 +75,7 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // dramaApiKey 以 credential-ref 形式存储，不落明文；运行时经 resolveDramaApiKey 解析。
   const base: CanvasStudioConfig = {
     dramaApiBase: DEFAULT_DRAMA_API_BASE,
+    businessApiBase: DEFAULT_BUSINESS_API_BASE,
     dramaApiKey: DEFAULT_DRAMA_API_KEY_REF,
     falApiKey: DEFAULT_FAL_API_KEY_REF,
     // P1 登录闭环：Supabase 项目沿用 reelsbuddy-auth（默认值即生效，无需用户配置）。
@@ -180,6 +194,102 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
   syncErrorVisibility()
   syncDramaAuthRequired()
+
+  // ── DramaServer 管理面 + 模型网关（方案 P2/P4，CV-356/357）────────────────
+  // 登录后：auth/sync（用户 + 设备登记）→ /v1/models 拉目录 → 写 llm-pi-ai 网关行
+  // （configEditor，与 Models 页同一条写路径，热生效）+ 凭据随会话推送轮换。
+  const studioHome = dshHomePath('canvas-studio')
+  const appVersionOf = (): string => {
+    try {
+      return (createRequire(import.meta.url)('../package.json') as { version?: string }).version ?? '0.0.0'
+    } catch {
+      return '0.0.0'
+    }
+  }
+  const deviceRegistry = new DeviceRegistry(studioHome, appVersionOf())
+  const credentialsSink = (): CredentialsSink | undefined => ctx.get('credentials') as CredentialsSink | undefined
+
+  // 网关行 reconcile：指纹无变化不写；串行队列防并发 edit；只动自己的行。
+  let currentGateway: GatewayRow | null = gatewayRow(readGatewayCatalog(studioHome))
+  let reconcileQueue: Promise<unknown> = Promise.resolve()
+  const applyGatewayConfig = async (row: GatewayRow | null): Promise<'applied' | 'unchanged' | 'unavailable'> => {
+    const editor = ctx.get('configEditor') as ConfigEditor | undefined
+    if (editor === undefined) return 'unavailable'
+    const entry: Entry | undefined = editor.entries().find((candidate) => candidate.options.id === GATEWAY_SETTINGS_NS)
+    if (entry === undefined) return 'unavailable'
+    const profile = row === null ? null : gatewayProfile(row)
+    const existing = gatewayProviderOf(entry.options.config as Record<string, unknown> | undefined)
+    if (profile === null ? existing === undefined : isDeepStrictEqual(existing, profile)) return 'unchanged'
+    await editor.edit(entry, (current) => mergeGatewayConfig(current as Record<string, unknown>, profile))
+    return 'applied'
+  }
+  const reconcileGateway = (catalog: { apiBaseUrl: string; models: CatalogModel[] }): Promise<{ changed: boolean; models: number; unavailable?: boolean }> => {
+    const run = async (): Promise<{ changed: boolean; models: number; unavailable?: boolean }> => {
+      const written = writeGatewayCatalog(studioHome, catalog)
+      const next = gatewayRow(written)
+      if (gatewayFingerprint(next) === gatewayFingerprint(currentGateway)) {
+        return { changed: false, models: next?.models.length ?? 0 }
+      }
+      const state = await applyGatewayConfig(next)
+      // unavailable 时不推进 currentGateway（指纹保持旧值，下次 reconcile 会重试）。
+      if (state === 'unavailable') {
+        return { changed: false, models: next?.models.length ?? 0, unavailable: true }
+      }
+      currentGateway = next
+      return { changed: state === 'applied', models: next?.models.length ?? 0 }
+    }
+    const queued = reconcileQueue.then(run, run)
+    reconcileQueue = queued.then(() => undefined, () => undefined)
+    return queued
+  }
+
+  installAccountState({
+    enabled: () => source().businessApiBase.trim() !== '' && source().supabaseUrl.trim() !== '',
+    businessApiBase: () => source().businessApiBase,
+    device: deviceRegistry,
+    log: ctx.logger,
+    // 凭据发布与目录 reconcile 都不抛给编排层：失败只进日志（不阻塞登录闭环）。
+    onSessionToken: (token) => {
+      void publishGatewayCredential(credentialsSink(), (name) => credentialRef(name), token)
+        .then((published) => {
+          if (!published) ctx.logger.warn('[canvas-studio] 网关凭据未写入：凭据服务不可用或 token 为空')
+        })
+        .catch((cause: unknown) => {
+          ctx.logger.warn(`[canvas-studio] 网关凭据写入失败：${cause instanceof Error ? cause.message : String(cause)}`)
+        })
+    },
+    onCatalogChanged: async (models, apiBaseUrl) => {
+      const result = await reconcileGateway({ apiBaseUrl, models })
+      if (result.unavailable) {
+        ctx.logger.warn('[canvas-studio] 网关行未写入：当前 DSH 运行时没有 configEditor')
+        return
+      }
+      if (result.changed) {
+        ctx.logger.info(`[canvas-studio] 模型网关已${models.length === 0 ? '清空' : '更新'}：${result.models} 个模型（热生效）`)
+      }
+    },
+  })
+
+  // 启动期从目录缓存恢复网关行（重启/未重登录场景；登录推送会覆盖为网络新目录）。
+  // apply 期 configEditor 可能尚未就绪 → 返回 false 后推迟 3s 重试一次（一次性，非常驻定时器）。
+  const recoverGatewayFromCache = async (): Promise<boolean> => {
+    if (currentGateway === null) return true
+    const state = await applyGatewayConfig(currentGateway)
+    if (state === 'unavailable') return false
+    if (state === 'applied') {
+      ctx.logger.info(`[canvas-studio] 网关行已从目录缓存恢复：${currentGateway.models.length} 个模型`)
+    }
+    return true
+  }
+  void recoverGatewayFromCache().then((ready) => {
+    if (ready) return
+    const retry = setTimeout(() => {
+      void recoverGatewayFromCache().then((retried) => {
+        if (!retried) ctx.logger.warn('[canvas-studio] 网关行缓存恢复失败：configEditor 仍不可用')
+      })
+    }, 3000)
+    ctx.effect(() => () => { clearTimeout(retry) }, 'canvas-studio: gateway cache recovery retry')
+  })
 
   // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。

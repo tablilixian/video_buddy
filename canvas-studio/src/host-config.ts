@@ -29,6 +29,13 @@ export const CANVAS_STUDIO_NS = 'canvas-studio'
 /** Drama Backend API 基址默认值（WL 自架后端）。 */
 export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082'
 
+/**
+ * DramaServer 业务 API 基址默认值（方案 P1/CV-355；管理面 auth/sync · models ·
+ * credits + /v1/llm 网关；与生成后端同机不同端口，2026-10-20 部署确认 80 端口）。
+ * **清空 = 管理面整体降级关闭**（同 supabaseUrl 空 = 隐藏登录的既有语义）。
+ */
+export const DEFAULT_BUSINESS_API_BASE = 'http://117.50.108.73'
+
 /** Drama Backend API Key 的默认凭据引用（值不落明文，经 credentials 解析）。 */
 export const DEFAULT_DRAMA_API_KEY_REF = 'CANVAS_STUDIO_DRAMA_API_KEY'
 
@@ -50,6 +57,11 @@ export const DEFAULT_FAL_API_KEY_REF = 'CANVAS_STUDIO_FAL_API_KEY'
 export interface CanvasStudioConfig {
   /** Drama Backend API 基址。 */
   dramaApiBase: string
+  /**
+   * DramaServer 业务 API 基址（管理面 + /v1/llm 网关；方案 CV-355）。
+   * 留空 = 管理面整体降级关闭（account-state 零请求、网关行不写）。
+   */
+  businessApiBase: string
   /** Drama Backend API Key 的凭据引用（credential-ref，不落明文）。 */
   dramaApiKey: string
   /** fal API Key 的凭据引用（credential-ref，不落明文；阶段 4 接入 fal H3 时使用）。 */
@@ -157,6 +169,7 @@ export interface CanvasStudioConfig {
  */
 export const CanvasStudioConfig = z.object({
   dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
+  businessApiBase: z.string().default(DEFAULT_BUSINESS_API_BASE),
   dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
   falApiKey: z.string().role('credential-ref').default(DEFAULT_FAL_API_KEY_REF),
   // P1 登录闭环（沿用 reelsbuddy-auth 项目；空串 = 未配置，客户端登录入口降级隐藏）。

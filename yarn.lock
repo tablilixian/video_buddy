@@ -10348,6 +10348,7 @@ __metadata:
     "@deepseek-ai/dsh-client-ui-theme": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-tool": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-client-ui-workspace": "npm:0.2.1-rc.2"
+    "@deepseek-ai/dsh-config-editor": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-credentials": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-home-paths": "npm:0.2.1-rc.2"
     "@deepseek-ai/dsh-host-webserver": "npm:0.2.1-rc.2"

@@ -102,6 +102,7 @@
     "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-tool": "0.2.1-rc.2",
     "@deepseek-ai/dsh-client-ui-workspace": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-config-editor": "0.2.1-rc.2",
     "@remotion/bundler": "4.0.535",
     "@types/node": "^22.20.0",
     "@types/react": "^18",

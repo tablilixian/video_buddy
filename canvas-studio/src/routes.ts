@@ -30,6 +30,8 @@ import { generateQueueSnapshot } from './generate-queue.js'
 // P1 登录闭环（Supabase OAuth PKCE）：loopback 回调服务 + 会话中转缓存。
 import { startLoopback, consumePendingCallback, loopbackActive, stopLoopback } from './auth-loopback.js'
 import { setAuthSession, clearAuthSession } from './auth-session.js'
+// 管理面编排（方案 P2/CV-356）：会话推送触发 auth/sync + 目录拉取（fire-and-forget）。
+import { notifyAuthSession, notifyAuthCleared } from './account-state.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
 import { activeResumeJobCount } from './video-jobs.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
@@ -3363,6 +3365,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           }
           if (body.event === 'SIGNED_OUT') {
             clearAuthSession()
+            notifyAuthCleared()
             sendJson(res, 200, { ok: true })
             return
           }
@@ -3383,6 +3386,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             userId: typeof session.userId === 'string' ? session.userId : '',
             email: typeof session.email === 'string' ? session.email : null,
           })
+          // 管理面 bootstrap（方案 P2/CV-356）：fire-and-forget，幂等去重；失败只进
+          // 日志、不回滚登录态、不影响本次推送响应。
+          notifyAuthSession(session.accessToken)
           sendJson(res, 200, { ok: true })
         } catch (cause) {
           sendRouteFailure(res, cause, 400, '登录状态同步失败，请重试。')

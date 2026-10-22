@@ -37,6 +37,30 @@
 - **涉及文件**：`src/remotion/shape-geometry.ts` / `src/remotion/components/Shape.tsx` / `skills/code-driven-explainer/references/manifest-contract.md` / `src/host-tools.ts` / `tests/remotion-shape-box.test.mjs`
 - **落地/验收**：提交 `6bf3e7ca4f`。守卫 5 条（`50,50,100,100` 矩形 = 全画布 / `0,0` 只占四分之一 / 文档示例串 / 工具描述串 / `boxStyle` 输出含 translate）；**反向变异**（示例改回 `0,0`）⇒ 红。**真机验收通过**（2026-10-20）。
 
+#### CV-357 · DramaServer 模型网关接入 LLM（方案 P4）
+
+- **状态**：已修复·待桌面验收 + L6 真实链路（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：方案 [DramaServer-管理面接口接入方案.md](./plans/DramaServer-管理面接口接入方案.md) P4。**0.2.1 重评估（2026-10-22）**：三 seam 全在（`ctx.get('configEditor')` 的 `entries()/edit()` 面、`credentials.set`、llm-pi-ai 监听 `internal/config` 行级热重放）→ **spike 免除、无需升级 DSH**（推翻原拍板 0.2-5 的升级前提）。**落码**：`src/gateway.ts` 纯函数（`gatewayProfile` 行生成 / `mergeGatewayConfig` 只动自己的行 + 用户 provider 保留 + 空目录移除防复活 / 指纹无变化不写 / `gateway-catalog.json` 目录缓存 0600 / `publishGatewayCredential`）；`src/index.ts` 装配 `applyGatewayConfig`/`reconcileGateway`（串行队列 + unavailable 不推进指纹）+ 启动期缓存恢复（一次性 3s 延迟重试）。路由 `canvas-studio-gateway`（displayName 'DramaServer'，`openai-completions`，baseURL `<businessApiBase>/v1/llm`），凭据 `CANVAS_STUDIO_GATEWAY_TOKEN` 随每次会话推送轮换。**背景**：宿主模型目录 `buildModelCatalog` 只列已注册 provider 且凭据解析失败的组整体剔除 → 本项是聊天「暂无可选模型」的唯一修复路径。
+- **涉及文件**：`src/gateway.ts`（新）/ `src/index.ts` / `tests/gateway.test.mjs`（新）
+- **落地/验收**：验证链四步全绿（gateway 测试 5 条全过；裸抛守卫拦下 2 处 `throw new Error` → 改状态返回）。**待桌面验收**：登录后设置 → 模型「DramaServer 官方模型」区块点亮（模型列表 + 设为默认）；聊天页模型选择器出现 DramaServer 组；`auth/sync` 在服务端产生用户 + 设备记录（后端确认）；L6：`DRAMA_ACCESS_TOKEN=… node scripts/live-e2e-management.mjs`（sync → models → 一次 chat/completions）。
+
+#### CV-356 · 登录 bootstrap 管理面编排（方案 P2）
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：方案 P2。`src/account-state.ts` 模块级单例（与 auth-session.ts 同风格，deps 注入保可测）：routes.ts 的 auth/session 路由在 `setAuthSession` 后 fire-and-forget `notifyAuthSession(token)`（幂等去重：同 token + 目录 TTL 5min 内只发布凭据不重打接口；进行中复用同一 Promise），`clearAuthSession` 后 `notifyAuthCleared()`（reset；目录缓存与网关行保留，重登录即刷新）。错误策略对齐 api(10).md §6：401 静默（client 重推即重试）、403 置禁用态停止业务请求、429 按 `Retry-After` 退避（无头默认 30s）、503 固定退避、500 记日志不重试；bootstrap 失败不回滚登录态、不影响推送响应。启用闸 = `businessApiBase` 非空 && `supabaseUrl` 非空（live 读取）。
+- **涉及文件**：`src/account-state.ts`（新）/ `src/routes.ts` / `tests/account-state.test.mjs`（新，stub 全局 fetch）
+- **落地/验收**：验证链四步全绿；编排测试 6 条全过（幂等 / 401 / 429 窗口内零请求但凭据照发 / 403 禁用 / 未启用零请求 / reset）。**待桌面验收**：登录后 Host 日志出现「管理面 bootstrap 完成」；登出后再登录不重复登记设备。
+
+#### CV-355 · 管理面协议客户端与设备标识（方案 P1）
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：方案 P1。`src/drama-management.ts`：`DramaClient`（`sync` / `listTextModels` / `creditBalance`；Bearer 头；`fetchImpl` 注入保可测；`ApiError {code,status,retryAfterSeconds}` + `parseApiError` 错误信封解析——code 优先、Retry-After 单取、非 JSON 体回退 HTTP 文案；`name` 字段改 `VideoBuddy Desktop`）。`src/device-registry.ts`：`$DSH_HOME/canvas-studio/device.json` UUID v4、0600、损坏重生成、跨启动复用（**不随 assetDir 换库迁移**）。`src/host-config.ts`：新增 `businessApiBase`（默认 `http://117.50.108.73`；清空 = 管理面整体降级关闭）。
+- **涉及文件**：`src/drama-management.ts`（新）/ `src/device-registry.ts`（新）/ `src/host-config.ts` / `src/index.ts`（base 兜底 + DeviceRegistry 装配）/ `tests/drama-management.test.mjs`（新）/ `tests/device-registry.test.mjs`（新）/ `package.json`（+devDep `dsh-config-editor`）
+- **落地/验收**：验证链四步全绿；客户端测试 4 条（错误信封 429 Retry-After / sync 形状与 device body / models null → []）+ 设备测试 2 条（复用 / 损坏重生成 / 0600）。**待桌面验收**：登录后 `$DSH_HOME/canvas-studio/device.json` 生成且重启不变；服务端设备记录 `name=VideoBuddy Desktop`。
+
 #### CV-354 · 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

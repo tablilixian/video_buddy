@@ -287,25 +287,25 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   })
 
   // 启动期从目录缓存恢复网关行（重启/未重登录场景；登录推送会覆盖为网络新目录）。
-  // apply 期 configEditor 可能尚未就绪 → 返回 false 后推迟 3s 重试一次（一次性，非常驻定时器）。
-  const recoverGatewayFromCache = async (): Promise<boolean> => {
-    if (currentGateway === null) return true
+  // **必须延后且兜 catch**：settings.mutate 底层走 ConfigEditor 的 profile 重放，
+  // 在装载早期触发会把启动期激活校验的失败放大成 unhandled rejection
+  // （2026-10-22 实测 = `fatal load failure` 整个应用起不来）。延迟 5s 让 loader
+  // 完成首场激活后再试；失败只进日志，绝不致命。
+  const recoverGatewayFromCache = async (): Promise<void> => {
+    if (currentGateway === null) return
     const state = await applyGatewayConfig(currentGateway)
-    if (state === 'unavailable') return false
     if (state === 'applied') {
       ctx.logger.info(`[canvas-studio] 网关行已从目录缓存恢复：${currentGateway.models.length} 个模型`)
     }
-    return true
   }
-  void recoverGatewayFromCache().then((ready) => {
-    if (ready) return
-    const retry = setTimeout(() => {
-      void recoverGatewayFromCache().then((retried) => {
-        if (!retried) ctx.logger.warn('[canvas-studio] 网关行缓存恢复失败：configEditor 仍不可用')
+  ctx.effect(() => {
+    const timer = setTimeout(() => {
+      void recoverGatewayFromCache().catch((cause: unknown) => {
+        ctx.logger.warn(`[canvas-studio] 网关行缓存恢复失败（不影响启动）：${cause instanceof Error ? cause.message : String(cause)}`)
       })
-    }, 3000)
-    ctx.effect(() => () => { clearTimeout(retry) }, 'canvas-studio: gateway cache recovery retry')
-  })
+    }, 5000)
+    return () => { clearTimeout(timer) }
+  }, 'canvas-studio: gateway cache recovery')
 
   // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。

@@ -35,11 +35,21 @@ const BUNDLE_ID_PATTERN = /^bundle_[A-Za-z0-9_-]{32}$/u
 const DISABLE_PREVIEW_ID_PATTERN = /^disable_[A-Za-z0-9_-]{43}$/u
 const ENABLE_PREVIEW_ID_PATTERN = /^enable_[A-Za-z0-9_-]{43}$/u
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u
+
+/**
+ * Profile-local bundle the launcher materializes its own Loader layer into.
+ *
+ * It is launcher-owned state, not an installed plugin: the desktop never offers
+ * to disable or uninstall it, because doing so would drop every Desktop row from
+ * the next generation.
+ */
+export const DESKTOP_LAYER_BUNDLE_NAME = 'dsh-desktop-layer'
 const IMMUTABLE_BUNDLES = new Set([
   ...(PROFILE_TEMPLATES.web?.bundles ?? []),
   '@deepseek-ai/dsh-desktop-app',
   'dsh-plugin-desktop',
   'dsh-community-market',
+  DESKTOP_LAYER_BUNDLE_NAME,
 ])
 
 /** One direct bundle declared by the active profile. */

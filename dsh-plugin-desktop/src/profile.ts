@@ -1,6 +1,6 @@
 /** Compatibility profile composition over the official Web bundle and user plugins. */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { evaluate, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -22,7 +22,7 @@ import {
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { parseDocument } from 'yaml'
+import { parseDocument, stringify as yamlStringify } from 'yaml'
 import { unpackedAsarPath } from './packaged-runtime-path.ts'
 import { findOverlayPackage, resolveOverlayPackage } from './package-overlay.ts'
 import { DESKTOP_DEFAULT_WEB_PORT } from './desktop-port.ts'
@@ -45,6 +45,7 @@ import {
 } from './window-material.ts'
 import {
   activeDesktopProfileLayers,
+  DESKTOP_LAYER_BUNDLE_NAME,
   desktopPluginBundleMutable,
   readDesktopDisabledBundles,
 } from './desktop-plugins.ts'
@@ -63,6 +64,21 @@ export const DESKTOP_PACKAGE_NAME = 'dsh-plugin-desktop'
 
 /** Empty include root rewritten before every profile boot. */
 export const DESKTOP_PROFILE_ROOT = 'cordis.yml'
+
+/**
+ * Profile-local bundle carrying the launcher's own Loader layer.
+ *
+ * The layer has to be a real bundle layer, not an in-memory patch list handed to
+ * `boot()`: every profile recomposition (a settings write, a plugin install, a
+ * reload) rebuilds the graph from `bundles + profile patch + home patch +
+ * overlays`, so a layer that exists only in the launcher's memory is invisible
+ * to those callers — they would drop the Desktop rows and re-enable the entries
+ * this launcher keeps off. Materializing it into the profile makes the boot
+ * composition and every later recomposition byte-for-byte the same source.
+ */
+export const DESKTOP_LAYER_PACKAGE_NAME = DESKTOP_LAYER_BUNDLE_NAME
+
+const DESKTOP_LAYER_PATCH_FILENAME = 'cordis.patch.yml'
 
 const BIN_NAME = DESKTOP_PACKAGE_NAME
 const REQUIRED_BUNDLES = requiredWebBundles()
@@ -270,13 +286,16 @@ export interface SkippedOptionalEntry {
 /**
  * Normalize the installation-owned prefix while preserving third-party order.
  * @param current - current persistent bundle list.
- * @returns base, Web carrier, then every third-party bundle in prior order.
+ * @returns base, Web carrier, every third-party bundle in prior order, then the launcher layer.
  */
 export function desktopBundleList(current: readonly string[]): string[] {
   const thirdParty = current.filter(name => !REQUIRED_BUNDLE_SET.has(name)
     && name !== DESKTOP_PACKAGE_NAME
+    && name !== DESKTOP_LAYER_PACKAGE_NAME
     && !OBSOLETE_DESKTOP_BUNDLE_SET.has(name))
-  return [...REQUIRED_BUNDLES, ...thirdParty]
+  // The launcher layer is always last: it disables or replaces rows that the
+  // base, Web carrier, and third-party layers insert.
+  return [...REQUIRED_BUNDLES, ...thirdParty, DESKTOP_LAYER_PACKAGE_NAME]
 }
 
 /** Return whether two ordered string lists are identical. */
@@ -494,6 +513,11 @@ function loadRecoveryFilteredProfile(
         patches: patchPaths.flatMap(file => loadOverlayPatches(BIN_NAME, file)),
       })
     } catch (cause) {
+      // The launcher materializes its own layer further down. A profile that
+      // lists the bundle before the layer directory exists (first boot, or a
+      // profile whose node_modules was pruned) bootstraps from the in-memory
+      // layer instead of failing outright.
+      if (packageName === DESKTOP_LAYER_PACKAGE_NAME) continue
       if (!isDshMarket) throw cause
       dshMarketFailure = marketFailureMessage(cause)
     }
@@ -510,6 +534,110 @@ function loadRecoveryFilteredProfile(
     },
     ...(dshMarketFailure === undefined ? {} : { dshMarketFailure }),
   }
+}
+
+/**
+ * Write the launcher-owned Loader layer as a Profile-local bundle.
+ *
+ * The static structural rows are copied from the shipped layer file verbatim so
+ * `!!js` expressions keep their exact source form; the launcher-computed rows
+ * (platform swaps, Web port, Desktop settings) are appended as plain YAML.
+ * Every boot rewrites both files, so the layer is always a function of this
+ * generation's inputs and can never accumulate stale rows.
+ * @param profileDir - active profile package directory.
+ * @param sourceText - shipped `cordis.patch.yml` contents.
+ * @param dynamicPatches - launcher-computed rows appended to the layer.
+ * @returns the absolute path of the written patch file.
+ */
+function materializeDesktopLayer(
+  profileDir: string,
+  sourceText: string,
+  dynamicPatches: readonly PatchOptions[],
+): string {
+  const layerDir = join(profileDir, 'node_modules', DESKTOP_LAYER_PACKAGE_NAME)
+  mkdirSync(layerDir, { recursive: true })
+  writeFileSync(join(layerDir, 'package.json'), `${JSON.stringify({
+    name: DESKTOP_LAYER_PACKAGE_NAME,
+    version: '0.0.0',
+    private: true,
+    dsh: { bundle: { patch: [`./${DESKTOP_LAYER_PATCH_FILENAME}`] } },
+  }, undefined, 2)}\n`)
+  const trailing = dynamicPatches.length === 0
+    ? ''
+    : yamlStringify([...dynamicPatches], { lineWidth: 0 })
+  const patchPath = join(layerDir, DESKTOP_LAYER_PATCH_FILENAME)
+  writeFileSync(patchPath, `${sourceText.trimEnd()}\n${trailing}`)
+  return patchPath
+}
+
+/**
+ * Ensure the launcher layer is the last bundle of any profile this launcher boots.
+ * @param profileDir - active profile package directory.
+ */
+function ensureDesktopLayerBundle(profileDir: string): void {
+  if (!existsSync(join(profileDir, 'package.json'))) return
+  const manifest = readProfileManifest(BIN_NAME, profileDir)
+  const rawBundles = (manifest.dsh?.profile as { bundles?: unknown } | undefined)?.bundles
+  if (rawBundles !== undefined
+    && (!Array.isArray(rawBundles) || rawBundles.some(value => typeof value !== 'string'))) {
+    throw new Error(`${BIN_NAME}: dsh.profile.bundles must be an array of package names`)
+  }
+  const current = rawBundles === undefined ? [] : rawBundles as string[]
+  const bundles = [...current.filter(name => name !== DESKTOP_LAYER_PACKAGE_NAME), DESKTOP_LAYER_PACKAGE_NAME]
+  if (sameList(current, bundles)) return
+  writeProfileManifest(profileDir, {
+    ...manifest,
+    dsh: {
+      ...manifest.dsh,
+      profile: {
+        ...manifest.dsh?.profile,
+        bundles,
+      },
+    },
+  })
+}
+
+/** Project a row's enablement into a comparable form; `!!js` gates stay symbolic. */
+function enablementFlag(value: unknown): string {
+  if (value === undefined || value === null) return 'undefined'
+  return typeof value === 'boolean' ? String(value) : 'expression'
+}
+
+/**
+ * Assert the persisted layer reproduces the launcher's composition.
+ *
+ * A profile recomposition (settings write, plugin install, reload) rebuilds the
+ * graph from the layer files, so a layer that failed to materialize, was
+ * dropped from `dsh.profile.bundles`, or lost its ordering would silently
+ * remove the Desktop rows or re-enable an entry this launcher keeps off.
+ * Config values are excluded on purpose: the user layer legitimately overrides
+ * them.
+ * @param launcherRows - rows the launcher composed in memory.
+ * @param persistedRows - rows composed from the layer files on disk.
+ */
+function assertDesktopLayerApplied(
+  launcherRows: readonly EntryOptions[],
+  persistedRows: readonly EntryOptions[],
+): void {
+  const index = (rows: readonly EntryOptions[]): Map<string, EntryOptions> => new Map(
+    rows.flatMap(row => typeof row.id === 'string' ? [[row.id, row] as const] : []),
+  )
+  const persisted = index(persistedRows)
+  const drift: string[] = []
+  for (const [id, row] of index(launcherRows)) {
+    const next = persisted.get(id)
+    if (next === undefined) drift.push(`${id}: missing`)
+    else if (next.name !== row.name) drift.push(`${id}: ${String(row.name)} -> ${String(next.name)}`)
+    else if (enablementFlag(next.disabled) !== enablementFlag(row.disabled)) {
+      drift.push(`${id}: disabled ${enablementFlag(row.disabled)} -> ${enablementFlag(next.disabled)}`)
+    }
+  }
+  if (drift.length === 0) return
+  throw new Error(
+    `${BIN_NAME}: the Desktop layer ${DESKTOP_LAYER_PACKAGE_NAME} did not survive profile composition`
+    + ` (${drift.slice(0, 8).join('; ')}${drift.length > 8 ? `; +${String(drift.length - 8)} more` : ''});`
+    + ` delete ${join('node_modules', DESKTOP_LAYER_PACKAGE_NAME)} from the profile and restart`,
+  )
 }
 
 /** Read a row's object config without trusting arbitrary YAML values. */
@@ -742,78 +870,115 @@ export function prepareDesktopProfile(
   writeFileSync(rootConfig, '[]\n')
 
   const desktopPatches = loadOverlayPatches(BIN_NAME, DESKTOP_PATCH_PATH)
-  const bundlePatches: PatchOptions[] = []
-  let dshMarketPatches: PatchOptions[] | undefined
-  let desktopLayerInserted = false
+  const desktopLayerSource = readFileSync(DESKTOP_PATCH_PATH, 'utf8')
   const providerAwareDisabledBundles = new Set(disabledBundles)
   if (marketSelection.requested === DESKTOP_MARKET_IDENTITIES.dshMarket.provider) {
     providerAwareDisabledBundles.delete(DESKTOP_MARKET_IDENTITIES.dshMarket.packageName)
   }
-  for (const layer of activeDesktopProfileLayers(profile, providerAwareDisabledBundles)) {
-    if (layer.packageName === DESKTOP_MARKET_IDENTITIES.dshMarket.packageName) {
-      dshMarketPatches = layer.patches
-      continue
-    }
-    bundlePatches.push(...layer.patches)
-    if (layer.packageName !== '@deepseek-ai/dsh-web-app') continue
-    bundlePatches.push(...desktopPatches)
-    desktopLayerInserted = true
-  }
-  if (!desktopLayerInserted) {
-    throw new Error(`${BIN_NAME}: desktop profile is missing @deepseek-ai/dsh-web-app`)
-  }
-
   const loadedHomePatches = loadOptionalPatches(BIN_NAME, join(home, PROFILE_PATCH_FILENAME)) ?? []
   const { patches: homePatches, skipped: skippedOptionalEntries } = omitUnresolvedOptionalEntries(
     loadedHomePatches,
     bareModuleBaseUrl,
   )
-  const filteredBundles = filterMarketProviderPatches(bundlePatches)
-  const filteredProfile = filterMarketProviderPatches(profile.patches)
-  const filteredHome = filterMarketProviderPatches(homePatches)
-  const hasProviderConflict = filteredBundles.removedProviderReference
-    || filteredProfile.removedProviderReference
-    || filteredHome.removedProviderReference
-  let effectiveMarket: DesktopMarketProvider = 'disabled'
-  let marketFailure: string | undefined
-  const providerPatches: PatchOptions[] = []
-  if (marketSelection.requested !== 'disabled') {
-    if (hasProviderConflict) {
-      marketFailure = `${BIN_NAME}: conflicting Market provider Loader identity was removed`
-    } else if (marketSelection.requested === DESKTOP_MARKET_IDENTITIES.community.provider) {
-      marketFailure = validateMarketPackage(
-        DESKTOP_MARKET_IDENTITIES.community.packageName,
-        bareModuleBaseUrl,
-      )
-      if (marketFailure === undefined) {
-        providerPatches.push({
-          insert: [{
-            id: DESKTOP_MARKET_IDENTITIES.community.rowId,
-            name: DESKTOP_MARKET_IDENTITIES.community.packageName,
-          }],
-        })
-        effectiveMarket = DESKTOP_MARKET_IDENTITIES.community.provider
+
+  /**
+   * Assemble one generation from a profile snapshot.
+   *
+   * `launcher` ignores a layer left by an earlier boot and composes the shipped
+   * file instead: the rows below are derived from that view, so seeing its own
+   * output would make the computation non-idempotent (the replacement row it
+   * inserted last time would look like a pre-existing row, and the next layer
+   * would carry a config patch for a row it no longer inserts).
+   * `persisted` is what the Loader itself will read, layer included.
+   */
+  const planGeneration = (
+    source: RecoveryFilteredProfile,
+    mode: 'launcher' | 'persisted',
+  ): {
+    patches: PatchOptions[]
+    effectiveMarket: DesktopMarketProvider
+    marketFailure?: string
+    layerFromProfile: boolean
+  } => {
+    const bundlePatches: PatchOptions[] = []
+    let dshMarketPatches: PatchOptions[] | undefined
+    let webAppSeen = false
+    let layerFromProfile = false
+    for (const layer of activeDesktopProfileLayers(source.profile, providerAwareDisabledBundles)) {
+      if (layer.packageName === DESKTOP_MARKET_IDENTITIES.dshMarket.packageName) {
+        dshMarketPatches = layer.patches
+        continue
       }
-    } else if (loadedProfile.dshMarketFailure !== undefined) {
-      marketFailure = loadedProfile.dshMarketFailure
-    } else if (dshMarketPatches === undefined) {
-      marketFailure = `${BIN_NAME}: selected dshmarket bundle layer is unavailable`
-    } else {
-      try {
-        validateDshMarketBundlePatches(dshMarketPatches)
-        providerPatches.push(...dshMarketPatches)
-        effectiveMarket = DESKTOP_MARKET_IDENTITIES.dshMarket.provider
-      } catch (cause) {
-        marketFailure = marketFailureMessage(cause)
+      if (layer.packageName === DESKTOP_LAYER_PACKAGE_NAME) {
+        layerFromProfile = true
+        if (mode === 'launcher') continue
+      }
+      bundlePatches.push(...layer.patches)
+      if (layer.packageName !== '@deepseek-ai/dsh-web-app') continue
+      webAppSeen = true
+      if (mode === 'launcher') bundlePatches.push(...desktopPatches)
+    }
+    if (!webAppSeen) {
+      throw new Error(`${BIN_NAME}: desktop profile is missing @deepseek-ai/dsh-web-app`)
+    }
+    const filteredBundles = filterMarketProviderPatches(bundlePatches)
+    const filteredProfile = filterMarketProviderPatches(source.profile.patches)
+    const filteredHome = filterMarketProviderPatches(homePatches)
+    const hasProviderConflict = filteredBundles.removedProviderReference
+      || filteredProfile.removedProviderReference
+      || filteredHome.removedProviderReference
+    let effectiveMarket: DesktopMarketProvider = 'disabled'
+    let marketFailure: string | undefined
+    const providerPatches: PatchOptions[] = []
+    if (marketSelection.requested !== 'disabled') {
+      if (hasProviderConflict) {
+        marketFailure = `${BIN_NAME}: conflicting Market provider Loader identity was removed`
+      } else if (marketSelection.requested === DESKTOP_MARKET_IDENTITIES.community.provider) {
+        marketFailure = validateMarketPackage(
+          DESKTOP_MARKET_IDENTITIES.community.packageName,
+          bareModuleBaseUrl,
+        )
+        if (marketFailure === undefined) {
+          providerPatches.push({
+            insert: [{
+              id: DESKTOP_MARKET_IDENTITIES.community.rowId,
+              name: DESKTOP_MARKET_IDENTITIES.community.packageName,
+            }],
+          })
+          effectiveMarket = DESKTOP_MARKET_IDENTITIES.community.provider
+        }
+      } else if (source.dshMarketFailure !== undefined) {
+        marketFailure = source.dshMarketFailure
+      } else if (dshMarketPatches === undefined) {
+        marketFailure = `${BIN_NAME}: selected dshmarket bundle layer is unavailable`
+      } else {
+        try {
+          validateDshMarketBundlePatches(dshMarketPatches)
+          providerPatches.push(...dshMarketPatches)
+          effectiveMarket = DESKTOP_MARKET_IDENTITIES.dshMarket.provider
+        } catch (cause) {
+          marketFailure = marketFailureMessage(cause)
+        }
       }
     }
+    return {
+      patches: [
+        ...filteredBundles.patches,
+        ...providerPatches,
+        ...filteredProfile.patches,
+        ...filteredHome.patches,
+      ],
+      effectiveMarket,
+      ...(marketFailure === undefined ? {} : { marketFailure }),
+      layerFromProfile,
+    }
   }
-  const patches: PatchOptions[] = [
-    ...filteredBundles.patches,
-    ...providerPatches,
-    ...filteredProfile.patches,
-    ...filteredHome.patches,
-  ]
+
+  const planned = planGeneration(loadedProfile, 'launcher')
+  const patches: PatchOptions[] = planned.patches
+  const dynamicPatchStart = patches.length
+  const effectiveMarket = planned.effectiveMarket
+  const marketFailure = planned.marketFailure
   const composedRows = composeEntries([patches])
   assertUniqueEntryIds(composedRows)
   assertEffectiveMarketRows(composedRows, effectiveMarket)
@@ -832,7 +997,6 @@ export function prepareDesktopProfile(
     port,
     macosMaterial,
     windowsMaterial,
-    openBrowser,
     networkExposure,
   } = readDesktopStartupSettings(rowConfig(shellRow))
   const webRuntime = rows.get('web-runtime')
@@ -1017,15 +1181,43 @@ export function prepareDesktopProfile(
       windowsMaterial,
     },
   })
+
+  // Hand the layer to the profile. Everything above composed a graph the
+  // launcher alone can see; the Loader's own recomposition (settings writes,
+  // plugin installs) rebuilds it from `bundles + profile patch + home patch`, so
+  // the layer has to exist as a bundle layer before the generation boots.
+  ensureDesktopLayerBundle(profile.dir)
+  materializeDesktopLayer(profile.dir, desktopLayerSource, patches.slice(dynamicPatchStart))
+  const persistedProfile = loadRecoveryFilteredProfile(
+    profileName,
+    profileDir,
+    disabledBundles,
+    marketSelection.requested,
+  )
+  const persisted = planGeneration(persistedProfile, 'persisted')
+  if (persisted.layerFromProfile !== true) {
+    throw new Error(`${BIN_NAME}: ${DESKTOP_LAYER_PACKAGE_NAME} is not an active bundle of profile ${JSON.stringify(profileName)}`)
+  }
+  const persistedRows = composeEntries([persisted.patches])
+  // Compare against the launcher's complete intent, including the rows computed
+  // above, so a lost platform swap or enablement flip is reported as drift.
+  assertDesktopLayerApplied(composeEntries([patches]), persistedRows)
+  const persistedShell = persistedRows.find(row => row.id === DESKTOP_SHELL_ROW_ID)
+  if (persistedShell?.name !== DESKTOP_SHELL_PACKAGE) {
+    throw new Error(`${BIN_NAME}: persisted profile layer lost the ${DESKTOP_SHELL_PACKAGE} shell row`)
+  }
+  // Startup facts come from the persisted composition, which is exactly what
+  // the Loader will mount: the user layer outranks the layer's own defaults.
+  const persistedSettings = readDesktopStartupSettings(rowConfig(persistedShell))
   return {
     homeDir: home,
-    profile,
+    profile: persistedProfile.profile,
     profileContext: {
       name: profileName,
-      dir: profile.dir,
-      patchPath: profile.patchPath,
+      dir: persistedProfile.profile.dir,
+      patchPath: persistedProfile.profile.patchPath,
       installAnchor: INSTALL_ANCHOR,
-      startedBundles: profile.layers.map(layer => layer.packageName),
+      startedBundles: persistedProfile.profile.layers.map(layer => layer.packageName),
       cwd: process.cwd(),
       home,
       overlays: [],
@@ -1033,14 +1225,14 @@ export function prepareDesktopProfile(
     },
     rootConfig,
     bareModuleBaseUrl,
-    patches: structuredClone(patches),
+    patches: structuredClone(persisted.patches),
     skippedOptionalEntries,
-    mode,
-    port,
-    macosMaterial,
-    windowsMaterial,
-    openBrowser,
-    networkExposure,
+    mode: persistedSettings.mode,
+    port: persistedSettings.port,
+    macosMaterial: persistedSettings.macosMaterial,
+    windowsMaterial: persistedSettings.windowsMaterial,
+    openBrowser: persistedSettings.openBrowser,
+    networkExposure: persistedSettings.networkExposure,
     settingsDocument,
     market: desktopMarketSnapshotWithEffective(marketSelection, effectiveMarket),
     requiresDependencyMigration,

@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { boot } from '@deepseek-ai/dsh-app-boot'
+import { boot, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import {
   createLaunchEnvironmentSnapshot,
@@ -279,6 +279,23 @@ try {
     '@deepseek-ai/dsh-client-ui-directory-picker-native',
   ]) {
     if (ids.has(id)) throw new Error(`assembled advanced Web graph unexpectedly includes ${id}`)
+  }
+
+  // Regression for the 2026-10-22 settings-write outage. Every settings write
+  // reaches `ConfigEditor.edit` -> `reconcileProfilePatches` with the patch list
+  // read back from the layer files. While the Desktop layer existed only in the
+  // launcher's memory, that recomposition dropped every Desktop row and revived
+  // the two entries this launcher keeps off, so the shell lost its window on any
+  // save. Recomposing exactly what the editor would read must be a no-op.
+  await reconcileProfilePatches(ctx, readProfilePatches('dsh', prepared.profileContext), 'dsh')
+  const liveRows = new Map(ctx.loader.entries().map(entry => [entry.options.id, entry.options]))
+  for (const id of ['desktop-shell', 'canvas-studio', 'desktop-webserver']) {
+    if (!liveRows.has(id)) throw new Error(`profile recomposition dropped the ${id} row`)
+  }
+  for (const id of ['hmr', 'desktop-product-telemetry']) {
+    const row = liveRows.get(id)
+    if (row === undefined) throw new Error(`profile recomposition removed the ${id} row instead of disabling it`)
+    if (row.disabled !== true) throw new Error(`profile recomposition re-enabled ${id}`)
   }
 } finally {
   await ctx?.fiber.dispose()

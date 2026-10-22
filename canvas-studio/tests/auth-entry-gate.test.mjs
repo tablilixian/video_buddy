@@ -189,14 +189,16 @@ test('聊天发送：唯一实现 + 全仓不得直调 conversation.send', () =>
     + '别的路径自己取句柄发消息就等于绕过聊天登录闸')
 
   // ③ 宿主 facade 包装：闸必须在 claimAndSend 之前（否则未登录先把项目建出来）
-  const wrapAt = INDEX.indexOf('conversation.sendSession = (...args')
+  const wrapAt = INDEX.indexOf('conversation.sendSession = ')
   assert.ok(wrapAt > 0, '找不到 sendSession 包装（结构变了就更新本守卫）')
   const wrap = INDEX.slice(wrapAt, INDEX.indexOf('installed = { conversation, original }', wrapAt))
   const wrapGateAt = wrap.indexOf('requireSignIn()')
   const claimAt = wrap.indexOf('claimAndSend(args)')
   assert.ok(wrapGateAt > 0 && claimAt > wrapGateAt,
     '聊天闸必须在 claimAndSend 之前 —— 未登录时先建项目再被拒是错的（草稿与空项目双输）')
-  assert.match(wrap, /return Promise\.resolve\(\{ kind: 'error' \}\)/,
+  // 包装是 async（0.2.1 后首句要先等基线就绪），未登录直接返回结果对象即可 ——
+  // 只要返回的是 `{ kind: 'error' }`，宿主就保留草稿（SubmitOutcome 契约）。
+  assert.match(wrap, /return (\{ kind: 'error' \}|Promise\.resolve\(\{ kind: 'error' \}\))/,
     "未登录必须返回 { kind: 'error' } —— 宿主据此保留草稿（SubmitOutcome 契约）")
 
   // ④ 程序代发两条路径都必须经唯一实现

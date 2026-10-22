@@ -109,11 +109,27 @@ test('E-2（R-P2-02 履约）：启动即置位首页，画布只在显式 openP
 })
 
 test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → 错位重建 → 成功放行）', () => {
-  // lobby 判定：基线就绪且当前会话不映射任何项目。基线未就绪时不得误判
-  //（resolveActiveProjectId 那时恒 null，会把项目内发送误判成首页发送）。
-  // CV-297：结构改为「先取 active 再判 null」，并插入错位防护分支 —— 本用例随新结构更新。
-  assert.match(INDEX, /if \(ctx\.workspaces\.list\.getSnapshot\(\)\.phase === 'ready'\) \{/,
-    'lobby 判定必须带基线就绪前提 —— 否则启动瞬间会误认领')
+  // 2026-10-22 真机修正：基线未就绪时**不能直接放行**。放行的后果是首句落进
+  // `.draft-*` 目录后永远不成项目 —— 侧栏一直「还没有项目」、agent 所有画布工具
+  // 报「未绑定任何 Canvas Studio 项目」、布局停在首页（用户原话「打完招呼还停在
+  // 这一页」）。改为有界等待：就绪后照常判定（首页首句走认领 → 布局进故事板），
+  // 超时才退回原生发送，且必须留一条可定位的日志（旧写法这里完全静默）。
+  assert.match(INDEX, /if \(!await waitForBaseline\(\)\) \{/,
+    'lobby 判定前必须有基线等待闸 —— 未就绪直接放行会让首句永远成不了项目')
+  assert.match(INDEX, /const waitForBaseline = async \(\): Promise<boolean> => \{/,
+    '基线等待必须是有界轮询（不能无上限阻塞输入）')
+  assert.match(INDEX, /phase === 'ready'\s*\n\s*&& sessionSvc\.list\.getSnapshot\(\)\.phase === 'ready'\) return true/,
+    '等待必须同时覆盖 workspaces 与 sessions 基线（认领要用当前会话 cwd）')
+  assert.match(INDEX, /const BASELINE_WAIT_MS = \d+/,
+    '等待上限必须是具名常量（可读、可调，别散落魔数）')
+  assert.match(INDEX, /if \(Date\.now\(\) >= deadline\) return false[\s\S]{0,160}setTimeout\(resolve, BASELINE_POLL_MS\)/,
+    '等待必须是有界轮询：到点返回 false，否则按固定间隔轮询（既不能忙等，也不能无限等）')
+  const waitAt = INDEX.indexOf('if (!await waitForBaseline())')
+  const activeAt = INDEX.indexOf('const active = resolveActiveProjectId()')
+  assert.ok(waitAt !== -1 && activeAt > waitAt,
+    '等待闸必须在 resolveActiveProjectId 之前（先解析就先被基线未就绪骗成 null）')
+  assert.match(INDEX, /project claim skipped, the message stays in the draft session/,
+    '超时退回原生路径必须留日志 —— 否则「服务没起来」与「首句不建项目」在日志里无法区分')
   assert.match(INDEX, /const active = resolveActiveProjectId\(\)/, '必须先取激活项目 id')
   assert.match(INDEX, /if \(active === null\) return claimAndSend\(args\)/, '无选中项目必须走认领')
   // CV-299 验收前修正：首页意图闸 —— homePinned 时无视残留 cwd/recentWorkspaceId
@@ -141,7 +157,7 @@ test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → �
     '非撞名失败（目录被别的窗口认领）必须强制重建落点 —— 否则用户重发永远撞同一目录')
   // 成功后放行走 divertSend（附件改道链路共用），不得直连 original 跳过附件。
   const claimAt = INDEX.indexOf('const claimAndSend')
-  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession =')
   const claimBody = INDEX.slice(claimAt, wrapperAt)
   assert.match(claimBody, /return divertSend\(args\)/, '认领成功后必须经 divertSend 放行（附件改道共用一份）')
   assert.match(claimBody, /storeInstance\.actions\.select\(project\.id\)/, '认领成功必须选中新项目（清 homePinned + 载画布）')
@@ -149,7 +165,7 @@ test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → �
 
 test('CV-294（方案 A）：认领改名后必须重建会话绑定，首句改发到新会话', () => {
   const claimAt = INDEX.indexOf('const claimAndSend')
-  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession =')
   assert.ok(claimAt !== -1 && wrapperAt > claimAt)
   const claimBody = INDEX.slice(claimAt, wrapperAt)
   // 判据 = project.dir 是否变化：Host 改名回退时保持原会话（cwd 还有效），不空转重建。
@@ -305,7 +321,7 @@ test('存储根变更：客户端必须重置列表 / 画布态并强制重建�
 
 test('认领失败：按新根自愈重试一次 + 写进统一错误面（不许静默）', () => {
   const claimAt = INDEX.indexOf('const claimAndSend')
-  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession =')
   assert.ok(claimAt !== -1 && wrapperAt > claimAt)
   const claimBody = INDEX.slice(claimAt, wrapperAt)
   assert.match(claimBody, /if \(allowStorageRebuild\)/, '认领失败必须先尝试按新根重建落点（自愈路径）')

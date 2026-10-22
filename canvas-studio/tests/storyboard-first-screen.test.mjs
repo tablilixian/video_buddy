@@ -39,7 +39,7 @@ test('CV-302 ①：claim（首页发首句）必须把 Host 给的 workflow 同�
     'adoptWorkflow 必须用项目记录里已有的 workflow（零请求、零猜想），缺失才回落 WORKFLOW_DEFAULT',
   )
   const claimAt = INDEX.indexOf('const claimAndSend')
-  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession = ')
   assert.ok(claimAt !== -1 && wrapperAt > claimAt, 'claimAndSend 与其外层 wrapper 必须都还在')
   const claimBody = INDEX.slice(claimAt, wrapperAt)
   const selectAt = claimBody.indexOf('storeInstance.actions.select(project.id)')

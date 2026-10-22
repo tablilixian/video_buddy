@@ -799,6 +799,11 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         attempts += 1
         if (attempts <= 60 && timer !== null) return
         if (timer !== null) { clearInterval(timer); timer = null }
+        // 放弃安装必须留痕（约 30s 未取到服务）。此前静默 return，于是「首句不建项目」
+        // 与「服务没起来」在日志里长得一模一样，只能靠猜。
+        if (attempts > 60) {
+          ctx.logger.warn('canvas-studio: conversation service unavailable after 30s; lobby claim and attachment divert stay disabled for this window')
+        }
         return
       }
       if (timer !== null) { clearInterval(timer); timer = null }
@@ -1016,38 +1021,65 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         return divertSend(args)
       }
 
-      conversation.sendSession = (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
+      /**
+       * 首句撞上基线未就绪时**等**它，而不是直接放行原生发送。
+       *
+       * 基线（workspaces / sessions 的 phase）就绪前 `resolveActiveProjectId()` 恒
+       * null，所以那时无从判定 lobby；但旧写法是「不就绪 → 直接 divertSend」，结果
+       * 首句落进 `.draft-*` 目录后**永远不成项目**：侧栏始终「还没有项目」、agent
+       * 所有画布工具报「未绑定任何 Canvas Studio 项目」、布局停在首页。2026-10-22
+       * 真机实测（用户「打完招呼还停在这一页」，会话 cwd 停在 `.draft-202610-22113327`）。
+       *
+       * 改成有界等待：就绪后照常判定 —— 首页首句走认领，`select` + `adoptWorkflow`
+       * 会把布局带到故事板（`WORKFLOW_DEFAULT.state = 'storyboarding'`）；超时才退回
+       * 原生路径，并留下一条**能定位**的日志（旧路径这里完全静默）。
+       */
+      const BASELINE_WAIT_MS = 8000
+      const BASELINE_POLL_MS = 100
+      const waitForBaseline = async (): Promise<boolean> => {
+        const deadline = Date.now() + BASELINE_WAIT_MS
+        for (;;) {
+          if (ctx.workspaces.list.getSnapshot().phase === 'ready'
+            && sessionSvc.list.getSnapshot().phase === 'ready') return true
+          if (Date.now() >= deadline) return false
+          await new Promise((resolve) => { setTimeout(resolve, BASELINE_POLL_MS) })
+        }
+      }
+
+      conversation.sendSession = async (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         // 聊天登录闸（用户输入那条路）：未登录 → 弹登录窗 + 立即返回 error（零发送、零副作用）。
         // 契约：宿主收到 `{ kind:'error' }` **保留草稿**（与 claimAndSend 同款），用户登录
         // 后原样再点一次发送即可（刻意不自动补发 —— 与 P2「不阻塞等待登录」的取舍一致）。
         // **必须在 claimAndSend 之前**：否则未登录会先把首页 draft 目录认领成项目，
         // 有副作用了才被拒 —— 草稿与一个空项目双输。
-        if (!requireSignIn()) return Promise.resolve({ kind: 'error' })
-        // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
-        // 基线未就绪时不误判（resolveActiveProjectId 那时恒 null）。
-        if (ctx.workspaces.list.getSnapshot().phase === 'ready') {
-          // CV-299 验收前修正：**首页意图优先**。`homePinned=true`（启动窗口 /
-          // 品牌区回首页）表示用户明确停在首页，此时即便残留会话的 cwd 仍映射到
-          // 某个老项目（宿主启动恢复会话，或 goHome 的 draft 落点异步未就位），
-          // 也绝不能把首句发进那个老项目 —— 必须走认领。否则老项目被误触发执行、
-          // 新项目没建、布局又因 homePinned 留在首页（2026-10-11 用户实测：
-          // 「新建项目闪一下又回首页，一个类似名字的老项目开始执行了」）。
-          // claimAndSend 自带 cwd 错位自愈（认领被拒 → 强制重建落点 → 新 cwd 重试）。
-          if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)
-          const active = resolveActiveProjectId()
-          if (active === null) return claimAndSend(args)
+        if (!requireSignIn()) return { kind: 'error' }
+        // 基线未就绪时不判定 lobby（`resolveActiveProjectId` 那时恒 null，会把项目内
+        // 发送误判成首页发送），也不能直接放行 —— 必须等，否则首句永远成不了项目。
+        if (!await waitForBaseline()) {
+          ctx.logger.warn('canvas-studio: workspace baseline stayed pending before the first send; project claim skipped, the message stays in the draft session')
+          return divertSend(args)
+        }
+        // CV-299 验收前修正：**首页意图优先**。`homePinned=true`（启动窗口 /
+        // 品牌区回首页）表示用户明确停在首页，此时即便残留会话的 cwd 仍映射到
+        // 某个老项目（宿主启动恢复会话，或 goHome 的 draft 落点异步未就位），
+        // 也绝不能把首句发进那个老项目 —— 必须走认领。否则老项目被误触发执行、
+        // 新项目没建、布局又因 homePinned 留在首页（2026-10-11 用户实测：
+        // 「新建项目闪一下又回首页，一个类似名字的老项目开始执行了」）。
+        // claimAndSend 自带 cwd 错位自愈（认领被拒 → 强制重建落点 → 新 cwd 重试）。
+        if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)
+        const active = resolveActiveProjectId()
+        if (active === null) return claimAndSend(args)
 
-          // CV-297：**会话与项目错位防护**。`resolveActiveProjectId` 优先返回手动选中
-          // 的项目，而真正承载这条消息的是 `sessions.current` —— 两者可能对不上（典型：
-          // 项目被删后残留的孤儿会话，cwd 指向已不存在的目录）。错位时消息发进孤儿会话
-          // ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落首页。
-          // 处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
-          const selected = storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
-          const sessions = sessionSvc.list.getSnapshot()
-          const current = currentSessionOf(sessions)
-          if (selected !== undefined && current?.cwd !== undefined && current.cwd !== selected.dir) {
-            return rebindAndSend(selected, args)
-          }
+        // CV-297：**会话与项目错位防护**。`resolveActiveProjectId` 优先返回手动选中
+        // 的项目，而真正承载这条消息的是 `sessions.current` —— 两者可能对不上（典型：
+        // 项目被删后残留的孤儿会话，cwd 指向已不存在的目录）。错位时消息发进孤儿会话
+        // ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落首页。
+        // 处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
+        const selected = storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
+        const sessions = sessionSvc.list.getSnapshot()
+        const current = currentSessionOf(sessions)
+        if (selected !== undefined && current?.cwd !== undefined && current.cwd !== selected.dir) {
+          return rebindAndSend(selected, args)
         }
         return divertSend(args)
       }

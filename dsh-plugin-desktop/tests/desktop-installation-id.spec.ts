@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +11,7 @@ import {
   desktopInstallationIdPath,
   getOrCreateDesktopInstallationId,
   parseDesktopInstallationId,
+  reclaimAbandonedWriterLock,
 } from '../src/desktop-installation-id.ts'
 
 const roots: string[] = []
@@ -19,6 +22,25 @@ async function userData(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-installation-id-'))
   roots.push(root)
   return root
+}
+
+/** A pid the OS has already reaped, so a signal probe answers ESRCH. */
+async function exitedPid(): Promise<number> {
+  const child = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  const pid = child.pid
+  await new Promise<void>((resolve) => { child.once('exit', () => { resolve() }) })
+  if (pid === undefined) throw new Error('child process did not report a pid')
+  return pid
+}
+
+/** Reproduce the claim name the shared atomic-write package derives from a record. */
+function takeoverClaimPath(lockPath: string, recordPid: number): string {
+  const digest = createHash('sha256').update(`${recordPid}\n`).digest('hex').slice(0, 16)
+  return `${lockPath}.takeover-${digest}`
+}
+
+async function missing(path: string): Promise<void> {
+  await expect(lstat(path)).rejects.toMatchObject({ code: 'ENOENT' })
 }
 
 afterEach(async () => {
@@ -129,5 +151,63 @@ describe('Desktop installation identity', () => {
 
   it.each(['', 'relative/path', `/tmp/bad\0path`])('rejects unsafe userData path %j', async (root) => {
     await expect(getOrCreateDesktopInstallationId(root)).rejects.toThrow('must be an absolute path')
+  })
+
+  it('reclaims the lock and takeover claim a killed writer left behind', async () => {
+    const root = await userData()
+    const statePath = desktopInstallationIdPath(root)
+    await mkdir(join(root, 'identity'))
+    const deadHolder = await exitedPid()
+    // Writer created its lock, then was killed before it could release it.
+    await writeFile(`${statePath}.lock`, `${deadHolder}\n`)
+    // A claimant killed between creating its claim and releasing the lock: the
+    // shared package then answers every further takeover with `return false` and
+    // waits out the whole deadline, which is what bricks startup.
+    const claimPath = takeoverClaimPath(`${statePath}.lock`, deadHolder)
+    await writeFile(claimPath, `${deadHolder}\n`)
+
+    await expect(getOrCreateDesktopInstallationId(root, { randomUUID: () => FIRST })).resolves.toBe(FIRST)
+    await missing(`${statePath}.lock`)
+    await missing(claimPath)
+  })
+
+  it('reports the abandoned artifacts it reclaims', async () => {
+    const root = await userData()
+    const statePath = desktopInstallationIdPath(root)
+    await mkdir(join(root, 'identity'))
+    await writeFile(`${statePath}.lock`, `${await exitedPid()}\n`)
+
+    await expect(reclaimAbandonedWriterLock(statePath)).resolves.toBe(true)
+    await missing(`${statePath}.lock`)
+    await expect(reclaimAbandonedWriterLock(statePath)).resolves.toBe(false)
+  })
+
+  it('keeps a lock whose recorded holder is still running', async () => {
+    const root = await userData()
+    const statePath = desktopInstallationIdPath(root)
+    await mkdir(join(root, 'identity'))
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' })
+    try {
+      await writeFile(`${statePath}.lock`, `${String(holder.pid)}\n`)
+
+      await expect(getOrCreateDesktopInstallationId(root, { randomUUID: () => FIRST }))
+        .rejects.toThrow(/could not be persisted safely/u)
+      // A live writer keeps its lock, and the message now names the file to inspect.
+      await expect(readFile(`${statePath}.lock`, 'utf8')).resolves.toBe(`${String(holder.pid)}\n`)
+      await expect(getOrCreateDesktopInstallationId(root, { randomUUID: () => FIRST }))
+        .rejects.toThrow(/writer lock at/u)
+    } finally {
+      holder.kill('SIGKILL')
+    }
+  }, 20000)
+
+  it('leaves a lock whose record is not a pid untouched', async () => {
+    const root = await userData()
+    const statePath = desktopInstallationIdPath(root)
+    await mkdir(join(root, 'identity'))
+    await writeFile(`${statePath}.lock`, 'not-a-pid\n')
+
+    await expect(reclaimAbandonedWriterLock(statePath)).resolves.toBe(false)
+    await expect(readFile(`${statePath}.lock`, 'utf8')).resolves.toBe('not-a-pid\n')
   })
 })

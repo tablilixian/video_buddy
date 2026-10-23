@@ -190,6 +190,13 @@ export interface AssetCaptureHooks {
    */
   onToolFinished?(projectId: string, toolName: string): void
   /**
+   * 2026-10-23：`render_composition` **成功**结算回调（studio 工具不走
+   * `onToolFinished`——那是 workflow 工具专用；失败/取消走 onToolError/onToolCancelled，
+   * 都带 runId）。客户端用它放掉渲染轮询的「在飞」计数（见 render-poll-gate.ts），
+   * 否则轮询会在工单结算后继续空转。
+   */
+  onRenderToolSettled?(projectId: string, runId: string): void
+  /**
    * P7 工作流工具开始回调：ask_user_choice 在 execute 一开始就写入待回答
    * 问题，客户端延迟刷新一两次才能把点选卡片拉出来（事件先于写盘到达时
    * 单次刷新会扑空）。
@@ -422,6 +429,12 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           // 让客户端从单一真相源拿到最新节点（含血缘 sourceIds），不再依赖
           // 解析事件渲染文本里的 URL —— 那在后端异常 / 渲染差异时并不可靠。
           hooks.reloadCanvas(projectId)
+          // 2026-10-23：render_composition 成功结算 ⇒ 放掉渲染轮询的在飞计数
+          // （失败/取消已由 onToolError/onToolCancelled 覆盖，成功此前没有任何
+          // 带 runId 的信号 —— 轮询会一直空转）。
+          if (state.toolName === 'render_composition' && runId.length > 0) {
+            hooks.onRenderToolSettled?.(projectId, runId)
+          }
           // 创意先行 / CV-308：Host 附注里带 `STORYBOARD_TOUCH_MARKER` == 它确实回写了
           // 故事板（显式 `storyboardRef` 与 CV-306 自动兜底两条路径共用这一个判据）。
           // 覆盖层是 iframe、不会自己重载 —— 不 bump 就永远停在旧内容上。

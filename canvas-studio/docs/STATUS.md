@@ -3,9 +3,9 @@
 > **这是唯一事实来源。** 需求 / 缺陷 / 优化点的当前状态一律以本文件为准。
 > 其它文档（backlog、分析报告、设计稿）只保留**技术细节与决策过程**，状态一律引用本文件。
 >
-> **最近更新：2026-10-23**（**CV-358 余额接真实数据（`/v1/credits/balance`）·左栏卡 + 只读路由 + 生成后刷新（待桌面验收）** —— REQ-030 ③ 时代的 `0 / 1,000` 纯展示占位退场。Host 侧 `account-state` 加余额三态（balance / fetchedAt / error）+ 30s TTL + `refreshCredits(force)` + `creditsView()`，token **从 auth-session 会话缓存现取**（不再抄一份，规避「退避/幂等分支提前 return 漏更新」那类 bug）；`GET /canvas-studio/account/credits`（`?refresh=1` 绕 TTL，未登录/未启用返回 200 降级体，读失败保留旧值不 500）；UI 复用左栏 `.csCredits` 卡（可用 + 冻结行、固定 4 位小数、**不自造总额度分母**）：未登录「登录后查看」可点弹登录、失败标灰留数字、403 转「账号受限」；刷新四触发 = 登录预取 / 卡挂载 / 点击强刷 / **生成彻底结束后强刷 + 6s 复检**（`generate-queue` 槽位释放置陈旧 + client 队列空闲信号）。新增 3 个测试文件块、16 条断言；验证链四步全绿（2085·2085）；反向变异两处（陈旧标记失效 / 失败清空旧值）与升级钮可点各红一条。详见 [cv-details.md](./cv-details.md)）
-> **上一条 2026-10-22**（**CV-355~357 DramaServer 管理面 P1+P2+P4 落码，自有大模型打通聊天与设置页（待桌面验收/L6）** —— 按用户拍板对方案做了 0.2.1 重评估（§三 seam 全在：configEditor / credentials.set / llm-pi-ai 热重放，**无需升级 DSH**，spike 免除）。P1 `DramaClient`（auth/sync · models · credits）+ `device.json` 设备身份 + `businessApiBase` 设置项；P2 `account-state` 会话推送编排（幂等去重 / 401 静默 / 429 退避 / 403 禁用 / 失败不阻塞登录）；P4 网关：目录写 `canvas-studio-gateway` 行（configEditor 热生效）+ `CANVAS_STUDIO_GATEWAY_TOKEN` 凭据随 token 轮换 → 聊天模型选择器与设置页官方区块自动点亮。新增 4 个测试文件；验证链四步全绿；L6 脚本 `scripts/live-e2e-management.mjs` 已备。详见 [cv-details.md](./cv-details.md)）
-> **上一条 2026-10-22（上午）**（**CV-354 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计（待桌面验收）** —— 根因：0.2.1 升级删除 `connection.api` 门面，面板 `getModelApi`/`getCredentials` 恒取 undefined → 「模型」页签整页空白，SettingsModal 三处密钥保存/状态查询一并失效。修法：wire 面迁到 `remote.llm`/`remote.settings`/`remote.credentials` 命名空间服务（类型经 typert 合并面收窄，不手写签名）；面板按交互稿重排 —— 默认模型 → DramaServer 官方模型（只读，P4 落地前「待接入」暗态）→ 我的 Provider 折叠行（点「编辑」展开、同时只开一张，对齐官方）→ 折叠未用官方 → 自定义。目录纯函数抽 `src/model-directory.ts`（join/分区/摘要）带单测。验证链全绿。详见 [cv-details.md](./cv-details.md)）
+> **最近更新：2026-10-23**（**CV-359 渲染工单滞留改派 + 画布页轮询保活（待桌面验收）** —— 修 10-20 起真机 `render_composition` **11 连败**（全部 `CS-RENDER-TIMEOUT`，签名：RenderHost 已创建 → 5min idle 销毁 → 超时）。双根因：① 画布页 `pollRenderJob` 「扑空 ⇒ 停表」，而宿主建单晚于最早几拍（校验/素材探测可达几十秒）⇒ 工单永久无人认领（`onToolFinished` 对 studio 工具不触发，停表线是死代码）；② O-06 执行者 3s warmup 错过即永远钉 client，RenderHost 替补永远接不了盘。修法：客户端 `render-poll-gate.ts` 决策表（在飞期间扑空只 hold，收工由结算回调清账，成功路径新增 `onRenderToolSettled` 钩子）+ 宿主 `claimRenderJobFor` **滞留改派**（client 单 15s 内从未被 claim 且窗口健康 ⇒ 窗口接管 + 补装看门狗；claim 打点保证看过的单永不抢）+ 改派/窗口 unsupported 两条留痕日志。新 `scripts/probe/render-host-e2e.probe.mjs` 三阶段 Electron 探针：窗口冷启实测 124~155ms（« 3s 预算）、真实渲染出片、改派全链路无超时。验证链全绿（2095·2095）；新增 10 条测试。详见 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-23**（**CV-358 余额接真实数据（`/v1/credits/balance`）·左栏卡 + 只读路由 + 生成后刷新（待桌面验收）** —— REQ-030 ③ 时代的 `0 / 1,000` 纯展示占位退场。Host 侧 `account-state` 加余额三态（balance / fetchedAt / error）+ 30s TTL + `refreshCredits(force)` + `creditsView()`，token **从 auth-session 会话缓存现取**（不再抄一份，规避「退避/幂等分支提前 return 漏更新」那类 bug）；`GET /canvas-studio/account/credits`（`?refresh=1` 绕 TTL，未登录/未启用返回 200 降级体，读失败保留旧值不 500）；UI 复用左栏 `.csCredits` 卡（可用 + 冻结行、固定 4 位小数、**不自造总额度分母**）：未登录「登录后查看」可点弹登录、失败标灰留数字、403 转「账号受限」；刷新四触发 = 登录预取 / 卡挂载 / 点击强刷 / **生成彻底结束后强刷 + 6s 复检**（`generate-queue` 槽位释放置陈旧 + client 队列空闲信号）。新增 3 个测试文件块、16 条断言；验证链四步全绿（2085·2085）；反向变异两处（陈旧标记失效 / 失败清空旧值）与升级钮可点各红一条。详见 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-22**（**CV-354~357** —— 模型设置页 0.2.1 断线修复 + 官方区块重设计；DramaServer 管理面 P1+P2+P4 落码，自有大模型打通聊天与设置页，改走 `settings.mutate` 避开死 entry 重放失败。详见 [cv-details.md](./cv-details.md)）
 > **更早的变更记录**：2026-10 见 [`changelog.md`](./changelog.md)；2026-09 及更早归档在 [`archive/changelog-2026-09.md`](./archive/changelog-2026-09.md)；本 header 历史全文（2026-09 至 10-11 的逐条速记）见 [`archive/status-header-history.md`](./archive/status-header-history.md)。
 
 
@@ -28,8 +28,8 @@
 | `已分配·未登记` | 编号已在源码注释流通但 STATUS 无对应条目（记账缺口） | 补登条目或回收编号 |
 
 ### 编号规则
-- **当前水位**：2026-10-23 —— **CV-354~CV-358 已修复·待桌面验收**（CV-354 模型设置页 0.2.1 断线修复 + 重设计；CV-355~357 DramaServer 管理面 P1+P2+P4，自有大模型接入聊天与设置页；CV-358 余额接真实数据：只读路由 + 左栏卡 + 生成后刷新）；前序 CV-350~353 REQ-034 批次 A 已完成（真机验收通过）、CV-349、CV-338~CV-348 等均待桌面验收；更早见 §4.1 索引表。
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-357**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
+- **当前水位**：2026-10-23 —— **CV-359 渲染工单滞留改派 + 画布页轮询保活（已修复·待桌面验收，修 10-20 起 11 连败）**；CV-354~CV-358 已修复·待桌面验收（CV-354 模型设置页 0.2.1 断线修复 + 重设计；CV-355~357 DramaServer 管理面 P1+P2+P4，自有大模型接入聊天与设置页；CV-358 余额接真实数据：只读路由 + 左栏卡 + 生成后刷新）；前序 CV-350~353 REQ-034 批次 A 已完成（真机验收通过）、CV-349、CV-338~CV-348 等均待桌面验收；更早见 §4.1 索引表。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-359**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - **条目详情**写在 [cv-details.md](./cv-details.md)（本表 §4.1 的详情层，按 CV 号 grep）、[canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目技术方案）与各分析文档中，**本表只管状态**。
 
@@ -52,7 +52,7 @@
 
 <!-- STATUS_SUMMARY_START -->
 | 已完成 | 144 | CV-001~004, CV-008~020, CV-022~035, CV-037, CV-038, CV-041, CV-044, CV-045, CV-061, CV-063, CV-068, CV-070, CV-072, CV-074, CV-076~078, CV-089, CV-094, CV-097~100, CV-109, CV-112, CV-114, CV-115, CV-119, CV-124, CV-125, CV-138~144, CV-146, CV-148, CV-149, CV-153, CV-155, CV-161, CV-162, CV-174, CV-176~179, CV-194, CV-204~206, CV-221, CV-222, CV-241~244, CV-246, CV-251~257, CV-259~272, CV-279~288, CV-293, CV-295~310, CV-313~316, CV-350~353 |
-| 已修复·待验收 | 155 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349, CV-354~358 |
+| 已修复·待验收 | 156 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~349, CV-354~359 |
 | 进行中 | 1 | CV-175 |
 | 已完成·待验收 | 2 | CV-049, CV-062 |
 | 待处理 | 16 | CV-005, CV-021, CV-039, CV-040, CV-042, CV-043, CV-047, CV-048, CV-053~055, CV-084, CV-085, CV-087, CV-090, CV-273 |
@@ -269,6 +269,7 @@
 | CV-356 | **已修复·待验收** | **P1** | 登录 bootstrap 管理面编排（P2） |
 | CV-357 | **已修复·待验收** | **P1** | DramaServer 模型网关接入 LLM（P4） |
 | CV-358 | **已修复·待验收** | **P1** | 余额接真实数据：只读路由与左栏卡 |
+| CV-359 | **已修复·待验收** | **P1** | 渲染工单滞留改派 + 画布页轮询保活 |
 | CV-338 | **已修复·待验收** | **P1** | orbit/draw 语义原语契约与校验 |
 | CV-339 | **已修复·待验收** | **P2** | 语义原语组件接线与 skill 同步 |
 | CV-340 | **已修复·待验收** | **P1** | 长片渲染队列与进度通道（D1） |

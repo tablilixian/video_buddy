@@ -44,7 +44,7 @@ import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 export const RENDER_JOB_TIMEOUT_MS = 90_000
 
 /**
- * 这张单由谁来渲染（**建单时定，之后不改**）。
+ * 这张单由谁来渲染（**建单时定；唯一的例外见 `claimRenderJobFor` 的滞留改派**）。
  *
  * - `render-host`：隐藏窗口（`src/render-host/`）。页面被遮挡/最小化/切会话都照跑。
  * - `client`：用户画布页（三期之前的老路径）。页面不可见 ⇒ rAF 停摆 ⇒ 挂到超时。
@@ -52,6 +52,12 @@ export const RENDER_JOB_TIMEOUT_MS = 90_000
  * 为什么要在建单时钉死而不是每拍现算：现算会让「窗口在第 3 秒死掉」的单在下一拍
  * 被客户端接走，而客户端只能**从头**渲一遍 —— 用户看到进度条回到 0，且上一单的抽帧
  * 已经落了一半。钉死 + 心跳看门狗（失联即结算失败）语义更诚实：要么渲完，要么明确报错。
+ *
+ * ⚠️ 2026-10-23 例外（滞留改派）：真机实测「冷启窗口 3s 内没就绪 ⇒ 单钉给 client，
+ * 而画布页取单链路死了（页面没开 / 项目没选中 / 轮询早停）」时，这张单**没人认领**，
+ * 白等到 `CS-RENDER-TIMEOUT`（10-20 起 11 连败的签名）。故 `client` 单若在宽限期内
+ * 连客户端看都没看过一眼（从未被 claim），允许隐藏窗口在就绪后**接管**——它从头渲，
+ * 与「页面中途切走导致重渲」的代价一致，而收益是把必然超时变成必然成功。
  */
 export type RenderExecutor = 'render-host' | 'client'
 
@@ -184,6 +190,14 @@ interface ActiveRenderJob {
   settled: boolean
   /** 二期 1b：是否已获得渲染槽位（排队中为 `false`，客户端暂时看不到这张单）。 */
   dispatched: boolean
+  /** 滞留改派：获得槽位的时刻（`armTimeout` 恰在派发时跑一次）。 */
+  dispatchedAt?: number
+  /** 滞留改派：画布页第一次 claim 到这张单的时刻；从未被看过为 `undefined`。 */
+  clientClaimedAt?: number
+  /** 滞留改派：被隐藏窗口接管的时刻（观测用）。 */
+  takenOverAt?: number
+  /** O-06：本单生效的心跳判失联阈值（建单时算好，改派后看门狗复用同一值）。 */
+  heartbeatStaleMs: number
 }
 
 /** 进程内工单表（Host 半与路由同模块单例）。 */
@@ -201,12 +215,17 @@ const activeJobs = new Map<string, ActiveRenderJob>()
 export function claimRenderJobFor(
   projectId: string | null,
   owner: RenderExecutor,
+  options: ClaimRenderJobOptions = {},
 ): PendingRenderJob | null {
+  const now = options.now ?? Date.now()
   for (const job of activeJobs.values()) {
     if (job.projectId !== projectId && projectId !== null) continue
     if (!job.dispatched) continue
     if (job.executor !== owner) continue
-        return {
+    // 滞留改派的判据打点：画布页「看过」这张单的第一拍。只记第一次即可，
+    // 轮询每秒都会再来，重复打点无害。
+    if (owner === 'client' && job.clientClaimedAt === undefined) job.clientClaimedAt = now
+    return {
       jobId: job.jobId,
       projectId: job.projectId,
       manifest: job.manifest,
@@ -215,6 +234,77 @@ export function claimRenderJobFor(
       realDurations: job.realDurations,
       sampleFrames: job.sampleFrames,
     }
+  }
+  if (owner === 'render-host') {
+    // 滞留改派（2026-10-23，O-06 真机翻车的兜底）：隐藏窗口取单扑空时，若存在
+    // 「已派发、宽限期内画布页从未 claim 过」的 client 单且窗口健康，把它改派给
+    // 窗口。判据保证双端不会同时渲同一张单：客户端看过一眼就永不改派。
+    const takeover = takeoverOrphanedClientJob(now, options.graceMs ?? RENDER_HOST_TAKEOVER_GRACE_MS, options.onTakeover)
+    if (takeover !== null) {
+      return {
+        jobId: takeover.jobId,
+        projectId: takeover.projectId,
+        manifest: takeover.manifest,
+        fps: takeover.fps,
+        quality: takeover.quality,
+        realDurations: takeover.realDurations,
+        sampleFrames: takeover.sampleFrames,
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 滞留改派宽限期（毫秒）：`client` 单派发后这么久仍**从未被画布页 claim 过**，
+ * 隐藏窗口取单时可以接管。
+ *
+ * 为什么是 15s：健康的画布页每 1s 一拍、取到单立刻开渲，宽限期只要盖过几拍
+ * 轮询就够（「工具调用 → 宿主建单」的校验/素材探测延迟发生在派发**前**，不占
+ * 这段）。太短会和「客户端正在路上」的正常竞态抢单，太长则把用户白等的超时
+ * 又拉长一截。
+ */
+export const RENDER_HOST_TAKEOVER_GRACE_MS = 15_000
+
+/** 滞留改派的可调参数（`claimRenderJobFor` 第三参；生产路径不传）。 */
+export interface ClaimRenderJobOptions {
+  /** 现在时刻（测试注入假时钟）。 */
+  now?: number
+  /** 宽限期（缺省 `RENDER_HOST_TAKEOVER_GRACE_MS`）。 */
+  graceMs?: number
+  /** 发生改派时的通知（路由层拿去打日志，排障用）。 */
+  onTakeover?: (jobId: string) => void
+}
+
+/**
+ * 滞留改派：找最老一张「client 单但画布页从没认领过」的工单，转给隐藏窗口。
+ *
+ * 只转**一张**：隐藏窗口的取单是 1s 一拍的轮询，并发又是 1 —— 一拍接一单，
+ * 剩下的下一拍自然轮到（FIFO 由 Map 插入序保证，与队列口径一致）。
+ *
+ * @returns 被改派的工单；没有合格候选时返回 `null`（调用方照旧返回无单）。
+ */
+function takeoverOrphanedClientJob(
+  now: number,
+  graceMs: number,
+  onTakeover: ((jobId: string) => void) | undefined,
+): ActiveRenderJob | null {
+  // 窗口必须健康才配接管：这条 claim 也可能来自 curl（排障手工取单），
+  // 没有一个活着的窗口就不该把单从「可能只是慢」的客户端手里抢走。
+  if (!renderHostReady(now)) return null
+  for (const job of activeJobs.values()) {
+    if (job.executor !== 'client' || job.settled || !job.dispatched) continue
+    if (job.clientClaimedAt !== undefined) continue
+    // 派发时刻未知按「刚派发」处理：宁可少改派，不多抢。
+    const dispatchedAt = job.dispatchedAt ?? now
+    if (now - dispatchedAt < graceMs) continue
+    job.executor = 'render-host'
+    job.takenOverAt = now
+    // 看门狗在 armTimeout 只给建单时就归窗口的单装；改派单要在这里补装，
+    // 否则窗口渲到一半死掉，这张单要干等原始超时而不是 30s 内结算。
+    armHostWatchdog(job, job.heartbeatStaleMs)
+    onTakeover?.(job.jobId)
+    return job
   }
   return null
 }
@@ -410,11 +500,14 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       timer: setTimeout(() => {}, 0),
       settled: false,
       dispatched: slot.dispatched,
+      heartbeatStaleMs,
       ...(signal !== undefined ? { signal } : {}),
     }
     activeJobs.set(jobId, job)
     const armTimeout = (): void => {
       if (job.settled) return
+      // 滞留改派以本时刻为宽限起点（armTimeout 恰在「获得槽位」时跑一次）。
+      job.dispatchedAt = Date.now()
       if (job.executor === 'render-host') armHostWatchdog(job, heartbeatStaleMs)
       job.timer = setTimeout(() => {
         if (job.settled) return

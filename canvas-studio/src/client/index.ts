@@ -29,6 +29,8 @@ import { refreshCreditsAfterGeneration } from './credits-store.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, type PendingStudioRenderJob } from './api.js'
+// 2026-10-23：渲染轮询的拍内决策表（纯函数，tests/render-poll-gate.test.mjs 钉住）。
+import { decideRenderPollStep } from '../render-poll-gate.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -1402,6 +1404,17 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   // 截止必须**严格大于**它（最后一个任务要等完整条队列），42min 成对调整。
   const PENDING_TIMEOUT_MS = 2_520_000
   const pendingTimers = new Map<string, { projectId: string; timer: ReturnType<typeof setTimeout> }>()
+  // 2026-10-23：在飞的 render_composition 工具调用（runId 集合）。
+  // 为什么需要它：宿主建单发生在工具调用的校验/素材探测**之后**（可达几十秒），
+  // 轮询最早几拍必然扑空 —— 老代码一扑空就永久停表，之后建好的工单没人认领，
+  // 白等到 CS-RENDER-TIMEOUT（真机 11 连败的客户端半边根因）。现在「在飞 > 0」
+  // 期间扑空只等待；计数清零（工具成功/失败/取消/占位兜底超时）才允许收表。
+  const inflightRenderRuns = new Set<string>()
+  /** 清理一个在飞渲染调用；归零且本端没在真渲 ⇒ 停轮询（收工唯一入口的另一半）。 */
+  const releaseRenderRun = (runId: string): void => {
+    if (!inflightRenderRuns.delete(runId)) return
+    if (inflightRenderRuns.size === 0 && activeRender === null) stopRenderPoll()
+  }
   const clearPendingTimer = (runId: string): void => {
     const entry = pendingTimers.get(runId)
     if (entry !== undefined) {
@@ -1417,6 +1430,8 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       projectId,
       timer: setTimeout(() => {
         pendingTimers.delete(runId)
+        // 占位兜底超时也要放掉在飞渲染计数（事件丢失时它是最后的收表机会）。
+        releaseRenderRun(runId)
         storeInstance.actions.markPendingError(
           projectId,
           runId,
@@ -1520,35 +1535,54 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     activeRender?.controller.abort()
     activeRender = null
   }
+  /** 「在飞但项目没同步出来」只告警一次（连续告警每秒刷屏，没有增量信息）。 */
+  let warnedRenderPollNoProject = false
   /** 取一次待渲染工单并渲染。同单只渲染一次；单消失即收工。 */
   const pollRenderJob = async (): Promise<void> => {
     const projectId = resolveActiveProjectId()
-    if (projectId === null) {
-      stopRenderPoll()
-      return
-    }
-    let job: PendingStudioRenderJob | null
-    try {
-      job = await fetchPendingStudioRenderJob(projectId)
-    } catch {
-      return // 网络抖动：下一拍再试（轮询本身就是重试）
-    }
-    if (job === null) {
-      // 两种情况都是「本页没有单」：① 工单已结算（宿主已渲完 / 超时 / 被撤单）；
-      // ② **这条单归隐藏窗口渲**（REQ-034 O-06，`pending` 按 owner 过滤）。
-      // ② 时角标不能凭空消失 —— 用队列观测面把隐藏窗口的进度镜像过来，
-      // 否则用户看到的是「点完渲染什么都没发生」，比切换执行者之前更差。
-      const mirror = await fetchStudioRenderJobViews(projectId).catch(() => [])
-      const running = mirror.find((view) => view.state === 'rendering' || view.state === 'queued')
-      if (running !== undefined) {
-        setRenderProgress(running.jobId, running.progress)
-        return // 继续轮询：镜像要跟着隐藏窗口的进度走
+    let job: PendingStudioRenderJob | null = null
+    let mirrorRunning: { jobId: string; progress: number } | null = null
+    if (projectId !== null) {
+      try {
+        job = await fetchPendingStudioRenderJob(projectId)
+      } catch {
+        return // 网络抖动：下一拍再试（轮询本身就是重试）
       }
-      clearRenderProgress()
-      // 工单已消失（宿主已结算 / 超时 / 被撤单）⇒ 收工，并中断本端可能还在跑的渲染。
-      stopRenderPoll()
+      if (job === null) {
+        // 本页没有单的两种情况：① 工单已结算（宿主已渲完 / 超时 / 被撤单）；
+        // ② **这条单归隐藏窗口渲**（REQ-034 O-06，`pending` 按 owner 过滤）。
+        // ② 时角标不能凭空消失 —— 用队列观测面把隐藏窗口的进度镜像过来，
+        // 否则用户看到的是「点完渲染什么都没发生」，比切换执行者之前更差。
+        const mirror = await fetchStudioRenderJobViews(projectId).catch(() => [])
+        const running = mirror.find((view) => view.state === 'rendering' || view.state === 'queued')
+        if (running !== undefined) mirrorRunning = { jobId: running.jobId, progress: running.progress }
+      }
+    } else if (!warnedRenderPollNoProject && inflightRenderRuns.size > 0) {
+      warnedRenderPollNoProject = true
+      ctx.logger.warn('canvas-studio: render_composition 在飞但画布页还没有选中项目 —— 轮询保持等待（项目同步出来后自动开始取单）')
+    }
+    // 拍内决策收口在纯函数 `decideRenderPollStep`（tests/render-poll-gate.test.mjs）：
+    // 修复前这里的口径是「没单 ⇒ 立刻停表」，而宿主建单晚于本函数最早几拍 ——
+    // 一扑空就永久停表，之后建好的工单没人认领（真机 11 连败的客户端半边根因）。
+    const step = decideRenderPollStep({
+      hasProjectId: projectId !== null,
+      jobFound: job !== null,
+      mirrorRunning: mirrorRunning !== null,
+      renderRunsInFlight: inflightRenderRuns.size,
+    })
+    if (step === 'claim' && job !== null) {
+      await renderClaimedJob(job)
       return
     }
+    if (step === 'mirror' && mirrorRunning !== null) {
+      setRenderProgress(mirrorRunning.jobId, mirrorRunning.progress)
+      return // 继续轮询：镜像要跟着隐藏窗口的进度走
+    }
+    clearRenderProgress()
+    if (step === 'stop') stopRenderPoll()
+  }
+  /** 对一张已 claim 的工单执行渲染（预览闸门 + 执行器 + 收尾）。 */
+  const renderClaimedJob = async (job: PendingStudioRenderJob): Promise<void> => {
     if (activeRender?.jobId === job.jobId) return // 同一单仍在渲染：等它回写
     // CV-334 · B3.3：**渲染前只读预览**闸门 —— 取到单先让人看一眼画面，确认后才真渲染。
     //
@@ -1613,6 +1647,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   }
   const ensureRenderPoll = (): void => {
     if (renderPoll !== null) return
+    warnedRenderPollNoProject = false
     renderPoll = setInterval(() => { void pollRenderJob() }, RENDER_POLL_MS)
     void pollRenderJob() // 立即探一拍：工具调用刚发出时宿主可能已建好单
   }
@@ -2081,17 +2116,31 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         armPendingTimer(projectId, info.runId)
         ensureQueuePoll()
         // REQ-034 · B3：`render_composition` 产物由本端 CSR 渲染产出 —— 起渲染工单轮询取单。
-        if (info.toolName === 'render_composition') ensureRenderPoll()
+        // 2026-10-23：登记在飞 runId（轮询保活的判据，收工由结算回调清账）。
+        if (info.toolName === 'render_composition') {
+          inflightRenderRuns.add(info.runId)
+          ensureRenderPoll()
+        }
       },
       onToolError: (projectId, runId, message) => {
         clearPendingTimer(runId)
+        // 渲染调用失败（如 manifest 校验不过，工单根本没建）也要放掉在飞计数，
+        // 否则轮询会一直空转（releaseRenderRun 内部只在真命中时才收表）。
+        releaseRenderRun(runId)
         storeInstance.actions.markPendingError(projectId, runId, message)
       },
       // CV-239：取消类调用（用户打断）—— 占位节点**直接移除**，不标红失败。
       // 会话转录里仍有「生成已取消」一行，叙事不丢；画布不留「生成失败」的坑。
       onToolCancelled: (projectId, runId) => {
         clearPendingTimer(runId)
+        releaseRenderRun(runId)
         storeInstance.actions.removePendingByRunId(projectId, runId)
+      },
+      // 2026-10-23：render_composition **成功**结算（studio 工具不走 onToolFinished，
+      // 那是 workflow 工具专用回调）。不清账轮询会在工单结算后继续空转。
+      onRenderToolSettled: (_projectId, runId) => {
+        clearPendingTimer(runId)
+        releaseRenderRun(runId)
       },
     }))
     return disposeCapture

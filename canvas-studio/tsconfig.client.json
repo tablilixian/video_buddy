@@ -6,5 +6,5 @@
     "skipLibCheck": true
   },
   "exclude": [],
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/render-host/main.ts", "src/contracts/**/*.ts", "src/tool-presentation.ts", "src/canvas-geometry.ts", "src/canvas-actions.ts", "src/canvas-aspect.ts", "src/canvas-placement.ts", "src/skill-catalog.ts", "src/style-grid.ts", "src/shot-versions.ts", "src/compose-selection.ts", "src/media-extension.ts", "src/model-directory.ts", "src/account-format.ts", "src/project-naming.ts", "src/project-sections.ts", "src/test-driver.ts", "src/voice-dims.ts", "src/storyboard-zoom.ts", "src/remotion/manifest.ts", "src/remotion/timing.ts", "src/remotion/components/**/*.tsx"]
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/render-host/main.ts", "src/contracts/**/*.ts", "src/tool-presentation.ts", "src/canvas-geometry.ts", "src/canvas-actions.ts", "src/canvas-aspect.ts", "src/canvas-placement.ts", "src/render-poll-gate.ts", "src/skill-catalog.ts", "src/style-grid.ts", "src/shot-versions.ts", "src/compose-selection.ts", "src/media-extension.ts", "src/model-directory.ts", "src/account-format.ts", "src/project-naming.ts", "src/project-sections.ts", "src/test-driver.ts", "src/voice-dims.ts", "src/storyboard-zoom.ts", "src/remotion/manifest.ts", "src/remotion/timing.ts", "src/remotion/components/**/*.tsx"]
 }

@@ -1,9 +1,14 @@
 /**
  * REQ-034 · O-06 执行者切换 / 心跳判活 / 超时口径 —— 守卫。
  *
- * 这一层的核心不变量只有一条：**一张单归谁渲，建单时定死，之后谁都不能抢**。
+ * 这一层的核心不变量：**一张单归谁渲，建单时定死**；唯一例外是 2026-10-23 的
+ * **滞留改派**——`client` 单派发后宽限期内画布页从未 claim 过、且隐藏窗口健康时，
+ * 窗口取单可以把它接管（真机 11 连败的兜底：窗口 3s 内没就绪 ⇒ 单钉给 client，
+ * 而画布页取单链路死了 ⇒ 没人认领 ⇒ CS-RENDER-TIMEOUT）。
+ *
  * 抢单的后果不是报错，而是「客户端把已经渲了一半的单从头再来一遍」——用户看到
- * 进度条归零，且宿主侧已经落了一半的抽帧变成孤儿。
+ * 进度条归零，且宿主侧已经落了一半的抽帧变成孤儿。所以改派判据钉死「客户端从未
+ * 看过这张单」（claim 即打点），看过的单永远不抢。
  *
  * 反向变红的口径写在每个用例的注释里，别改成永远为真的断言。
  */
@@ -23,6 +28,7 @@ const {
   claimRenderJobFor,
   failRenderHostJobs,
   renderHostJobCount,
+  RENDER_HOST_TAKEOVER_GRACE_MS,
   runRenderJob,
 } = await import('../lib/remotion/render-job.js')
 const { recordRenderHostReport, renderHostReady, resetRenderHostReport } = await import('../lib/render-host/status.js')
@@ -223,4 +229,135 @@ test('O-06 接线：工具描述写明「关掉整个 App 会中断渲染」（�
   assert.ok(tool !== undefined)
   assert.match(tool.description, /关掉整个 App 会中断渲染/, '这条边界必须进工具描述')
   assert.match(tool.description, /隐藏渲染窗口/, '执行者换了就要说清楚，否则模型还会教用户「切到前台」')
+})
+
+// ───────────────────────── 滞留改派（2026-10-23） ─────────────────────────
+
+test('改派：client 单宽限期后从未被 claim，隐藏窗口取单时接管', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  recordRenderHostReport({ state: 'idle' })
+  const projectId = 'proj-takeover'
+  const { guarded } = await startJob({ projectId, executor: 'client' })
+  await sleep(20) // 等派发（armTimeout 打 dispatchedAt）
+
+  const takeovers = []
+  // 假时钟拨过宽限期：不用真等 15s。
+  const claimed = claimRenderJobFor(null, 'render-host', {
+    now: Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS + 1000,
+    onTakeover: (jobId) => { takeovers.push(jobId) },
+  })
+  assert.ok(claimed !== null, '滞留单必须被隐藏窗口接管（反向变红：删掉 takeoverOrphanedClientJob 即复现 11 连败）')
+  assert.equal(claimed.projectId, projectId)
+  assert.equal(takeovers.length, 1, '改派必须留痕（路由层拿去打日志）')
+  assert.equal(renderHostJobCount(), 1, '接管后归属要翻转为 render-host')
+
+  // 接管后画布页必须再也看不到这张单 —— 否则双端同时渲同一张单。
+  assert.equal(claimRenderJobFor(projectId, 'client'), null, '改派后客户端不许再 claim（防双渲）')
+
+  await abortJob(claimed.jobId, guarded)
+  resetRenderHostReport()
+})
+
+test('改派：宽限期内不抢（客户端可能正在路上）', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  recordRenderHostReport({ state: 'idle' })
+  const projectId = 'proj-grace'
+  const { guarded } = await startJob({ projectId, executor: 'client' })
+  await sleep(20)
+
+  const claimed = claimRenderJobFor(null, 'render-host', { now: Date.now() + 1000 })
+  assert.equal(claimed, null, '宽限期内窗口不许抢单')
+
+  const byClient = claimRenderJobFor(projectId, 'client')
+  assert.ok(byClient !== null, '客户端随后照常取到自己的单')
+  await abortJob(byClient.jobId, guarded)
+  resetRenderHostReport()
+})
+
+test('改派：客户端 claim 过的单永不接管（防「渲一半从头再来」）', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  recordRenderHostReport({ state: 'idle' })
+  const projectId = 'proj-claimed'
+  const { guarded } = await startJob({ projectId, executor: 'client' })
+  await sleep(20)
+
+  const byClient = claimRenderJobFor(projectId, 'client') // claim 即打点
+  assert.ok(byClient !== null)
+  const stolen = claimRenderJobFor(null, 'render-host', {
+    now: Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS * 10,
+  })
+  assert.equal(stolen, null, '客户端看过的单，窗口等多久都不许抢（反向变红：去掉 clientClaimedAt 判据这条就红）')
+
+  await abortJob(byClient.jobId, guarded)
+  resetRenderHostReport()
+})
+
+test('改派：窗口不健康时不抢（claim 也可能来自 curl 排障）', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  const projectId = 'proj-no-window'
+  const { guarded } = await startJob({ projectId, executor: 'client' })
+  await sleep(20)
+
+  const stolen = claimRenderJobFor(null, 'render-host', {
+    now: Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS + 1000,
+  })
+  assert.equal(stolen, null, '没有活着的窗口不许改派 —— 否则单会悬空等超时')
+
+  const byClient = claimRenderJobFor(projectId, 'client')
+  assert.ok(byClient !== null)
+  await abortJob(byClient.jobId, guarded)
+})
+
+test('改派：FIFO —— 最老的滞留单先被接管，结算后下一张跟上', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  recordRenderHostReport({ state: 'idle' })
+  const first = await startJob({ projectId: 'proj-fifo-a', executor: 'client' })
+  await sleep(20)
+  const second = await startJob({ projectId: 'proj-fifo-b', executor: 'client' })
+  await sleep(20) // B 排队（并发 1），A 结算后才派发
+  const future = Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS + 1000
+
+  const claimedA = claimRenderJobFor(null, 'render-host', { now: future })
+  assert.ok(claimedA !== null)
+  assert.equal(claimedA.projectId, 'proj-fifo-a', '先建的单先被接管')
+  // claim 是幂等的（工单表不弹单；生产里窗口开渲后 pollOnce 自会停拍）。
+  const again = claimRenderJobFor(null, 'render-host', { now: future })
+  assert.equal(again?.jobId, claimedA.jobId, '重复 claim 返回同一张单')
+
+  await abortJob(claimedA.jobId, first.guarded)
+  // A 结算 → 槽位释放 → B 派发（此刻起算它自己的宽限期）。
+  const claimedB = claimRenderJobFor(null, 'render-host', {
+    now: Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS + 1000,
+  })
+  assert.ok(claimedB !== null, '下一拍轮到第二张滞留单')
+  assert.equal(claimedB.projectId, 'proj-fifo-b')
+
+  await abortJob(claimedB.jobId, second.guarded)
+  resetRenderHostReport()
+})
+
+test('改派：接管后看门狗生效 —— 窗口失联 30s 口径内结算（补装验证）', async () => {
+  resetRenderHostReport()
+  resetRenderHostDispatch()
+  recordRenderHostReport({ state: 'rendering' })
+  const projectId = 'proj-takeover-watchdog'
+  // 把 30s 压到 120ms：判据是「距最近一次生命迹象」，与具体阈值无关。
+  const { guarded } = await startJob({ projectId, executor: 'client', heartbeatStaleMs: 120 })
+  await sleep(20)
+
+  const claimed = claimRenderJobFor(null, 'render-host', {
+    now: Date.now() + RENDER_HOST_TAKEOVER_GRACE_MS + 1000,
+  })
+  assert.ok(claimed !== null, '先完成接管（此时窗口再无心跳）')
+
+  const error = await guarded
+  assert.equal(error?.code, 'CS-RENDER-002', `改派单必须被看门狗结算（反向变红：接管时不补装 armHostWatchdog ⇒ 干等原始超时，此断言红），实际：${String(error?.code)}`)
+  assert.match(error.message, /渲染窗口异常/)
+  assert.equal(activeRenderJobCount(), 0, '结算后工单出表')
+  resetRenderHostReport()
 })

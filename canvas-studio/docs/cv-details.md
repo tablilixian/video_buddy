@@ -37,6 +37,16 @@
 - **涉及文件**：`src/remotion/shape-geometry.ts` / `src/remotion/components/Shape.tsx` / `skills/code-driven-explainer/references/manifest-contract.md` / `src/host-tools.ts` / `tests/remotion-shape-box.test.mjs`
 - **落地/验收**：提交 `6bf3e7ca4f`。守卫 5 条（`50,50,100,100` 矩形 = 全画布 / `0,0` 只占四分之一 / 文档示例串 / 工具描述串 / `boxStyle` 输出含 translate）；**反向变异**（示例改回 `0,0`）⇒ 红。**真机验收通过**（2026-10-20）。
 
+---
+
+#### CV-359 · 渲染工单滞留改派 + 画布页轮询保活
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：修 10-20 起真机 `render_composition` **11 连败**（10-20 九次 + 10-23 两次；全部 `CS-RENDER-TIMEOUT`，签名恒为「RenderHost 已创建 → 恰 5min `idle` 销毁 → 超时」，日志在 `~/Library/Application Support/VideoBuddy/logs/`）。**双根因**：① **画布页轮询自杀** —— `client/index.ts` 的 `pollRenderJob` 在「pending 扑空 ⇒ 立刻 `stopRenderPoll`」，而宿主建单发生在工具 execute 的校验/素材探测**之后**（可达几十秒）⇒ 最早几拍必然扑空 ⇒ 停表后再也没人认领工单；且 `onToolFinished` 只对 workflow 工具触发，`render_composition` 的停表线（L2033）是**死代码**，成功路径没有任何带 runId 的收工信号。② **执行者 3s 钉死不换派** —— O-06 的 `pickExecutor` 冷启等 3s 不到就永远钉 `client`，而 RenderHost 正是 O-06 为「画布页不在/不可见」建的替补 ⇒ 替补永远接不了盘。两个坏点互相掩护成 100% 失败。**修法（客户端）**：新 `src/render-poll-gate.ts` 纯函数决策表（`claim/mirror/hold/stop`）——在飞 `render_composition`（`inflightRenderRuns` Set，runId 记账）期间扑空只 `hold`；收工统一由结算回调清账：失败/取消走 `onToolError`/`onToolCancelled`（已有 runId），**成功路径新增 `onRenderToolSettled` 钩子**（asset-capture 成功分支补发）；`armPendingTimer` 兜底超时也放计数（事件丢失的最后一道）；「在飞但项目没同步出来」hold 并 warn 一次。**修法（宿主）**：`claimRenderJobFor` 加第三参 `ClaimRenderJobOptions`，**滞留改派** —— owner=host 扑空时找「已派发、`RENDER_HOST_TAKEOVER_GRACE_MS`(15s) 内画布页从未 claim、窗口 `renderHostReady()`」的 client 单接管（executor 翻转 + 补装心跳看门狗 + `onTakeover` 留痕）；client claim 即打点 `clientClaimedAt` ⇒ 看过的单永不抢（防双渲/渲一半重来）；`armTimeout` 打 `dispatchedAt` 作宽限起点。**留痕日志**：改派 warn（pending 路由）+ 窗口自报 `unsupported`/`error` warn（状态路由，去重到状态变化）——后者针对「窗口自报一拍就停手、5min 被 idle 回收、全程无日志」的盲区。**探针**：新 `scripts/probe/render-host-e2e.probe.mjs`（三阶段 Electron 探针，运行方式见文件头），阶段 3 用**真实** `runRenderJob`+`claimRenderJobFor`+真实隐藏窗口跑改派全链路。
+- **涉及文件**：`src/render-poll-gate.ts`（新）/ `src/remotion/render-job.ts` / `src/routes.ts` / `src/asset-capture.ts` / `src/client/index.ts` / `tsconfig.client.json` / `tests/render-poll-gate.test.mjs`（新 4）/ `tests/render-host-executor.test.mjs`（+6 改派用例）/ `scripts/probe/render-host-e2e.probe.mjs`（新）
+- **落地/验收**：验证链四步全绿（typecheck / build / verify:loader / `test:smoke` **2095·2095**），新增 10 条断言全过；**反向变异**（决策表 hold 行改成 stop / 接管不补装看门狗 / 去掉 clientClaimedAt 判据）各红一条，用例注释写明。**探针实测（Electron 43.4.0）**：窗口冷启 **124~155ms**（« 3s warmup 预算 ⇒ 桌面 11 连败期间窗口更可能是自报 `unsupported` 后停手，新日志下次可直接判）；真实渲染出片 250ms/20208 字节；改派全链路 15.6s 接管 → 出片 → 无超时。**待桌面验收**：重启桌面 → 对话里让 agent 出一条 draft 成片（画布页开着）→ 出片；再关掉画布页只留对话 → 再出一条 → 15s 内改派日志出现 → 仍出片；日志里若见「渲染窗口自报 unsupported」即新问题（WebCodecs 在桌面隐藏窗口不可用），另行排查。
+
 #### CV-358 · 余额接真实数据：只读路由与左栏卡
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

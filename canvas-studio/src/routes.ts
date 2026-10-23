@@ -316,6 +316,8 @@ const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
 const ROUTE_RENDER_HOST = '/canvas-studio/render-host'
 const ROUTE_RENDER_HOST_JS = '/canvas-studio/render-host.js'
 const ROUTE_RENDER_HOST_STATUS = '/canvas-studio/render-host/status'
+/** 窗口自报 unsupported/error 的告警去重（状态变化才再打；回到 idle 即复位）。 */
+let lastRenderHostWarnedState: 'unsupported' | 'error' | undefined
 /** 页面 bundle 与 routes.js 同级（tsdown 的第二个 entry 产出 `lib/render-host.js`）。 */
 const RENDER_HOST_BUNDLE_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'render-host.js')
 const MAX_BODY_BYTES = 16 * 1024 * 1024
@@ -2988,7 +2990,14 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         // 隐藏窗口不绑画布页 ⇒ 允许不带 projectId（= 任意项目，只认归它渲的单）。
         const scope = owner === 'render-host' && (projectId === null || projectId.length === 0) ? null : projectId
-        const job = claimRenderJobFor(scope, owner)
+        const job = claimRenderJobFor(scope, owner, {
+          // 滞留改派（CV 2026-10-23）：client 单宽限期内无人认领 ⇒ 窗口接管。
+          // 必须留痕：这条路径生效意味着「画布页取单链路没跑起来」，不记日志的话
+          // 排障只能靠 CS-RENDER-TIMEOUT 倒推（10-20 起 11 连败就是这么查的）。
+          onTakeover: (takenJobId) => {
+            ctx.logger.warn(`[canvas-studio] 滞留渲染工单 ${takenJobId} 已改派隐藏渲染窗口（宽限期内画布页未认领，请检查画布页取单链路）`)
+          },
+        })
         // 取到单 = 窗口真的在干活 ⇒ 重置空闲回收计时（心跳本身不算活动，否则窗口永不回收）。
         if (job !== null) touchRenderHost()
         if (!res.destroyed) sendJson(res, 200, { job })
@@ -3273,6 +3282,15 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         // ⚠️ 心跳 ≠ 活动：每拍都 touch 的话空闲回收永远不触发（窗口每天 24h 挂着吃内存）。
         // 只有「正在渲」才算活动；取单成功那条路另外 touch（见 pending 路由）。
         if (report.state === 'rendering') touchRenderHost()
+        // 2026-10-23：窗口自报「干不了活」必须留痕 —— unsupported/error 的窗口自报
+        // 一拍后就停手（不心跳不取单），5min 后被 idle 回收，全程无任何其它日志。
+        // 桌面 11 连败期间它在不在场只能靠这条日志判（排障时先看这里，再看滞留改派）。
+        if ((report.state === 'unsupported' || report.state === 'error') && report.state !== lastRenderHostWarnedState) {
+          lastRenderHostWarnedState = report.state
+          ctx.logger.warn(`[canvas-studio] 渲染窗口自报 ${report.state}${report.detail === undefined ? '' : `（${report.detail}）`} —— 该窗口不会承担渲染，工单将回退画布页或等待改派`)
+        } else if (report.state === 'idle') {
+          lastRenderHostWarnedState = undefined
+        }
         sendJson(res, 200, { ok: true, state: report.state })
       } catch (cause) {
         sendRouteFailure(res, cause, 400, '渲染窗口状态上报失败。')

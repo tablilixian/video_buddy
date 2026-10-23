@@ -77,8 +77,10 @@ export interface StoryboardShot {
    */
   readonly facesVisible?: boolean
   /**
-   * 本镜效果图引用（生成时经 `image_generate` 的 `storyboardRef=<shot id>` 由 Host 自动回写）。
-   * 只存引用不存副本；渲染层按画布节点解析出缩略图。agent 手写 storyboard 段时也可显式给。
+   * 本镜效果图引用（历史通道：`image_generate` 的 `storyboardRef=<shot id>` 由 Host 回写）。
+   * 2026-10-22 起该通道停用 —— 落地前绑镜出图被门禁拦、落地后不再回写（见
+   * `host-tools.ts` 的 `attachImageToStoryboard`）；字段保留用于读存量数据与渲染。
+   * 只存引用不存副本；渲染层按画布节点解析出缩略图。agent 手写 storyboard 段时仍可显式给。
    */
   readonly refImage?: StoryboardAssetRef
   readonly backup: boolean
@@ -339,7 +341,8 @@ export type StoryboardWriteInput = {
 
 /**
  * `§02.lookRef` / `§04.shots[].refImage` 是**挂图通道的产物引用** —— 唯一写入方是
- * `attachStoryboardImage`（agent 经 `image_generate` 的 `storyboardRef` 触发），
+ * `attachStoryboardImage`（agent 经 `image_generate` 的 `storyboardRef` 触发；2026-10-22
+ * 起只有 `'look'` 形态生效，shot id 形态被门禁 / 降级关闭），
  * 它们的值 agent 手里没有，因此「传了 = 替换该节」这条节级语义**不能套在它们头上**。
  *
  * 实证事故（2026-10-12「下雨天」项目）：18:02 出基调样张 → Host 自动挂 `lookRef`
@@ -449,6 +452,8 @@ export interface AttachImageResult {
  *
  * `storyboardRef` 两种形态：
  * - 语义 shot id（`S1-Sh1`）→ 挂到该 shot 的 `refImage`（同 shot 重出图时后者覆盖前者）；
+ *   **2026-10-22 起调用方已不再走到这里**（落地前被门禁拦、落地后降级为附注），
+ *   保留分支只为读旧路径 / 直接调用此纯函数的测试；
  * - `'look'` → 挂到 §02 视觉规范的 `lookRef`（基调样张不属某一镜，挂基调层）。
  *
  * 没找到目标返回原 sections + `miss` —— 调用方降级为提示文本，绝不抛错

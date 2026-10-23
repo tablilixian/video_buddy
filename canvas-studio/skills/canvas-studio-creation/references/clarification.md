@@ -19,6 +19,22 @@
 
 **只在对话里说、或改文本节点，都不会更新分镜卡。**
 
+## 落地前可做 / 不可做（2026-10-22 定稿；门禁 = `approval-gate.ts`）
+
+「落地」= 用户在覆盖层点「确认落地」。**落地前的唯一目标是把剧本定下来，不花生成成本**——所有产线动作等落地后再做。
+
+| 可做 | 不可做（Host 硬拦，重试无用） |
+|---|---|
+| 澄清问答、`ask_user_choice` | 任何**绑镜**出图：`shotRefs`（分镜卡）或 `storyboardRef=<shot id>`（分镜卡落地后才有） |
+| `write_storyboard` 分节写 | `video_generate` / `video_composite` / `compose_video` / `render_composition` |
+| Look 样张（`image_generate storyboardRef='look'`）+ `look_card` | `extract_last_frame` / `qc_shot` / `music_generation` / `tts_voiceover` |
+| 定妆照 / 角色卡（`character_generate` / `character_sheet`，**按片型自主决定，非必需**） | 自行推进工作流状态（「确认落地」是用户按钮，不是 agent 工具） |
+
+**软预算**：落地前**不绑镜**的出图每周期上限 **3 张**（`look-budget.ts`）。超限 Host 报 `CS-USER-ERR`，此时**唯一出路**是 `ask_user_choice` 问用户「还想出哪几张、为什么需要」；用户答复后预算自动重置。**不要换参数绕道**——绑镜通道在落地前一律被硬拦。
+
+**收尾**：故事板写到本次规划最后一笔时传 `awaitingLanding=true`，Host 校验落地阻断项清零后**自动结束回合**，把裁决权交给覆盖层。中间笔不要传（会把自己没写的节砍在半路）；有阻断项时本参数无效，Host 照常返回阻断清单。
+
+
 ## ⚠️ 放手跑（auto）下本文件**整节作废** —— 先看这一条，再往下读
 
 **执行模式是「放手跑」时：不要调用 `ask_user_choice`，一次都不要。**

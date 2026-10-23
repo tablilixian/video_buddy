@@ -115,7 +115,7 @@ scenes: [ { id: 'S1', title: '两军对峙', shots: [ ... ] } ]
 | `frames` | 填 | 时间码展示用，`round(duration × 24)`（渲染成 `8s · 192f`），不参与落地校验 |
 | `narrationRef` | 可选 | 指向 `§03` 的 `V{n}`。**填了不存在的是 blocker**，比 shotRef 严格 |
 | `promptEn` | **本 skill 有意留空** | 英文视频提示词在第 9 步按 `h3-prompt-writing` 现写，提前写会与参考图组合脱节 |
-| `refImage` | 不填 | 由 Host 在 `image_generate storyboardRef=<shot id>` 时自动回写 |
+| `refImage` | 不填 | 落地前不产生（`storyboardRef=<shot id>` 已被门禁拦截，逐镜出图要等落地）；落地后逐镜关联走 `image_generate shotRefs=[该镜分镜卡]` |
 | `backup` | ✅ 填 `false` | 备份拍标记，只有真出备份镜才 `true` |
 
 ⚠️ **`promptEn` 留空会触发一条 warning**「N 个 shot 缺英文 prompt（promptEn）」。这是本 skill 的**预期行为**，不是缺陷——落地校验只把它列为 warning，不拦落地。看到这条告警不要惊慌，也不要去补写。

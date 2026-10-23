@@ -28,9 +28,15 @@
  *    资产卡、质检、BGM、成片）一律不放行；但 Look 阶段的样张/定妆照要放行
  *    （它们在澄清阶段就得能出，那时 state 也是 `storyboarding`）。
  *
- * 判据用 `shotBound`（本次调用是否绑定了分镜卡）区分「逐镜关键帧」与「Look 图」：
+ * 判据用 `shotBound`（本次调用是否绑定了分镜）区分「逐镜关键帧」与「Look 图」：
  * 绑定到某一镜的图才是产线产物。这与 `generate.ts` 的 `operationTypeOf` 同源 ——
  * **同一规则只准一份判据**（阶段判定与门禁判定若各写一份，迟早一个放行一个拦）。
+ *
+ * 2026-10-22 真机漏网补丁：绑镜有**两条通道** —— `shotRefs`（分镜卡节点）与
+ * `storyboardRef=<shot id>`（故事板 refImage 回写）。后者过去不进 `shotBound`，
+ * 于是在 `storyboarding` 态成了旁路（agent 被 `shotRefs` 拒后按 skill 旧文案换道
+ * 成功）。现在两条通道由调用方（`host-tools.ts`）一并并入 `shotBound`，`'look'`
+ * 形态不算绑镜。
  *
  * ## 谁不受限
  *
@@ -61,16 +67,19 @@ const REVIEW_STATES: ReadonlySet<string> = new Set([
  * 收敛过的教训：`compose_video` / `extract_last_frame` / `music_generation` 过去也
  * 不在表内 —— 它们分别能拼片、抽帧、出 BGM，都是第 8~10 步的动作。它们单靠自己
  * 出不了新关键帧，但放行它们等于允许「没批分镜就先出 BGM/拼一版看看」。
+ *
+ * `character_sheet` **不在此表**（2026-10-22 拍板）：样张 / 定妆照由模型按视频类型
+ * 自主决定做不做，落地前不拦 —— 它只在审阅态（keyframe_review）经 PRODUCING_TOOLS
+ * 被拦。过去它在 FORMAL_TOOLS 里，与「样张/定妆照不受限」的 skill 口径互相矛盾。
  */
 const FORMAL_TOOLS: ReadonlySet<string> = new Set([
   'video_generate',
   'video_composite',
   'compose_video',
   'extract_last_frame',
-  'character_sheet',
   'qc_shot',
   'music_generation',
-  // CV-271：语音合成占位升真 —— 与 music_generation 同为「产出音频产物」的正式动作。
+  // CV-271（REQ-034）：语音合成占位升真 —— 与 music_generation 同为「产出音频产物」的正式动作。
   'tts_voiceover',
   // CV-327（REQ-034）：代码驱动合成 —— 与 compose_video 同为「出终版成片」的正式动作，
   // 且直接在 execute() 里干活（不走 runGeneration）。漏登记会让它在拍摄定稿阶段 /
@@ -89,6 +98,8 @@ const PRODUCING_TOOLS: ReadonlySet<string> = new Set([
   'image_generate_withtxt',
   'image_fix',
   'character_generate',
+  // 2026-10-22 拍板：落地前不拦（样张/定妆照由模型自主决定）；审阅态仍属「产出」要拦。
+  'character_sheet',
 ])
 
 /** 各审阅态的拒绝文案：说清「在等什么」+「不要做什么」（REQ-022 后只剩关键帧）。 */
@@ -126,7 +137,7 @@ export interface ApprovalGateInput {
   readonly mode: StudioWorkflowMode
   /** 项目当前的工作流状态。 */
   readonly state: StudioWorkflowState
-  /** 本次调用是否绑定了分镜卡（`image_generate` / `image_generate_withtxt` / `character_generate` 传了 `shotRefs`）。 */
+  /** 本次调用是否绑定了分镜（`shotRefs` 解析命中，或 `image_generate` 传了 shot id 形态的 `storyboardRef`）。 */
   readonly shotBound: boolean
 }
 

@@ -36,14 +36,19 @@ const FORMAL = [
   'video_composite',
   'compose_video',
   'extract_last_frame',
-  'character_sheet',
   'qc_shot',
   'music_generation',
   'render_composition',
 ]
 
-/** Look 阶段的产出（storyboarding 下合法，审阅态下同样要拦）。 */
-const LOOK_PRODUCING = ['image_generate', 'character_generate']
+/**
+ * Look 阶段的产出（storyboarding 下合法，审阅态下同样要拦）。
+ *
+ * `character_sheet` 于 2026-10-22 从 FORMAL 移到此处：定妆照 / 样张由模型按片型
+ * **自主决定**做不做，落地前不拦（它出的是角色四视图，属澄清期的视觉确认，不是
+ * 分镜产物）；但关键帧审阅期仍属「产出新东西」，照旧拦。
+ */
+const LOOK_PRODUCING = ['image_generate', 'image_generate_withtxt', 'character_generate', 'character_sheet']
 
 /**
  * FORMAL 里**不走 `runGeneration`** 的那六个：它们各自的 `execute()` 直接干活，
@@ -105,8 +110,9 @@ test('storyboarding（尚未落到画布）：正式产线动作全拦', () => {
   }
 })
 
-test('storyboarding：绑了分镜卡的出图拦，没绑的放行（Look 阶段就得能出样张）', () => {
+test('storyboarding：绑了分镜的出图拦，没绑的放行（Look 阶段就得能出样张 / 定妆照）', () => {
   for (const tool of LOOK_PRODUCING) {
+    if (tool === 'character_sheet') continue // 不走 shotRefs，另有专门用例
     assert.ok(gate(tool, 'storyboarding', { shotBound: true }) !== null, `${tool} 带 shotRefs 时必须被拦`)
     assert.equal(gate(tool, 'storyboarding', { shotBound: false }), null, `${tool} 不带 shotRefs（Look 图）应放行`)
   }
@@ -120,12 +126,15 @@ test('拒因必须可操作：说清在等什么 + 明令不要重试', () => {
     assert.ok(message.includes('不要重试'), `${state} 的拒因必须明令不要重试`)
     assert.ok(!message.includes('image_generate 出概念图不受限'), '旧文案「image_generate 不受限」必须已删除')
   }
-  assert.ok(gate('character_sheet', 'storyboarding').includes('write_storyboard'), 'storyboarding 拒因要给出路')
+  assert.ok(gate('video_generate', 'storyboarding').includes('write_storyboard'), 'storyboarding 拒因要给出路')
+  // 2026-10-22 拍板：定妆照在落地前不拦（模型按片型自主决定），只在审阅态拦。
+  assert.equal(gate('character_sheet', 'storyboarding'), null, '定妆照 / 角色卡落地前放行')
+  assert.ok(gate('character_sheet', 'keyframe_review') !== null, '关键帧审阅期仍拦——等待期不该产出新东西')
 })
 
 test('六个直接 execute 的工具必须真的接了门禁（判定对了但没接 = 等于没做）', () => {
   for (const tool of DIRECT) {
-    assert.ok(FORMAL.includes(tool), `${tool} 不在 FORMAL 表里——测试常量已经漂移`)
+    assert.ok([...FORMAL, ...LOOK_PRODUCING].includes(tool), `${tool} 不在任何一张表里——测试常量已经漂移`)
   }
   // 这六个工具不走 runGeneration，门禁要各自显式调用。事故里 character_sheet
   // 就是「既不在 GATED_TOOLS、又不走 runGeneration」的双重漏网。
@@ -140,11 +149,18 @@ test('六个直接 execute 的工具必须真的接了门禁（判定对了但�
 test('走 runGeneration 的生成工具：门禁在 runGeneration 里且用的是传入的 tool 名', () => {
   // video_generate / video_composite / image_generate / character_generate 都经
   // runGeneration，判定必须在**生成之前**（写在后面等于图已经出完了才拦）。
+  // 2026-10-22：判据由调用方传入（`shotBound`），因为绑镜有两条通道 —— `shotRefs`
+  // 与 shot id 形态的 `storyboardRef`，后者只能在调用点算（`isShotIdStoryboardRef`）。
   const src = readSource('../src/host-tools.ts')
   assert.match(
     src,
-    /await assertApprovalAllowed\(registry, projectId, tool, \(params\.shotNodeIds\?\.length \?\? 0\) > 0\)/,
+    /await assertApprovalAllowed\(registry, projectId, tool, shotBound\)/,
     'runGeneration 必须用传入的 tool 名 + shotBound 判据调门禁',
+  )
+  assert.match(
+    src,
+    /isShotIdStoryboardRef\(a\.storyboardRef\)/,
+    'image_generate 必须把 shot id 形态的 storyboardRef 并入 shotBound——这条旁路就是 2026-10-22 事故',
   )
   const gateAt = src.indexOf('await assertApprovalAllowed(registry, projectId, tool,')
   const generateAt = src.indexOf('return generateAsset(registry, tool, projectId, params, signal)')

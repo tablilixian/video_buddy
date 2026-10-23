@@ -30,6 +30,7 @@ import { join } from 'node:path'
 import { AssetLibrary } from '../lib/asset-library.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { resetDramaProbeCache } from '../lib/generate.js'
+import { resetLookBudget } from '../lib/look-budget.js'
 
 const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(20000) })
 
@@ -114,6 +115,11 @@ async function makeFixture() {
     upsertAsset: async () => {},
     releaseAssetNodes: async () => {},
   }
+  // 2026-10-22：落地前出图有「每周期 N 张」软预算（look-budget.ts），计数按项目存在
+  // Host 内存里、跨用例共享。本文件的用例与预算无关，却在 storyboarding 下连出多张 ——
+  // 先清零，免得同进程别的用例把计数顶到上限后在这里假红。
+  resetLookBudget('p1')
+  resetLookBudget('p2')
   return { root, libRoot, assets, dirA, dirB, library, asset, bare, registry }
 }
 

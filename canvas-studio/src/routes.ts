@@ -57,6 +57,7 @@ import type { StoryboardDocument, StoryboardSections, StoryboardVersions } from 
 import { validateForSeed } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import { invalidateActiveSkillsPromptCache, refreshActiveSkillsPromptCache } from './active-skills-prompt.js'
+import { resetLookBudget } from './look-budget.js'
 // CV-331/332/333：用户上传 skill 面（列表 / 导入 / 删除 / 回收站）。
 import { SKILL_CATALOG, VISIBLE_CATALOG, builtinSlotOwners } from './skill-catalog.js'
 import { validateImport } from './skill-import-validate.js'
@@ -2397,6 +2398,10 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             return
           }
           await registry.answerPendingQuestion(body.projectId, body.value)
+          // 用户答复即进入新的「一轮」：落地前样张/定妆照软预算清零（look-budget.ts）。
+          // 语义是「每多出一批图都要用户点头一次」，所以只有**答复**能重置 —— 光是
+          // 模型自己再问一遍不算（问题没被作答，预算照旧封顶）。
+          resetLookBudget(body.projectId)
           // answerPendingQuestion 成功即项目存在。
           project = (await registry.getProject(body.projectId)) as StudioProject
         } else if (body.action === 'setMode') {

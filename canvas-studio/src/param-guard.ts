@@ -150,6 +150,8 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   colorGrade: '布尔开关',
   allowFreeText: '布尔开关',
   multiSelect: '布尔开关',
+  // 2026-10-22：write_storyboard 的收尾笔信号（true ⇒ 本次写完后本回合可交还用户审阅）。
+  awaitingLanding: '布尔开关（收尾笔信号：写完后 Host 才会 concludeTurn）',
   // REQ-034（O-11）：该镜是否呈现面部。false ⇒ 质检跳过外貌核对（手部微距不再被判「未呈现面部」）。
   facesVisible: '布尔开关（false ⇒ 质检跳过外貌核对）',
   duration: '数值（秒），非法取值由 clampDuration 钳制',

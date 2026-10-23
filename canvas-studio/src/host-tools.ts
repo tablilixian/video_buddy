@@ -72,6 +72,7 @@ import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
 import { throwError } from './error-system.js'
+import { assertLookBudget, chargeLookBudget, lookBudgetApplies } from './look-budget.js'
 import './errors/catalog.js'
 
 /** 产物结果 schema（工具返回给模型的结构）。 */
@@ -860,6 +861,10 @@ async function assertApprovalAllowed(
  * - `storyboardRef` = shot 语义 id（`S1-Sh1`）→ 挂该 shot 的 `refImage`；
  * - `'look'` → 挂 §02 视觉规范的 `lookRef`（基调样张）。
  *
+ * 2026-10-22 起 **shot id 形态在 agent 通道上已关闭**：落地前它被门禁当成「绑镜出图」
+ * 直接拦（`approval-gate.ts` 的 shotBound），落地后本函数把回写降级为附注。因此实际
+ * 走到这里的只有 `'look'`；shot 分支保留给纯函数直调与存量数据。
+ *
  * **绝不抛错**：故事板缺失 / 损坏 / 目标语义 id 不存在时降级为返回一句提示文本
  * （生成已完成，回写失败不该让整次工具调用失败）。返回追加进工具结果的附注。
  *
@@ -875,6 +880,13 @@ async function attachImageToStoryboard(
 ): Promise<string | undefined> {
   let note: string | undefined
   const next = await updateStoryboard(registry, projectId, (current) => {
+    // 2026-10-22 拍板：落地后 shot id 形态不再回写 —— 分镜卡已按落地那一刻的定稿
+    // 铸成，refImage 属于落地前的审阅语义；落地后逐镜关联走 `shotRefs`（分镜卡节点）。
+    // 生成已完成，故降级为附注而不是抛错（与前两个降级分支同一取向）。
+    if (current.landed !== null && storyboardRef !== 'look') {
+      note = `项目已落地，逐镜效果图不再回写故事板（refImage 属落地前审阅语义）；本图只落在画布节点 ${nodeId}，请用 shotRefs 关联分镜卡。`
+      return current
+    }
     const result = attachStoryboardImage(current.sections, storyboardRef, { kind: 'canvasNode', id: nodeId })
     if (result.hit === 'miss') {
       note = `未找到故事板目标「${storyboardRef}」（不是 shot 语义 id 也不是 look），效果图只落在画布节点 ${nodeId} 上。`
@@ -943,6 +955,7 @@ function runGeneration(
   params: GenerateParams,
   signal: AbortSignal,
   cwd: string | undefined,
+  shotBound: boolean = (params.shotNodeIds?.length ?? 0) > 0,
 ): Promise<GenerateResult> {
   return resolveProjectId(registry, cwd).then(async (projectId) => {
     // P7 硬门禁（DD-09 起收口到 approval-gate.ts）：逐步确认模式下，产线动作必须
@@ -953,9 +966,22 @@ function runGeneration(
     // agent 在「分镜待批准」的 3 分 58 秒里跑完了第 4~5 步（含 2 次 image_generate
     // 定妆照与 character_sheet 建卡）。现在 image_generate 带 shotRefs 与
     // character_sheet 都在门禁内。
-    await assertApprovalAllowed(registry, projectId, tool, (params.shotNodeIds?.length ?? 0) > 0)
+    //
+    // 2026-10-22 真机漏网：绑镜有两条通道，`shotRefs` 之外的 `storyboardRef=<shot id>`
+    // 过去不进 shotBound，storyboarding 态被 agent 当成绕道（详见 approval-gate.ts
+    // 头注释）。shot id 形态的 storyboardRef 由调用方并入 shotBound 一起判。
+    await assertApprovalAllowed(registry, projectId, tool, shotBound)
     return generateAsset(registry, tool, projectId, params, signal)
   })
+}
+
+/**
+ * `storyboardRef` 是否为 **shot id 形态**（绑到某一镜）。`'look'` 与空值是样张
+ * 通道，不算绑镜 —— 门禁判据（shotBound）与落地后回写降级共用这一份判定。
+ */
+function isShotIdStoryboardRef(value: string | undefined): boolean {
+  const v = value?.trim()
+  return v !== undefined && v !== '' && v !== 'look'
 }
 
 /**
@@ -1301,7 +1327,11 @@ async function resolveShotRefs(
         ? cards.find((node) => new RegExp(`^分镜 ${byNumber[1]}(?:\\s|·|$)`).test(node.title ?? ''))
         : undefined)
     if (hit === undefined) {
-      throwError('CS-USER-ERR', { message: `分镜卡「${raw}」未找到：请用提交分镜后工具结果里列出的卡片标题或节点 id 作为 shotRefs` })
+      // 2026-10-22 真机教训：旧文案指向已下线的「提交分镜」，模型照文案找不到东西，
+      // 转头去换参数绕道（本次事故的推波助澜者）。文案必须把「等落地」说成唯一出路。
+      throwError('CS-USER-ERR', {
+        message: `分镜卡「${raw}」未找到：先核对写法（卡片标题如「分镜 1 · 特写」、「分镜 N」镜号，或节点 id）。若项目尚未落地（用户还没在覆盖层点「确认落地」），分镜卡还不存在 —— 请停止逐镜出图，等待用户落地后再试；不要换别的参数绕道重试。`,
+      })
     }
     if (!out.includes(hit.id)) out.push(hit.id)
   }
@@ -1427,7 +1457,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
-        storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——传 shot 语义 id（如 `S1-Sh1`，挂到该分镜的 refImage）或 `look`（基调样张，挂到 §02 视觉规范）。**逐镜效果图必须传**，否则图只落在被覆盖层挡住的画布上，用户在故事板里看不到。基调样张在「故事板已建、还没分镜、§02 尚无样张」时 Host 会自动兜底挂上；但「换一批」重出样张必须显式传 `look`，否则不会覆盖用户已确认的那张' },
+        storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——**只准传 `look`**（基调样张，挂到 §02 视觉规范）。**shot 语义 id 形态已停用**：落地前传 shot id 会被门禁拦截（逐镜效果图必须等用户点「确认落地」），落地后逐镜关联请改用 `shotRefs`（分镜卡）。没传时若「故事板已建、§02 尚无样张、本图也未绑镜」，Host 会自动兜底挂为样张；「换一批」重出样张必须显式传 `look`，否则不会覆盖用户已确认的那张' },
         // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
         // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
         autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true；纯文生图命中文字路由时产物已是逐字正确，无需也不会触发修复）。关闭后文字出错需手动调 image_fix' },
@@ -1444,7 +1474,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        let result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        // 2026-10-22 门禁补丁：绑镜有两条通道，shot id 形态的 storyboardRef 也算绑镜。
+        const shotBound = (params.shotNodeIds?.length ?? 0) > 0 || isShotIdStoryboardRef(a.storyboardRef)
+        // 落地前软预算（2026-10-22 拍板）：只管 confirm+storyboarding 下**不绑镜**的出图；
+        // 绑镜调用由门禁在 runGeneration 里拦截，轮不到预算。
+        const budgetWorkflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const budgetApplies = lookBudgetApplies(budgetWorkflow.mode, budgetWorkflow.state) && !shotBound
+        if (budgetApplies) assertLookBudget(projectId)
+        let result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd, shotBound)
+        if (budgetApplies) chargeLookBudget(projectId)
         // CV-212：含非 ASCII 引号文本 → 自动 image_fix 兜底（不读图，跳过 VLM 校验）。
         // 默认开启；agent 显式传 autoFixText=false 可关闭（如做大批量无文字图省成本）。
         // R-P1-03：纯文生且提示词含可显示文字时，路由已改走 Qwen 文字渲染链路
@@ -1499,7 +1537,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        return await runGeneration(registry, 'image_generate_withtxt', params, exec.signal, exec.agent?.session.header.cwd)
+        // 落地前软预算（同 image_generate）：不绑镜的带字图也占样张预算。
+        const budgetWorkflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const budgetApplies = lookBudgetApplies(budgetWorkflow.mode, budgetWorkflow.state) && (params.shotNodeIds?.length ?? 0) === 0
+        if (budgetApplies) assertLookBudget(projectId)
+        const withtxtResult = await runGeneration(registry, 'image_generate_withtxt', params, exec.signal, exec.agent?.session.header.cwd)
+        if (budgetApplies) chargeLookBudget(projectId)
+        return withtxtResult
       },
     }),
     defineTool({
@@ -1542,7 +1586,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        return runGeneration(registry, 'character_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        // 落地前软预算（同 image_generate）：不绑镜的定妆照/立绘也占样张预算。
+        const budgetWorkflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const budgetApplies = lookBudgetApplies(budgetWorkflow.mode, budgetWorkflow.state) && (params.shotNodeIds?.length ?? 0) === 0
+        if (budgetApplies) assertLookBudget(projectId)
+        const charResult = await runGeneration(registry, 'character_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        if (budgetApplies) chargeLookBudget(projectId)
+        return charResult
       },
     }),
     defineTool({
@@ -2725,6 +2775,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
         assets: { type: 'string' as const, description: '可选 JSON：需要上传/搜集的素材清单（只存引用）' },
         constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
+        awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容），故事板进入待用户审阅状态。Host 校验落地阻断项清零后会自动结束你的回合、把裁决权交给覆盖层；有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
       },
       output: {
         schema: {
@@ -2748,8 +2799,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 三态取值已穷尽，故按**白名单**放行：只有 `storyboarding` 过；`keyframe_review`
         // 与 `executing` 一律拒；`workflow` 缺失（三态之前的老项目）保持放行，不给存量
         // 项目凭空制造新红字。
-        const state = (await registry.getProject(projectId))?.workflow?.state
-        if (state !== undefined && state !== 'storyboarding') {
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const state = workflow.state
+        if (state !== 'storyboarding') {
           // CV-304（评审 SB-04）：文案**不许**再指路到不存在的工具。旧文案让 agent
           // 去找「结构修订」那个独立工具（REQ-022 排期 P2，**尚未实现**）——查不到
           // 就原地绕圈。现在只说事实 + 指出唯一出路（把改动意愿交回用户）。
@@ -2856,6 +2908,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
 
         const summary = summarizeStoryboard(normalized.sections)
+        // P0-2（2026-10-22 拍板，审计收尾）：显式收尾信号 + 硬停。模型在收尾笔传
+        // `awaitingLanding:true`，且落地阻断项清零（与落地闸同一份 `validateForSeed`）
+        // 时自动结束回合 —— 「提示词停不住」是 2026-09-14 与 2026-10-22 两次真机事故
+        // 的共同根因，停止指令必须有 concludeTurn 这一级硬兜底。刻意**不做**「写齐自动
+        // 判定」：哪些节合法留空由片型决定（真机实例：纯产品广告 5/9 就是终态），自动
+        // 判定要么永不触发、要么把旁白/声音砍在半路。auto 模式不 conclude（放手跑由
+        // Host 自动落地，见 screenplay.md 第 6 条）。
+        const concludedForLanding = a.awaitingLanding === true
+          && workflow.mode === 'confirm'
+          && state === 'storyboarding'
+          && blockers.length === 0
+        if (concludedForLanding) exec.concludeTurn()
         // CV-296：把「本次没传、保留现值」的节明说 —— agent 漏传时能自查，用户也能看懂哪几节没动。
         // 首稿（missing）全部是空值，没有「保留」可言，不列。
         const inputKeys = new Set(Object.keys(writeInput))
@@ -2875,7 +2939,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               ? '落地完成度：无阻断项。'
               : `落地阻断项 ${String(blockers.length)} 条（不影响落盘，但落地前必须补）：${blockers.join('；')}`,
             ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
-            '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',
+            concludedForLanding
+              ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
+              : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',
           ].join('\n'),
         }
       },

@@ -1,6 +1,6 @@
 # DramaServer 管理面接口接入方案（auth/sync · models · credits/balance）
 
-> 状态：**已重新评估并开工（2026-10-22）**——P1 = CV-355、P2 = CV-356、P4 = CV-357；P3 的模型相关 UI 已随 CV-354 落地（官方区块识别网关行 + 待接入暗态），余额 chip / 业务用户展示等其余 UI 项随 credits 需求另排
+> 状态：**P1/P2/P4 落码完成，剩桌面 GUI 验收 + L6（2026-10-23 核对代码与提交）**——P1 = CV-355、P2 = CV-356、P4 = CV-357；**P2 只落了 `auth/sync` + `models`，`credits` 缓存未实现**；**P3 未开工**（未取号），CV-354 只落了模型相关 UI（官方区块识别网关行 + 待接入暗态）。逐阶段进度与缺口见 [§0.5](#05-当前进度核对2026-10-23)
 > 日期：2026-10-20（2026-10-22 按 DSH 0.2.1-rc.2 重新评估，见 §0.4）
 > 接口来源：《DramaServer 业务 API》（api(10).md，2026-10-19 版）：`POST /v1/auth/sync`、`GET /v1/models`、`GET /v1/credits/balance`
 > 参考实现：`/Users/wl/Desktop/job/reelsbuddy-desktop`（ADR-0002 已在 DSH 体系完整落地同一套接口）
@@ -54,6 +54,22 @@
 
 范围调整：本轮落地 **P1 + P2 + P4**（用户拍板「重新评估后开发，把自有大模型配置连通」+ 真实链路验收）；P3 剩余 UI（余额 chip、业务用户展示）不在本轮。
 
+### 0.5 当前进度核对（2026-10-23）
+
+对着 `src/` 与提交历史逐条核对，不按「已写进文档」算完成：
+
+| 阶段 | 条目 | 代码状态 | 证据 / 缺口 |
+| --- | --- | --- | --- |
+| P1 协议客户端 + 设备身份 | CV-355 | ✅ 落码 | `src/drama-management.ts`（`sync`/`listTextModels`/`creditBalance`/`ApiError`）、`src/device-registry.ts`、`host-config.ts` 的 `businessApiBase`；两个测试文件在位 |
+| P2 登录 bootstrap | CV-356 | 🟡 **部分** | 已落 `auth/sync` → `models` → 网关回调（`src/account-state.ts`，接线在 `routes.ts:3373/3396`）；**`refreshBalance()` 与 credits 缓存从未实现** —— `creditBalance()` 至今**零调用方**（`grep -rE "creditBalance\|refreshBalance" src` 只命中定义处） |
+| P4 LLM 网关 | CV-357 | ✅ 落码 | `src/gateway.ts` 纯函数 + `index.ts` 的 `applyGatewayConfig`/`reconcileGateway`（串行队列 + 指纹 + 启动期缓存恢复）；落行走 `settings.mutate`（`configEditor.edit` 的全量重放会被无关 entry 激活失败整体回滚，见 CV-357 详情） |
+| P3 只读路由 + UI | 未取号 | ❌ **未开工** | `GET /canvas-studio/account/{session,models,credits}` 三条路由、`client/api.ts` 封装、StudioFrame 的余额 chip / 业务用户展示**全部不存在**；`tests/account-routes.test.mjs` 也不存在 |
+
+**结论（LLM 这条线）**：代码缺口 = 0。剩下全是验收 —— 桌面 5 步（官方区块点亮 / 聊天模型选择器出现 DramaServer 组 / 保存设置窗口不消失 / 服务端有设备记录 / 日志出现「管理面 bootstrap 完成」）+ L6 脚本一次 `scripts/live-e2e-management.mjs` + §4.2 两个契约待确认项（`/v1/llm` 契约、text 模型与 `openai-completions` 兼容性），后者本就靠 L6 覆盖。
+
+**结论（积分这条线）**：代码缺口 = 3 层 + 1 个触发点，见 [§P3](#p3--client-只读路由--ui-展示未开工) 的「积分落地清单」。
+
+
 ---
 
 ## P1 · Host 管理协议客户端 + 设备标识
@@ -77,6 +93,8 @@
 
 **目标**：client 推送会话后，Host 幂等完成业务用户同步 + 设备登记，并预热目录/余额缓存。失败不阻塞现有登录闭环。
 
+> **现状（2026-10-23）**：下表「目录缓存 / 回调 / 幂等 / 错误策略」已全部落地；**`refreshBalance()` 与 credits TTL 缓存未实现**（`creditBalance()` 无调用方）。该项归到 P3 的积分清单一起做 —— 单独一个「取余额但没人用」的 Host 方法是死代码。
+
 | 动作 | 文件 | 说明 |
 | --- | --- | --- |
 | 新增 | `canvas-studio/src/account-state.ts` | Host 侧缓存与编排：`bootstrap()`（auth/sync，带 device 全量信息）、`refreshCatalog()`、`refreshBalance()`；TTL 缓存（建议 models 5min / credits 30s）；`onCatalogChanged` 回调（P4 网关消费）；启用闸 = `businessApiBase` 非空 && `supabaseUrl` 非空（`syncDramaAuthRequired` 同款联动模式，见 `index.ts:153-163`） |
@@ -88,9 +106,30 @@
 
 ---
 
-## P3 · client 只读路由 + UI 展示
+## P3 · client 只读路由 + UI 展示（未开工）
+
+> **现状（2026-10-23）**：整块未开工，未取 CV 号（开工前按 STATUS §4.1 水位复核后 +1）。CV-354 只落了「官方区块识别 `canvas-studio-gateway` 行 + 待接入暗态」，与本节的三条 account 路由无关。
 
 **目标**：画布 UI 可见登录用户、设备、模型目录、积分余额。
+
+### 积分落地清单（回答「积分什么时候能更新」）
+
+数据源已就绪（`DramaClient.creditBalance(token)`，CV-355），缺的是从 Host 到眼睛的三层管道：
+
+| # | 层 | 落点 | 要点 |
+| --- | --- | --- | --- |
+| 1 | Host 缓存 | `src/account-state.ts` 补 `refreshBalance(force)` | 复用现有单例与 deps 注入；`creditBalance` TTL **30s**（方案 §P2 原口径）；`401` 静默、`403` 沿用同一禁用态、`429/503` **不写退避**（余额是主动刷新语义，等下次用户操作即可）；bootstrap 成功后**顺手预取一次**（失败只记日志） |
+| 2 | 只读路由 | `src/routes.ts` 新增 `GET /canvas-studio/account/credits` | 校验沿用 `storage-info` 的 loopback authority + same-origin；返回 `{ available_balance, frozen_balance, currency, fetchedAt, disabled?, stale? }`；`?refresh=1` 绕 TTL（**仍受「一次只发一个请求」去重**，防连点打满 600/min）；未启用闸时返回降级体（`enabled:false`，不抛） |
+| 3 | UI | `src/client/api.ts` + `StudioFrame.tsx` 顶栏 chip | 金额固定 **4 位小数**，`parseInt` 一律禁止（方案 §0.3）；`available` / `frozen` 两个数；403 禁用态显示「账号受限」而不是数字 |
+
+**「何时更新」= 四个触发点**（前三个必须在同一批做，否则用户只能靠刷新页面）：
+
+1. 登录 bootstrap 成功后预取；
+2. chip 挂载 / 画布页重新可见时（TTL 内复用缓存，过期才发请求）；
+3. 用户点 chip 或下拉刷新 → `?refresh=1` 强制刷新；
+4. **生成结算后主动刷一次** —— 挂到生成队列释放处（`callDrama` 的 `finally` 之后、任务终态推送点）。这是「扣完费立刻看到新余额」的唯一手段；缺这条，积分会一直显示上一次登录时的数字。
+
+**验收口径**：登录后 chip 出现且与 `GET /v1/credits/balance` 一致；跑一次生成 → chip 数字下降（不必等 TTL）；断网/503 时 chip 保留旧值并标灰，不显示 0。
 
 | 动作 | 文件 | 说明 |
 | --- | --- | --- |
@@ -110,6 +149,8 @@ UI 落点细节（chip 具体挂哪个槽位）实施时与现有登录入口布
 
 ### 4.0 Spike（先行，结论回填本节）
 
+> **已关闭（2026-10-22）**：三 seam 在 0.2.1-rc.2 上实测全部存在，结论见 [§0.4](#04-重新评估2026-10-22dsh-021-rc2-已就位) 表格；下方「缺失即升级」的分支未触发。保留原文作历史记录。
+
 验证我们 pin 的 DSH（`0.1.x-rc` 线，canvas-studio `package.json`：dsh-agent `0.1.1-rc.2` / 基建 `0.1.0-rc.7`）是否具备三 seam：
 
 1. `ctx.get('configEditor')` 存在且可写 profile 用户层（reelsbuddy 侧是 `0.2.1-rc.2` 的 `ctx.configEditor`）；
@@ -128,8 +169,8 @@ Spike 产物：一次性探针脚本（不入 `src/`），证据与结论回填�
 | 动作 | 文件 | 说明 |
 | --- | --- | --- |
 | 新增 | `canvas-studio/src/gateway.ts` | 参考 `reelsbuddy-desktop/src/host/studio/gateway.ts`：`gatewayRow(catalog)`（目录 → provider 行）、指纹比较（目录无变化不写配置）、空目录 → 移除网关行（防已下线模型复活）；provider id `canvas-studio-gateway`，`apiKeyEnv: CANVAS_STUDIO_GATEWAY_TOKEN`（只写引用名，凭据值不入配置文件），`api: openai-completions`，`baseURL: <businessApiBase>/v1/llm`（默认即 `http://117.50.108.73/v1/llm`），`models: [...目录快照...]`；合并只改自己的行，用户配置不受影响 |
-| 新增 | `canvas-studio/src/gateway-catalog.ts` | 目录缓存读写：`$DSH_HOME/canvas-studio/gateway-catalog.json`（`account-state.refreshCatalog()` 成功后落盘） |
-| 修改 | `canvas-studio/src/index.ts` | 可选接入 `configEditor`（`ctx.get('configEditor')`，缺失时记日志降级，同 reelsbuddy `unavailable` 状态，其余链路照常）；`accountState.onCatalogChanged → reconcileGateway`（configEditor.edit 合并进 profile 用户层 + 热重放）；每次会话推送（P2 钩子）刷新 `ctx.credentials.set('CANVAS_STUDIO_GATEWAY_TOKEN', <access token>)` |
+| 新增 | ~~`canvas-studio/src/gateway-catalog.ts`~~ → 并入 `gateway.ts` | **实施偏差**：目录缓存读写（`readGatewayCatalog` / `writeGatewayCatalog` / `gatewayCatalogPath`）没单开文件，直接放 `gateway.ts` —— 三处都是几行纯函数，另开文件只多一个 import 环的风险 |
+| 修改 | `canvas-studio/src/index.ts` | **实施偏差（重要）**：落行**不是** `configEditor.edit`，而是 `settings.mutate`。原因：`settings.mutate` 底层走 `ConfigEditor.edit` 的 **profile 全量重放**，只要图里有任一无关 entry 激活失败（桌面壳的 `hmr` 缺 `--expose-internals` / `desktop-product-telemetry` 缺 `DSH_CLIENT_VERSION`），整批写入就被回滚 —— 网关行永远写不进去。`settings.mutate` 走 llm-pi-ai 用户层 volatile 写 + 热重注册，不做全量重放。装配面 = `applyGatewayConfig` / `reconcileGateway`（串行队列 + 指纹 + `unavailable` 不推进指纹）+ 启动期缓存恢复（延后 5s 且兜 catch，早触发会放大成 `fatal load failure`）；每次会话推送发布 `CANVAS_STUDIO_GATEWAY_TOKEN` |
 | 新增测试 | `canvas-studio/tests/gateway.test.mjs` | 行生成、指纹（无变化不写）、空目录移除、凭据发布形状（credentialRef、空 token 不写）、无 configEditor 降级 |
 
 ### 4.2 待确认（阻塞验收，不阻塞编码）
@@ -144,9 +185,29 @@ Spike 产物：一次性探针脚本（不入 `src/`），证据与结论回填�
 ## 验证链与收尾
 
 - 每阶段收口跑 canvas-studio 验证链（顺序铁律）：`corepack yarn typecheck && corepack yarn build && corepack yarn verify:loader && corepack yarn test:smoke`。
-- L6 真实端到端（不在 CI）：参考 reelsbuddy `scripts/live-e2e.mjs`——真实 Supabase token 跑通 sync → models → balance → 一次 `/v1/llm/chat/completions`。
+- L6 真实端到端（不在 CI）：`DRAMA_ACCESS_TOKEN=<桌面登录的 access token> node scripts/live-e2e-management.mjs`（已备，未跑）—— 跑通 sync → models → balance → 一次 `/v1/llm/chat/completions`。
 - 手工桌面验收：登录后模型选择器出现 DramaServer 模型（无需重启）；额度 chip 数值与后端一致；`auth/sync` 在服务端产生用户 + 设备记录（后端确认）。
 - 收尾四步（AGENTS.md 强制）：`docs/STATUS.md` 终态 + 变更记录；`canvas-ux-backlog.md` 对应行；`docs/tracking.md` 派单映射（条目号分配后回填本方案占位号）；精确路径提交。
+
+### 剩余清单（2026-10-23，按依赖顺序）
+
+**A. LLM 一条线（代码 0 缺口，只剩验收）**
+
+1. 用户终端启动桌面（受管 shell 起不了 Electron，见交接文档 §6-9/11），日志确认无 `did not activate`、出现「网关行已从目录缓存恢复」/「管理面 bootstrap 完成」。
+2. 设置 → 模型：「DramaServer 官方模型」区块点亮；**期间保存任意一项** —— 窗口不得消失、`profiles/desktop/cordis.patch.yml` 出现 `llm-pi-ai.providers`。
+3. 聊天模型选择器出现 DramaServer 组，选它发一句话拿到回复（这是「设为 LLM」的最终判据）。
+4. L6 脚本一次（覆盖 §4.2 两个待确认：`/v1/llm` 契约、`openai-completions` 兼容性）。
+5. 服务端确认设备记录 `name=VideoBuddy Desktop`。
+6. 以上通过 → CV-355/356/357 状态改「已完成」，STATUS §0 水位与 `changelog.md` 同步。
+
+**B. 积分一条线（代码 0% 起步，P2 欠账 + P3 全量）**
+
+1. `account-state.refreshBalance(force)` + 30s TTL + bootstrap 预取（P2 欠账）。
+2. `GET /canvas-studio/account/credits`（`?refresh=1` 强刷、未启用降级体、403 禁用态）。
+3. `client/api.ts` 封装 + StudioFrame chip（4 位小数、available/frozen、失败保留旧值）。
+4. 生成结算后主动刷新（挂生成队列释放点）。
+5. 测试：`tests/account-state.test.mjs` 扩 credits 用例（TTL / 强刷去重 / 401 静默 / 403）+ 新增 `tests/account-routes.test.mjs`（authority 拒绝 / 降级体 / `refresh=1`）。
+6. 开工前取号（P3 未取号；按 STATUS §4.1 水位 +1，并 grep 复核）。
 
 ## 风险清单
 

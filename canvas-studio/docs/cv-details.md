@@ -52,6 +52,7 @@
 - **详情**：方案 P2。`src/account-state.ts` 模块级单例（与 auth-session.ts 同风格，deps 注入保可测）：routes.ts 的 auth/session 路由在 `setAuthSession` 后 fire-and-forget `notifyAuthSession(token)`（幂等去重：同 token + 目录 TTL 5min 内只发布凭据不重打接口；进行中复用同一 Promise），`clearAuthSession` 后 `notifyAuthCleared()`（reset；目录缓存与网关行保留，重登录即刷新）。错误策略对齐 api(10).md §6：401 静默（client 重推即重试）、403 置禁用态停止业务请求、429 按 `Retry-After` 退避（无头默认 30s）、503 固定退避、500 记日志不重试；bootstrap 失败不回滚登录态、不影响推送响应。启用闸 = `businessApiBase` 非空 && `supabaseUrl` 非空（live 读取）。
 - **涉及文件**：`src/account-state.ts`（新）/ `src/routes.ts` / `tests/account-state.test.mjs`（新，stub 全局 fetch）
 - **落地/验收**：验证链四步全绿；编排测试 6 条全过（幂等 / 401 / 429 窗口内零请求但凭据照发 / 403 禁用 / 未启用零请求 / reset）。**⚠️ 桌面首轮实测（2026-10-22）抓到回归**：`runBootstrap` 把 DeviceRegistry 的方法作为**裸引用**传给 DramaClient → 调用时 this 丢失 → `Cannot read private member #deviceId`，sync 从未发出（设备文件/目录/网关行全缺，官方区块仍「待接入」、聊天仍「暂无可选模型」）；修法 = 三 getter 包箭头函数，新增**真 DeviceRegistry 实例**回归守卫（fake 普通对象测不出 #私有成员问题）。**待桌面验收**：登录后 Host 日志出现「管理面 bootstrap 完成」；登出后再登录不重复登记设备。
+- **残余（2026-10-23 核对）**：方案 P2 原计划的 `refreshBalance()` 与 credits TTL 缓存**未实现** —— `drama-management.ts` 的 `creditBalance()` 至今无调用方。该项与 P3 的余额路由/UI 合并推进（见方案 §0.5 / §P3「积分落地清单」），不单独立项。
 
 #### CV-355 · 管理面协议客户端与设备标识（方案 P1）
 

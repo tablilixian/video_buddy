@@ -244,6 +244,9 @@ import { SkillMarket } from './SkillMarket.js'
 import { AssetLibraryPage, LibImportDialog } from './AssetLibrary.js'
 import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
+// CV-358：左栏余额卡（管理面 `/v1/credits/balance` 的真实数据）。
+import { CreditsCard } from './CreditsCard.js'
+import { getCreditsState, installCreditsVisibilityRefresh, refreshCredits, resetCredits, subscribeCredits, type CreditsState } from './credits-store.js'
 // P1 登录闭环：登录弹窗 + 登录态 store（见 client/auth/）。
 import { LoginModal } from './auth/LoginModal.js'
 import { getAuthState, initAuthStore, installAuthVisibilityPush, requireSignIn, setLoginPromptHandler, subscribeAuth, type AuthState } from './auth/auth-store.js'
@@ -606,6 +609,19 @@ export function StudioFrame(props: StudioFrameProps) {
    */
   const signedInName = auth.status === 'signed-in' ? auth.user?.name : undefined
   const [loginOpen, setLoginOpen] = useState(false)
+  // ── CV-358：余额卡（模块级单例，与 auth-store 同构）──
+  // 三个触发源：卡片挂载 / 登录态变化 / client/index.ts 的「一次生成彻底结束」。
+  const [creditsState, setCreditsState] = useState<CreditsState>(getCreditsState)
+  useEffect(() => subscribeCredits(() => { setCreditsState(getCreditsState()) }), [])
+  // 页面切回来对一次；TTL 由 Host 判 —— 30s 内回来就是一个零请求的空转。
+  useEffect(() => { installCreditsVisibilityRefresh() }, [])
+  // 登录态变化：登录成功读一次（Host 的 bootstrap 里也有预取，两层互不冲突：
+  // 都在 TTL 里，谁先到谁生效），登出清内存视图 —— 不清就是下一个登录者看到
+  // 上一个人的余额。
+  useEffect(() => {
+    if (auth.status === 'signed-in') void refreshCredits(false)
+    else if (auth.status === 'signed-out') resetCredits()
+  }, [auth.status])
   useEffect(() => {
     const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
     // 0.2.1 起 `ctx.configForms` 的首帧是 `{ status: 'loading', value: undefined }`，
@@ -2393,21 +2409,19 @@ export function StudioFrame(props: StudioFrameProps) {
                 onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
               />
             </div>
-            {/* REQ-030 ③（2026-10-07 已拍）：Credits 纯展示占位 —— 无商业化后端，
-                余额静态、升级套餐置灰「即将上线」；真数据源接入前不接任何计算。
-                与 REQ-029/031 的积分展示同源口径（前端估算标「预估」的闸门同款）。 */}
-            <div className="csCredits">
-              <div className="csCreditsRow">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path d="M8 1.5 9.7 6l4.5 1.6L9.7 9.2 8 13.7 6.3 9.2 1.8 7.6 6.3 6 8 1.5Z" />
-                </svg>
-                <span>Credits</span>
-                <span className="csCreditsVal">0 / 1,000</span>
-              </div>
-              <button type="button" className="csCreditsUpgrade" disabled title="即将上线">
-                升级套餐
-              </button>
-            </div>
+            {/* CV-358：余额卡接真实数据源（`/v1/credits/balance`）。形态按拍板：
+                可用 + 冻结行、固定 4 位小数、**不伪造总额度分母**（后端无此字段）；
+                「升级套餐」继续置灰（商业化入口未接，与余额数据无关）。
+                未登录点它弹登录窗（与用户卡同一个窗，行为一致）。 */}
+            <CreditsCard
+              view={creditsState.view}
+              signedIn={auth.status === 'signed-in'}
+              localMode={auth.status === 'unconfigured'}
+              loading={creditsState.loading}
+              failure={creditsState.failure}
+              onRefresh={() => { void refreshCredits(true) }}
+              onSignIn={() => { setLoginOpen(true) }}
+            />
             {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
                 固定在侧栏底部不随项目列表滚动）。 */}
             <UserCard

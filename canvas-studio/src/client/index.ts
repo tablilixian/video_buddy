@@ -24,6 +24,8 @@ import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
+// CV-358：生成彻底结束后刷一次余额（扣费在服务端，Host 拿不到结算时刻）。
+import { refreshCreditsAfterGeneration } from './credits-store.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, type PendingStudioRenderJob } from './api.js'
@@ -1467,6 +1469,11 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     // 没有生成在飞 ⇒ 收工（同时清掉痕量，避免残留一行「排队中」）。
     if (!queuePollNeeded()) {
       stopQueuePoll()
+      // CV-358：这一次生成彻底结束（无在飞请求、无恢复任务）⇒ 扣费可能刚落账。
+      // 为什么挂这里而不是 `callDrama` 的 finally：那一步只是释放出队槽位，服务端
+      // 还没结算；「队列彻底空闲」才是我们这边唯一可靠的结束信号。
+      // （内部还会 6s 后复检一次，兜住异步结算。）
+      refreshCreditsAfterGeneration()
       return
     }
     const state = generationQueueStateOf(snapshot)

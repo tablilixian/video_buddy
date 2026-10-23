@@ -1332,6 +1332,8 @@ const LOBBY_POPOVER_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyPopo
 const LOBBY_SPEC_ROW_SRC = codeOnly(readFileSync(new URL('../src/client/LobbySpecRow.tsx', import.meta.url), 'utf8'))
 const LOBBY_STASH_BAR_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyStashBar.tsx', import.meta.url), 'utf8'))
 const STUDIO_FRAME_SRC = codeOnly(readFileSync(new URL('../src/client/StudioFrame.tsx', import.meta.url), 'utf8'))
+// CV-358：余额卡从 StudioFrame 内联 JSX 抽出成组件（接真实数据源后状态变多）。
+const CREDITS_CARD_SRC = codeOnly(readFileSync(new URL('../src/client/CreditsCard.tsx', import.meta.url), 'utf8'))
 
 /** 播放弹窗（`.csModalHeader` / `.csModalClose` 的真实消费者）。 */
 const MEDIA_MODAL_FILES = [
@@ -1413,16 +1415,33 @@ test('REQ-030 守卫：左栏重排（拍板 ①A ②A ③A ④C）——骨架�
   assert.match(STUDIO_FRAME_SRC, /setSkillMarketOpen\(true\)/, '「技能」必须开既有 SkillMarket 浮层（CV-065），不得另造面板')
   assert.match(STUDIO_FRAME_SRC, /setLibOpen\(true\)/, '「资产」必须开既有资产库浮层（REQ-001），不得另造面板')
 
-  // ③ Credits 占位卡：纯展示（静态余额 + 升级套餐 disabled）；升级钮不得接任何
-  //    onClick（无商业化后端，接了就是假语义）。
-  assert.match(STUDIO_FRAME_SRC, /csCreditsUpgrade/, 'StudioFrame 必须渲染 Credits 占位卡（口径③已拍：纯展示）')
+  // ③ Credits 卡：REQ-030 时代是纯展示占位（静态 `0 / 1,000`），CV-358 起接
+  //    管理面真实余额（`/v1/credits/balance`），卡体随之抽成 CreditsCard.tsx。
+  //    占位语义里必须**继续成立**的两条：升级套餐仍 disabled 且不接 onClick
+  //    （商业化后端未接），以及不得再出现假分母 —— 后端没有总额度字段，那个
+  //    1000 是当年的前端常量。格式化口径（固定 4 位小数、不抹零）由
+  //    tests/account-format.test.mjs 行为断言，不在这里盯源码字面量。
+  assert.match(STUDIO_FRAME_SRC, /<CreditsCard/, 'StudioFrame 必须挂 CreditsCard（卡体已抽出，不再内联 JSX）')
+  assert.match(STUDIO_FRAME_SRC, /creditsState\.view/, '余额卡必须吃 Host 视图（creditsState.view），不得平行再存一份')
+  assert.match(CREDITS_CARD_SRC, /csCreditsUpgrade/, 'CreditsCard 必须渲染「升级套餐」')
   assert.match(
-    STUDIO_FRAME_SRC,
+    CREDITS_CARD_SRC,
     /csCreditsUpgrade" disabled/,
     '升级套餐必须 disabled（占位口径：商业化后端未接入）',
   )
+  assert.doesNotMatch(
+    CREDITS_CARD_SRC,
+    /csCreditsUpgrade[\s\S]{0,80}onClick/,
+    '升级套餐不得接 onClick（接了就是假语义：没有可跳的购买页）',
+  )
+  assert.doesNotMatch(CREDITS_CARD_SRC, /1,000/, '余额卡不得再出现假分母（后端只给可用/冻结，没有总额度）')
+  assert.match(CREDITS_CARD_SRC, /available_balance/, '主数字必须是服务端 available_balance（不得自算）')
   for (const cls of ['csCredits', 'csCreditsRow', 'csCreditsVal', 'csCreditsUpgrade']) {
     assert.notEqual(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 缺 styles.ts 规则（类与样式必须双向配对）`)
+  }
+  // CV-358 新增的三个状态类也必须成对（失败标灰 / 提示行 / 整行可点）。
+  for (const cls of ['csCreditsStale', 'csCreditsHint', 'csCreditsRowBtn']) {
+    assert.notEqual(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 缺 styles.ts 规则`)
   }
 
   // ①A 列表结构：段头（「项目」+「＋」建组）随 ProjectList 渲染；未分组平铺

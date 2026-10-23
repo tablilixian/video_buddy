@@ -76,6 +76,23 @@ function abortReason(signal: AbortSignal | undefined): unknown {
 }
 
 /**
+ * 一次生成结束的钩子（CV-358：把余额缓存标记陈旧）。
+ *
+ * 刻意做成 setter 而不是直接 `import { markCreditsStale }`：生成队列是媒体链路，
+ * 不该反向依赖账号编排模块；接线放装配层（`index.ts`）。
+ *
+ * 语义是「**本次请求已经结束**」，不是「服务端已经结清」—— 扣费时刻后端才知道，
+ * 钩子只负责让下一次读数不吃旧缓存。异常一律吞掉：队列推进的优先级高于记账。
+ */
+export type GenerationSettledHook = () => void
+let settledHook: GenerationSettledHook | null = null
+
+/** 装配时接线；传 null 撤销（单测复位用）。 */
+export function setGenerationSettledHook(hook: GenerationSettledHook | null): void {
+  settledHook = hook
+}
+
+/**
  * 申请一个槽位。等待期间被 abort 则**出队并抛错** —— 不清理就锁死整条队列。
  */
 function acquire(label: string, signal: AbortSignal | undefined): Promise<void> {
@@ -127,6 +144,12 @@ export async function withGenerateSlot<T>(
     // 释放与推进必须在一起：漏掉 pump() 会让队列停在第一个上。
     active = null
     pump()
+    // 钩子排在 pump() 之后：先让下一单拿到槽位，记账失败的代价不许传导给队列。
+    try {
+      settledHook?.()
+    } catch {
+      // 记账钩子的异常绝不外抛（它是附加语义，不是生成结果的一部分）。
+    }
   }
 }
 

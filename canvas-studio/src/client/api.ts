@@ -12,6 +12,7 @@ import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import type { StudioStorageInfo } from '../storage-info.js'
+import type { AccountCreditsView } from '../contracts/account.js'
 import { throwError } from '../error-system.js'
 import type { CompositionManifest } from '../remotion/manifest.js'
 import type {
@@ -377,6 +378,26 @@ export async function fetchStudioGenerateQueue(
 
 /** 存储目录诊断类型（形状在 src/storage-info.ts 定义，路由与 UI 共用同一来源）。 */
 export type { StudioStorageDraftStats, StudioStorageInfo, StudioStorageProjectEntry } from '../storage-info.js'
+
+/** 管理面余额视图（形状在 src/contracts/account.ts 定义，路由与 UI 共用同一来源）。 */
+export type { AccountCreditsView } from '../contracts/account.js'
+
+/**
+ * 管理面余额（CV-358，左栏余额卡）。`force` ⇒ 带 `?refresh=1` 绕 Host 的 30s TTL。
+ *
+ * 失败向上抛（不是静默返回 null）：余额卡必须能区分「读到 0.0000」与「没读到」，
+ * 静默成 0 会让用户以为钱没了。
+ */
+export async function fetchStudioAccountCredits(
+  force = false,
+  signal?: AbortSignal,
+): Promise<AccountCreditsView> {
+  const suffix = force ? '?refresh=1' : ''
+  return readJson<AccountCreditsView>(await fetch(`/canvas-studio/account/credits${suffix}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
 
 /**
  * REQ-021 R001 后续（方案 B）：存储目录只读诊断信息（设置页诊断区「存储目录」

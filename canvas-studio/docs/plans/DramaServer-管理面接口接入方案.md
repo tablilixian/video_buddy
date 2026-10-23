@@ -1,6 +1,6 @@
 # DramaServer 管理面接口接入方案（auth/sync · models · credits/balance）
 
-> 状态：**P1/P2/P4 落码完成，剩桌面 GUI 验收 + L6（2026-10-23 核对代码与提交）**——P1 = CV-355、P2 = CV-356、P4 = CV-357；**P2 只落了 `auth/sync` + `models`，`credits` 缓存未实现**；**P3 未开工**（未取号），CV-354 只落了模型相关 UI（官方区块识别网关行 + 待接入暗态）。逐阶段进度与缺口见 [§0.5](#05-当前进度核对2026-10-23)
+> 状态：**P1/P2/P4 + 积分（P3 的 credits 部分）落码完成，剩桌面 GUI 验收 + L6（2026-10-23 核对）**——P1 = CV-355、P2 = CV-356、P4 = CV-357、**余额 = CV-358**；P3 只剩 `session` / `models` 两条只读路由与业务用户展示未做（未取号）。逐阶段进度与缺口见 [§0.5](#05-当前进度核对2026-10-23)
 > 日期：2026-10-20（2026-10-22 按 DSH 0.2.1-rc.2 重新评估，见 §0.4）
 > 接口来源：《DramaServer 业务 API》（api(10).md，2026-10-19 版）：`POST /v1/auth/sync`、`GET /v1/models`、`GET /v1/credits/balance`
 > 参考实现：`/Users/wl/Desktop/job/reelsbuddy-desktop`（ADR-0002 已在 DSH 体系完整落地同一套接口）
@@ -61,13 +61,13 @@
 | 阶段 | 条目 | 代码状态 | 证据 / 缺口 |
 | --- | --- | --- | --- |
 | P1 协议客户端 + 设备身份 | CV-355 | ✅ 落码 | `src/drama-management.ts`（`sync`/`listTextModels`/`creditBalance`/`ApiError`）、`src/device-registry.ts`、`host-config.ts` 的 `businessApiBase`；两个测试文件在位 |
-| P2 登录 bootstrap | CV-356 | 🟡 **部分** | 已落 `auth/sync` → `models` → 网关回调（`src/account-state.ts`，接线在 `routes.ts:3373/3396`）；**`refreshBalance()` 与 credits 缓存从未实现** —— `creditBalance()` 至今**零调用方**（`grep -rE "creditBalance\|refreshBalance" src` 只命中定义处） |
+| P2 登录 bootstrap | CV-356 | ✅ 完成（含欠账） | `auth/sync` → `models` → 网关回调（`src/account-state.ts`，接线 `routes.ts:3373/3396`）；**`refreshBalance` 那条欠账已随 CV-358 落地**（`refreshCredits` + 30s TTL + `creditsView`） |
 | P4 LLM 网关 | CV-357 | ✅ 落码 | `src/gateway.ts` 纯函数 + `index.ts` 的 `applyGatewayConfig`/`reconcileGateway`（串行队列 + 指纹 + 启动期缓存恢复）；落行走 `settings.mutate`（`configEditor.edit` 的全量重放会被无关 entry 激活失败整体回滚，见 CV-357 详情） |
-| P3 只读路由 + UI | 未取号 | ❌ **未开工** | `GET /canvas-studio/account/{session,models,credits}` 三条路由、`client/api.ts` 封装、StudioFrame 的余额 chip / 业务用户展示**全部不存在**；`tests/account-routes.test.mjs` 也不存在 |
+| P3 只读路由 + UI | **CV-358**（credits）/ 未取号（其余） | 🟡 **credits 已落** | `GET /canvas-studio/account/credits` + `CreditsCard`（左栏 `.csCredits` 卡，见下方「积分落地清单」）；`session` / `models` 两条路由与业务用户展示**仍未做**，不需要它们的功能就不必开 |
 
 **结论（LLM 这条线）**：代码缺口 = 0。剩下全是验收 —— 桌面 5 步（官方区块点亮 / 聊天模型选择器出现 DramaServer 组 / 保存设置窗口不消失 / 服务端有设备记录 / 日志出现「管理面 bootstrap 完成」）+ L6 脚本一次 `scripts/live-e2e-management.mjs` + §4.2 两个契约待确认项（`/v1/llm` 契约、text 模型与 `openai-completions` 兼容性），后者本就靠 L6 覆盖。
 
-**结论（积分这条线）**：代码缺口 = 3 层 + 1 个触发点，见 [§P3](#p3--client-只读路由--ui-展示未开工) 的「积分落地清单」。
+**结论（积分这条线）**：已落 **CV-358**（Host 缓存 → 只读路由 → 左栏卡 + 生成后刷新），代码缺口 0，剩桌面验收。下面 §P3「积分落地清单」保留**开工前核对出的四处文档偏差**，那是这次真正省时间的地方。
 
 
 ---
@@ -106,9 +106,18 @@
 
 ---
 
-## P3 · client 只读路由 + UI 展示（未开工）
+## P3 · client 只读路由 + UI 展示
 
-> **现状（2026-10-23）**：整块未开工，未取 CV 号（开工前按 STATUS §4.1 水位复核后 +1）。CV-354 只落了「官方区块识别 `canvas-studio-gateway` 行 + 待接入暗态」，与本节的三条 account 路由无关。
+> **现状（2026-10-23）**：**积分部分已落 CV-358**（只读路由 + 左栏卡 + 生成后刷新）；`session` / `models` 两条路由与业务用户展示**仍未开工、未取号**（开工前按 STATUS §4.1 水位复核）。
+>
+> **开工前按代码核对，本节原设计有四处与实际不符**（照抄会做错，已按实测修正）：
+>
+> | # | 原文 | 实际 | 修正 |
+> | --- | --- | --- | --- |
+> | 1 | 「顶栏额度 chip」 | 画布没有顶栏；左栏底部已有 `.csCredits` 占位卡（REQ-030 ③） | 就地升级该卡，卡体抽 `CreditsCard.tsx` |
+> | 2 | 展示 `available / frozen`（沿用 `0 / 1,000`） | `/v1/credits/balance` **无总额度字段** | 改成「可用 + 冻结行」，不自造分母 |
+> | 3 | 生成结算后刷一次，挂 `callDrama` 的 finally | 那一步只是**释放出队槽位**，服务端未结清 | 挂 client `pollGenerationQueue` 里 `queuePollNeeded()` 转 false（+ 6s 复检） |
+> | 4 | （未提）用生成队列状态当忙碌判据 | `generationQueueStateOf` 在「有 active、无 waiting」时返回 `null` | 不得用 `store.generationQueue` 判忙碌，用 `queuePollNeeded()` |
 
 **目标**：画布 UI 可见登录用户、设备、模型目录、积分余额。
 
@@ -129,7 +138,9 @@
 3. 用户点 chip 或下拉刷新 → `?refresh=1` 强制刷新；
 4. **生成结算后主动刷一次** —— 挂到生成队列释放处（`callDrama` 的 `finally` 之后、任务终态推送点）。这是「扣完费立刻看到新余额」的唯一手段；缺这条，积分会一直显示上一次登录时的数字。
 
-**验收口径**：登录后 chip 出现且与 `GET /v1/credits/balance` 一致；跑一次生成 → chip 数字下降（不必等 TTL）；断网/503 时 chip 保留旧值并标灰，不显示 0。
+**验收口径**：登录后卡片出现且与 `GET /v1/credits/balance` 一致；跑一次生成 → 数字下降（不必等 TTL）；断网/503 时卡片保留旧值并标灰，不显示 0。
+
+**落地（CV-358，2026-10-23）**：①`src/account-state.ts` 的 `refreshCredits(force)` / `creditsView()` / `markCreditsStale()`（30s TTL、不抛错、**不写退避窗口**、在飞去重；**token 从 `auth-session` 现取而非另存一份** —— 抄一份会在「退避窗口内 / 幂等命中」两个提前 return 的分支漏更新，拿旧 token 换 401）；②`routes.ts` 的 `GET /canvas-studio/account/credits`（`requestAllowed` 守卫、`?refresh=1` 绕 TTL、未登录/未启用返 **200 降级体**、读失败保留旧值不 500）；③`CreditsCard.tsx`（七态）+ `credits-store.ts`（空闲即刷 + 6s 复检，连续生成不叠计时器）+ `formatCredits`（固定 4 位小数、不抹零）；④Host 侧 `generate-queue` 槽位释放置陈旧、client 侧队列空闲强刷 —— 两条互补，缺前一条会「生成后 30s 内切项目看到扣费前的数字」。
 
 | 动作 | 文件 | 说明 |
 | --- | --- | --- |
@@ -191,7 +202,9 @@ Spike 产物：一次性探针脚本（不入 `src/`），证据与结论回填�
 
 ### 剩余清单（2026-10-23，按依赖顺序）
 
-**A. LLM 一条线（代码 0 缺口，只剩验收）**
+**A. LLM 一条线（桌面验收已通过 —— 用户 2026-10-23 反馈）**
+
+下列步骤保留作**复验顺序**；L6 若尚未跑，建议补一次（它是 §4.2 两个契约待确认项的唯一覆盖手段）。
 
 1. 用户终端启动桌面（受管 shell 起不了 Electron，见交接文档 §6-9/11），日志确认无 `did not activate`、出现「网关行已从目录缓存恢复」/「管理面 bootstrap 完成」。
 2. 设置 → 模型：「DramaServer 官方模型」区块点亮；**期间保存任意一项** —— 窗口不得消失、`profiles/desktop/cordis.patch.yml` 出现 `llm-pi-ai.providers`。
@@ -200,14 +213,17 @@ Spike 产物：一次性探针脚本（不入 `src/`），证据与结论回填�
 5. 服务端确认设备记录 `name=VideoBuddy Desktop`。
 6. 以上通过 → CV-355/356/357 状态改「已完成」，STATUS §0 水位与 `changelog.md` 同步。
 
-**B. 积分一条线（代码 0% 起步，P2 欠账 + P3 全量）**
+**B. 积分一条线 —— 已落码（CV-358），只剩桌面验收**
 
-1. `account-state.refreshBalance(force)` + 30s TTL + bootstrap 预取（P2 欠账）。
-2. `GET /canvas-studio/account/credits`（`?refresh=1` 强刷、未启用降级体、403 禁用态）。
-3. `client/api.ts` 封装 + StudioFrame chip（4 位小数、available/frozen、失败保留旧值）。
-4. 生成结算后主动刷新（挂生成队列释放点）。
-5. 测试：`tests/account-state.test.mjs` 扩 credits 用例（TTL / 强刷去重 / 401 静默 / 403）+ 新增 `tests/account-routes.test.mjs`（authority 拒绝 / 降级体 / `refresh=1`）。
-6. 开工前取号（P3 未取号；按 STATUS §4.1 水位 +1，并 grep 复核）。
+1. ~~`account-state` 余额缓存 + TTL + bootstrap 预取~~ → `refreshCredits` / `creditsView` / `markCreditsStale` ✅
+2. ~~`GET /canvas-studio/account/credits`（强刷 / 降级体 / 403）~~ ✅
+3. ~~`client/api.ts` 封装 + 左栏卡（4 位小数 / 可用 + 冻结 / 失败留旧值）~~ → `CreditsCard.tsx` ✅
+4. ~~生成结算后刷新~~ → Host 置陈旧 + client 队列空闲强刷 + 6s 复检 ✅
+5. ~~测试~~ → `account-state`（+7）/ `account-routes`（新 5）/ `account-format`（新 4），REQ-030 守卫改判据 ✅
+6. ~~取号~~ → **CV-358** ✅
+7. **待桌面验收**：登录后左栏四位小数余额与接口一致 → 跑一次生成看数字下降（不等 30s）→ 点卡强刷 → 断网/503 保留旧值标灰 → 登出后数字消失。
+
+**C. 仍未开工（需要时才做）**：`GET /canvas-studio/account/session`（业务用户 + 设备）、`GET /canvas-studio/account/models`（目录缓存）与业务用户展示 —— 目前没有任何 UI 消费方，等「账号页」需求再取号。
 
 ## 风险清单
 

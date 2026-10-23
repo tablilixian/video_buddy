@@ -27,8 +27,9 @@ import { setRuntimeConfig } from './generate.js'
 import { setDramaAuthRequired } from './auth-session.js'
 // 管理面（方案 P1/P2/P4，CV-355/356/357）：设备身份 + 账号编排 + 模型网关。
 import { DeviceRegistry } from './device-registry.js'
-import { installAccountState } from './account-state.js'
+import { installAccountState, markCreditsStale } from './account-state.js'
 import type { CatalogModel } from './drama-management.js'
+import { setGenerationSettledHook } from './generate-queue.js'
 import {
   gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
   publishGatewayCredential, readGatewayCatalog,
@@ -285,6 +286,11 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
       }
     },
   })
+
+  // 生成一结束就把余额标记陈旧（CV-358）：Host 不知道后端何时结清，但至少能保证
+  // 「下一次读余额」不吃扣费前的缓存 —— 否则生成完 30s 内切项目/重开窗口会看到
+  // 旧数字。客户端在队列彻底空闲时还会再强刷一次，两条互补。
+  setGenerationSettledHook(() => { markCreditsStale() })
 
   // 启动期从目录缓存恢复网关行（重启/未重登录场景；登录推送会覆盖为网络新目录）。
   // **必须延后且兜 catch**：settings.mutate 底层走 ConfigEditor 的 profile 重放，

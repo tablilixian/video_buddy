@@ -1340,8 +1340,9 @@ const STUDIO_STYLES = `
   cursor: default;
 }
 
-/* Credits 占位卡（口径③已拍 2026-10-07：纯展示，无商业化数据源）。
-   余额静态「0 / 1,000」、升级套餐置灰「即将上线」。 */
+/* 余额卡（CV-358 起接真实数据源 /v1/credits/balance；REQ-030 ③ 的「纯展示
+   占位」时代结束）。余额：可用 + 冻结行、固定 4 位小数、无总额度分母。
+   「升级套餐」仍然长期 disabled（商业化入口未接）。 */
 .csCredits {
   flex: 0 0 auto;
   margin: 0 var(--cs-space-3, 12px);
@@ -1349,6 +1350,12 @@ const STUDIO_STYLES = `
   border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   border-radius: var(--cs-radius-lg, 12px);
   background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+
+/* 读失败 / 账号受限：整卡降透明提示「这数字不新鲜」，但**不隐藏数字**
+   —— 消失比变灰更让用户以为钱没了。 */
+.csCreditsStale {
+  opacity: 0.55;
 }
 
 .csCreditsRow {
@@ -1360,6 +1367,25 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 整行可点（点击 = 强刷余额）：button reset，外观与原来的 div 一致。 */
+.csCreditsRowBtn {
+  font: inherit;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.csCreditsRowBtn:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.csCreditsRowBtn:disabled {
+  cursor: default;
+}
+
 .csCreditsRow svg {
   color: var(--cs-accent-soft, var(--cs-accent));
   flex: 0 0 auto;
@@ -1369,6 +1395,21 @@ const STUDIO_STYLES = `
   margin-left: auto;
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
+  /* 等宽数字：刷新后位数变化时整行不抖（4 位小数 + 千分位）。 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* 次要提示行（冻结 / 刷新失败 / 账号受限）：一条就够，不堆叠。 */
+.csCreditsHint {
+  margin: -3px 0 9px;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csCreditsHintWarn {
+  color: var(--cs-warn, var(--dsw-alias-label-secondary));
 }
 
 /* 升级套餐：accent 渐变实底（与 hero 发送钮同一配方，文字色走对比令牌 ——

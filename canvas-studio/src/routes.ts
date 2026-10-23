@@ -31,7 +31,8 @@ import { generateQueueSnapshot } from './generate-queue.js'
 import { startLoopback, consumePendingCallback, loopbackActive, stopLoopback } from './auth-loopback.js'
 import { setAuthSession, clearAuthSession } from './auth-session.js'
 // 管理面编排（方案 P2/CV-356）：会话推送触发 auth/sync + 目录拉取（fire-and-forget）。
-import { notifyAuthSession, notifyAuthCleared } from './account-state.js'
+// 余额（CV-358）：会话推送后预取，读路径见 `GET /canvas-studio/account/credits`。
+import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView } from './account-state.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
 import { activeResumeJobCount } from './video-jobs.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
@@ -264,6 +265,8 @@ const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
 const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 // REQ-021 R001 后续（方案 B）：存储目录只读诊断面（设置页诊断区「存储目录」信息块）。
 const ROUTE_STORAGE_INFO = '/canvas-studio/storage-info'
+// CV-358：管理面余额只读面（左栏余额卡的数据来源）。只读 ⇒ requestAllowed。
+const ROUTE_ACCOUNT_CREDITS = '/canvas-studio/account/credits'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 /**
  * CV-331：用户上传 skill 面（prefix + 内部分派，与 storyboard / auth 同模式 ——
@@ -1061,6 +1064,29 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         if (!res.destroyed) sendJson(res, 200, info)
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '存储信息读取失败，请稍后重试。')
+      }
+    }}),
+
+    // CV-358：管理面余额只读面（左栏余额卡的数据来源）。
+    // `?refresh=1` 绕 Host 的 30s TTL（用户点卡片 / 生成结束后的强刷）；**在飞去重
+    // 在 account-state 里做**（连点只发一个请求），这里不二次判断。失败不 500 ——
+    // 视图本身带 error + 旧值，UI 保留数字并标灰，比一张错误卡有用。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ACCOUNT_CREDITS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'account credits is read-only' })
+        return
+      }
+      const force = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get('refresh') === '1'
+      try {
+        await refreshCredits(force)
+        if (!res.destroyed) sendJson(res, 200, creditsView())
+      } catch (cause) {
+        // refreshCredits 自身不抛；这是 HTTP 面的最后一道兜底。
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分读取失败，请稍后重试。')
       }
     }}),
 

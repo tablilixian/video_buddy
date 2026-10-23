@@ -13,7 +13,11 @@ import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { installAccountState, notifyAuthSession, notifyAuthCleared, backoffMsOf } from '../lib/account-state.js'
+import {
+  installAccountState, notifyAuthSession, notifyAuthCleared, backoffMsOf,
+  refreshCredits, creditsView, markCreditsStale,
+} from '../lib/account-state.js'
+import { setAuthSession, clearAuthSession } from '../lib/auth-session.js'
 import { ApiError } from '../lib/drama-management.js'
 import { DeviceRegistry } from '../lib/device-registry.js'
 
@@ -231,5 +235,190 @@ test('未启用闸（businessApiBase/supabaseUrl 空）：零请求', async () =
   } finally {
     stub.restore()
     notifyAuthCleared()
+  }
+})
+
+// ── CV-358：余额（credits）───────────────────────────────────────────────────
+//
+// 这一组锁的是「什么时候发请求」与「失败时数字怎么处置」——两件事都会直接变成
+// 用户可见的错误（余额莫名空白 / 读失败显示成 0）。token 一律经 auth-session 的
+// 会话缓存取，所以每个用例都要显式登录，不能靠 `notifyAuthSession` 的入参。
+
+const balanceOk = { currency: 'CNY', available_balance: 12.3456, frozen_balance: 0.5, lots: null }
+
+/** 装一套可用的 deps；`warns` 收日志便于断言。 */
+function installCreditsDeps(overrides = {}) {
+  const warns = []
+  installAccountState({
+    enabled: () => true,
+    businessApiBase: () => 'http://business.test',
+    device: { deviceId: () => 'dev-1', platform: () => 'darwin', appVersion: () => '1.0.0' },
+    log: { info() {}, warn: (message) => { warns.push(message) } },
+    onSessionToken: () => {},
+    onCatalogChanged: () => {},
+    ...overrides,
+  })
+  return warns
+}
+
+function signIn(token = 'tok-credits') {
+  setAuthSession({ accessToken: token, expiresAt: null, userId: 'u-1', email: null })
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+}
+
+function errorResponse(code, status) {
+  return jsonResponse({ error: { code, message: `模拟错误 ${code}` } }, status)
+}
+
+/** 每个用例的统一复位：清会话 + 清编排与余额状态。 */
+function resetAll() {
+  clearAuthSession()
+  notifyAuthCleared()
+}
+
+test('credits：未登录零请求（视图 signedIn=false，余额为 null 而不是 0）', async () => {
+  resetAll()
+  installCreditsDeps()
+  const stub = stubFetch(async () => jsonResponse(balanceOk))
+  try {
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 0, '没有会话就不该打管理面')
+    const view = creditsView()
+    assert.equal(view.signedIn, false)
+    assert.equal(view.balance, null)
+    assert.equal(view.fetchedAt, null)
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：force 打一次、TTL 内复用缓存、force 再穿透', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  const stub = stubFetch(async () => jsonResponse(balanceOk))
+  try {
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 1)
+    assert.ok(String(stub.calls[0].url).endsWith('/v1/credits/balance'), '打的是余额接口')
+    assert.equal(
+      String(stub.calls[0].init.headers.Authorization ?? stub.calls[0].init.headers.authorization),
+      'Bearer tok-credits',
+      'Bearer 头来自会话缓存',
+    )
+    const view = creditsView()
+    assert.equal(view.balance.available_balance, 12.3456, '四位小数原样保留，不截断')
+    assert.equal(view.balance.frozen_balance, 0.5)
+    assert.ok(view.fetchedAt !== null, 'fetchedAt 必须落下来（UI 要显示更新时间）')
+
+    await refreshCredits(false)
+    assert.equal(stub.calls.length, 1, 'TTL 内的普通读取零请求')
+
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 2, 'force 绕 TTL')
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：并发两次只发一个请求（在飞去重）', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  const stub = stubFetch(async () => jsonResponse(balanceOk))
+  try {
+    await Promise.all([refreshCredits(true), refreshCredits(true)])
+    assert.equal(stub.calls.length, 1)
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：403 置禁用态且后续不再请求（与 bootstrap 同一禁用语义）', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  const stub = stubFetch(async () => errorResponse('account_disabled', 403))
+  try {
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 1)
+    const view = creditsView()
+    assert.equal(view.disabled, true)
+    assert.equal(view.error.code, 'account_disabled')
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 1, '账号受限后不再打业务接口')
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：429/503 不写退避 —— 保留旧值、下一次仍会请求', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  let mode = 'ok'
+  const stub = stubFetch(async () => (mode === 'ok' ? jsonResponse(balanceOk) : errorResponse('rate_limited', 429)))
+  try {
+    await refreshCredits(true)
+    assert.equal(creditsView().balance.available_balance, 12.3456)
+
+    mode = 'busy'
+    await refreshCredits(true)
+    assert.equal(creditsView().balance.available_balance, 12.3456, '读失败必须保留旧值（清成 0 会吓人）')
+    assert.equal(creditsView().error.code, 'rate_limited')
+    assert.equal(stub.calls.length, 2)
+
+    mode = 'ok'
+    await refreshCredits(true)
+    assert.equal(stub.calls.length, 3, '余额是主动刷新语义：429 不写退避窗口，点了就发')
+    assert.equal(creditsView().error, null, '读成功要清掉上一次的错误')
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：markCreditsStale 让 TTL 内的普通读取重新走网络', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  const stub = stubFetch(async () => jsonResponse(balanceOk))
+  try {
+    await refreshCredits(true)
+    await refreshCredits(false)
+    assert.equal(stub.calls.length, 1, '前置：TTL 内本应零请求')
+    markCreditsStale()
+    await refreshCredits(false)
+    assert.equal(stub.calls.length, 2, '生成结束后被标记陈旧 ⇒ 下一次读取必须走网络')
+    assert.ok(creditsView().fetchedAt !== null, '陈旧标志不污染 updatedAt 的展示')
+  } finally {
+    stub.restore()
+    resetAll()
+  }
+})
+
+test('credits：会话清除即清空余额（登出后不得残留上一个账号的钱）', async () => {
+  resetAll()
+  installCreditsDeps()
+  signIn()
+  const stub = stubFetch(async () => jsonResponse(balanceOk))
+  try {
+    await refreshCredits(true)
+    assert.equal(creditsView().balance.available_balance, 12.3456)
+    resetAll()
+    const view = creditsView()
+    assert.equal(view.balance, null)
+    assert.equal(view.signedIn, false)
+    assert.equal(view.fetchedAt, null)
+    assert.equal(view.error, null)
+  } finally {
+    stub.restore()
   }
 })

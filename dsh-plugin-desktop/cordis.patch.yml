@@ -144,6 +144,15 @@
             config:
               - id: compaction-basic
                 name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  # 压缩摘要请求的输出上限必须显式压到 32k：不配时默认取
+                  # headroomTokens=65536，wire 上变成 `max_completion_tokens: 65536`，
+                  # 而 DramaServer /v1/llm 的输出上限是 32k → 每次压缩都返回
+                  # `400 invalid_argument: invalid llm request`，18 连败后上下文烧穿、
+                  # 会话死于 max-tokens（2026-10-23 真机实测钉死，见
+                  # canvas-studio/docs/session-postmortem-code-driven-explainer-2026-10-23.md；
+                  # 32768 实测 200，65536 实测 400）。
+                  maxTokens: 32768
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
           - id: persistent-shell

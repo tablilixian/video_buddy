@@ -103,6 +103,12 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
+### C2. 本地图像检测（1 个，不调后端）
+
+| 工具名 | 用途 |
+|--------|------|
+| `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
+
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 
 这 1 个不调用任何后端端点，只返回「能力边界 + 替代路径」文本，用来让上游 skill
@@ -479,7 +485,8 @@
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `manifest` | string（**必填**） | `CompositionManifest` 的 JSON 字符串（`meta` + `tracks`），字段口径见根仓 `remotion-integration-devdoc-2026-10-14.md` §4 |
+| `manifest` | string（与 `manifestPath` 二选一） | `CompositionManifest` 的 JSON 字符串（`meta` + `tracks`），字段口径见根仓 `remotion-integration-devdoc-2026-10-14.md` §4 |
+| `manifestPath` | string（与 `manifest` 二选一） | CV-360：manifest JSON 文件的**绝对路径**（先落盘再引用）。长片推荐——内联 JSON 过大被截断时，「尾部完整性校验」（`manifestTruncationError`：`meta.durationInFrames` 必须 = 全部轨道最大结束帧，缩水即 `CS-USER-ERR` 拒收）会拦下报错，白烧一轮渲染窗口；文件通道无此风险 |
 | `projectId` | string | 可选；缺省用当前会话项目 |
 
 **渲染约束**（客户端执行器内部）：`outputTarget:'arraybuffer'`（默认 `web-fs` 需用户手势）、`licenseKey:'free-license'`、显式传 `width/height/fps/durationInFrames`（取自 `manifest.meta`）。

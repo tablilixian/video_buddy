@@ -25,6 +25,22 @@ test('入参：quality 已在 JSON Schema 里声明（否则模型传了也会�
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'manifest'))
 })
 
+// ── CV-360：manifestPath 传路径通道 + 尾部截断校验必须模型可见 ──
+
+test('入参：manifestPath 已在 JSON Schema 里声明（CV-360 长片传路径通道）', () => {
+  const params = renderTool().parameters?.properties ?? {}
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'manifestPath'), `实际入参：${Object.keys(params).join(', ')}`)
+  assert.ok(String(params.manifest?.description).includes('二选一'), 'manifest 描述应写明与 manifestPath 二选一')
+  assert.ok(String(params.manifestPath?.description).includes('绝对路径'), 'manifestPath 描述应写明绝对路径要求')
+})
+
+test('工具描述：manifestPath 与「尾部完整性校验」对模型可见（描述不可见 = 能力不存在）', () => {
+  const desc = renderTool().description
+  assert.ok(desc.includes('manifestPath'), '描述必须提及 manifestPath 通道')
+  assert.ok(desc.includes('尾部完整性校验'), '描述必须提及截断校验（模型据此理解报错并改传完整 manifest）')
+  assert.ok(desc.includes('meta.durationInFrames 必须等于全部轨道的最大结束帧'), '描述必须写明判据')
+})
+
 test('结果：frames / report 已在结果 schema 里声明（additionalProperties:false 下漏声明＝静默丢失）', () => {
   const schema = renderTool().output?.schema
   assert.ok(schema, 'render_composition 应声明结果 schema')

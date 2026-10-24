@@ -39,6 +39,32 @@
 
 ---
 
+#### CV-362 · inspect_image 像素级图像检测工具 + 先粗后精纪律
+
+- **状态**：已修复·验收中（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：真机复盘（[session-postmortem](./session-postmortem-code-driven-explainer-2026-10-23.md)）P1-3：环境无 PIL/ImageMagick、`read_image` 对项目素材报错，agent 为「把代码 UI 落进表盘屏幕」手写 8 个 PNG 解码脚本（decode/an/an2/an3/an4/shot/cmp/cmp2/colors），烧 25 分钟与大量上下文。**修法**：① 新 `src/inspect-image.ts` 纯函数层（**零外部依赖**，node:zlib 手解 PNG：colorType 0/2/3/4/6 × bitDepth 1/2/4/8/16 × 行滤波 0-4 × 调色板/tRNS；JPG/WEBP/隔行 Adam7 显式报错带替代路径）+ 宿主工具 `inspect_image`：`mode:"profile"`（尺寸/位深/色彩类型）、`"bbox-dark"/"bbox-bright"`（亮度阈值包围盒，Rec.601 加权，超大图行抽样 ≤400 万像素；返回**画布百分比中心与宽高**——与 `render_composition` 的 box 同口径，x/y 中心、w/h 宽高，直接填轨道 transform/box）、`"colors"`（每通道 16 级量化主色 top-N，透明像素不计）。工具描述写明「**唯一像素真值来源，禁止手写 PNG 解码脚本**」。② 总纲「标准工作流」加**先粗后精**一行：用户要「快速出效果」→ draft 档 + 位置参数框先出一版按反馈调；声明「不需要精准」后**禁止像素量测**（总纲 11KB 硬闸余量极小，加字等量置换：压缩第 9 步与入口分流重复表述）。③ 平台事实清单 #12/#13：像素真值唯一来源 / 临时脚本写项目 `build/`、`/tmp` 会被沙箱清空。**登记**：tool-registry 计数 25→26 + 名单钉死、toolchain.md 绑定表、canvas-studio-tools.md §C2、docs/README.md、STATUS §3.4、tool-presentation 展示表（REQ-008①）、param-guard 参数分类表（filePath/threshold/topN，与 CV-361 的 manifestPath 一并）。**门禁实证（本 CV 的守卫价值自证）**：首次全量 smoke 抓出 4 处基线外红灯并全数修复——①裸抛守卫（inspect-image 12 处 `throw new Error` → `throwError('CS-USER-ERR')`）②参数分类表漏登记 ③零视频分流② 第 9 步须保留 `render_composition` 字样 ④REQ-008① 展示表漏登记；终验 **2111/2111 全绿、基线外新增 0**。
+- **涉及文件**：`src/inspect-image.ts`（新）/ `src/host-tools.ts` / `src/tool-presentation.ts` / `src/param-guard.ts` / `skills/canvas-studio-creation/SKILL.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md` / `docs/README.md` / `tests/inspect-image.test.mjs`（新，11 条：合成 PNG 编码器造已知像素逐像素断言 + 工具契约）/ `tests/tool-registry.test.mjs`
+- **落地/验收**：tsc×2 全绿；定向套件（inspect-image / tool-presentation / param-guard / error-system-guards / skill-tool-refs / skill-discipline / tool-registry）70/70；**全量 test:smoke 2111/2111、基线外新增 0**。**验收中**：重启桌面 → 对项目素材（如表体图）调 `inspect_image(mode:"bbox-dark")` 确认返回的画布百分比与实际屏幕区吻合；确认总纲「先粗后精」注入生效。
+
+#### CV-361 · render_composition 传路径通道 + 尾部截断校验
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：真机复盘（[session-postmortem](./session-postmortem-code-driven-explainer-2026-10-23.md)）的两个渲染入参缺陷：① 长片内联 manifest 过大被截断后仍发起调用（agent 自述「manifest 被手工截断，还混入了多余的字段」），白烧一次 186s 渲染窗口；② 宿主校验只查**超长**（`end > meta.durationInFrames` → warning 裁切），从不查**缩水**（尾部轨道丢失照样放行）。**修法**：① 新增 `manifestPath` 参数（绝对路径，与 `manifest` 二选一，8MB 上限，绝对路径强制）——manifest 落盘后传路径，彻底绕开入参体积问题；② 新增 `manifestTruncationError()` 纯函数（`src/remotion/manifest.ts`）：`meta.durationInFrames` 必须 = 全部轨道最大结束帧（工具说明的明文契约），缩水即 `CS-USER-ERR` 并给修复指引（核对 tracks / 或把总时长改成 maxEnd）。**为什么不并进 `validateManifest`**：它被客户端校正路径复用（`client/remotion-render.ts:441`「校正结果必须仍能过校验，否则保留原样」），而 ffprobe 真值校正会合法缩短 video 轨 ⇒ 截断检测只放宿主工具入口。**同步**：工具描述 + 参数描述、`toolchain.md` 绑定表、`docs/canvas-studio-tools.md` §B4 参数表、`code-driven-explainer/references/manifest-contract.md` 头部（长片必须走 manifestPath + 组装自洽自查）。
+- **涉及文件**：`src/host-tools.ts` / `src/remotion/manifest.ts` / `skills/canvas-studio-creation/references/toolchain.md` / `skills/code-driven-explainer/references/manifest-contract.md` / `docs/canvas-studio-tools.md` / `tests/manifest.test.mjs` / `tests/render-tool-contract.test.mjs`
+- **落地/验收**：manifest + render-tool-contract 两文件 26/26；skill/tool-registry/tool-guardrail 门禁 24/24；tsdown + tsc×2 全绿。新增断言：截断报错含双帧数 + 「不要原样重试」+ 有意空尾出路；自洽/超长/结构不合法 → null（不越权）；manifestPath 在 JSON Schema 声明（否则模型传了被 schema 丢弃）；描述含「尾部完整性校验」判据（描述不可见 = 能力不存在）。**待桌面验收**：长片（>30KB manifest）走 manifestPath 渲染成功；故意传缩水 manifest（meta 总时长 > maxEnd）→ 渲染前被拦且报错含修复指引。
+
+
+
+#### CV-360 · 压缩摘要请求输出超网关上限致 18 连败
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：真机会话复盘（[session-postmortem](./session-postmortem-code-driven-explainer-2026-10-23.md)）发现 18 次 compaction 全部 `400 invalid_argument: invalid llm request`，上下文只涨不缩烧到 215K/262K，turn 2/3 以 max-tokens 结束、输出退化成裸 `<｜DSML｜` 标记。**根因链**：`dsh-plugin-desktop/cordis.patch.yml` 里 compaction-basic 零配置挂载 → `maxTokens = config.maxTokens ?? headroomTokens`（`compaction-basic/src/config.ts:76`）落到默认 **65536** → 摘要请求 wire 上带 `max_completion_tokens: 65536`（pi-ai 对非 deepseek.com 域名用 `max_completion_tokens` 字段）→ 超 DramaServer `/v1/llm` 的 **32k 输出上限** → 每次压缩 400。普通对话从不带该字段（pi-ai 只认 `options.maxTokens`，调用方不设就不发）⇒ 全部成功，形成「18 连败 + 对话正常」的全有全无模式。重试无降级：pre-step 每步再触发（18 次），`compaction/summary-error` waterfall 无监听者，llm-retry 不覆盖压缩旁路调用。**实测对照（2026-10-23， DramaServer 真机）**：`max_completion_tokens` 65536 → `400 {"code":"invalid_argument","message":"invalid llm request"}`（与会话记录逐字节一致）；32768 → 200；1024 → 200。**修法（全部落在可编辑区，不动 submodule）**：① `cordis.patch.yml` compaction-basic 显式 `config.maxTokens: 32768`（根修）；② `canvas-studio/src/gateway.ts` 模型行补 `maxTokens: GATEWAY_MAX_OUTPUT_TOKENS(=32_768)` —— compaction 的压力预留 `reservedCompletionTokens` 会取适配器 `defaultMaxTokens`（← 模型行 maxTokens）计入输出预留，压力阈值从「预留 65k」修正为 32k，触发时机不再虚晚。**升级即生效**：老安装的重启路径 `recoverGatewayFromCache` → `applyGatewayConfig` 走 deep-strict 比较（不走只含 `{apiBaseUrl, models[code,displayName]}` 的指纹门），旧形状 profile ≠ 新形状 → 自动重写网关行。
+- **涉及文件**：`dsh-plugin-desktop/cordis.patch.yml` / `canvas-studio/src/gateway.ts` / `canvas-studio/tests/gateway.test.mjs`
+- **落地/验收**：gateway 单测 5/5（含新增守卫：每个模型行 maxTokens=32768 且 < 65536）；tsdown + `tsc -p tsconfig.json` + `tsc -p tsconfig.client.json --emitDeclarationOnly` 全绿；cordis.patch.yml 用 yaml 解析器验证 compaction-basic 节点形状 `{config: {maxTokens: 32768}}`。**待桌面验收**：重启桌面 → 跑一次长会话（或直接复现 189K+ 上下文）→ 确认 `compaction/end` 不再带 error、出现 `compaction/summary` 成功事件。**遗留（纵深防御，另立项）**：压缩持续失败对用户可见的警示条 + `compaction/summary-error` 降级监听（N 连败后持久收缩选区重试）；DramaServer 侧 400 应带字段名与上限值（服务端立项）。
+
 #### CV-359 · 渲染工单滞留改派 + 画布页轮询保活
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

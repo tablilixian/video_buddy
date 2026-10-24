@@ -143,6 +143,12 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   shotTransition: '枚举（chain / cut / bridge）',
   // irMode 已随 CV-264 从工具入参移除（模式推断唯一事实源在 capabilityOf），分类表同步清账。
   mode: '枚举（shot-breakdown / free）',
+  // —— CV-362 inspect_image ——
+  filePath: '绝对路径（PNG 文件），存在性/尺寸由 statSync 校验，无文本占位形态',
+  threshold: '数值（亮度阈值 0-255），越界由 execute 钳制',
+  topN: '数值（主色数量 1-16），越界由 execute 钳制',
+  // —— CV-361 render_composition ——
+  manifestPath: '绝对路径（manifest JSON 文件），内容由 JSON.parse + validateManifest + 尾部完整性校验拒收，比通用占位尺子更准',
   // —— 布尔 / 数值：不存在文本占位形态 ——
   includeRetired: '布尔开关',
   autoFixText: '布尔开关',

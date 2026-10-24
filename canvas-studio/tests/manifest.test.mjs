@@ -9,6 +9,7 @@ import {
   collectManifestSourceIds,
   deriveAudioComposition,
   isAllowedManifestAssetRef,
+  manifestTruncationError,
   validateManifest,
 } from '../lib/remotion/manifest.js'
 
@@ -40,6 +41,34 @@ test('合法 manifest 通过且无契约告警（lint 建议不计）', () => {
   assert.equal(result.ok, true, result.errors.join('；'))
   assert.deepEqual(result.errors, [])
   assert.deepEqual(contractWarnings(result), [], result.warnings.join('；'))
+})
+
+// ── CV-360：manifest 尾部截断检测（宿主 render_composition 入口专属）──
+// 真机复盘：meta 声明 60s、轨道只排到 21s 的截断 manifest 通过了当时的校验照样渲染，
+// 白烧一次渲染窗口。判据 = 工具说明的明文契约「总时长应 = max(结束帧)」。
+
+test('CV-360 截断检测：maxEnd < 总时长 → 报错并给修复指引', () => {
+  const m = baseManifest()
+  m.meta.durationInFrames = 600 // 轨道最大结束帧只有 300
+  const err = manifestTruncationError(m)
+  assert.ok(err !== null, '缩水 manifest 必须报错')
+  assert.ok(err.includes('600') && err.includes('300'), `错误应含两个帧数：${err}`)
+  assert.ok(err.includes('截断'), `错误应点出截断嫌疑：${err}`)
+  assert.ok(err.includes('不要原样重试'), `错误应禁止原样重试：${err}`)
+  assert.ok(err.includes('把 meta.durationInFrames 改成 300'), `错误应给有意空尾的出路：${err}`)
+})
+
+test('CV-360 截断检测：自洽 / 超长 / 结构不合法 → null（不越权）', () => {
+  // 自洽（maxEnd == 300 == 总时长）：基线，放行
+  assert.equal(manifestTruncationError(baseManifest()), null)
+  // 超长（maxEnd 300 > 总时长 150）：是 validateManifest 的 warning 域（裁切），这里不管
+  const over = baseManifest()
+  over.meta.durationInFrames = 150
+  assert.equal(manifestTruncationError(over), null)
+  // 结构不合法：交给 validateManifest，这里一律 null
+  assert.equal(manifestTruncationError({ id: 'x' }), null)
+  assert.equal(manifestTruncationError(null), null)
+  assert.equal(manifestTruncationError('nope'), null)
 })
 
 test('非对象 / 缺 meta 直接拒绝', () => {

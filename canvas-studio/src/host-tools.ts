@@ -8,6 +8,7 @@
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
 import { randomUUID } from 'node:crypto'
+import { readFileSync, statSync } from 'node:fs'
 import { sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -59,7 +60,8 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
-import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
+import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
+import { decodePng, dominantColors, luminanceBBox, profileImage } from './inspect-image.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
@@ -2566,7 +2568,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       description:
         '用代码驱动合成（Remotion）把 CompositionManifest 渲染成成片——用于「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 转场」等生成模型做不到的精确动画与排版。'
         + '与 compose_video 并列：compose_video 只拼已有视频片段，本工具额外支持文本卡 / 形状 / 转场并逐帧精确控制。'
-        + '入参 manifest 是一段 JSON 字符串；先经宿主校验（不合法直接报错、不渲染）与素材核对，再过审批门（同 compose_video）。'
+        + '入参 manifest 是一段 JSON 字符串，或用 manifestPath 传 manifest JSON 文件的绝对路径（长片推荐，避免入参过大被截断——截断会在渲染前被「尾部完整性校验」拦下：meta.durationInFrames 必须等于全部轨道的最大结束帧）；'
+        + '先经宿主校验（不合法直接报错、不渲染）与素材核对，再过审批门（同 compose_video）。'
         + '渲染由宿主内置的**隐藏渲染窗口**完成（Electron 渲染进程 + Remotion Web 渲染器），宿主只做校验 / 编排 / 落盘；'
         + '渲染期间用户可以切走、最小化、甚至换到别的会话，都不影响；但**关掉整个 App 会中断渲染**（会以失败返回，重开后重试即可）。'
         + '成片作为 video-composite 节点落画布（血缘指向 manifest 引用的素材），返回与 compose_video 同形状的 url / 时长 / 分辨率 / 音轨构成 / nodeId。'
@@ -2599,7 +2602,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\nwarnings 里会出现「[编排体检 ML-xx] …」——这是**只提示不拒收**的观感体检（同帧入场 / 有进无出 / 动画过短 / 位移用 linear / 转场太短 / 静态占比过高 / 字幕超行等）。看到就照建议改，别当成渲染失败。'
         + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
       parameters: {
-        manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见本工具说明）；解析 / 校验失败会显式报错且不渲染' },
+        manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见本工具说明）；解析 / 校验失败会显式报错且不渲染。与 manifestPath 二选一；**长片（轨道多、JSON 超 ~30KB）请改用 manifestPath 落盘传路径**，避免入参截断' },
+        manifestPath: { type: 'string' as const, description: '可选：manifest JSON 文件的**绝对路径**（如先写入项目 build/ 目录再引用），与 manifest 二选一。长片 manifest 建议走这里——入参截断会在渲染前被「尾部完整性校验」拦下报错，浪费一轮；文件方式则无入参体积风险' },
         projectId: { type: 'string' as const, description: '可选：目标项目 id；缺省取当前会话项目' },
         quality: {
           type: 'string' as const,
@@ -2609,20 +2613,55 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { manifest?: unknown; projectId?: unknown; quality?: unknown }
+        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown }
         const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
         assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
         const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'render_composition', false)
-        if (typeof a.manifest !== 'string' || a.manifest.trim() === '') {
-          throwError('CS-USER-ERR', { message: '缺少 manifest（需 CompositionManifest JSON 字符串）。' })
+        // CV-360：入参获取双通道 —— 内联 JSON 字符串（老用法）或 manifestPath 文件引用。
+        // 背景：长片的内联 manifest 过大时会被工具入参截断（真机复盘：agent 手工截断后
+        // 仍发起调用，白烧一次渲染窗口）；落盘 + 传路径彻底绕开入参体积问题。
+        const hasInline = typeof a.manifest === 'string' && a.manifest.trim() !== ''
+        const hasPath = typeof a.manifestPath === 'string' && a.manifestPath.trim() !== ''
+        if (hasInline && hasPath) {
+          throwError('CS-USER-ERR', { message: 'manifest 与 manifestPath 二选一，不要同时传。' })
+        }
+        let manifestJson = ''
+        if (hasPath) {
+          const p = (a.manifestPath as string).trim()
+          if (!p.startsWith(sep)) {
+            throwError('CS-USER-ERR', { message: `manifestPath 必须是绝对路径（收到 ${p}）。` })
+          }
+          let stat: { size: number; isFile: () => boolean }
+          try {
+            stat = statSync(p)
+          } catch {
+            throwError('CS-USER-ERR', { message: `manifestPath 文件不存在或不可读：${p}。请先确认已写入磁盘。` })
+          }
+          if (!stat.isFile()) {
+            throwError('CS-USER-ERR', { message: `manifestPath 不是普通文件：${p}` })
+          }
+          const MAX_MANIFEST_BYTES = 8 * 1024 * 1024
+          if (stat.size > MAX_MANIFEST_BYTES) {
+            throwError('CS-USER-ERR', { message: `manifest 文件过大（${stat.size} 字节 > 8MB 上限）：${p}` })
+          }
+          try {
+            manifestJson = readFileSync(p, 'utf8')
+          } catch (cause) {
+            throwError('CS-USER-ERR', { message: `manifestPath 读取失败：${p}（${cause instanceof Error ? cause.message : String(cause)}）` })
+          }
+        } else if (hasInline) {
+          manifestJson = a.manifest as string
+        } else {
+          throwError('CS-USER-ERR', { message: '缺少 manifest（CompositionManifest JSON 字符串）或 manifestPath（manifest JSON 文件的绝对路径），二选一。' })
         }
         // 1) 解析 + 顺序衔接解析 + 校验（宿主侧纯函数，无浏览器 —— 与渲染路线无关）
         let parsed: unknown
         try {
-          parsed = JSON.parse(a.manifest)
+          parsed = JSON.parse(manifestJson)
         } catch {
-          throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON。请检查后重试。' })
+          throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON。请检查后重试'
+            + (hasPath ? '（文件内容损坏？重新写入后再试）。' : '。') })
         }
         // 三期 W1-2：`startAfter` 在**校验之前**解析成数字帧 —— 校验层允许 startFrame 缺省，
         // 但渲染器只认数字。解析失败（自引用 / 前向引用）直接拒收，零副作用。
@@ -2633,6 +2672,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const validation = validateManifest(normalized.manifest)
         if (!validation.ok) {
           throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
+        }
+        // CV-360：尾部截断检测（宿主入口专属，客户端校正路径不用 —— 真值校正会合法缩短轨道）。
+        // 真机教训：截断的 manifest（meta 声明 60s、轨道只排到 21s）通过了当时的校验，
+        // 照样发起渲染白烧一次窗口。这里按「总时长应 = 最大结束帧」的明文契约硬拦。
+        const truncation = manifestTruncationError(normalized.manifest)
+        if (truncation !== null) {
+          throwError('CS-USER-ERR', { message: truncation })
         }
         const manifest = normalized.manifest
         // 1.5) 素材物化（R3）：域内本地绝对路径 → 同源 URL；域外路径**显式拒收**。
@@ -2942,6 +2988,112 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             concludedForLanding
               ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
               : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',
+          ].join('\n'),
+        }
+      },
+    }),
+    defineTool({
+      name: 'inspect_image',
+      description:
+        '像素级图像分析（只支持 PNG，零外部依赖）：给出「亮度阈值包围盒 / 主色分布 / 基础信息」三类真值。'
+        + '用途：把代码 UI 精准落进素材上的物理区域（如手表屏幕暗区 bbox → 直接换算成 render_composition 轨道的画布百分比 x/y/w/h）；'
+        + '核对素材构图（表体在右 1/3？）与主色（背景色 / 主题色提取）。'
+        + '⚠️ 这是唯一的像素真值来源——**不要再手写 PNG 解码脚本**（node:zlib 手解 / 找 PIL / ffprobe 探像素都是弯路，本工具一次给全）。'
+        + '用法：先 mode:"profile" 看尺寸构图 → mode:"bbox-dark"（threshold 缺省 40，够定位深色屏幕/主体）或 "bbox-bright"（threshold 缺省 215，定位高光/白底）拿区域的画布百分比 → 直接填进轨道 transform/box。'
+        + 'mode:"colors" 返回量化主色 top-N（每通道 16 级）。返回的 bbox 中心/宽高已是画布百分比（与 render_composition 的 box 同口径：x/y 是中心、w/h 是宽高），无需再换算。'
+        + 'JPG/WEBP/隔行 PNG 会显式报错并给替代路径。',
+      parameters: {
+        filePath: { type: 'string' as const, description: '图像文件的绝对路径（PNG）。项目资产、画布素材、截图落盘文件均可' },
+        mode: {
+          type: 'string' as const,
+          enum: ['profile', 'bbox-dark', 'bbox-bright', 'colors'] as const,
+          description: 'profile = 尺寸/位深/色彩类型；bbox-dark / bbox-bright = 亮度阈值包围盒（含画布百分比中心与宽高）；colors = 主色 top-N',
+        },
+        threshold: { type: 'number' as const, description: '可选：亮度阈值 0-255（bbox 模式用）。dark 缺省 40（≤ 阈值算命中），bright 缺省 215（≥ 阈值算命中）。屏幕纯黑用 30-60；浅灰界面提到 120-180' },
+        topN: { type: 'number' as const, description: '可选：colors 模式返回的主色数量，1-16，缺省 8' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '分析结果（bbox 含画布百分比中心与宽高，可直接填 render_composition 的 transform/box）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args) {
+        const a = args as { filePath?: unknown; mode?: unknown; threshold?: unknown; topN?: unknown }
+        const filePath = typeof a.filePath === 'string' ? a.filePath.trim() : ''
+        if (filePath === '' || !filePath.startsWith(sep)) {
+          throwError('CS-USER-ERR', { message: '缺少 filePath 或不是绝对路径。' })
+        }
+        const mode = a.mode === 'bbox-dark' || a.mode === 'bbox-bright' || a.mode === 'colors' || a.mode === 'profile'
+          ? a.mode
+          : undefined
+        if (mode === undefined) {
+          throwError('CS-USER-ERR', { message: `mode 非法（${String(a.mode)}）—— 只允许 profile / bbox-dark / bbox-bright / colors` })
+        }
+        let buf: Uint8Array
+        let stat: { size: number; isFile: () => boolean }
+        try {
+          stat = statSync(filePath)
+        } catch (cause) {
+          throwError('CS-USER-ERR', { message: `文件不存在或不可读：${filePath}（${cause instanceof Error ? cause.message : String(cause)}）。请确认路径（可先 ls）。` })
+        }
+        if (!stat.isFile()) {
+          throwError('CS-USER-ERR', { message: `filePath 不是普通文件：${filePath}` })
+        }
+        if (stat.size > 64 * 1024 * 1024) {
+          throwError('CS-USER-ERR', { message: `文件过大（${stat.size} 字节 > 64MB 上限）：${filePath}` })
+        }
+        try {
+          buf = readFileSync(filePath)
+        } catch (cause) {
+          throwError('CS-USER-ERR', { message: `文件读取失败：${filePath}（${cause instanceof Error ? cause.message : String(cause)}）` })
+        }
+        const threshold = typeof a.threshold === 'number' && Number.isFinite(a.threshold)
+          ? Math.max(0, Math.min(255, Math.round(a.threshold)))
+          : undefined
+        const topN = typeof a.topN === 'number' && Number.isFinite(a.topN)
+          ? Math.max(1, Math.min(16, Math.round(a.topN)))
+          : 8
+        if (mode === 'profile') {
+          const profile = profileImage(buf)
+          return {
+            text: `格式 ${profile.format} · ${profile.width}×${profile.height} · ${profile.bitDepth}bit · ${profile.colorType} · ${(profile.bytes / 1024).toFixed(1)}KB`,
+          }
+        }
+        let decoded
+        try {
+          decoded = decodePng(buf)
+        } catch (cause) {
+          throwError('CS-USER-ERR', { message: cause instanceof Error ? cause.message : String(cause) })
+        }
+        if (mode === 'colors') {
+          const colors = dominantColors(decoded, topN)
+          if (colors.length === 0) {
+            return { text: '全图透明（无有效像素）' }
+          }
+          return {
+            text: [
+              `${decoded.width}×${decoded.height} 主色 top-${colors.length}（每通道 16 级量化，占比为非透明像素）：`,
+              ...colors.map((c) => `- ${c.hex}  ${c.pct}%`),
+            ].join('\n'),
+          }
+        }
+        const polarity = mode === 'bbox-dark' ? 'dark' as const : 'bright' as const
+        const effective = threshold ?? (polarity === 'dark' ? 40 : 215)
+        const bbox = luminanceBBox(decoded, polarity, effective)
+        if (bbox === null) {
+          return { text: `无命中像素（${polarity}，阈值 ${effective}）——阈值不合合适：dark 调高 / bright 调低后重试` }
+        }
+        return {
+          text: [
+            `${decoded.width}×${decoded.height} 中亮度${polarity === 'dark' ? ' ≤' : ' ≥'}${bbox.threshold} 的包围盒：`,
+            `像素范围 x ${bbox.x0}-${bbox.x1}，y ${bbox.y0}-${bbox.y1}`,
+            `画布百分比（render_composition box 口径，x/y=中心）：cx=${bbox.centerX} cy=${bbox.centerY} w=${bbox.widthPct} h=${bbox.heightPct}`,
+            `命中覆盖 ${bbox.coveragePct}%（命中过广说明阈值混入了背景，按需收紧；过小说明目标更亮/更暗，放宽阈值）`,
           ].join('\n'),
         }
       },

@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import {
   gatewayCatalogPath, gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
   publishGatewayCredential, readGatewayCatalog, writeGatewayCatalog,
-  GATEWAY_CREDENTIAL_REF, GATEWAY_ROUTE_NAME,
+  GATEWAY_CREDENTIAL_REF, GATEWAY_MAX_OUTPUT_TOKENS, GATEWAY_ROUTE_NAME,
 } from '../lib/gateway.js'
 
 const catalogOf = (models) => ({ apiBaseUrl: 'http://business.test', models, updatedAt: '2026-10-22T00:00:00Z' })
@@ -48,10 +48,19 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
     api: 'openai-completions',
     baseURL: 'http://business.test/v1/llm',
     models: [
-      { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144 },
-      { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144 },
+      { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768 },
+      { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144, maxTokens: 32_768 },
     ],
   })
+})
+
+test('模型行必须带 maxTokens=32768（DramaServer 输出上限，压缩压力预留依据）', () => {
+  const profile = gatewayProfile(gatewayRow(catalogOf([modelOf('deepseek-flash')])))
+  assert.equal(GATEWAY_MAX_OUTPUT_TOKENS, 32_768)
+  for (const model of profile.models) {
+    assert.equal(model.maxTokens, GATEWAY_MAX_OUTPUT_TOKENS)
+    assert.ok(model.maxTokens < 65_536, '必须低于 compaction 默认 headroom（65536），否则压缩请求 400')
+  }
 })
 
 test('gatewayProviderOf + 指纹：无变化不写的判据', () => {

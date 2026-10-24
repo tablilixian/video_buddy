@@ -1,6 +1,10 @@
 # CompositionManifest 契约（组装必读）
 
-`render_composition` 的唯一入参是字段 `manifest`（一段 JSON 字符串）。本文是该结构的字段手册与硬约束；上游口径见 `skills/canvas-studio-creation/references/toolchain.md`。
+`render_composition` 的 manifest 入参二选一：字段 `manifest`（一段 JSON 字符串），或字段 `manifestPath`（manifest JSON 文件的**绝对路径**）。本文是该结构的字段手册与硬约束；上游口径见 `skills/canvas-studio-creation/references/toolchain.md`。
+
+**长片必须走 `manifestPath`**：先把 manifest 写进项目内文件（如 `build/manifest.json`），再把绝对路径传给 `manifestPath`。原因：内联 JSON 过大时会被工具入参截断——宿主的「尾部完整性校验」会拦下缩水的 manifest（`meta.durationInFrames` 必须 = 全部轨道的最大结束帧，少一帧都报 `CS-USER-ERR`），但那已经浪费了一轮调用；文件通道没有入参体积风险。短 manifest（草稿迭代）内联即可。
+
+**时长自洽是硬约束**：组装完成时自查一遍 `meta.durationInFrames == max(track.startFrame + track.durationInFrames)`（字幕末句卡与收尾轨都应到达总时长），不成立先自己改对再调用——别等宿主报「尾部完整性校验失败」再返工。
 
 ## 顶层结构
 

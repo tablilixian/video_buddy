@@ -24,6 +24,16 @@ export const GATEWAY_SETTINGS_NS = 'llm-pi-ai'
 export const GATEWAY_CATALOG_FILE = 'gateway-catalog.json'
 /** 未在目录里声明容量时的兜底（DramaServer 默认最大输出 32k，给足上下文）。 */
 export const GATEWAY_DEFAULT_CONTEXT_WINDOW = 262_144
+/**
+ * DramaServer `/v1/llm` 的输出上限（2026-10-23 实测：32768 → 200，65536 → 400
+ * `invalid_argument`，错误体与会话记录中 18 次压缩失败逐字节一致）。
+ * 写进每个模型行的作用：compaction-basic 的压力预留（`reservedCompletionTokens`）
+ * 会取适配器的 per-request 默认（`defaultMaxTokens` ← 本字段）计入输出预留，
+ * 使压力阈值不再按 65k headroom 虚高、压缩触发时机正确。注意普通请求的
+ * `max_completion_tokens` 仍只在调用方显式设置时携带（pi-ai 只认 options.maxTokens），
+ * 压缩请求的输出上限由 cordis.patch.yml 里 compaction-basic 的 `maxTokens` 显式管住。
+ */
+export const GATEWAY_MAX_OUTPUT_TOKENS = 32_768
 
 export interface GatewayCatalog {
   apiBaseUrl: string
@@ -42,7 +52,7 @@ export interface GatewayProviderProfile {
   apiKeyEnv: string
   api: string
   baseURL: string
-  models: { id: string; name: string; contextWindow: number }[]
+  models: { id: string; name: string; contextWindow: number; maxTokens: number }[]
 }
 
 export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
@@ -55,6 +65,7 @@ export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
       id: model.code,
       name: model.displayName,
       contextWindow: GATEWAY_DEFAULT_CONTEXT_WINDOW,
+      maxTokens: GATEWAY_MAX_OUTPUT_TOKENS,
     })),
   }
 }

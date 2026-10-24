@@ -1458,6 +1458,47 @@ export function validateManifest(input: unknown): ManifestValidation {
   return { ok: errors.length === 0, errors, warnings }
 }
 
+/**
+ * CV-360 · manifest **尾部截断**检测（独立纯函数，只在宿主工具入口调用）。
+ *
+ * 为什么不并进 `validateManifest`：它还被客户端校正路径复用
+ * （`client/remotion-render.ts` 的「校正结果必须仍能通过校验，否则保留原样」），
+ * 而 ffprobe 真值校正会合法地缩短 video 轨 ⇒ 共享语义下「缩水」可能是正常产物。
+ * 截断检测只该拦**工具入口**那份用户声明的 manifest。
+ *
+ * 判据：`meta.durationInFrames` 应等于全部轨道的最大结束帧（工具说明的明文契约，
+ * 字幕规则也要求末句卡到达总时长）。`maxEnd < 总时长` 时，成片尾部就是一段
+ * 无内容的背景色 —— 真机上这正是「manifest 被截断后尾部轨道丢失」的症状
+ * （CV-360 复盘：宿主校验只查超长不查缩水，截断的 manifest 照样放行烧掉一次渲染）。
+ *
+ * 结构不合法（缺 meta / 缺 tracks / 非正整数）时返回 null —— 那些由 `validateManifest` 报。
+ */
+export function manifestTruncationError(input: unknown): string | null {
+  if (!isRecord(input)) return null
+  const meta = input.meta
+  if (!isRecord(meta)) return null
+  const total = meta.durationInFrames
+  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0 || !Array.isArray(input.tracks)) return null
+  let maxEnd = 0
+  for (const track of input.tracks) {
+    if (!isRecord(track)) continue
+    const start = track.startFrame
+    const duration = track.durationInFrames
+    if (typeof start === 'number' && Number.isFinite(start)
+      && typeof duration === 'number' && Number.isFinite(duration)) {
+      const end = start + duration
+      if (end > maxEnd) maxEnd = end
+    }
+  }
+  // maxEnd === 0 ⇒ 没有任何可判定的数字轨，结构问题交给 validateManifest。
+  if (maxEnd === 0 || maxEnd >= total) return null
+  return `manifest 尾部完整性校验失败：meta.durationInFrames(${total}) 大于全部轨道的最大结束帧(${maxEnd})`
+    + `——最后 ${total - maxEnd} 帧没有任何轨道覆盖。两种可能：`
+    + `① manifest 尾部轨道被截断（入参过大被截断的典型症状，最常见）；② 总时长多报。`
+    + `请核对 tracks[] 是否完整后重传完整 manifest，不要原样重试；`
+    + `若尾部空白确属有意（极少见），把 meta.durationInFrames 改成 ${maxEnd} 使其自洽。`
+}
+
 function validateTransitions(
   tracks: readonly unknown[],
   errors: string[],

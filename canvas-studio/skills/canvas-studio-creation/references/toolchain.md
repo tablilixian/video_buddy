@@ -39,6 +39,8 @@
 9. **全局资产库引用**：用户提到既定角色 / 场景 / 物件 / 群像（按名称或别名，如「女主」「雨夜巷弄」）时，system prompt 的「全局资产库」小节或 `list_references` 的 `library` 字段里有 `id=lib:<uuid>`——要作参考图 / 文件引用时**逐字使用** `@ref[lib:<id>]`（裸 `lib:<id>` 同样可解析），Host 自动把该资产的媒体物化到当前项目并换出可用 filename；**不得改写、翻译或截断 id**。库条目没有媒体文件时会明确报错，此时只按名称 / 别名用它的文字信息，**不要把 id 硬塞进 filename**。
 10. **产物 URL 只用于展示**：`image_generate` / `video_generate` 等返回的 `url` 用途只有三个——展示给用户、画布血缘、`upload_image` 取 filename。**不是视觉输入**。需要确认画面内容的唯一合规手段是 `image2vl`（视频用 `video2vl`）：先 `upload_image(imageUrl=url)` 拿 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；无需内容判断就直接文字汇报产物（尺寸 / 数量 / URL）。
 11. **`image_fix` 与 `image-edit` 槽位的分工**：去水印 / 去瑕疵 / 局部小修 / 图内文字修复走 `image_fix`；结构性改图（换构图、改风格、重绘）走 `image-edit` 槽位的 skill。**不要对大改用 `image_fix` 硬撑** —— 它是改图接口，prompt 里带场景/角色/风格描述会伤及画面。
+12. **像素真值只有 `inspect_image` 一个来源**：定位素材上的物理区域（表盘屏幕暗区、白底边缘）用 `mode:"bbox-dark"` / `"bbox-bright"`，返回的画布百分比中心与宽高与 `render_composition` 的 box 同口径、直接填轨道；主色用 `mode:"colors"`。**禁止手写 PNG 解码脚本（node:zlib 手解）、禁止找 PIL / ffprobe 探像素**——环境里没有，写了就是白烧 25 分钟（真机实证）。
+13. **临时脚本写进项目内目录**（如项目根 `build/`）：`/tmp` 会被沙箱清空，写进去 = 返工一遍（真机实证）。
 
 ## 调用节奏：图片类逐个来，视频类批量提交（先读这一节）
 
@@ -90,8 +92,9 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | cut_audio | **裁切音频片段**（Host 侧本地 ffmpeg，不调后端、秒回）：把一段音频裁成需要的区间，产物落为**新音频节点**（血缘指向源节点），可作 `bgmNodeId` / `audioRefs`。用户说「裁一下 / 只要 12–20 秒 / BGM 太长 / 只留副歌 15 秒」就用它 —— **不要自己拼 ffmpeg 命令，也不用去找 ffmpeg 在哪** | audio（画布音频节点 id / `@ref[显示名]` / 本地资产文件名；视频节点 = 抽它的音轨）、start（秒，含）、end（秒，不含；超源长自动截到末尾并给 warnings） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
 | extract_last_frame | 抽视频**真实末帧**（本地 ffmpeg，不占后端），供 `shotTransition=chain` 链帧用 | videoUrl（视频片段的同源 URL，即 `video_generate` / `video_composite` 返回的 `url`）。**只在衔接语义为 `chain` 时调用**；返回的 `filename` 直接作下一镜的 `filename`/`filenames[0]` |
+| inspect_image | **像素级图像检测**（本地零依赖，只支持 PNG，CV-362）：bbox 定位（暗/亮阈值 → 画布百分比中心与宽高，与 render_composition 的 box 同口径）/ 主色 top-N / 基础信息。**把代码 UI 落进素材物理区域（如表盘屏幕暗区）用 bbox-dark 拿百分比直接填轨道**；**这是唯一像素真值来源，禁止手写 PNG 解码脚本 / 找 PIL** | filePath（PNG 绝对路径）、mode（`profile`/`bbox-dark`/`bbox-bright`/`colors`）、threshold?（dark 缺省 40，bright 缺省 215）、topN?（colors，缺省 8） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
-| render_composition | **代码驱动合成**（Remotion，REQ-034）：按 manifest 渲染字幕卡 / 数据卡 / 转场 / 图文幻灯片成成片。返回结构与 `compose_video` **完全相同**（另加 `frames` 抽帧 + `report` 渲染报告）。客户端渲染、不占后端；素材先 `list_references` 对账。**节奏/排版没定前用 `quality:"draft"` 迭代**（半分辨率、跳过渲染前预览闸门、快 2.5×+），定稿再 `standard`/`high` 重渲 | manifest（**必填**，JSON 字符串，含 meta/tracks）、projectId?、quality?（`draft`/`standard`/`high`，缺省 standard） |
+| render_composition | **代码驱动合成**（Remotion，REQ-034）：按 manifest 渲染字幕卡 / 数据卡 / 转场 / 图文幻灯片成成片。返回结构与 `compose_video` **完全相同**（另加 `frames` 抽帧 + `report` 渲染报告）。客户端渲染、不占后端；素材先 `list_references` 对账。**节奏/排版没定前用 `quality:"draft"` 迭代**（半分辨率、跳过渲染前预览闸门、快 2.5×+），定稿再 `standard`/`high` 重渲 | manifest / manifestPath（**二选一**：JSON 字符串，或先把 manifest 写入项目内文件再传绝对路径——长片推荐后者，入参过大被截断会在渲染前被尾部完整性校验拦下）、projectId?、quality?（`draft`/`standard`/`high`，缺省 standard） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段；**失效参考默认不列**（`includeRetired=true` 连同失效一并读出，带 `status`） | includeRetired? |
 
 **BGM 生成 `music_generation`（可用，Drama txt2audio / Yue2）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM lyrics 留空（自动填 [Instrumental]）。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（**CV-209 自适应淡入淡出**），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。

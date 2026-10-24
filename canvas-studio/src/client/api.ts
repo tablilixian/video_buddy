@@ -1025,6 +1025,13 @@ export interface PendingStudioRenderJob {
   realDurations?: Record<string, number>
   /** 三期 W6-1：宿主建议的抽帧位置。 */
   sampleFrames?: number[]
+  /**
+   * 本单的绝对截止时刻（宿主时钟毫秒）。
+   *
+   * 页面据此**自己** abort：宿主超时只是"不再等"，并不会通知页面；一次挂住的渲染
+   * 会让 `currentJobId` 长期非空、后续轮询全部跳过（2026-10-24 事故的放大器）。
+   */
+  deadlineAt?: number
 }
 
 /**

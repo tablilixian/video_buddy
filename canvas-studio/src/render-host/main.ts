@@ -127,6 +127,16 @@ async function runJob(job: PendingRenderJob): Promise<void> {
   beat()
   const controller = new AbortController()
   inflight = controller
+  // 宿主超时只是「宿主不再等」，不会通知本页。没有这条自 abort，一次挂住的渲染会让
+  // `currentJobId` 长期非空、`pollOnce` 从此全部跳过 —— 后续每一单都只能等工具超时
+  // （2026-10-24 事故的放大器）。留 500ms 余量，让宿主的超时先落袋。
+  const deadlineTimer = typeof job.deadlineAt === 'number' && job.deadlineAt > 0
+    ? setTimeout(() => {
+        if (currentJobId !== jobId) return
+        paint('rendering', `已到截止时刻，正在中止 · ${jobId}`)
+        controller.abort()
+      }, Math.max(0, job.deadlineAt - Date.now() + 500))
+    : null
   try {
     const { executeRenderJob } = await loadExecutor()
     const outcome = await executeRenderJob({
@@ -144,6 +154,7 @@ async function runJob(job: PendingRenderJob): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
     paint('error', message)
   } finally {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer)
     inflight = null
     currentJobId = null
     beat()

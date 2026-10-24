@@ -152,14 +152,15 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
       report: {
         totalMs: 12_345,
         msPerFrame: 102.9,
-        encodeMs: 4_321,
+        prepareMs: 7_000,
+        renderMs: 5_345,
+        encodeDoneAtMs: 4_321,
         bitrateKbps: 3_500,
         // 下面这些宿主一定能自己算出来 ⇒ 客户端上报必须被忽略（防止两边口径漂移）
         quality: 'high',
         frames: 999,
         bytes: 1,
         sampledFrames: 42,
-        warm: true,
       },
     })
     const outcome = await pending
@@ -169,7 +170,7 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
     assert.equal(outcome.report.bytes, FAKE_MP4.length, '字节数取真实落盘长度')
     assert.equal(outcome.report.sampledFrames, 0, '抽帧数取宿主真实记录')
     assert.equal(outcome.report.totalMs, 12_345, '总耗时只能由客户端上报')
-    assert.equal(outcome.report.encodeMs, 4_321)
+    assert.equal(outcome.report.encodeDoneAtMs, 4_321)
     assert.equal(outcome.report.bitrateKbps, 3_500)
     assert.ok(outcome.report.msPerFrame > 0)
   })
@@ -182,11 +183,11 @@ test('渲染报告：客户端没上报时全部兜底为 0（不产生 NaN / un
     await commitRenderJob(registry, view.jobId, { bytes: FAKE_MP4 })
     const outcome = await pending
 
-    for (const key of ['totalMs', 'msPerFrame', 'encodeMs', 'bitrateKbps', 'width', 'height']) {
+    for (const key of ['totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bitrateKbps', 'width', 'height']) {
       assert.equal(typeof outcome.report[key], 'number', `report.${key} 必须是数字`)
       assert.ok(Number.isFinite(outcome.report[key]), `report.${key} 不得是 NaN`)
     }
     assert.equal(outcome.report.sampledFrames, 0)
-    assert.equal(outcome.report.warm, false)
+    assert.equal(outcome.report.prepareMs, 0, '客户端没上报准备耗时时兜底 0')
   })
 })

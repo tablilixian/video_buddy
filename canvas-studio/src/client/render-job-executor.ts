@@ -127,13 +127,14 @@ export function metricsReport(metrics: RenderMetrics): StudioRenderReport {
     quality: metrics.quality,
     frames: metrics.frames,
     totalMs: metrics.totalMs,
+    prepareMs: metrics.prepareMs,
+    renderMs: metrics.renderMs,
     msPerFrame: metrics.msPerFrame,
-    encodeMs: metrics.encodeMs,
+    encodeDoneAtMs: metrics.encodeDoneAtMs,
     bytes: metrics.bytes,
     bitrateKbps: metrics.bitrateKbps,
     width: metrics.width,
     height: metrics.height,
     sampledFrames: metrics.sampledFrames,
-    warm: metrics.warm,
   }
 }

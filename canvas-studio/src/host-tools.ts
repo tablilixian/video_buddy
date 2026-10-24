@@ -67,7 +67,7 @@ import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
-import { runRenderJob } from './remotion/render-job.js'
+import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
@@ -120,15 +120,16 @@ const resultSchema = {
       properties: {
         quality: { type: 'string' as const, description: '本次质量档：draft / standard / high' },
         frames: { type: 'integer' as const, description: '渲染帧数' },
-        totalMs: { type: 'number' as const, description: '总耗时（毫秒，含字体/探测/编码）' },
-        msPerFrame: { type: 'number' as const, description: '每帧平均耗时（毫秒）' },
-        encodeMs: { type: 'number' as const, description: '编码阶段耗时（毫秒；编码器未上报时为 0）' },
+        totalMs: { type: 'number' as const, description: '总耗时（毫秒，含准备/渲染/取字节）' },
+        prepareMs: { type: 'number' as const, description: '准备阶段耗时（毫秒：字体注入 + 素材时长探测 + 能力判定，与帧数无关）' },
+        renderMs: { type: 'number' as const, description: '净渲染耗时（毫秒：renderMediaOnWeb 调用到返回）' },
+        msPerFrame: { type: 'number' as const, description: '每帧净渲染耗时（毫秒，= renderMs / frames）' },
+        encodeDoneAtMs: { type: 'number' as const, description: '全部帧编码完成的时刻（毫秒，相对渲染开始）——**这是时间点，不是编码耗时**' },
         bytes: { type: 'integer' as const, description: '成片字节数' },
         bitrateKbps: { type: 'number' as const, description: '成片码率（kbps，按成片时长折算）' },
         width: { type: 'integer' as const, description: '成片真实宽度（像素）' },
         height: { type: 'integer' as const, description: '成片真实高度（像素）' },
         sampledFrames: { type: 'integer' as const, description: '实际落盘抽帧数' },
-        warm: { type: 'boolean' as const, description: '是否为暖机后的第二遍（性能基线用）' },
         lint: {
           type: 'array' as const,
           items: {
@@ -144,6 +145,24 @@ const resultSchema = {
       },
       description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数。用于判断「这条片花了多久、质量档是否生效」',
     },
+    // REQ-035 F-01：工单生命周期。`additionalProperties: false` 下漏声明 = 字段被静默丢弃
+    // （CV-146 教训），所以必须在这里显式登记。
+    job: {
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: {
+        id: { type: 'string' as const, description: '工单 id' },
+        path: { type: 'string' as const, description: '执行者：render-host（隐藏渲染窗口）/ client（画布页）' },
+        claimedAt: { type: 'number' as const, description: '被认领的时刻（毫秒时间戳）；未认领时该字段缺省' },
+        firstFrameAt: { type: 'number' as const, description: '第一帧进度上报的时刻（毫秒时间戳）；一帧没出时缺省' },
+        settled: { type: 'string' as const, description: '结算方式：ok / failed / timeout / cancelled' },
+        takeover: { type: 'boolean' as const, description: '是否发生过滞留改派（画布页卡住 → 隐藏窗口接管）' },
+        waitedMs: { type: 'number' as const, description: '从派发到结算的毫秒数' },
+        maxProgress: { type: 'number' as const, description: '到过的最大进度（0–1）' },
+      },
+      description: '工单生命周期：谁认领、有没有出首帧、是否改派过。失败时它决定「该改画面还是该查执行器」',
+    },
+    probe: { type: 'boolean' as const, description: '本次为探针渲染（未落画布节点、未抽帧、跳过体检）' },
   },
 }
 
@@ -221,29 +240,47 @@ interface ComposeToolResult {
   width: number
   height: number
   duration: number
-  nodeId: string
+  /** 探针渲染不落节点 ⇒ 这里可能缺省（REQ-035 F-05）。 */
+  nodeId?: string
   clipCount: number
   skippedCount: number
   audioComposition: StudioAudioComposition
   warnings?: string[]
   /** 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。 */
   frames?: { frame: number; url: string }[]
-  /** 三期 W6-2：渲染报告（性能与质量可复盘）。 */
+  /** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量可复盘）。 */
   report?: {
     quality: string
     frames: number
     totalMs: number
+    prepareMs: number
+    renderMs: number
     msPerFrame: number
-    encodeMs: number
+    encodeDoneAtMs: number
     bytes: number
     bitrateKbps: number
     width: number
     height: number
     sampledFrames: number
-    warm: boolean
     /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位；详细文案在 `warnings` 里）。 */
     lint?: { code: string; at: string }[]
   }
+  /** REQ-035 F-01：工单生命周期（谁认领、有没有出首帧、是否改派过）。 */
+  job?: {
+    id: string
+    /** `render-host`（隐藏渲染窗口）/ `client`（画布页）。 */
+    path: string
+    /** 未认领时**缺省**（schema 是 additionalProperties:false 的严格对象，不能传 null）。 */
+    claimedAt?: number
+    /** 一帧没出时缺省。 */
+    firstFrameAt?: number
+    settled: string
+    takeover: boolean
+    waitedMs: number
+    maxProgress: number
+  }
+  /** REQ-035 F-05：本次是探针渲染（未落画布节点、未抽帧、跳过体检）。 */
+  probe?: boolean
 }
 
 /** 校验用：取 schema 已声明的属性名。 */
@@ -326,18 +363,21 @@ function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasN
  * 渲染报告 → 一行文本（REQ-034 O-01）。
  *
  * 报告字段早已算好并塞进 payload，但一直没进模型可见文本 ⇒ W6 闭环（按 msPerFrame /
- * warm / 码率决策）在真机上 100% 失效。耗时为 0（客户端没上报）的项直接省略，
+ * 报文字段决策）在真机上 100% 失效。耗时为 0（客户端没上报）的项直接省略，
  * 避免出现一串「0ms」让人误读成「渲染没花时间」。
  */
 function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): string {
   const parts = [`quality=${report.quality}`]
   if (report.frames > 0) parts.push(`${report.frames} 帧`)
-  if (report.totalMs > 0) parts.push(`${(report.totalMs / 1000).toFixed(1)}s`)
+  if (report.totalMs > 0) parts.push(`总 ${(report.totalMs / 1000).toFixed(1)}s`)
+  // 把"准备"与"渲染"分开报：中文字体场景准备项可达十几秒，混在 msPerFrame 里
+  // 会让人以为是渲染慢（REQ-035 取证结论）。
+  if (report.prepareMs > 0) parts.push(`准备 ${(report.prepareMs / 1000).toFixed(1)}s`)
+  if (report.renderMs > 0) parts.push(`渲染 ${(report.renderMs / 1000).toFixed(1)}s`)
   if (report.msPerFrame > 0) parts.push(`msPerFrame=${report.msPerFrame.toFixed(1)}`)
-  if (report.encodeMs > 0) parts.push(`encodeMs=${Math.round(report.encodeMs)}`)
+  if (report.encodeDoneAtMs > 0) parts.push(`编码完成于 ${(report.encodeDoneAtMs / 1000).toFixed(1)}s`)
   if (report.bytes > 0) parts.push(`${(report.bytes / 1024 / 1024).toFixed(2)}MB`)
   if (report.bitrateKbps > 0) parts.push(`${Math.round(report.bitrateKbps)}kbps`)
-  parts.push(`warm=${report.warm ? 'true' : 'false'}`)
   return `渲染报告：${parts.join(' · ')}`
 }
 
@@ -351,6 +391,8 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     warnings?: string[]
     frames?: ComposeToolResult['frames']
     report?: ComposeToolResult['report']
+    job?: ComposeToolResult['job']
+    probe?: boolean
   }
   if (v.clipCount === undefined) return blocks
   const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`
@@ -364,14 +406,49 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   // REQ-034 O-01：抽帧与报告必须进可见文本。schema 里早就有这两个字段，但文本渲染一直漏写
   // ⇒ 8 张抽帧已经落盘，模型却不知道，自己 ls 资产目录、翻 /tmp、再用 ffmpeg 重抽一遍。
   // `compose_video` 没这两个字段，自动跳过。
+  //
+  // REQ-035 F-07：这句"先看这几张图"对**看不了图的模型**是不可执行的指令（2026-10-24
+  // 事故里 26 张抽帧 0 次被消费，agent 只能自写 PNG 解码器）。改成条件式，并给出
+  // "没有视觉能力"时的明确出路。
   const frames = v.frames ?? []
   if (frames.length > 0) {
     const listed = [...frames].sort((a, b) => a.frame - b.frame)
-    lines.push(`抽帧 ${listed.length} 张（**先看这几张图再向用户汇报**）：`)
+    lines.push(`抽帧 ${listed.length} 张（**具备读图能力时**先看这几张再向用户汇报；看不了就跳过并说明"未做画面自检"）：`)
     for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
   }
   if (v.report !== undefined) lines.push(formatRenderReport(v.report))
+  if (v.job !== undefined) lines.push(formatRenderJobDiagnostics(v.job))
   return [{ type: 'text', text: lines.join('\n') }]
+}
+
+/** REQ-035 F-01：把诊断快照转成 schema 友好的载荷（null 一律改缺省）。 */
+function jobDiagnosticsPayload(d: RenderJobDiagnostics): NonNullable<ComposeToolResult['job']> {
+  return {
+    id: d.id,
+    path: d.path,
+    settled: d.settled,
+    takeover: d.takeover,
+    waitedMs: Math.round(d.waitedMs),
+    maxProgress: d.maxProgress,
+    ...(d.claimedAt === null ? {} : { claimedAt: d.claimedAt }),
+    ...(d.firstFrameAt === null ? {} : { firstFrameAt: d.firstFrameAt }),
+  }
+}
+
+/**
+ * REQ-035 F-01：工单生命周期 → 一行文本。
+ *
+ * 为什么要进模型可见文本：失败时它决定"该改画面还是该查执行器"，成功时它解释
+ * "这次为什么快/慢"。此前这条信息只存在于宿主内存与日志里。
+ */
+function formatRenderJobDiagnostics(job: NonNullable<ComposeToolResult['job']>): string {
+  const who = job.path === 'render-host' ? '隐藏渲染窗口' : '画布页'
+  const claimed = job.claimedAt === undefined
+    ? '未认领'
+    : `已于 ${new Date(job.claimedAt).toLocaleTimeString('zh-CN', { hour12: false })} 认领`
+  const first = job.firstFrameAt === undefined ? '无首帧' : '已出首帧'
+  const takeover = job.takeover ? ' · 曾改派' : ''
+  return `工单：${who} · ${claimed} · ${first} · 进度 ${Math.round(job.maxProgress * 100)}% · 用时 ${(job.waitedMs / 1000).toFixed(1)}s${takeover}`
 }
 
 /** 秒值展示：整数不带小数尾巴，小数留一位（标题与结果文案共用，避免两处漂移）。 */
@@ -2610,10 +2687,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           enum: ['draft', 'standard', 'high'] as const,
           description: '可选：渲染质量档。draft = 半分辨率 + 低码率 + 不抢主线程（迭代预览，跳过渲染前预览闸门，快 2.5×+）；**草稿会就地替换上一版草稿**（画布上只保留一个「草稿成片」预览节点，反复迭代不堆卡），定稿后渲 standard/high 才进版本链留档。standard = 与原来完全一致（缺省）；high = 高码率 + 短关键帧（交付/发布）',
         },
+        probe: {
+          type: 'boolean' as const,
+          description: '可选：**探针渲染（调试用）**。为 true 时不落画布节点、不抽帧、跳过编排体检，只在返回里给 url 与工单诊断。反复调参 / 验链路时用它 —— 否则每次试错都会把画布上的成片节点覆盖成试错产物（REQ-035 F-05）。',
+        },
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown }
+        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown; probe?: unknown }
         const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
         assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
         const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -2728,6 +2809,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (a.quality !== undefined && quality === undefined) {
           throwError('CS-USER-ERR', { message: `quality 非法（${String(a.quality)}）—— 只允许 draft / standard / high` })
         }
+        // REQ-035 F-05：探针渲染 —— 不落节点 / 不抽帧 / 跳过体检。
+        // 2026-10-24 事故里 6 次成功全写同一个画布节点，最后把成片节点覆盖成 10 帧黑屏。
+        const probe = a.probe === true
         const job = await runRenderJob({
           projectId,
           manifest: renderManifest,
@@ -2735,25 +2819,28 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           signal: exec.signal,
           ...(quality !== undefined ? { quality } : {}),
           realDurations: pre.realDurations,
-          sampleFrames: pickSampleFrames(renderManifest),
+          sampleFrames: probe ? [] : pickSampleFrames(renderManifest),
         })
-        // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）
-        const composedNode = await appendComposedVideoNode(registry, projectId, {
-          url: job.url,
-          duration: job.duration,
-          audioComposition,
-          // 三期 W5-4：草稿档打标 —— 画布角标据此区分「快速看一版」与交付档。
-          ...(job.quality === 'draft' ? { draft: true } : {}),
-          ...(job.width !== undefined ? { width: job.width } : {}),
-          ...(job.height !== undefined ? { height: job.height } : {}),
-          sourceIds: collectManifestSourceIds(renderManifest),
-        })
+        // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针不落。
+        const composedNode = probe
+          ? null
+          : await appendComposedVideoNode(registry, projectId, {
+            url: job.url,
+            duration: job.duration,
+            audioComposition,
+            // 三期 W5-4：草稿档打标 —— 画布角标据此区分「快速看一版」与交付档。
+            ...(job.quality === 'draft' ? { draft: true } : {}),
+            ...(job.width !== undefined ? { width: job.width } : {}),
+            ...(job.height !== undefined ? { height: job.height } : {}),
+            sourceIds: collectManifestSourceIds(renderManifest),
+          })
         // 5) 质量护栏：probe 真值核对（步骤 2）+ 幻灯片风险评分（§9.2，仅提示不阻断）
         //    评分对象用 `renderManifest`（真正被渲染的那份）—— 校正改过时长，拿校正前的
         //    `source` 打分与成片不是同一份数据。
         const risk = scoreSlideshowRisk(renderManifest)
         // 三期 W1-3：取一次体检结果，既给报告里的计数，也让「置顶提醒」有统一来源。
-        const lintIssues = lintMotion(renderManifest)
+        // F-05：探针渲染跳过体检 —— 调试期的画面本来就不完整，体检只会生产噪声。
+        const lintIssues = probe ? [] : lintMotion(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
         const warnings = [
           ...validation.warnings,
@@ -2771,10 +2858,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           width: job.width ?? COMPOSED_FALLBACK.width,
           height: job.height ?? COMPOSED_FALLBACK.height,
           duration: job.duration,
-          nodeId: composedNode.id,
+          ...(composedNode === null ? {} : { nodeId: composedNode.id }),
           clipCount: source.tracks.length,
           skippedCount: 0,
           audioComposition,
+          // F-01：工单生命周期 —— 成功也要回，才能解释"这次为什么快/慢、走的是哪条路"。
+          job: jobDiagnosticsPayload(job.job),
+          ...(probe ? { probe: true } : {}),
           ...(warnings.length > 0 ? { warnings } : {}),
           ...(job.frames.length > 0
             ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }

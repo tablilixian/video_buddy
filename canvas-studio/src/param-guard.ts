@@ -195,6 +195,8 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // 且它不指向任何「别处产出的真实对象」，没有占位形态可言。
   quality: '枚举（draft / standard / high），取值不合规由 schema 拒收',
   projectId: '项目 id（宿主下发的短标识）—— 非法 / 不存在的项目由 resolveProjectId 拒收，不是素材句柄，不存在「来自别处产出的真实对象」的占位形态',
+  // REQ-035（F-05）：探针渲染开关 —— 不落画布节点 / 不抽帧 / 跳过体检。
+  probe: '布尔开关（探针渲染：不落画布节点、不抽帧、跳过编排体检）',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

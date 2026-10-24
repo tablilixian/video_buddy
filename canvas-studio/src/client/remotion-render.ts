@@ -97,19 +97,32 @@ export interface RenderSample {
   png: Uint8Array
 }
 
-/** 三期 W6-2：渲染报告（性能与质量都可复盘）。 */
+/** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量都可复盘）。 */
 export interface RenderMetrics {
   quality: RenderQuality
   frames: number
+  /** 端到端总耗时（含准备 + 渲染 + 取字节）。 */
   totalMs: number
+  /** 准备阶段：字体注入 + 素材时长探测 + 能力判定（与帧数无关的固定项）。 */
+  prepareMs: number
+  /** 净渲染耗时：`renderMediaOnWeb` 从调用到返回（不含取字节）。 */
+  renderMs: number
+  /** 每帧净渲染耗时 = `renderMs / frames`（**不再掺准备阶段**）。 */
   msPerFrame: number
-  encodeMs: number
+  /**
+   * 全部帧**编码完成**的时刻（相对渲染开始，毫秒）。
+   *
+   * 原字段名 `encodeMs` 会被读成"编码耗时"，而 `@remotion/web-renderer` 的
+   * `onProgress().doneIn` 语义是「从渲染开始到所有帧编码完成的时间点」——
+   * 名字与语义不符曾让一次复盘凭空造出"20–34s 编码尾巴"的错误模型（REQ-035 F-04）。
+   * 编码器未上报时为 `0`。
+   */
+  encodeDoneAtMs: number
   bytes: number
   bitrateKbps: number
   width: number
   height: number
   sampledFrames: number
-  warm: boolean
 }
 
 export interface RenderManifestOnWebOptions {
@@ -216,7 +229,12 @@ export async function renderManifestOnWeb(
   const sampleSet = new Set(sampleFrames)
   const pendingSamples: { frame: number; promise: Promise<Uint8Array | null> }[] = []
   let frameIndex = 0
-  let encodeMs = 0
+  // REQ-035 F-04：`doneIn` 是"编码完成的时刻"而不是"编码耗时"，字段名必须说清这一点。
+  let encodeDoneAtMs = 0
+  // 准备阶段到此为止（字体 + 时长探测 + 能力判定）；它和帧数无关，必须单独计量，
+  // 否则 `msPerFrame` 会把固定开销摊到每一帧上（中文字体场景可达 19s，见取证报告）。
+  const renderStartedAt = Date.now()
+  const prepareMs = renderStartedAt - startedAt
   const result = await renderMediaOnWeb({
     composition: {
       id: 'studio-composition',
@@ -256,13 +274,14 @@ export async function renderManifestOnWeb(
     ...(options.onProgress !== undefined
       ? {
         onProgress: (progress: { progress: number; doneIn: number | null }) => {
-          if (typeof progress.doneIn === 'number' && Number.isFinite(progress.doneIn)) encodeMs = progress.doneIn
+          if (typeof progress.doneIn === 'number' && Number.isFinite(progress.doneIn)) encodeDoneAtMs = progress.doneIn
           options.onProgress?.(progress.progress)
         },
       }
       : {}),
     ...(signal === undefined ? {} : { signal }),
   })
+  const renderMs = Date.now() - renderStartedAt
   const blob = await result.getBlob()
   const bytes = new Uint8Array(await blob.arrayBuffer())
   if (bytes.length === 0) throw new WebRenderError('渲染产物为空（编码器未产出字节），请重试。')
@@ -278,14 +297,15 @@ export async function renderManifestOnWeb(
     quality,
     frames,
     totalMs,
-    msPerFrame: Math.round((totalMs / frames) * 100) / 100,
-    encodeMs,
+    prepareMs,
+    renderMs,
+    msPerFrame: Math.round((renderMs / frames) * 100) / 100,
+    encodeDoneAtMs,
     bytes: bytes.length,
     bitrateKbps: seconds > 0 ? Math.round((bytes.length * 8) / seconds / 1000) : 0,
     width: Math.max(1, Math.round(width * preset.scale)),
     height: Math.max(1, Math.round(height * preset.scale)),
     sampledFrames: samples.length,
-    warm: false,
   }
   return { bytes, warnings, samples, metrics }
 }

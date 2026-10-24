@@ -55,9 +55,13 @@ test('结果：report 内部字段与宿主 `RenderJobReport` 对齐（耗时 / 
   const report = renderTool().output?.schema?.properties?.report
   assert.ok(report, 'report 必须有内联结构，否则 agent 读到的是不透明对象')
   const fields = Object.keys(report.properties ?? {})
-  for (const key of ['quality', 'frames', 'totalMs', 'msPerFrame', 'encodeMs', 'bytes', 'bitrateKbps', 'sampledFrames', 'warm']) {
+  for (const key of ['quality', 'frames', 'totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'sampledFrames']) {
     assert.ok(fields.includes(key), `report 缺少字段 ${key}（实际：${fields.join(', ')}）`)
   }
+  // REQ-035 F-04：`warm` / `encodeMs` 已删除 —— 前者恒为 false（硬编码），后者语义是
+  // "编码完成的时刻"而非耗时，两个都在 2026-10-24 事故里把复盘带偏过。
+  assert.ok(!fields.includes('warm'), 'report 不应再有 warm（恒 false 的假字段）')
+  assert.ok(!fields.includes('encodeMs'), 'encodeMs 已改名 encodeDoneAtMs（原名会被读成耗时）')
 })
 
 // ── REQ-034 O-01：抽帧与渲染报告必须进**模型可见文本** ──
@@ -100,27 +104,32 @@ test('O-01：抽帧 url 与帧号必须进返回文本（否则 W6「先看抽�
   assert.match(text, /抽帧 3 张/, `抽帧张数要写清，实际：\n${text}`)
 })
 
-test('O-01：渲染报告必须进返回文本（msPerFrame / quality / warm 可据此决策）', () => {
+test('O-01 / F-04：渲染报告必须进返回文本（准备 / 渲染 / msPerFrame 可据此决策）', () => {
   const report = {
     quality: 'standard',
     frames: 600,
     totalMs: 35_000,
-    msPerFrame: 58.3,
-    encodeMs: 2100,
+    prepareMs: 19_400,
+    renderMs: 15_600,
+    msPerFrame: 26,
+    encodeDoneAtMs: 15_100,
     bytes: 3.88 * 1024 * 1024,
     bitrateKbps: 1545,
     width: 1280,
     height: 720,
     sampledFrames: 3,
-    warm: false,
   }
   const text = renderText('render_composition', composeResultValue({ frames: [], report }))
   assert.match(text, /渲染报告/, `必须有一行渲染报告，实际：\n${text}`)
-  assert.match(text, /msPerFrame=58\.3/, `必须含每帧耗时，实际：\n${text}`)
+  assert.match(text, /msPerFrame=26\.0/, `必须含每帧耗时，实际：\n${text}`)
   assert.match(text, /quality=standard/, `必须含质量档，实际：\n${text}`)
-  assert.match(text, /warm=false/, `必须含暖机标记，实际：\n${text}`)
-  assert.match(text, /35\.0s/, `必须含总耗时，实际：\n${text}`)
+  // F-04：准备与渲染必须分开报 —— 中文字体场景准备项可达十几秒，混进 msPerFrame 会误判成"渲染慢"
+  assert.match(text, /准备 19\.4s/, `必须单列准备耗时，实际：\n${text}`)
+  assert.match(text, /渲染 15\.6s/, `必须单列净渲染耗时，实际：\n${text}`)
+  assert.match(text, /编码完成于 15\.1s/, `编码完成时刻要说清是"时刻"不是耗时，实际：\n${text}`)
+  assert.match(text, /总 35\.0s/, `必须含总耗时，实际：\n${text}`)
   assert.match(text, /1545kbps/, `必须含码率，实际：\n${text}`)
+  assert.ok(!/warm=/.test(text), `不该再有 warm 字段，实际：\n${text}`)
 })
 
 test('O-01：compose_video 没有 frames/report 时不得冒出空段（老调用方文本不变）', () => {
@@ -128,4 +137,35 @@ test('O-01：compose_video 没有 frames/report 时不得冒出空段（老调�
   assert.ok(!text.includes('抽帧'), `没有抽帧就不该出现「抽帧」，实际：\n${text}`)
   assert.ok(!text.includes('渲染报告'), `没有报告就不该出现「渲染报告」，实际：\n${text}`)
   assert.match(text, /纳入 15 段/, `原有信息不能丢，实际：\n${text}`)
+})
+
+// ── REQ-035 F-01 / F-03 / F-05 ──────────────────────────────────────────────
+
+test('F-03：超时文案不再要求「页面可见」，且带 {diagnosis} 诊断位', async () => {
+  const { getErrorSpec } = await import('../lib/error-system.js')
+  const spec = getErrorSpec('CS-RENDER-TIMEOUT')
+  assert.ok(spec, 'CS-RENDER-TIMEOUT 必须已注册')
+  assert.ok(!spec.userMessage.includes('已打开且可见'), `旧文案在误导方向（实测四档窗口无差异）：${spec.userMessage}`)
+  assert.ok(spec.userMessage.includes('{diagnosis}'), `必须带诊断位：${spec.userMessage}`)
+})
+
+test('F-05：probe 入参已声明（探针不落节点，避免覆盖成片）', () => {
+  const params = renderTool().parameters?.properties ?? {}
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'probe'), `实际入参：${Object.keys(params).join(', ')}`)
+  assert.equal(params.probe.type, 'boolean')
+  assert.ok(String(params.probe.description).includes('不落画布节点'), '描述必须说清探针不落节点')
+})
+
+test('F-01：结果 schema 声明 job 诊断，且返回文本会渲染它', () => {
+  const props = renderTool().output?.schema?.properties ?? {}
+  assert.ok(props.job, '结果 schema 必须声明 job（additionalProperties:false 下漏声明 = 静默丢弃）')
+  const text = renderText('render_composition', composeResultValue({
+    job: { id: 'rj-1', path: 'client', settled: 'timeout', takeover: false, waitedMs: 90_000, maxProgress: 0 },
+  }))
+  assert.match(text, /工单：画布页 · 未认领 · 无首帧/iu, `工单诊断必须进可见文本，实际：\n${text}`)
+})
+
+test('F-05：探针结果没有 nodeId 时不得冒出「画布节点 id」', () => {
+  const text = renderText('render_composition', composeResultValue({ nodeId: undefined, probe: true }))
+  assert.ok(!text.includes('画布节点 id'), `探针不落节点就不该报节点 id，实际：\n${text}`)
 })

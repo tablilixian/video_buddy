@@ -111,6 +111,23 @@ export function renderHostReady(now = Date.now()): boolean {
   return health.state === 'idle' || health.state === 'rendering'
 }
 
+/**
+ * 能不能**接管滞留单**（与 `renderHostReady()` 刻意分开）。
+ *
+ * 为什么必须分开：派单闸要求「**现在**就绪」，改派闸只要求「这个窗口**待会儿**能干活」。
+ * 两者共用一条判据会造成结构性死锁 —— 窗口一旦被判 not ready，新单被推给画布页，
+ * 同时它自己也不再被允许接管那张单。**2026-10-24 事故**：全天 39 次超时、0 次改派，
+ * 就是这个死锁的直接结果（见 `docs/plans/REQ-035-Phase0-取证报告-20261024.md`）。
+ *
+ * 口径：`idle` / `rendering` / `booting` 都算能接管（`booting` 只是还没自检完，
+ * 单可以先排队）；`unsupported` / `error` 明确干不了，不接。
+ */
+export function renderHostCanTakeOver(now = Date.now()): boolean {
+  const health = renderHostHealth(now)
+  if (!health.alive) return false
+  return health.state === 'idle' || health.state === 'rendering' || health.state === 'booting'
+}
+
 /** 测试与「窗口重建」用：清掉上一窗口留下的状态，避免误判为活的。 */
 export function resetRenderHostReport(): void {
   lastReport = undefined

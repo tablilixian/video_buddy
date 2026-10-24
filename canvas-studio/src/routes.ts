@@ -622,14 +622,13 @@ function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefine
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined
   }
   const report: Partial<RenderJobReport> = {}
-  for (const key of ['frames', 'totalMs', 'msPerFrame', 'encodeMs', 'bytes', 'bitrateKbps', 'width', 'height', 'sampledFrames'] as const) {
+  for (const key of ['frames', 'totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'width', 'height', 'sampledFrames'] as const) {
     const value = num(key)
     if (value !== undefined) report[key] = value
   }
   if (source.quality === 'draft' || source.quality === 'standard' || source.quality === 'high') {
     report.quality = source.quality
   }
-  if (typeof source.warm === 'boolean') report.warm = source.warm
   return report
 }
 
@@ -2994,8 +2993,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           // 滞留改派（CV 2026-10-23）：client 单宽限期内无人认领 ⇒ 窗口接管。
           // 必须留痕：这条路径生效意味着「画布页取单链路没跑起来」，不记日志的话
           // 排障只能靠 CS-RENDER-TIMEOUT 倒推（10-20 起 11 连败就是这么查的）。
-          onTakeover: (takenJobId) => {
-            ctx.logger.warn(`[canvas-studio] 滞留渲染工单 ${takenJobId} 已改派隐藏渲染窗口（宽限期内画布页未认领，请检查画布页取单链路）`)
+          onTakeover: (takenJobId, reason) => {
+            ctx.logger.warn(`[canvas-studio] 滞留渲染工单 ${takenJobId} 已改派隐藏渲染窗口（${reason}；请检查画布页取单/渲染链路）`)
           },
         })
         // 取到单 = 窗口真的在干活 ⇒ 重置空闲回收计时（心跳本身不算活动，否则窗口永不回收）。

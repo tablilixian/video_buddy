@@ -31,7 +31,7 @@ import {
   type RenderJobView,
 } from './render-queue.js'
 import { hasRenderHostLauncher, warmRenderHost } from '../render-host/dispatch.js'
-import { RENDER_HOST_STALE_MS, renderHostHealth, renderHostReady } from '../render-host/status.js'
+import { RENDER_HOST_STALE_MS, renderHostCanTakeOver, renderHostHealth, renderHostReady } from '../render-host/status.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
 /**
@@ -77,25 +77,70 @@ export interface PendingRenderJob {
   realDurations: Record<string, number>
   /** 三期 W6-1：建议抽帧位置（绝对帧号）。 */
   sampleFrames: number[]
+  /**
+   * 本单的**绝对截止时刻**（宿主时钟毫秒）。
+   *
+   * 给页面一个自己能判的终线：宿主超时只是"宿主不再等"，页面并不知道，
+   * 于是一次挂住的渲染会让 `currentJobId` 长期非空、后续轮询全部跳过
+   * （2026-10-24 事故的放大器）。页面拿到它就能在同一时刻自行 abort。
+   */
+  deadlineAt: number
 }
 
-/** 三期 W6-2：渲染报告（宿主侧形状，字段与客户端 `RenderMetrics` 对齐）。 */
+/** 三期 W6-2 / REQ-035 F-04：渲染报告（宿主侧形状，字段与客户端 `RenderMetrics` 一一对齐）。 */
 export interface RenderJobReport {
   quality: RenderQuality
   frames: number
   totalMs: number
+  /** 准备阶段（字体注入 + 素材时长探测 + 能力判定），与帧数无关。 */
+  prepareMs: number
+  /** 净渲染耗时（`renderMediaOnWeb` 从调用到返回）。 */
+  renderMs: number
+  /** 每帧净渲染耗时 = `renderMs / frames`。 */
   msPerFrame: number
-  encodeMs: number
+  /** 全部帧**编码完成**的时刻（相对渲染开始）；不是"编码耗时"。 */
+  encodeDoneAtMs: number
   bytes: number
   bitrateKbps: number
   width: number
   height: number
   sampledFrames: number
-  warm: boolean
 }
 
-/** 三期 W6-1：一张抽帧（已落盘的同源 URL）。 */
-export interface RenderSampleResult {
+/**
+ * REQ-035 F-01：工单生命周期快照。
+ *
+ * 2026-10-24 事故的 39 次超时里，agent 只能看到"超时"这一句，无法区分
+ * 「没人取单」「取了没开渲」「渲到一半停了」—— 三种情况的修法完全不同。
+ * 这份快照成功与失败都会带回，并拼进超时文案，让排障不再靠猜。
+ */
+export interface RenderJobDiagnostics {
+  id: string
+  /** 谁在渲：隐藏渲染窗口 or 用户画布页。 */
+  path: RenderExecutor
+  /** 被认领的时刻；`null` = 从未被认领。 */
+  claimedAt: number | null
+  /** 第一帧进度上报的时刻；`null` = 一帧都没出过。 */
+  firstFrameAt: number | null
+  settled: 'ok' | 'failed' | 'timeout' | 'cancelled'
+  /** 是否发生过滞留改派（画布页卡住 → 窗口接管）。 */
+  takeover: boolean
+  /** 从派发到结算的毫秒数。 */
+  waitedMs: number
+  /** 到过的最大进度（0–1）。 */
+  maxProgress: number
+}
+
+/** 把诊断快照压成一句人读文本（进超时文案与日志）。 */
+export function describeDiagnostics(d: RenderJobDiagnostics): string {
+  const who = d.path === 'render-host' ? '隐藏渲染窗口' : '画布页'
+  const waited = Math.round(d.waitedMs / 1000)
+  if (d.claimedAt === null) return `${who}从未取走这张工单（等 ${waited}s）`
+  if (d.firstFrameAt === null) return `${who}已取单但 ${waited}s 内一帧都没渲染`
+  return `${who}已渲染 ${waited}s，进度 ${Math.round(d.maxProgress * 100)}%${d.takeover ? '（曾发生过改派）' : ''}`
+}
+
+/** 三期 W6-1：一张抽帧（已落盘的同源 URL）。 */export interface RenderSampleResult {
   frame: number
   url: string
 }
@@ -118,6 +163,8 @@ export interface RenderJobOutcome {
   frames: RenderSampleResult[]
   /** 三期 W6-2：渲染报告。 */
   report: RenderJobReport
+  /** REQ-035 F-01：工单生命周期快照（成功也回，便于对比"这次为什么快/慢"）。 */
+  job: RenderJobDiagnostics
 }
 
 /** 建单参数。 */
@@ -137,10 +184,14 @@ export interface RunRenderJobOptions {
   sampleFrames?: number[]
   /** O-06：强制指定执行者（测试 / 排障用；缺省按 RenderHost 是否就绪自动选）。 */
   executor?: RenderExecutor
-  /** O-06：等隐藏窗口自报就绪的上限（缺省 3s）。只影响冷启首单。 */
+  /** O-06：等隐藏窗口自报就绪的上限（缺省 `RENDER_HOST_WARMUP_MS` = 8s）。只影响冷启首单。 */
   hostWarmupMs?: number
   /** O-06：心跳判失联阈值（缺省 `RENDER_HOST_STALE_MS`）。测试注入短值。 */
   heartbeatStaleMs?: number
+  /** client 单「取单后一帧没动」的判死阈值（缺省 `CLIENT_CLAIM_STALL_MS`）。测试注入短值。 */
+  clientClaimStallMs?: number
+  /** client 单「开渲后停滞」的判死阈值（缺省 `CLIENT_PROGRESS_STALL_MS`）。测试注入短值。 */
+  clientProgressStallMs?: number
 }
 
 /** 客户端回写内容。 */
@@ -180,6 +231,13 @@ interface ActiveRenderJob {
   executor: RenderExecutor
   /** O-06：最近一次进度上报（心跳看门狗把它也算作「活着」的证据）。 */
   lastProgressAt: number
+  /**
+   * 到过的最大进度（0–1）。`0` 表示**一帧都没动过**。
+   *
+   * 改派与看门狗都用它区分「取走了但没开渲」和「正在渲只是慢」——这两件事的处置
+   * 完全相反（前者要立刻接管/结算，后者必须继续等）。
+   */
+  maxProgress: number
   /** O-06：宿主心跳看门狗（只在 `render-host` 单派发后存在）。 */
   watchdog: ReturnType<typeof setInterval> | null
   resolve: (outcome: RenderJobOutcome) => void
@@ -194,10 +252,22 @@ interface ActiveRenderJob {
   dispatchedAt?: number
   /** 滞留改派：画布页第一次 claim 到这张单的时刻；从未被看过为 `undefined`。 */
   clientClaimedAt?: number
+  /** REQ-035 F-01：任意执行者第一次 claim 的时刻（诊断用，不改派判据）。 */
+  claimedAt?: number
+  /** REQ-035 F-01：第一次进度 > 0 的时刻；`undefined` = 一帧都没出过。 */
+  firstFrameAt?: number
   /** 滞留改派：被隐藏窗口接管的时刻（观测用）。 */
   takenOverAt?: number
   /** O-06：本单生效的心跳判失联阈值（建单时算好，改派后看门狗复用同一值）。 */
   heartbeatStaleMs: number
+  /** 本单预算（毫秒）；`deadlineAt = dispatchedAt + timeoutMs`。 */
+  timeoutMs: number
+  /** 绝对截止时刻（派发时定；页面据此自 abort，见 `PendingRenderJob.deadlineAt`）。 */
+  deadlineAt: number
+  /** client 单「取单后一帧没动」的判死阈值（见 `CLIENT_CLAIM_STALL_MS`）。 */
+  claimStallMs: number
+  /** client 单「开渲后停滞」的判死阈值（见 `CLIENT_PROGRESS_STALL_MS`）。 */
+  progressStallMs: number
 }
 
 /** 进程内工单表（Host 半与路由同模块单例）。 */
@@ -225,6 +295,8 @@ export function claimRenderJobFor(
     // 滞留改派的判据打点：画布页「看过」这张单的第一拍。只记第一次即可，
     // 轮询每秒都会再来，重复打点无害。
     if (owner === 'client' && job.clientClaimedAt === undefined) job.clientClaimedAt = now
+    // 诊断用（F-01）：任意执行者的首次认领时刻。
+    if (job.claimedAt === undefined) job.claimedAt = now
     return {
       jobId: job.jobId,
       projectId: job.projectId,
@@ -233,13 +305,13 @@ export function claimRenderJobFor(
       quality: job.quality,
       realDurations: job.realDurations,
       sampleFrames: job.sampleFrames,
+      deadlineAt: job.deadlineAt,
     }
   }
   if (owner === 'render-host') {
-    // 滞留改派（2026-10-23，O-06 真机翻车的兜底）：隐藏窗口取单扑空时，若存在
-    // 「已派发、宽限期内画布页从未 claim 过」的 client 单且窗口健康，把它改派给
-    // 窗口。判据保证双端不会同时渲同一张单：客户端看过一眼就永不改派。
-    const takeover = takeoverOrphanedClientJob(now, options.graceMs ?? RENDER_HOST_TAKEOVER_GRACE_MS, options.onTakeover)
+    // 滞留改派（2026-10-23，O-06 真机翻车的兜底）：隐藏窗口取单扑空时，把
+    // 「画布页取走了却没动静」的 client 单接管过来。判据见 `clientJobIsOrphaned`。
+    const takeover = takeoverOrphanedClientJob(now, options)
     if (takeover !== null) {
       return {
         jobId: takeover.jobId,
@@ -249,6 +321,7 @@ export function claimRenderJobFor(
         quality: takeover.quality,
         realDurations: takeover.realDurations,
         sampleFrames: takeover.sampleFrames,
+        deadlineAt: takeover.deadlineAt,
       }
     }
   }
@@ -266,18 +339,85 @@ export function claimRenderJobFor(
  */
 export const RENDER_HOST_TAKEOVER_GRACE_MS = 15_000
 
+/**
+ * 「取走了但没开渲」的判定阈值（毫秒）。
+ *
+ * 2026-10-24 事故里最贵的一条：`clientClaimedAt` 一旦打点就**永久**放弃改派，
+ * 而 claim ≠ 在渲。画布页取到单后卡住（主线程被 `pageResponsiveness: 'disabled'`
+ * 按住、页面被切走、renderer 崩了），这张单就再也回不到空闲的隐藏窗口。
+ * 现在改成：claim 后这么久**一帧进度都没有** ⇒ 视为滞留，允许接管 / 结算。
+ *
+ * 为什么是 20s：健康客户端出首帧是秒级；20s 足够盖住一次慢启动，又远小于
+ * 90s 的工具超时下限。
+ */
+export const CLIENT_CLAIM_STALL_MS = 20_000
+
+/**
+ * 「开渲后停滞」的判定阈值（毫秒）。
+ *
+ * 已经出过进度、但这么久没有新进度 ⇒ 判卡死。取值比 claim 档宽得多：
+ * 编码尾巴可能长时间没有回调（`draft` 档冻结主线程时更明显），误杀一张
+ * 马上要成的片子比多等一分钟更贵。
+ */
+export const CLIENT_PROGRESS_STALL_MS = 90_000
+
+/**
+ * 冷启等待上限（毫秒）。
+ *
+ * 原值 3s 是纸面推演：窗口要创建 → loadURL → 拉 bundle → 自检 → 首次自报，
+ * 实测远不止 3s。于是**每个新会话的首单几乎必然被判给画布页**，而那正是最
+ * 容易挂的一条路（见 Phase 0 报告 §三 D-4）。
+ */
+export const RENDER_HOST_WARMUP_MS = 8_000
+
 /** 滞留改派的可调参数（`claimRenderJobFor` 第三参；生产路径不传）。 */
 export interface ClaimRenderJobOptions {
   /** 现在时刻（测试注入假时钟）。 */
   now?: number
   /** 宽限期（缺省 `RENDER_HOST_TAKEOVER_GRACE_MS`）。 */
   graceMs?: number
-  /** 发生改派时的通知（路由层拿去打日志，排障用）。 */
-  onTakeover?: (jobId: string) => void
+  /** claim 后无进度的滞留阈值（缺省 `CLIENT_CLAIM_STALL_MS`）。 */
+  claimStallMs?: number
+  /** 开渲后停滞阈值（缺省 `CLIENT_PROGRESS_STALL_MS`）。 */
+  progressStallMs?: number
+  /** 发生改派时的通知（路由层拿去打日志，排障用）。`reason` 说明命中哪一档滞留判据。 */
+  onTakeover?: (jobId: string, reason: string) => void
 }
 
 /**
- * 滞留改派：找最老一张「client 单但画布页从没认领过」的工单，转给隐藏窗口。
+ * 这张 client 单是不是已经"滞留"（可以改派）；返回原因，`null` = 还正常。
+ *
+ * 三档，按证据强弱递进：
+ * 1. **从没被取过**：派发后超过宽限期 ⇒ 画布页压根没在工作（原逻辑）。
+ * 2. **取过但一帧没动**：claim 后超过 `claimStallMs` ⇒ 取了单却没开渲（新增）。
+ * 3. **开渲后停住**：进度停更超过 `progressStallMs` ⇒ 中途卡死（新增）。
+ *
+ * 第 2 档是本次事故的核心：原判据止步于「claim 过就永不改派」，把"取单"当成了
+ * "在渲"。原因串会原样进宿主日志，排障时一眼能分清是哪一档。
+ */
+function clientJobOrphanReason(
+  job: ActiveRenderJob,
+  now: number,
+  graceMs: number,
+  claimStallMs: number,
+  progressStallMs: number,
+): string | null {
+  if (job.executor !== 'client' || job.settled || !job.dispatched) return null
+  if (job.clientClaimedAt === undefined) {
+    // 派发时刻未知按「刚派发」处理：宁可少改派，不多抢。
+    const dispatchedAt = job.dispatchedAt ?? now
+    return now - dispatchedAt >= graceMs ? '宽限期内画布页未认领' : null
+  }
+  if (job.maxProgress <= 0) {
+    const waited = now - job.clientClaimedAt
+    return waited >= claimStallMs ? `画布页认领后 ${Math.round(waited / 1000)}s 无任何进度` : null
+  }
+  const stalled = now - job.lastProgressAt
+  return stalled >= progressStallMs ? `画布页进度停滞 ${Math.round(stalled / 1000)}s` : null
+}
+
+/**
+ * 滞留改派：找最老一张"滞留"的 client 单，转给隐藏窗口。
  *
  * 只转**一张**：隐藏窗口的取单是 1s 一拍的轮询，并发又是 1 —— 一拍接一单，
  * 剩下的下一拍自然轮到（FIFO 由 Map 插入序保证，与队列口径一致）。
@@ -286,24 +426,25 @@ export interface ClaimRenderJobOptions {
  */
 function takeoverOrphanedClientJob(
   now: number,
-  graceMs: number,
-  onTakeover: ((jobId: string) => void) | undefined,
+  options: ClaimRenderJobOptions,
 ): ActiveRenderJob | null {
-  // 窗口必须健康才配接管：这条 claim 也可能来自 curl（排障手工取单），
-  // 没有一个活着的窗口就不该把单从「可能只是慢」的客户端手里抢走。
-  if (!renderHostReady(now)) return null
+  // 窗口只要**还能干活**就配接管 —— 不再要求它「此刻就绪」。
+  // 两者共用一个判据会形成死锁：窗口忙/刚渲染完 ⇒ 新单推给画布页，同时禁止它接管。
+  // 这条 claim 也可能来自 curl（排障手工取单），所以仍要求窗口活着，避免把单从一个
+  // 「可能只是慢」的客户端手里抢给一个不存在的窗口。
+  if (!renderHostCanTakeOver(now)) return null
+  const graceMs = options.graceMs ?? RENDER_HOST_TAKEOVER_GRACE_MS
+  const claimStallMs = options.claimStallMs ?? CLIENT_CLAIM_STALL_MS
+  const progressStallMs = options.progressStallMs ?? CLIENT_PROGRESS_STALL_MS
   for (const job of activeJobs.values()) {
-    if (job.executor !== 'client' || job.settled || !job.dispatched) continue
-    if (job.clientClaimedAt !== undefined) continue
-    // 派发时刻未知按「刚派发」处理：宁可少改派，不多抢。
-    const dispatchedAt = job.dispatchedAt ?? now
-    if (now - dispatchedAt < graceMs) continue
+    const reason = clientJobOrphanReason(job, now, graceMs, claimStallMs, progressStallMs)
+    if (reason === null) continue
     job.executor = 'render-host'
     job.takenOverAt = now
-    // 看门狗在 armTimeout 只给建单时就归窗口的单装；改派单要在这里补装，
+    // 改派单要在这里补装看门狗（`armTimeout` 只给建单时就归窗口的单装），
     // 否则窗口渲到一半死掉，这张单要干等原始超时而不是 30s 内结算。
-    armHostWatchdog(job, job.heartbeatStaleMs)
-    onTakeover?.(job.jobId)
+    armLivenessWatchdog(job, job.heartbeatStaleMs)
+    options.onTakeover?.(job.jobId, reason)
     return job
   }
   return null
@@ -342,13 +483,35 @@ export function reportRenderJobProgress(jobId: string, progress: number): boolea
   // O-06：进度也是「页面还活着」的证据 —— 看门狗用它兜住「主线程被编码器按住」的窗口。
   if (applied) {
     const job = activeJobs.get(jobId)
-    if (job !== undefined) job.lastProgressAt = Date.now()
+    if (job !== undefined) {
+      job.lastProgressAt = Date.now()
+      // `maxProgress > 0` 是「真的开渲了」的唯一硬证据，改派与看门狗都靠它区分
+      // 「取单没动」和「在渲只是慢」。
+      if (Number.isFinite(progress) && progress > job.maxProgress) {
+        if (job.maxProgress <= 0 && progress > 0) job.firstFrameAt = Date.now()
+        job.maxProgress = progress
+      }
+    }
   }
   return applied
 }
 
-function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | 'cancelled' | 'timedOut', error?: string): void {
-  clearTimeout(job.timer)
+/** REQ-035 F-01：把一张工单的当前状态压成诊断快照（结算前后都可调）。 */
+function diagnosticsOf(job: ActiveRenderJob, settled: RenderJobDiagnostics['settled']): RenderJobDiagnostics {
+  const since = job.dispatchedAt ?? job.claimedAt ?? Date.now()
+  return {
+    id: job.jobId,
+    path: job.executor,
+    claimedAt: job.claimedAt ?? null,
+    firstFrameAt: job.firstFrameAt ?? null,
+    settled,
+    takeover: job.takenOverAt !== undefined,
+    waitedMs: Math.max(0, Date.now() - since),
+    maxProgress: job.maxProgress,
+  }
+}
+
+function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | 'cancelled' | 'timedOut', error?: string): void {  clearTimeout(job.timer)
   if (job.watchdog !== null) {
     clearInterval(job.watchdog)
     job.watchdog = null
@@ -379,14 +542,16 @@ function immediateExecutor(options: RunRenderJobOptions): RenderExecutor | undef
 }
 
 /**
- * 冷启等待：窗口存在但还没自报就绪（新建约 1s）。
+ * 冷启等待：窗口存在但还没自报就绪（新建约 1s，实测更久）。
  *
- * 为什么值得等这 3 秒：首单如果甩给画布页，而用户此时切走了，就正好复现本次要修的
- * 那个挂死。3s 换「首单也走隐藏窗口」是划算的；等不到则老实回退客户端。
+ * 为什么值得等：首单如果甩给画布页，而用户此时切走了，就正好复现本次要修的
+ * 那个挂死。等待预算从 3s 提到 8s —— 窗口要创建 → loadURL → 拉 bundle → 自检
+ * → 首次自报，3s 是纸面值（2026-10-24 事故里首单几乎必然因此判给画布页）。
+ * 等不到才老实回退客户端。
  */
 async function pickExecutor(options: RunRenderJobOptions): Promise<RenderExecutor> {
   warmRenderHost()
-  const budget = Math.max(0, options.hostWarmupMs ?? 3000)
+  const budget = Math.max(0, options.hostWarmupMs ?? RENDER_HOST_WARMUP_MS)
   if (budget === 0) return 'client'
   const deadline = Date.now() + budget
   while (Date.now() < deadline) {
@@ -401,31 +566,73 @@ async function pickExecutor(options: RunRenderJobOptions): Promise<RenderExecuto
 }
 
 /**
- * 心跳看门狗：`render-host` 单派发后开始盯着。
+ * 心跳看门狗：**两种执行者都装**（此前只给 `render-host` 装，见下方"为什么改"）。
  *
- * 判据 = 「距最近一次生命迹象」> 阈值，生命迹象取两者**较新**的一个：
- * ① 页面自报（`POST /render-host/status`，每 1s）；
- * ② 进度上报（渲染循环里的 `onProgress`，`draft` 档冻结主线程时**只有它还会到**）。
+ * 判据按执行者分开，因为两条路能拿到的证据不同：
+ * - `render-host`：页面自报（`POST /render-host/status`，1s 一拍）与进度上报谁新用谁。
+ *   只看自报会误杀 —— `pageResponsiveness: 'disabled'` 会把主线程按住几十秒。
+ * - `client`：没有页面自报通道，只有进度。分两档（见 `clientSilence`）：
+ *   取单后**一帧没动**按 `CLIENT_CLAIM_STALL_MS` 判，已开渲后按 `CLIENT_PROGRESS_STALL_MS` 判。
  *
- * 只看①会误杀：`pageResponsiveness: 'disabled'` 会把主线程按住几十秒。
- * 两个都不来 ⇒ 页面真死了（或被系统挂起），此时**必须**结算，否则工具调用干等到超时。
+ * 为什么 client 也要装：2026-10-24 事故里 client 单是**唯一**没有兜底的路径 ——
+ * 画布页取走一张单后卡住，宿主只能干等到 90–420s 的固定超时，期间用户什么提示都没有。
  */
-function armHostWatchdog(job: ActiveRenderJob, staleMs: number): void {
+function armLivenessWatchdog(job: ActiveRenderJob, staleMs: number): void {
   if (job.watchdog !== null) return
+  const tick = job.executor === 'render-host'
+    ? Math.max(200, Math.min(1000, Math.floor(staleMs / 4)))
+    : 1000
   const timer = setInterval(() => {
     if (job.settled) return
-    const now = Date.now()
-    const silentFor = Math.min(renderHostHealth(now).ageMs, now - job.lastProgressAt)
-    if (silentFor <= staleMs) return
+    const stall = silenceOf(job, Date.now(), staleMs)
+    if (stall === null) return
+    const diag = diagnosticsOf(job, 'failed')
     job.settled = true
-    settleAndForget(job, 'failed', `render host silent for ${Math.round(silentFor / 1000)}s`)
+    settleAndForget(job, 'failed', `${stall.detail} · ${describeDiagnostics(diag)}`)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: '渲染窗口异常，已中止本次渲染。请重试。',
-      detail: `render host heartbeat lost for ${Math.round(silentFor / 1000)}s`,
+      message: stall.message,
+      detail: `${stall.detail} · ${describeDiagnostics(diag)}`,
+      job: diag,
     }))
-  }, Math.max(200, Math.min(1000, Math.floor(staleMs / 4))))
+  }, tick)
   ;(timer as unknown as { unref?: () => void }).unref?.()
   job.watchdog = timer
+}
+
+/** 看门狗判定：返回 `null` 表示"还活着"，否则给出结算理由。 */
+function silenceOf(
+  job: ActiveRenderJob,
+  now: number,
+  staleMs: number,
+): { message: string; detail: string } | null {
+  if (job.executor === 'render-host') {
+    const silentFor = Math.min(renderHostHealth(now).ageMs, now - job.lastProgressAt)
+    if (silentFor <= staleMs) return null
+    return {
+      message: '渲染窗口异常，已中止本次渲染。请重试。',
+      detail: `render host heartbeat lost for ${Math.round(silentFor / 1000)}s`,
+    }
+  }
+  // client：没有自报可看，只能看「有没有真的动起来」
+  if (job.maxProgress <= 0) {
+    const waited = now - (job.clientClaimedAt ?? job.dispatchedAt ?? now)
+    if (waited < job.claimStallMs) return null
+    // 有窗口能干活 ⇒ 把「救活」的机会留给改派（它会重渲这一单），别在这里判死。
+    if (renderHostCanTakeOver(now)) return null
+    return {
+      message: '画布页取单后一直没开始渲染，已中止本次渲染。请重试。',
+      detail: `client claimed but produced no progress for ${Math.round(waited / 1000)}s`,
+    }
+  }
+  const stalled = now - job.lastProgressAt
+  if (stalled < job.progressStallMs) return null
+  // 同上：能改派就交给窗口重渲 —— 编码尾巴可能长时间没有回调，
+  // 宁可多跑一遍也不要误杀一张马上要成的片子。
+  if (renderHostCanTakeOver(now)) return null
+  return {
+    message: '画布页渲染中断（长时间无进展），已中止本次渲染。请重试。',
+    detail: `client progress stalled for ${Math.round(stalled / 1000)}s`,
+  }
 }
 
 /**
@@ -494,6 +701,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       samples: [],
       executor,
       lastProgressAt: Date.now(),
+      maxProgress: 0,
       watchdog: null,
       resolve,
       reject,
@@ -501,6 +709,10 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       settled: false,
       dispatched: slot.dispatched,
       heartbeatStaleMs,
+      timeoutMs,
+      deadlineAt: 0,
+      claimStallMs: Math.max(1, options.clientClaimStallMs ?? CLIENT_CLAIM_STALL_MS),
+      progressStallMs: Math.max(1, options.clientProgressStallMs ?? CLIENT_PROGRESS_STALL_MS),
       ...(signal !== undefined ? { signal } : {}),
     }
     activeJobs.set(jobId, job)
@@ -508,12 +720,23 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       if (job.settled) return
       // 滞留改派以本时刻为宽限起点（armTimeout 恰在「获得槽位」时跑一次）。
       job.dispatchedAt = Date.now()
-      if (job.executor === 'render-host') armHostWatchdog(job, heartbeatStaleMs)
+      // 排队可能很久；进度/存活计时都从**真正派发**起算，否则排在前面的单会误判超时。
+      job.lastProgressAt = job.dispatchedAt
+      job.deadlineAt = job.dispatchedAt + timeoutMs
+      // 两种执行者都要看门狗：client 单此前完全没有兜底（Phase 0 §三 D-3）。
+      armLivenessWatchdog(job, heartbeatStaleMs)
       job.timer = setTimeout(() => {
         if (job.settled) return
+        const diag = diagnosticsOf(job, 'timeout')
         job.settled = true
-        settleAndForget(job, 'timedOut', `timeout after ${timeoutMs}ms`)
-        reject(makeCanvasError('CS-RENDER-TIMEOUT', { seconds: Math.round(timeoutMs / 1000) }))
+        settleAndForget(job, 'timedOut', `timeout after ${timeoutMs}ms · ${describeDiagnostics(diag)}`)
+        // F-01/F-03：把「谁认领了 / 有没有出首帧」直接写进文案 —— 39 次超时里
+        // agent 只能看到一句"超时"，于是把执行器故障误判成画面太复杂。
+        reject(makeCanvasError('CS-RENDER-TIMEOUT', {
+          seconds: Math.round(timeoutMs / 1000),
+          diagnosis: describeDiagnostics(diag),
+          job: diag,
+        }))
       }, timeoutMs)
     }
     if (slot.dispatched) {
@@ -597,6 +820,8 @@ export async function commitRenderJob(
   const warnings = [...(input.warnings ?? [])]
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
 
+  // F-01：结算前取一次快照（结算会把它从工单表摘掉）。
+  const diagnostics = diagnosticsOf(job, 'ok')
   job.settled = true
   settleAndForget(job, 'succeeded')
   const frames = [...job.samples].sort((a, b) => a.frame - b.frame)
@@ -606,14 +831,15 @@ export async function commitRenderJob(
     quality: job.quality,
     frames: Math.max(1, Math.round(job.manifest.meta.durationInFrames)),
     totalMs: input.report?.totalMs ?? 0,
+    prepareMs: input.report?.prepareMs ?? 0,
+    renderMs: input.report?.renderMs ?? 0,
     msPerFrame: input.report?.msPerFrame ?? 0,
-    encodeMs: input.report?.encodeMs ?? 0,
+    encodeDoneAtMs: input.report?.encodeDoneAtMs ?? 0,
     bytes: input.bytes.length,
     bitrateKbps: input.report?.bitrateKbps ?? 0,
     width: info.width ?? input.report?.width ?? 0,
     height: info.height ?? input.report?.height ?? 0,
     sampledFrames: frames.length,
-    warm: input.report?.warm ?? false,
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,
@@ -623,6 +849,7 @@ export async function commitRenderJob(
     quality: job.quality,
     frames,
     report,
+    job: diagnostics,
     ...(info.width !== undefined ? { width: info.width } : {}),
     ...(info.height !== undefined ? { height: info.height } : {}),
   }

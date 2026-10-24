@@ -321,16 +321,22 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '按提示修正 manifest（素材 / 尺寸 / 时长）后重试；必要时把 manifest 传小一份先验证链路。',
   },
   {
-    // 宿主建单后无人结算：无画布客户端在线 / 客户端长时间未回写。10 分钟上限。
+    // 宿主建单后无人结算：既可能是没人取单，也可能是取走后没回写。
+    //
+    // REQ-035 F-03（2026-10-24 事故）：旧文案写「请确认画布页面已打开且可见」——
+    // 这句话既与 render_composition 的工具描述（"可以切走、最小化，都不影响"）互相
+    // 矛盾，也被实测否证（四档窗口 hidden/visible/occluded 耗时差 3ms）。它把一次
+    // **执行器链路**故障误导成了"用户没把窗口摆对"，实际排障白烧 3 小时。
+    // 现在文案只陈述可判定的事实，并把诊断串（谁认领、有没有出首帧）带出来。
     code: 'CS-RENDER-TIMEOUT',
     module: 'RENDER',
     severity: 'S2',
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
-    userMessage: '成片渲染超时（{seconds} 秒内画布客户端未返回结果）：请确认画布页面已打开且可见，然后重试。',
-    devMessage: 'runRenderJob timeout after {seconds}s（客户端未 commit）',
-    recoveryHint: '确认桌面端画布窗口打开；缩短成片时长 / 降低分辨率后重试。',
+    userMessage: '成片渲染超时（{seconds} 秒内未完成）：{diagnosis}',
+    devMessage: 'runRenderJob timeout after {seconds}s: {diagnosis}',
+    recoveryHint: '这不是画面复杂度问题。若诊断为「未认领 / 无进度」，属渲染执行器链路故障，请查看应用日志中的 render-job 记录后重试；若为「已在渲染」，再考虑缩短时长或降分辨率。',
   },
 
   // ── I 波形（仅开发者示例：用户无需也不应看到 ffmpeg 内部缺失）──────────────

@@ -1720,3 +1720,39 @@
 - **详情**：用户在设置里切浅色/深色后，故事板覆盖层要关闭再打开才换色。根因：`ThemeRuntime` **不暴露 `subscribe`**，宿主只在 `theme/change` 上广播；覆盖层色板写在 iframe URL 上，组件拿不到重渲染信号就不会重新加载 ⇒ 停在旧色板。修法：注入面透出 `subscribeTheme`（宿主 `theme/change`；`contracts.ts` 契约 + `index.ts` 接线），覆盖层用 `useSyncExternalStore` 订阅主题快照（引用在变化前稳定，可作 snapshot），并据它派生 `sbLight` / 容器底色 / iframe URL。
 - **涉及文件**：`src/client/contracts.ts` / `src/client/index.ts` / `src/client/StudioFrame.tsx` / `tests/storyboard-theme-live.test.mjs`
 - **落地/验收**：接线守卫 `storyboard-theme-live` 2 例（注入面契约 + index 接线到 `theme/change`；覆盖层订阅快照并据它派生色板与 iframe URL）。验证链全绿：typecheck / 沙箱三段 build / verify:loader / `test:smoke` **1877·1877、基线 0**。**⚑ 待桌面验收**：设置里切浅色/深色，覆盖层应立即换色（无需关闭再打开），深↔浅各来回一次。
+
+#### CV-363 · REQ-035 渲染可靠性 P0：认领/改派/看门狗 + 工单诊断 + 字段语义
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：智能手表成片 49 次 `render_composition` / **39 次 `CS-RENDER-TIMEOUT`** / 0 成片。Phase 0 用真机日志定死根因：**工单基本没走隐藏渲染窗口** —— 全天 `滞留渲染工单` 改派日志 **0 次**；`CS-RENDER-TIMEOUT` 恰好 39 条与会话逐一对应；`RenderHost 已创建` 8 次 / `销毁(idle)` 7 次，而销毁时刻 = 最后一次 `touchRenderHost()` + 5min（`lifecycle.ts:15`，忙时不回收），每次都落在「该时段零成功渲染」之后 ⇒ 那段时间窗口从未取到单。五个结构性缺陷一次修完：
+  1. **派单闸与改派闸共用 `renderHostReady()`**（`status.ts:108`）：闸一关，新单推给画布页，**同时**禁止窗口接管 ⇒ 死锁。新增 `renderHostCanTakeOver()`：`booting/idle/rendering` 可接管，`error/unsupported` 不可。
+  2. **`clientClaimedAt` 一次打点即永久放弃改派**（`render-job.ts:295` 旧判据）：claim ≠ 在渲。改三档滞留判据 `clientJobOrphanReason()`：未认领 15s / 认领后无进度 20s / 开渲后停滞 90s，原因串进 `onTakeover(jobId, reason)` 日志。
+  3. **client 单无看门狗**（`armHostWatchdog` 只给 host 单装）：改 `armLivenessWatchdog`，两种执行者都装；新增 `job.maxProgress` 作为「真的开渲了」的唯一硬证据；**有窗口可接管时主动让位给改派（重渲），没窗口才判死**，避免误杀编码尾巴。
+  4. **冷启预算 3s**（`pickExecutor`）：窗口要创建→loadURL→拉 bundle→自检→首次自报，3s 是纸面值 ⇒ 首单几乎必然判给画布页。提到 8s（`RENDER_HOST_WARMUP_MS`）。
+  5. **工具超时不通知页面**：页面 `currentJobId` 非空后 `pollOnce` 永久跳过 ⇒ 后续每单必挂（重启客户端能解开，所以「重启有时管用」）。工单载荷下发 `deadlineAt`，页面到点自 abort（留 500ms 让宿主超时先落袋）。
+  配套：`RenderJobDiagnostics` + `describeDiagnostics()` 使成功/超时/看门狗三条路都带快照并进模型可见文本（`工单：画布页 · 未认领 · 无首帧 · 用时 90.0s`）；`CS-RENDER-TIMEOUT` 文案删掉「请确认画布页面已打开且可见」（与工具描述互斥、被四档窗口实测否证 333/336/333/336ms）改带 `{diagnosis}`；报告字段修正（新增 `prepareMs`/`renderMs`，`msPerFrame=renderMs/frames`，`encodeMs`→`encodeDoneAtMs`（它是 `onProgress().doneIn`＝编码完成**时刻**），**删 `warm`**（硬编码 false 的假字段））；`probe:true` 探针不落画布节点/不抽帧/跳过体检（事故里最后一次探针把成片节点覆盖成 10 帧黑屏）。
+- **涉及文件**：`src/remotion/render-job.ts` / `src/render-host/status.ts` / `src/render-host/main.ts` / `src/client/api.ts` / `src/routes.ts` / `src/host-tools.ts` / `src/client/remotion-render.ts` / `src/client/render-job-executor.ts` / `src/errors/catalog.ts` / `src/param-guard.ts` / `tests/render-host-takeover.test.mjs`（新增 10 条）
+- **落地/验收**：提交 `8d378f14fa`。tsc 三套全过；新增 10 条 + 既有渲染相关 43 条全绿；全量 smoke **2119·2119、基线外新增 0**。**⚑ 待桌面验收**：见 `plans/REQ-035-真机验收清单-20261024.md` Z-1..Z-7。**注意：本条推翻 CV-359 的「claim 过就永不改派」判据**。
+
+#### CV-364 · 编排体检去重/呼吸豁免 + inspect_image 能力对齐 + 资产生命线
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：三处「工具说了自己做不到的事」：
+  1. **ML-04 刷屏**：原实现按**动画分段**逐条 push，同一条轨上 3 段长呼吸就产出 3 条一模一样的 `ML-04`（事故里 3 条 glow 轨刷出 14 条），把真告警挤出 `MAX_ISSUES`。改 `(code, at)` 去重；并加**往复呼吸豁免**：一条轨的动画首尾状态相同（`from ≈ to`，容差 0.6）即判循环脉动，长时长是设计意图，不再被判「动画拖沓」。
+  2. **inspect_image 描述失真**：旧描述写「这是唯一的像素真值来源——不要再手写 PNG 解码脚本」，实测深色屏压深色背景时 `bbox-dark` 退化成整图（threshold 收到 8 仍占 97.3% 宽），agent 只能自写解码器（事故里为此写了 9 个脚本、耗 1.5h）。改：新增 `mode:"grid"`（32×18 亮度表 + 最暗/最亮块坐标，直接回答「目标在画面哪一块」）；`bbox-*` 加 `region`（画布百分比中心语义）限定扫描区；覆盖率分母改为**扫描区**且 >90% 时显式告警「包围盒已退化，这次结果不能用来定位」；描述如实交代边界并给 grid/region 出路。
+  3. **资产生命线**：`asset-gc` 的「根目录孤儿物理删除」是本次 `watch-hero.png` / `watch-720.png` / `glow-baked.png` 一起消失的真凶（此后连历史工件都无法重放）。改为**只登记不删**（`AssetGcResult.orphansRemoved:number` → `orphans:string[]`，客户端 api 类型同步）；素材缺失报错补「同目录相近文件」提示（`watch-hero.png` 丢了但 `watch-720.png` 还在时可直接改 `src` 自救）。
+- **涉及文件**：`src/remotion/motion-lint.ts` / `src/inspect-image.ts` / `src/host-tools.ts` / `src/asset-gc.ts` / `src/client/api.ts` / `src/param-guard.ts` / `tests/remotion-motion-lint.test.mjs` / `tests/inspect-image.test.mjs` / `tests/asset-gc.test.mjs` / `tests/asset-history.test.mjs`
+- **落地/验收**：提交 `ed1831d6c0`。motion-lint +3、inspect-image +4（含「bbox 退化」与「region 命中」双向）；全量 smoke **2132·2132 全绿**。
+
+#### CV-365 · 16 条引擎契约入库（文档↔源码守卫）+ skill 纪律补强
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：
+  1. **引擎契约入库**：`code-driven-explainer/references/manifest-contract.md` 新增「实现细节」16 条，都是**读源码才看得到**的组件层事实（事故里 agent 为此读了 27 次源码、烧 1.5h、触发 5 次压缩）：circle 直径只由 `box.w` 决定（`height:0` + `paddingBottom:w%`，`h` 被忽略）；line 的 `box.x` 是左缘（居中用的 `translateX(-50%)` 被换成 0）；bullets 圆点常显无开关、18px + 24px ⇒ 文字左缘固定偏 42px、容器固定 900px；bullets 的 `typewriter` 用整卡帧推进 ⇒ 逐行打字必须拆轨；title 带 `rgba(0,0,0,0.35)` 全屏蒙版、subtitle 固定底部居中；自动排版只缩不放（0.94 递减）⇒ 放大只能 `transform.scale`；`shape` 的 `box` 不能被 animate、但 animate 的 `x/y` 会覆盖 `box.x/y`；`transition` 作用于整条轨；`fx:glow` 固定冷蓝；`temperature>0` 走 -12deg（暖）、**冷调必须给负值**；path 坐标 0–100 双轴且 `preserveAspectRatio="none"`（非等比）；`durationInFrames === max(end)`、`exit ≤ 轨道时长`；`render_composition` 别传 `projectId`、长片走 `manifestPath`。
+  2. **文档不漂移守卫**：新增 `tests/manifest-contract-doc.test.mjs` —— 10 条「文档短语 ↔ 源码正则」对码（源码改了文档没跟即红）+ 章节编号连续性 + 旧口径残留检查（`不要再手写 PNG 解码脚本` 不得复现）。
+  3. **skill 纪律**：`SKILL.md` 补「有下一步就别停轮」（事故里阶段成功后白等 36 分钟）、「先看工单再看内容」（`工单：…` 显示未认领/无首帧、或最小探针 >1s/帧 ⇒ 判环境问题、停止缩 manifest）、`CS-RENDER-TIMEOUT` 按诊断三分类处置。SKILL.md 10.1KB（≤12KB 闸内）。
+- **涉及文件**：`skills/code-driven-explainer/references/manifest-contract.md` / `skills/code-driven-explainer/SKILL.md` / `tests/manifest-contract-doc.test.mjs`（新增 11 条）
+- **落地/验收**：提交 `30c5a51166`。全量 smoke **2143·2143 全绿**（+11）。踩点：文档原本**没有** `inspect_image` 提及，新守卫的「引导不能删」断言一开始红，顺手补了像素定位引导。

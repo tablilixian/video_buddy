@@ -461,6 +461,34 @@
 - `report: { quality, frames, totalMs, msPerFrame, encodeMs, bytes, bitrateKbps, width, height, sampledFrames, warm, lint }`
   —— 这条片花了多久、质量档是否生效、哪几条 lint 命中。慢得离谱时先看 `msPerFrame` 与 `encodeMs` 的占比。
 
+## 实现细节（读源码才看得到，2026-10 真机踩过）
+
+> 这一节是**组件层实现事实**，不是约定。写 manifest 时按它避开，比渲染完再改省一轮。
+> `tests/manifest-contract-doc.test.mjs` 会把这批"文档断言"回去对源码 —— 源码改了而文档没跟，测试会红。
+
+| # | 实现事实 | 你该怎么做 |
+| --- | --- | --- |
+| 1 | `shape:"circle"` 的直径**只由 `box.w` 决定**（实现是 `height:0` + `paddingBottom: w%`，高度按父**宽**解析），**`box.h` 被忽略** | 画圆只给 `w`；想要椭圆用 `shape:"path"` 或 `transform.scale` 拉一个圆 |
+| 2 | `shape:"line"` 的 `box.x` 是**左边缘**，不是中心（它把居中用的 `translateX(-50%)` 换成了 `translateX(0)`） | 要让一条线看起来居中，`x` 按 `50 - w/2` 写 |
+| 3 | `bullets` 的文字色**硬编码** `#e6edf3`；`accentColor` 只改**圆点**颜色 | 表盘/卡片里要多色文字，只能用 `shape` 拼，或换 `subtitle` |
+| 4 | `bullets` 的圆点**常显、无开关**；圆点 18px + 右边距 24px ⇒ 文字左缘固定偏 **42px**；容器固定 **900px** 宽 | 按像素对齐时把这 42px 算进去；窄画布上容器会按 90% 收 |
+| 5 | `bullets` 的 `anim:"typewriter"` 用**整卡的轨内帧**推进，多行会同时开始打字 | 要"一行打完再打下一行"，必须**拆成多条 textCard 轨**，各自错开 `startFrame` |
+| 6 | `variant:"title"` 带**全屏蒙版** `rgba(0,0,0,0.35)`；`variant:"subtitle"` 固定**底部居中** | 想要"左栏大标题"用 `bullets` + `transform.x`，不要用 title 硬挪 |
+| 7 | 自动排版**只缩不放**：`fitTextPolicy` 从 `baseFontPx` 以 0.94 递减收缩，永不放大 | 想让标题更大，改 `transform.scale`，别指望字号自适应 |
+| 8 | `shape` 的 `box` **不能被 `animate` 动画**；`shapeTransform` 只有 `scale` / `rotation`，**没有位移** | 用 `animate` 的 `x/y` 动位置（见第 9 条），不要试图动画 `box` |
+| 9 | 但 `animate.from/to` 里的 `x/y` **会覆盖 `box.x/y`**（`positionDeclared` 以 animate 为准） | "以 `box` 定初始位置、只动 y"是可行的：`animate` 里只写 `y`，`x` 保持 `box` |
+| 10 | `transition` 作用于 `fromTrackId` / `toTrackId` 的**整条轨**，不是单个元素 | "只擦除某一行/某个块"做不到；要么拆轨，要么用 `exit` 淡出模拟 |
+| 11 | `fx:"glow"` 的发光色**固定冷蓝** `rgba(120,190,255,…)`，不可配 | 要暖色光晕就用 `shape` + 半透明径向渐变自己画 |
+| 12 | `meta.look.temperature > 0` 走 `hue-rotate(-12deg)`（偏暖）；`≤ 0` 走 168°（偏青） | **要冷调必须给负值**（如 `-0.55`），给 0 等于不调、给正数是反方向 |
+| 13 | `shape:"path"` 的 `d` 是 **0–100 双轴百分比**且 `preserveAspectRatio="none"`（非等比） | 16:9 下画"正圆感"的曲线要按 `rx : ry ≈ 1 : 0.5625` 补偿 |
+| 14 | `box` 的 `w` / `h` 是**画布百分比**，不是像素；父容器变了它跟着变 | 换算像素时一律 `百分比 × 画布宽/高 ÷ 100`，别写死 px |
+| 15 | `meta.durationInFrames` 必须 **等于** `max(startFrame + durationInFrames)`；`exit.durationInFrames` 必须 **≤ 轨道时长** | 改末尾轨的时长后同步改 `meta`；`exit` 只能在长轨上用，别给 1 帧轨写 10 帧退场 |
+| 16 | `render_composition` **不要传 `projectId`**（省略即按当前项目解析）；长 manifest 走 `manifestPath` 绝对路径 | 内联超 ~30KB 会被入参截断，尾部完整性校验会当场拒收，白烧一轮 |
+
+> 像素定位（素材上的屏幕/主体矩形）：用 `inspect_image` —— 先 `mode:"grid"` 看空间分布，
+> 再用 `bbox-dark` + `region` 拿精确矩形。它给的是**扫描区内的包络**，不是连通域；
+> 深色目标压在深色背景上时会退化成整块区域（覆盖率 >90% 会显式告警），别拿那次结果去定位。
+
 ## 硬约束（违反即校验失败或不达预期）
 
 1. `meta.durationInFrames` 与 `max(track.endFrame)` 偏差 > 1 帧会 warning，请让两者一致；任一轨超出总时长会 warning 并在渲染时按 `meta` 裁切。

@@ -4,7 +4,7 @@
 > 性质：设计评审 + 目标态方案。**只读文档，未改任何代码。**  
 > 范围：`canvas-studio/skills/`、`canvas-studio/src/` 中与质量检测、校验、路由、交付反馈相关的机制。  
 > 方法：静态代码核查 + 文档核查。所有现状判断均给出文件位置；目标态部分是设计决策，不冒充已实现事实。  
-> 基线：当前工作树（含未提交的 CV-360 manifest 截断检测、CV-362 `inspect_image` 改动）。  
+> 基线：当前工作树（含未提交的 CV-361 manifest 截断检测、CV-362 `inspect_image` 改动）。  
 > 结论口径：本文把“质量”拆成**合同有效性、技术质量、内容质量、合规质量、性能质量**五类，不再用一个“质检”概念混装。
 
 ---
@@ -65,11 +65,11 @@ flowchart LR
 
 | # | 检测 | 位置 | 触发 / 判定 | 反馈 | 用户可读性 | 评价 |
 |---|---|---|---|---|---|---|
-| 1 | 参数占位守卫 | `src/param-guard.ts:270`、`:294` | 入参含 `TODO`、`xxx`、`待定` 等占位值 → 抛 `CS-PARAM-002` | 工具失败，agent 收到错误 | 中 | 必要，防昂贵接口空跑 |
+| 1 | 参数占位守卫 | `src/param-guard.ts:275`、`:295`（实抛 `:304`） | 入参含 `TODO`、`xxx`、`待定` 等占位值 → 抛 `CS-PARAM-002` | 工具失败，agent 收到错误 | 中 | 必要，防昂贵接口空跑 |
 | 2 | 文本占位守卫 | `src/text-guard.ts:169`、`:249` | 旁白 / 故事板 / 入参是占位文本 → 拒收或清洗 | 工具失败 / 载入清洗 | 较高 | 必要 |
 | 3 | 故事板完成度 | `src/contracts/storyboard.ts:810` | `blockers` 缺标题/画幅/时长/token/分镜/shot 字段/引用/角色 `lockedPrompt`/ID 唯一性；`warnings` 缺 `promptEn`、时长偏差、待核实事实、待上传素材 | 确认清单 | 中 | 必要，但只是“能不能落地”，不是“好不好” |
 | 4 | H3-IR 校验 | `src/h3-ir-validate.ts:152`、`:738` | 六段结构、模式、段名、运镜词表、数值区间、素材编号 | 工具入口拦截 / warning | 低 | 对 H3 必要；只覆盖 H3 链路 |
-| 5 | Manifest 结构校验 | `src/remotion/manifest.ts:1096` | id/meta/宽高/fps/帧数/轨道 id/时间字段/transform/animate/orbit/fx/exit/blend/colorShift 等；另有 `manifestTruncationError`（`:1476`）拦“总时长大于轨道最大结束帧”的尾部截断 | `render_composition` 失败或 warnings | 低 | Remotion 规范的核心硬闸；截断检测是 CV-360 的真机教训 |
+| 5 | Manifest 结构校验 | `src/remotion/manifest.ts:1096` | id/meta/宽高/fps/帧数/轨道 id/时间字段/transform/animate/orbit/fx/exit/blend/colorShift 等；另有 `manifestTruncationError`（`:1476`）拦“总时长大于轨道最大结束帧”的尾部截断 | `render_composition` 失败或 warnings | 低 | Remotion 规范的核心硬闸；截断检测是 CV-361 的真机教训 |
 | 6 | 素材完整性 | `src/remotion/asset-check.ts:134` | 缺失、非同源 URL、未物化 → `missing`，硬失败；ffprobe 探真实时长/像素 | 工具失败 | 中 | 必要，防静默 404/黑帧 |
 | 7 | Look 卡完整性 | `look_card` 工具 | 缺 5 项 tokens 时 warning，仍落卡 | 工具结果 warning | 低 | 有价值，但用户不知道“5 项 tokens”是什么 |
 | 8 | 审批门禁 | `src/approval-gate.ts` | 按状态/模式/工具决定是否允许 | 工具失败 | 中 | **不是质量检测**，是安全/流程闸 |
@@ -125,7 +125,7 @@ flowchart LR
 | 24 | `qc_shot` 单镜一致性 | `src/host-tools.ts:1732`、`src/quality-check.ts:344` | VLM 对照 `expect` / 资产卡 `lockedPrompt` → PASS/FAIL/WARN + 漂移项；支持 `facesVisible`、`shotFocus` | 工具结果 + 写回节点 `qc` | 中 | 有价值，但交付后运行、不返工、auto 跳过、VLM 不可靠 |
 | 25 | `image2vl` | `src/host-tools.ts:2084` | 图片描述 | 自由文本 | 中 | 分析工具，不是质检；文字识别不可靠 |
 | 26 | `video2vl` | `src/host-tools.ts:2121` | 视频内容/运镜/节奏描述 | 自由文本 | 中 | 没有结构化 rubric，不是质检 |
-| 27 | Skill 自检清单 | `skills/*/references/*checklist*.md` | 交付前人工/模型逐条检查 | 无机器回执 | 低 | 主观质量唯一可用的方式，但不可审计 |
+| 27 | Skill 自检清单 | `skills/*/references/*checklist*.md` | 交付前人工/模型逐条检查 | 无机器回执 | 低 | 主观质量唯一可用的方式，但不可审计。**2026-10-24 勘误补记：22 个 skill 中仅 5 个有 checklist 文件**（3d-animation-short-generator / minimalist-product-ad-generator / music-video-subtitle-generator / paper-collage-explainer-generator / papercraft-stop-motion-explainer），覆盖面比下表名目暗示的低得多——反而加重 P1-5 |
 | 28 | 开发自测 | `src/auto-test-checkpoints.ts:191`、`src/auto-test-report.ts:140` | 客观断言 | 测试报告 | 开发用 | 不是用户质检 |
 
 ### 2.5 当前反馈路径
@@ -562,7 +562,7 @@ interface TextSpec {
 #### 硬闸
 
 - Manifest 结构合法。
-- Manifest 尾部完整：`meta.durationInFrames` 必须等于全部轨道最大结束帧；缩水即拒收（`manifestTruncationError`，CV-360）。
+- Manifest 尾部完整：`meta.durationInFrames` 必须等于全部轨道最大结束帧；缩水即拒收（`manifestTruncationError`，CV-361）。
 - 长片 manifest 走 `manifestPath` 文件通道，避免入参截断。
 - 素材存在、可解码、同源。
 - 字体存在、渲染成功。
@@ -944,6 +944,38 @@ quality_contract:
 ### 10.4 本文未做的事
 
 - 未改任何代码。
-- 未登记 CV 编号。
+- 成文时未登记 CV 编号；后随 CV-362 批次一并入库（见 `docs/STATUS.md` 2026-10-23 条目）。
 - 未替产品拍板；第 6 节是建议，最终需要产品/设计/工程共同确认。
 - 未声称 VLM 可以可靠判断内容质量；相反，本文的核心建议是不要让它做最终验收。
+
+---
+
+## 11. 评审补充（2026-10-24）
+
+> 本节是对前文的独立复核与落地缺口补记。引用核查方法：对全文约 30 处 file:line 逐一与当前工作树对码。
+
+### 11.1 勘误记录
+
+- **CV 编号（3 处，已修正）**：manifest 截断检测实为 **CV-361**，成文时误写为 CV-360（CV-360 是压缩摘要超网关上限致 18 连败）。基线行、§2.1 #5、§5.11 已改。
+- **行号漂移（已修正）**：`param-guard.ts` 占位守卫实位 `:275`/`:295`（实抛 `:304`）。
+- **覆盖面高估（已在 §2.4 #27 补记）**：22 个 skill 中仅 5 个有 checklist 文件。
+- 其余抽验引用（`quality-check.ts:25`、`StudioFrame.tsx:1940`、`compose.ts:562/:611/:637`、`text-detection.ts:209/:236/:283`、`model-route.ts:105`、`storyboard.ts:810`、`slideshow-risk.ts:103` 等）全部准确；P0/P1/P2 结论均有代码支撑，可作为事实源。
+
+### 11.2 落地缺口（目标态能做之前必须先回答的）
+
+| # | 缺口 | 说明 | 影响 |
+|---|---|---|---|
+| G-1 | OCR 实现选型未定 | D5 / Phase 2 的核心依赖。CV-362 复盘已实证本机无 PIL/ImageMagick，零依赖自研 OCR 不现实；接云端 OCR 引入新依赖与成本 | 阻塞 Phase 2 |
+| G-2 | QualityContract 持久化位置未定 | 存哪、与现有 `plan.targetDuration` / `storyboard.json` 的关系、契约变更如何留痕（§5.3.2 只说“调整要记录”） | 阻塞 Phase 1 |
+| G-3 | D8 与 skill 登记门禁的冲突未提 | 本项目 skill 有 6 处登记对账 + `platform.yaml` 9 必填 + `SKILL.md ≤12KB`（总纲已压在 11KB 内）。quality_contract 放 frontmatter 要同步 `src/skill-catalog.ts` 逐字段相等门禁；放 `references/` 要新登记通道 | 影响 D8 拍板成本 |
+| G-4 | Phase 0–5 无工作量估算 | D1 是架构级改动 + UI 面板 + 事件持久化，无法做优先级取舍 | 影响排期 |
+| G-5 | 合规质量零落地路径 | 五层里唯一没有现状检测点、也没有目标态最小项的一层；应标“远期”或给最小项（如版权素材声明） | 期望管理 |
+| G-6 | D10 清理缺消费方清单 | `qc_shot` schema 改动波及 `canvas-studio-creation/SKILL.md` 第 11 步、STATUS/cv-details、相关测试；改 SKILL.md 受 12KB 闸约束需等量置换 | 影响 D2/D10 实施 |
+
+### 11.3 新增拍板项（补充第 6 节，D12–D14）
+
+| # | 事项 | 选项 | 建议 | 理由 |
+|---|---|---|---|---|
+| D12 | 文字验收的识别实现 | ① 自研零依赖 OCR ② 接云端 OCR API ③ 复用 Qwen 链路做“裁切区域 + 结构化文字对照” | **③**，critical 项仍由用户逐字确认 | ①已被 CV-362 证伪（无 PIL/ImageMagick）；②引入新依赖与密钥管理；③复用现有模型路由，输出识别文本供对照，与 `inspect_image` 的“确定性真值 + 模型辅助”分层一致 |
+| D13 | skill 质量契约的载体 | ① SKILL.md frontmatter ② `references/quality-contract.yaml` + 登记门禁扩展 | **②**，同步扩 `tests/skill.test.mjs` 一条对账 | ①撞 12KB 硬闸且要动 `skill-catalog.ts` 逐字段相等门禁，成本高；②不动 frontmatter 结构，登记成本一条测试 |
+| D14 | 分期切法与 quick win | ① 严格按 Phase 0→5 ② Phase 0+1 先行，并先做两个文案级 quick win | **②**。quick win：`StudioFrame.tsx:1940` warning 不再 toast 成 error；D2/D10 的“FAIL 不返工”“budget/exhausted”语义改名 | 一天级工作量、用户感知最强；D10 语义清理做完再动架构，避免新旧概念叠加 |

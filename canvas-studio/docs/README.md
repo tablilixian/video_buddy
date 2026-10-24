@@ -92,7 +92,7 @@
 | --- | --- |
 | [api.md](./api.md) | Drama Backend 接口权威清单（**v0.4.0**，2026-09-30：异步任务 / withtxt / txt2speech / 双退役标注） |
 | [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) | 画布侧调用要点薄索引（调用链路 / 上传流程 / 分辨率档位 / image2fix 纪律 / health 语义） |
-| [canvas-studio-tools.md](./canvas-studio-tools.md) | **26 个工具**（25 真实 + 1 占位）的参数与返回说明（**数字由 `tests/tool-registry.test.mjs` 钉死**，增删改名即红；2026-10-12 AR-06 勘误：此前写 26；2026-10-16 REQ-034 加 `render_composition`；2026-10-23 加 `inspect_image`） |
+| [canvas-studio-tools.md](./canvas-studio-tools.md) | **27 个工具**（26 真实 + 1 占位）的参数与返回说明（**数字由 `tests/tool-registry.test.mjs` 钉死**，增删改名即红；2026-10-12 AR-06 勘误：此前写 26；2026-10-16 REQ-034 加 `render_composition`；2026-10-23 加 `inspect_image`；2026-10-24 REQ-035 加 `scaffold_manifest`） |
 
 ## 五、测试与探针
 

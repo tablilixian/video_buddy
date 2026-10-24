@@ -303,3 +303,22 @@ test('transitionOverride：老四种效果语义不变（窗口外恒等）', ()
   const zoomMid = transitionOverride(110, [windowOf('zoom', 'to')])
   closeTo(zoomMid.scale, 0.96, 1e-12, 'zoom 中点 0.92 → 1 的半程')
 })
+
+// ── REQ-035 B2-1（D9）：超时预算公式钉住 ────────────────────────────────────
+// Phase 0 结论：39 次超时**不是**预算问题（工单压根没被取走）。但公式本身是
+// 「基线 + 帧×单价」的正确形态，必须有守卫钉住，别被下一次"以为预算是问题"改回去。
+
+test('B2-1：预算 = 帧数 × 200ms + 60s，clamp 在 [90s, 20min]', () => {
+  assert.equal(renderTimeoutMs(0), 90_000, '下限 90s：短片不该被压到 60s 以下')
+  assert.equal(renderTimeoutMs(150), 90_000, '150 帧理论 90s，正好压线')
+  assert.equal(renderTimeoutMs(450), 150_000, '450 帧 ⇒ 150s（事故里就是这个数）')
+  assert.equal(renderTimeoutMs(1800), 420_000, '1800 帧 ⇒ 420s（独立工程实测 129–182s，3.2× 余量）')
+  assert.equal(renderTimeoutMs(100_000), 20 * 60_000, '上限 20min：再长也不许无限挂')
+})
+
+test('B2-1：预算随帧数线性、与 fps 无关（同一帧数同预算）', () => {
+  const a = renderTimeoutMs(600)
+  const b = renderTimeoutMs(600)
+  assert.equal(a, b)
+  assert.ok(renderTimeoutMs(1200) - renderTimeoutMs(600) === 120_000, '每 600 帧应多 120s（200ms/帧）')
+})

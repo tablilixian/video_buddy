@@ -108,6 +108,7 @@
 | 工具名 | 用途 |
 |--------|------|
 | `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
+| `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect`）→ 返回「全片底色 + 片头标题 + 片尾落版」的 JSON，返回前已跑 `validateManifest`。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对，省掉「校验失败→改→再失败」循环。只产 JSON，不落盘/不渲染/不动画布 |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 

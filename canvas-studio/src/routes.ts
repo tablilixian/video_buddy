@@ -43,7 +43,7 @@ import { cancelRenderJob, claimRenderJobFor, commitRenderJob, failRenderHostJobs
 // REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
 import { renderHostHtml } from './render-host/page.js'
 import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
-import { setRenderHostLauncher } from './render-host/dispatch.js'
+import { setRenderHostLauncher, setRenderHostResetter } from './render-host/dispatch.js'
 import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHost } from './render-host/window.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -3463,11 +3463,18 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       },
     }) !== undefined
     setRenderHostLauncher(launchRenderHost)
+    // B2-2（D10）：窗口自己失败时把它丢掉，下一单拿干净的 —— 事故里"越试越死"
+    // 就是半残窗口继续接单造成的。节流在 dispatch 侧（30s 内不重复重置）。
+    setRenderHostResetter((reason) => {
+      disposeRenderHost(reason)
+      ctx.logger.warn(`[canvas-studio] 渲染窗口已重置（${reason}），下一单将重建`)
+    })
     if (process.env.CANVAS_STUDIO_RENDER_HOST === '1') launchRenderHost()
   }
   return () => {
     // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
     setRenderHostLauncher(undefined)
+    setRenderHostResetter(undefined)
     stopLoopback()
     disposeRenderHost('plugin-dispose')
     for (const dispose of routes) dispose()

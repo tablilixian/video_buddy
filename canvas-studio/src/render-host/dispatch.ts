@@ -14,7 +14,23 @@
 
 export type RenderHostLauncher = () => boolean
 
+/**
+ * 渲染失败后**重置隐藏窗口**的钩子（REQ-035 B2-2 / D10）。
+ *
+ * 为什么需要：2026-10-24 事故里"越试越死" —— 一次超时后窗口带着半残状态继续接单，
+ * 后续每单都在同一个坏状态上失败，只有重启客户端才恢复。
+ * 与 `setRenderHostLauncher` 同一注入风格：宿主侧自己会 `disposeRenderHost`，
+ * 本模块只负责"什么时候该重置"，不知道窗口怎么造。
+ */
+export type RenderHostResetter = (reason: string) => void
+
 let launcher: RenderHostLauncher | undefined
+let resetter: RenderHostResetter | undefined
+// 初值取 -Infinity：0 会被"距上次重置 30s"判成刚重置过，导致**第一次失败反而不重置**。
+let lastResetAt = Number.NEGATIVE_INFINITY
+
+/** 两次重置之间的最小间隔：防止"失败→重置→再失败"抖动成抖窗。 */
+export const RENDER_HOST_RESET_MIN_INTERVAL_MS = 30_000
 let lastWarmAt = 0
 
 /** 注册/注销拉起器（插件卸载时传 `undefined`）。 */
@@ -47,8 +63,33 @@ export function warmRenderHost(now = Date.now()): boolean {
   }
 }
 
+/** 登记重置钩子（`undefined` = 关掉）。 */
+export function setRenderHostResetter(next: RenderHostResetter | undefined): void {
+  resetter = next
+}
+
+/**
+ * 刚刚失败的是**隐藏窗口自己**的时候调一次：把窗口丢掉，下一单拿一个干净的。
+ *
+ * @returns true = 真的重置了；false = 没有钩子 / 距上次重置太近（被节流）。
+ */
+export function resetRenderHostAfterFailure(reason: string, now = Date.now()): boolean {
+  if (resetter === undefined) return false
+  if (now - lastResetAt < RENDER_HOST_RESET_MIN_INTERVAL_MS) return false
+  lastResetAt = now
+  try {
+    resetter(reason)
+    return true
+  } catch {
+    // 重建失败不是致命错误：下一单 `pickExecutor` 会重试拉起（等不到就回退客户端）。
+    return false
+  }
+}
+
 /** 测试用：清掉登记与防抖时间戳。 */
 export function resetRenderHostDispatch(): void {
   launcher = undefined
+  resetter = undefined
   lastWarmAt = 0
+  lastResetAt = Number.NEGATIVE_INFINITY
 }

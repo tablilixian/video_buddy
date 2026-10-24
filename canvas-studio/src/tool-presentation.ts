@@ -58,6 +58,7 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // —— 前者拼已有视频片段，后者按 manifest 渲染字幕卡/数据卡/转场/图文幻灯片。
   render_composition: { tier: 'A', title: '代码合成成片', icon: '合' },
   inspect_image: { tier: 'A', title: '图像检测', icon: '析' },
+  scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },

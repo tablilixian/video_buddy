@@ -33,6 +33,7 @@ import {
 } from './render-queue.js'
 import { hasRenderHostLauncher, warmRenderHost } from '../render-host/dispatch.js'
 import { RENDER_HOST_STALE_MS, renderHostCanTakeOver, renderHostHealth, renderHostReady } from '../render-host/status.js'
+import { resetRenderHostAfterFailure } from '../render-host/dispatch.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
 /**
@@ -590,6 +591,7 @@ function armLivenessWatchdog(job: ActiveRenderJob, staleMs: number): void {
     const diag = diagnosticsOf(job, 'failed')
     job.settled = true
     settleAndForget(job, 'failed', `${stall.detail} · ${describeDiagnostics(diag)}`)
+    if (diag.path === 'render-host') resetRenderHostAfterFailure(`render host stalled: ${stall.detail}`)
     job.reject(makeCanvasError('CS-RENDER-002', {
       message: stall.message,
       detail: `${stall.detail} · ${describeDiagnostics(diag)}`,
@@ -731,6 +733,8 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         const diag = diagnosticsOf(job, 'timeout')
         job.settled = true
         settleAndForget(job, 'timedOut', `timeout after ${timeoutMs}ms · ${describeDiagnostics(diag)}`)
+        // B2-2：超时且单在窗口上 ⇒ 认定窗口状态可疑，丢掉重建（客户端路径不碰窗口）。
+        if (diag.path === 'render-host') resetRenderHostAfterFailure(`render timeout ${Math.round(timeoutMs / 1000)}s`)
         // F-01/F-03：把「谁认领了 / 有没有出首帧」直接写进文案 —— 39 次超时里
         // agent 只能看到一句"超时"，于是把执行器故障误判成画面太复杂。
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {

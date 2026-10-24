@@ -3193,6 +3193,115 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
     }),
     defineTool({
+      // REQ-035 B2-3（D11 · 做成 host 工具而非 skill 脚本）：结构骨架一次算对，
+      // 省掉「时长不自洽 → 校验失败 → 改 → 再失败」的循环（事故里这个循环烧了 3 轮）。
+      name: 'scaffold_manifest',
+      description:
+        '生成一份**结构合法**的 CompositionManifest 骨架（全片底色 + 片头标题 + 片尾落版），之后你在这上面加自己的轨道。'
+        + '存在的理由：手写 manifest 最容易死在「时长自洽」这一类 —— `meta.durationInFrames` 必须**等于**全部轨道最大结束帧，'
+        + '`exit.durationInFrames` 不能超过所在轨道时长。这里一次算对，且返回前已跑过 `validateManifest`（不会给出非法 JSON）。'
+        + '用法：传 `title` + `durationSeconds`（可选 `fps` / `aspect`）→ 拿到 JSON → 替换文案、往 `tracks` 里追加轨道。'
+        + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
+        + '本工具只产出 JSON：不落盘、不渲染、不动画布。',
+      parameters: {
+        title: { type: 'string' as const, required: true, description: '片名（写进 meta.title 与片头卡文案）' },
+        durationSeconds: { type: 'number' as const, required: true, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧' },
+        fps: { type: 'number' as const, description: '可选：24 / 25 / 30 / 60，缺省 30' },
+        aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1280×720 / 720×1280 / 720×720）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: 'Manifest JSON 骨架 + 下一步怎么改' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args) {
+        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown }
+        const title = typeof a.title === 'string' ? a.title.trim() : ''
+        if (title.length === 0) throwError('CS-USER-ERR', { message: 'title 不能为空' })
+        const seconds = typeof a.durationSeconds === 'number' && Number.isFinite(a.durationSeconds) ? a.durationSeconds : 0
+        if (seconds <= 0) throwError('CS-USER-ERR', { message: 'durationSeconds 必须是正数（秒）' })
+        if (seconds > 1800) throwError('CS-USER-ERR', { message: 'durationSeconds 上限 1800 秒（30 分钟）；更长的片子请分段出片再拼' })
+        const fps = a.fps === 24 || a.fps === 25 || a.fps === 30 || a.fps === 60 ? a.fps : 30
+        const SIZES: Record<string, { width: number; height: number }> = {
+          '16:9': { width: 1280, height: 720 },
+          '9:16': { width: 720, height: 1280 },
+          '1:1': { width: 720, height: 720 },
+        }
+        const aspect = typeof a.aspect === 'string' && SIZES[a.aspect] !== undefined ? a.aspect : '16:9'
+        const size = SIZES[aspect] ?? { width: 1280, height: 720 }
+        const total = Math.max(fps, Math.round(seconds * fps))
+        // 片头/片尾各不超过全片 1/3，且不超过 2.5s —— 短片（<5s）也不会被两卡占满。
+        const cap = Math.max(2, Math.floor(total / 3))
+        const head = Math.min(Math.round(fps * 2.5), cap)
+        const tail = Math.min(Math.round(fps * 2.5), cap)
+        const exitFrames = Math.min(10, head, tail)
+        const manifest = {
+          // `manifest.id` 必填 —— 这正是事故里第一轮报错（"manifest.id 必须是非空字符串"）。
+          id: `comp-${Date.now().toString(36)}`,
+          meta: {
+            title,
+            width: size.width,
+            height: size.height,
+            fps,
+            durationInFrames: total,
+            backgroundColor: '#0B1220',
+          },
+          tracks: [
+            {
+              id: 'bg',
+              type: 'shape' as const,
+              shape: 'gradient' as const,
+              color: '#111827',
+              box: { x: 50, y: 50, w: 100, h: 100 },
+              startFrame: 0,
+              durationInFrames: total,
+              fadeFrames: 0,
+            },
+            {
+              id: 'title',
+              type: 'textCard' as const,
+              variant: 'title' as const,
+              text: title,
+              startFrame: 0,
+              durationInFrames: head,
+              fadeFrames: 0,
+              exit: { to: { opacity: 0, y: 44 }, durationInFrames: exitFrames },
+            },
+            {
+              id: 'ending',
+              type: 'textCard' as const,
+              variant: 'title' as const,
+              text: title,
+              startFrame: total - tail,
+              durationInFrames: tail,
+              fadeFrames: 0,
+            },
+          ],
+        }
+        // 出厂自检：骨架必须自己能过校验，否则这个工具就没意义。
+        const check = validateManifest(manifest as unknown as CompositionManifest)
+        if (!check.ok) {
+          throwError('CS-DEV-ERR', { message: `骨架生成后校验失败（这是产品缺陷，请报给开发）：${check.errors.join('；')}` })
+        }
+        const json = JSON.stringify(manifest, null, 2)
+        return {
+          text: [
+            `已生成 ${size.width}×${size.height} @${fps}fps · ${total} 帧（${seconds}s · ${aspect}）的骨架，已通过 validateManifest：`,
+            '```json',
+            json,
+            '```',
+            '下一步：① 改 `text` 文案；② 往 `tracks` 追加你的轨（每轨需要唯一 id、startFrame、durationInFrames）；',
+            `③ **任何改动末尾轨时长的操作都要同步 meta.durationInFrames**（当前 ${total}，必须始终 = 最大结束帧），否则会被尾部完整性校验拒收。`,
+          ].join('\n'),
+        }
+      },
+    }),
+    defineTool({
       name: 'inspect_image',
       description:
         '像素级图像分析（只支持 PNG，零外部依赖）：给出「亮度阈值包围盒 / 主色分布 / 基础信息」三类真值。'

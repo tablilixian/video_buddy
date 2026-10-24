@@ -93,7 +93,7 @@ test('CV-246：GC 不清 history 保护的根目录「孤儿」（画布无引�
     await writeFile(join(assetsDir, 'a.mp4'), Buffer.from([1]))
     await recordAssetHistory(registry, projectId, { file: 'a.mp4', tool: 'video_generate' })
     const result = await gcProjectAssets(registry, projectId)
-    assert.equal(result.orphansRemoved, 0, '受历史保护的文件不算孤儿')
+    assert.deepEqual(result.orphans, [], '受历史保护的文件不算孤儿')
     const names = (await readdir(assetsDir)).sort()
     assert.ok(names.includes('a.mp4'), '文件仍在根目录')
   })

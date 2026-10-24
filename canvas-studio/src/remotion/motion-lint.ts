@@ -82,8 +82,26 @@ function pickNumbers(value: Record<string, unknown>): Record<string, number> {
   return out
 }
 
-/** 位移强度（把不同维度折算到同一量纲：1% 位移 ≈ 1，scale 0.1 ≈ 5，rotation 10° ≈ 3.3）。 */
-function movementMagnitude(from: Record<string, number>, to: Record<string, number>): number {
+/**
+ * 两个视觉状态是否近似相同（识别「往复呼吸」用）。
+ *
+ * 容差 0.6 是**显示级**差异：x/y 是 0–100 的百分比、opacity 是 0–1，
+ * 半个百分点以内人眼分不出，够判"首尾回到原点"。任一维度只在一侧出现
+ * 就判不同 —— 那是"覆盖了一个维度"，不是回到起点。
+ */
+function sameState(a: Record<string, number>, b: Record<string, number>, tolerance = 0.6): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  if (keys.size === 0) return true
+  for (const key of keys) {
+    const va = a[key]
+    const vb = b[key]
+    if (va === undefined || vb === undefined) return false
+    if (Math.abs(va - vb) > tolerance) return false
+  }
+  return true
+}
+
+/** 位移强度（把不同维度折算到同一量纲：1% 位移 ≈ 1，scale 0.1 ≈ 5，rotation 10° ≈ 3.3）。 */function movementMagnitude(from: Record<string, number>, to: Record<string, number>): number {
   const delta = (key: string, scale: number): number => {
     const a = from[key]
     const b = to[key]
@@ -121,7 +139,14 @@ function isResidentDecoration(track: CompositionTrack, metaDuration: number): bo
 export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   if (manifest.meta?.lint === 'off') return []
   const issues: MotionLintIssue[] = []
+  // REQ-035 F-09：同一 (code, at) 只留一条。
+  // 原实现按**分段**逐条 push，于是「一条轨上有 3 段长呼吸动画」会产出 3 条一模一样的
+  // ML-04（2026-10-24 事故里 3 条 glow 轨刷出 14 条），把真正该看的告警挤出 MAX_ISSUES。
+  const seen = new Set<string>()
   const push = (issue: MotionLintIssue): void => {
+    const key = `${issue.code}|${issue.at}`
+    if (seen.has(key)) return
+    seen.add(key)
     if (issues.length < MAX_ISSUES) issues.push(issue)
   }
   const tracks = manifest.tracks.filter((track) => track.type !== 'transition')
@@ -175,6 +200,26 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   const segments: AbsoluteSegment[] = []
   tracks.forEach((track, index) => { segments.push(...collectSegments(track, index)) })
 
+  // REQ-035 F-09：**往复呼吸不是拖沓**。
+  // 一条轨的动画首尾状态相同（from ≈ to）说明它是"来回呼吸/循环脉动"，长时长恰恰是
+  // 设计意图；ML-04 原判据只看"时长长且位移小"，会把它判成"动画拖沓"，诱导 agent
+  // 去改掉正确的环境光/呼吸层（事故里 glowWide/Core/Hot 三条都被误报）。
+  const cyclicTracks = new Set<string>()
+  {
+    const byTrack = new Map<string, AbsoluteSegment[]>()
+    for (const segment of segments) {
+      const list = byTrack.get(segment.trackId) ?? []
+      list.push(segment)
+      byTrack.set(segment.trackId, list)
+    }
+    for (const [trackId, list] of byTrack) {
+      if (list.length < 2) continue
+      const first = list[0]
+      const last = list[list.length - 1]
+      if (first !== undefined && last !== undefined && sameState(first.from, last.to)) cyclicTracks.add(trackId)
+    }
+  }
+
   for (const segment of segments) {
     const duration = segment.end - segment.start
     // ML-03：动画太短 ⇒ 观感是抖动（30fps 下 0.2s）。
@@ -186,8 +231,8 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
         hint: '低于 6 帧（30fps 下 0.2s）观感是抖动；建议 ≥ 10 帧。',
       })
     }
-    // ML-04：动画太长且几乎不动 ⇒ 拖沓。
-    if (duration > 45 && movementMagnitude(segment.from, segment.to) < 10) {
+    // ML-04：动画太长且几乎不动 ⇒ 拖沓。往复呼吸轨豁免（见 cyclicTracks）。
+    if (!cyclicTracks.has(segment.trackId) && duration > 45 && movementMagnitude(segment.from, segment.to) < 10) {
       push({
         code: 'ML-04',
         at: segment.trackId,

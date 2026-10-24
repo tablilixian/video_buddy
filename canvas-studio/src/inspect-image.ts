@@ -37,6 +37,14 @@ export interface ImageProfile {
   bytes: number
 }
 
+/** 扫描区（像素坐标，含端点）；缺省 = 整图。REQ-035 F-06。 */
+export interface PixelRegion {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
 export interface LuminanceBBox {
   polarity: 'dark' | 'bright'
   /** 命中像素的包围盒（像素坐标，含端点）。 */
@@ -239,22 +247,31 @@ export function profileImage(buf: Uint8Array): ImageProfile {
  * 亮度阈值包围盒：`dark` = 亮度 ≤ threshold 的像素（定位「屏幕暗区 / 深色主体」），
  * `bright` = ≥ threshold（定位「高光 / 白底」）。亮度用 Rec.601 加权。
  * 超大图按行抽样，把参与像素压到 ~400 万以内（bbox 精度损失 ≤1px 量级）。
+ *
+ * REQ-035 F-06：新增 `region`（像素矩形）。深色屏幕落在深色背景上时，全图 bbox 会退化成
+ * 「整张图」（2026-10-24 实测 threshold 收到 8 仍占 97.3% 宽），agent 只好自己手写 PNG
+ * 解码器。限定扫描区后，同一个阈值就能给出屏幕本身的矩形。
  */
 export function luminanceBBox(
   decoded: DecodedPng,
   polarity: 'dark' | 'bright',
   threshold: number,
+  region?: PixelRegion,
 ): LuminanceBBox | null {
   const { width, height, rgba } = decoded
-  const total = width * height
-  const step = total > 4_000_000 ? Math.ceil(Math.sqrt(total / 4_000_000)) : 1
+  const x0Bound = Math.max(0, Math.min(width - 1, region?.x0 ?? 0))
+  const y0Bound = Math.max(0, Math.min(height - 1, region?.y0 ?? 0))
+  const x1Bound = Math.max(x0Bound, Math.min(width - 1, region?.x1 ?? width - 1))
+  const y1Bound = Math.max(y0Bound, Math.min(height - 1, region?.y1 ?? height - 1))
+  const scanned = (x1Bound - x0Bound + 1) * (y1Bound - y0Bound + 1)
+  const step = scanned > 4_000_000 ? Math.ceil(Math.sqrt(scanned / 4_000_000)) : 1
   let x0 = -1
   let y0 = -1
   let x1 = -1
   let y1 = -1
   let hits = 0
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
+  for (let y = y0Bound; y <= y1Bound; y += step) {
+    for (let x = x0Bound; x <= x1Bound; x += step) {
       const at = (y * width + x) * 4
       const lum = 0.299 * (rgba[at] ?? 0) + 0.587 * (rgba[at + 1] ?? 0) + 0.114 * (rgba[at + 2] ?? 0)
       const hit = polarity === 'dark' ? lum <= threshold : lum >= threshold
@@ -277,9 +294,86 @@ export function luminanceBBox(
     centerY: pct(y0 + y1 + 1, height * 2),
     widthPct: pct(x1 - x0 + 1, width),
     heightPct: pct(y1 - y0 + 1, height),
-    coveragePct: pct(hits * step * step, total),
+    // 覆盖率的分母是**扫描区**（不是全图）：限定 region 后它就是"这块区域里有多少命中"，
+    // 与"包围盒退化"的判据同一口径。
+    coveragePct: pct(hits * step * step, scanned),
     threshold,
   }
+}
+
+/**
+ * 粗粒度亮度网格（REQ-035 F-06）。
+ *
+ * 为什么需要它：`bbox-*` 只给"整体最暗/最亮的包络"，而"手表屏幕在画面哪个位置"
+ * 本质是**空间分布**问题。给一张 32×18 的均值亮度表 + 最暗块坐标，模型就能自己
+ * 读出"右偏中部的暗矩形"，不用再手写 ASCII 亮度图（事故里为此写了 9 个脚本）。
+ */
+export interface LuminanceGridCell {
+  row: number
+  col: number
+  /** 该块平均亮度 0–255。 */
+  meanLum: number
+  /** 块中心在画布上的百分比坐标（与 render_composition 的 box 同口径）。 */
+  centerX: number
+  centerY: number
+}
+
+export interface LuminanceGrid {
+  cols: number
+  rows: number
+  /** 行优先的均值矩阵（0–255），可直接当文本表打印。 */
+  matrix: number[][]
+  /** 最暗的一块 / 最亮的一块（含画布百分比矩形，可直接当轨道 box 用）。 */
+  darkest: { row: number; col: number; meanLum: number; centerX: number; centerY: number; widthPct: number; heightPct: number }
+  brightest: { row: number; col: number; meanLum: number; centerX: number; centerY: number; widthPct: number; heightPct: number }
+}
+
+export function luminanceGrid(decoded: DecodedPng, cols: number, rows: number): LuminanceGrid {
+  const c = Math.max(2, Math.min(96, Math.floor(cols)))
+  const r = Math.max(2, Math.min(96, Math.floor(rows)))
+  const { width, height, rgba } = decoded
+  const matrix: number[][] = []
+  for (let row = 0; row < r; row += 1) {
+    const line: number[] = []
+    const ys = Math.floor((row * height) / r)
+    const ye = Math.max(ys, Math.floor(((row + 1) * height) / r) - 1)
+    for (let col = 0; col < c; col += 1) {
+      const xs = Math.floor((col * width) / c)
+      const xe = Math.max(xs, Math.floor(((col + 1) * width) / c) - 1)
+      // 大图按步长抽样：每块最多约 400 点，够稳定又不会拖慢
+      const step = Math.max(1, Math.ceil(Math.sqrt(((xe - xs + 1) * (ye - ys + 1)) / 400)))
+      let sum = 0
+      let n = 0
+      for (let y = ys; y <= ye; y += step) {
+        for (let x = xs; x <= xe; x += step) {
+          const at = (y * width + x) * 4
+          sum += 0.299 * (rgba[at] ?? 0) + 0.587 * (rgba[at + 1] ?? 0) + 0.114 * (rgba[at + 2] ?? 0)
+          n += 1
+        }
+      }
+      line.push(n === 0 ? 0 : Math.round(sum / n))
+    }
+    matrix.push(line)
+  }
+  const cellRect = (row: number, col: number): LuminanceGrid['darkest'] => ({
+    row,
+    col,
+    meanLum: matrix[row]?.[col] ?? 0,
+    centerX: pct((col + 0.5) * width / c, width),
+    centerY: pct((row + 0.5) * height / r, height),
+    widthPct: pct(width / c, width),
+    heightPct: pct(height / r, height),
+  })
+  let darkest: LuminanceGrid['darkest'] = cellRect(0, 0)
+  let brightest: LuminanceGrid['brightest'] = cellRect(0, 0)
+  for (let row = 0; row < r; row += 1) {
+    for (let col = 0; col < c; col += 1) {
+      const lum = matrix[row]?.[col] ?? 0
+      if (lum < darkest.meanLum) darkest = cellRect(row, col)
+      if (lum > brightest.meanLum) brightest = cellRect(row, col)
+    }
+  }
+  return { cols: c, rows: r, matrix, darkest, brightest }
 }
 
 /**

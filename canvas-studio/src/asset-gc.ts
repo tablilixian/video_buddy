@@ -8,7 +8,7 @@
  *   2. **GC（打开项目自动 / `POST /canvas-studio/asset-gc` 手动）**：
  *      ① 引用集合内但落在 trash 的文件 → 移回根目录（undo 恢复 + 已保存的场景）；
  *      ② trash 其余文件 → 物理删除（undo 不跨会话，绝对安全）；
- *      ③ 根目录孤儿（历史遗留，如 compose 自定义命名的 mix 文件）→ 物理删除；
+ *      ③ 根目录孤儿（历史遗留，如 agent 用 ffmpeg 裁的中间图）→ **只登记，不删除**（F-08）；
  *      ④ reference-manifest 剪枝（指向已不存在文件的映射条目）。
  *
  * 引用判据是**文件名**（节点 url 的 basename）而非节点 id——`pasteNodes` 复制节点
@@ -120,8 +120,16 @@ export interface AssetGcResult {
   restored: number
   /** 从 .trash 物理删除的文件数。 */
   purged: number
-  /** 根目录孤儿（历史遗留）物理删除的文件数。 */
-  orphansRemoved: number
+  /**
+   * 根目录孤儿文件名（画布不引用、历史也没保护）。
+   *
+   * REQ-035 F-08（2026-10-24）：**只报告，不删除**。
+   * 旧实现把这类文件物理删除 —— 而"画布不引用"并不等于"没价值"：agent 用 ffmpeg
+   * 裁出来的中间图（watch-hero.png / watch-720.png / glow-baked.png）都不在画布节点上，
+   * 客户端重启后一次 GC 就把它们清掉了，此后**连历史工件都无法重放**（实测三份全丢）。
+   * 磁盘治理交给人：这里只把名单报出来，需要清理时由用户/显式接口决定。
+   */
+  orphans: string[]
 }
 
 /**
@@ -137,7 +145,7 @@ export async function gcProjectAssets(
   registry: ProjectRegistry,
   projectId: string,
 ): Promise<AssetGcResult> {
-  const result: AssetGcResult = { restored: 0, purged: 0, orphansRemoved: 0 }
+  const result: AssetGcResult = { restored: 0, purged: 0, orphans: [] }
   const doc = await registry.readCanvas(projectId)
   const referenced = collectReferencedBasenames(doc)
   // CV-246：并入历史保护名单——「画布引用 ∪ 历史未删条目」都不动。
@@ -157,15 +165,11 @@ export async function gcProjectAssets(
     if (entry.name === 'history.json') continue
     rootFiles.add(entry.name)
   }
-  // ③ 根目录孤儿（历史遗留）：画布不引用 **且** 历史未保护 → 物理删除。
+  // ③ 根目录孤儿（历史遗留）：画布不引用 **且** 历史未保护 → **只登记，不删除**（F-08）。
+  // 删除会连带清掉"画布上不挂节点、但 agent 后续渲染还要引用"的中间产物。
   for (const name of rootFiles) {
     if (referenced.has(name) || protectedNames.has(name)) continue
-    try {
-      await rm(join(assetsDir, name))
-      result.orphansRemoved += 1
-    } catch {
-      continue
-    }
+    result.orphans.push(name)
   }
   // ①② trash：仍被画布引用的移回根目录；画布不引用 **且** 历史未保护的物理
   // 删除；历史保护但未被画布引用的**留在 .trash**（回活会成为下次孤儿；面板

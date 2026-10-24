@@ -262,3 +262,66 @@ test('接线：结构有错时不跑体检（避免噪声淹没真问题）', ()
   assert.equal(result.ok, false)
   assert.ok(!result.warnings.some((warning) => warning.startsWith('[编排体检')), '结构错的时候体检结论不可信')
 })
+
+// ── REQ-035 F-09：去重 + 往复豁免 ───────────────────────────────────────────
+
+test('F-09：同一条轨的多段长动画只报一条 ML-04（不许刷屏挤掉别的告警）', () => {
+  // 事故现场：glowWide 轨上 3 段 900/760/1040 帧的呼吸动画 → 原实现产出 3 条一样的 ML-04
+  const m = manifest([
+    {
+      id: 'glowWide',
+      type: 'shape',
+      shape: 'rect',
+      color: '#123456',
+      box: { x: 50, y: 50, w: 10, h: 10 },
+      startFrame: 0,
+      durationInFrames: 120,
+      animate: [
+        { from: { x: 50 }, to: { x: 53 }, durationInFrames: 60 },
+        { from: { x: 53 }, to: { x: 57 }, durationInFrames: 60 },
+        { from: { x: 57 }, to: { x: 60 }, durationInFrames: 60 },
+      ],
+    },
+  ])
+  const ml04 = lintMotion(m).filter((issue) => issue.code === 'ML-04')
+  assert.equal(ml04.length, 1, `同轨同规则只留一条，实际 ${ml04.length} 条`)
+})
+
+test('F-09：往复呼吸（首尾状态相同）不算「动画拖沓」，不报 ML-04', () => {
+  // 典型环境光呼吸：x 从 50 漂到 53 再回到 50，时长很长 —— 这是设计意图
+  const m = manifest([
+    {
+      id: 'glowCore',
+      type: 'shape',
+      shape: 'rect',
+      color: '#123456',
+      box: { x: 50, y: 50, w: 10, h: 10 },
+      startFrame: 0,
+      durationInFrames: 120,
+      animate: [
+        { from: { x: 50 }, to: { x: 53 }, durationInFrames: 60 },
+        { from: { x: 53 }, to: { x: 50 }, durationInFrames: 60 },
+      ],
+    },
+  ])
+  assert.deepEqual(lintMotion(m).filter((issue) => issue.code === 'ML-04'), [])
+})
+
+test('F-09：首尾不同的长动画仍要报 ML-04（豁免不能放太宽）', () => {
+  const m = manifest([
+    {
+      id: 'lazy',
+      type: 'shape',
+      shape: 'rect',
+      color: '#123456',
+      box: { x: 50, y: 50, w: 10, h: 10 },
+      startFrame: 0,
+      durationInFrames: 120,
+      animate: [
+        { from: { x: 10 }, to: { x: 12 }, durationInFrames: 60 },
+        { from: { x: 12 }, to: { x: 14 }, durationInFrames: 60 },
+      ],
+    },
+  ])
+  assert.equal(lintMotion(m).filter((issue) => issue.code === 'ML-04').length, 1)
+})

@@ -8,7 +8,7 @@
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
 import { randomUUID } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -61,7 +61,7 @@ import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
 import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
-import { decodePng, dominantColors, luminanceBBox, profileImage } from './inspect-image.js'
+import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage } from './inspect-image.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
@@ -332,6 +332,36 @@ const speechResultSchema = {
 }
 /** CV-271 同款守卫：`tts_voiceover` 结果字段必须全部出现在 schema 里。 */
 export type SpeechSchemaCoverage = MustBeNever<MissingInSchema<typeof speechResultSchema, SpeechResult>>
+
+/**
+ * REQ-035 F-08：素材缺失时的"相近文件名"提示。
+ *
+ * 为什么需要：`watch-hero.png` 被 GC 删掉后，同目录还有 `watch-720.png` 和原始出图，
+ * 但报错只说"缺失"，agent 只能重新裁一遍（事故里重裁后又撞同一堵墙）。
+ * 这里按词干做子串互含匹配，把候选列出来 —— 只提示，不改语义。
+ */
+function nearMissAssetHint(assetsDir: string, missing: readonly string[]): string {
+  let names: string[]
+  try {
+    names = readdirSync(assetsDir)
+  } catch {
+    return ''
+  }
+  const hints: string[] = []
+  for (const entry of missing) {
+    const base = entry.split('→').pop()?.trim().split('/').pop() ?? ''
+    if (base.length === 0) continue
+    const stem = base.replace(/\.[^.]+$/u, '').toLowerCase()
+    const probe = stem.slice(0, 8)
+    const near = names.filter((name) => {
+      if (name === base) return false
+      const other = name.replace(/\.[^.]+$/u, '').toLowerCase()
+      return other.includes(probe) || stem.includes(other)
+    })
+    if (near.length > 0) hints.push(`${base} → 同目录相近文件：${near.slice(0, 3).join(' / ')}`)
+  }
+  return hints.length === 0 ? '' : `提示：${hints.join('；')}。若目标就是其中某张，把 manifest 的 src 改成它即可。`
+}
 
 /** 把产物结果渲染成模型可读的文本块。 */
 function renderResult(_args: unknown, value: unknown): ContentBlock[] {
@@ -2780,8 +2810,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         //    缺失素材**硬失败**（Z-8）：宿主侧已能判定，放行只会得到一条无上下文的渲染失败。
         const pre = await checkManifestAssets(source, registry.assetsDir(projectId))
         if (pre.missing.length > 0) {
+          // REQ-035 F-08：素材被清掉时，光说"缺失"没法自救 —— 同目录常有名字相近的替代
+          // （事故里 watch-hero.png 被 GC 删了，而 watch-720.png / 源图都还在）。
           throwError('CS-USER-ERR', {
-            message: `成片素材缺失或不可用（${pre.missing.join('；')}），请补齐素材后再渲染。`,
+            message: `成片素材缺失或不可用（${pre.missing.join('；')}），请补齐素材后再渲染。`
+              + nearMissAssetHint(registry.assetsDir(projectId), pre.missing),
           })
         }
         const reconciled = reconcileManifestVideoDurations(source, pre.realDurations, source.meta.fps)
@@ -2853,6 +2886,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
           ...job.warnings,
         ]
+        // F-05：探针渲染跳过体检 —— `validateManifest` 末尾会把体检文案并进 warnings，
+        // 只跳过 `lintMotion()` 不够，这里要一并滤掉（否则探针照样刷一屏告警）。
+        const effectiveWarnings = probe ? warnings.filter((w) => !w.startsWith('[编排体检')) : warnings
         const payload: ComposeToolResult = {
           url: job.url,
           width: job.width ?? COMPOSED_FALLBACK.width,
@@ -2865,7 +2901,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // F-01：工单生命周期 —— 成功也要回，才能解释"这次为什么快/慢、走的是哪条路"。
           job: jobDiagnosticsPayload(job.job),
           ...(probe ? { probe: true } : {}),
-          ...(warnings.length > 0 ? { warnings } : {}),
+          ...(effectiveWarnings.length > 0 ? { warnings: effectiveWarnings } : {}),
           ...(job.frames.length > 0
             ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }
             : {}),
@@ -3088,18 +3124,31 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         '像素级图像分析（只支持 PNG，零外部依赖）：给出「亮度阈值包围盒 / 主色分布 / 基础信息」三类真值。'
         + '用途：把代码 UI 精准落进素材上的物理区域（如手表屏幕暗区 bbox → 直接换算成 render_composition 轨道的画布百分比 x/y/w/h）；'
         + '核对素材构图（表体在右 1/3？）与主色（背景色 / 主题色提取）。'
-        + '⚠️ 这是唯一的像素真值来源——**不要再手写 PNG 解码脚本**（node:zlib 手解 / 找 PIL / ffprobe 探像素都是弯路，本工具一次给全）。'
-        + '用法：先 mode:"profile" 看尺寸构图 → mode:"bbox-dark"（threshold 缺省 40，够定位深色屏幕/主体）或 "bbox-bright"（threshold 缺省 215，定位高光/白底）拿区域的画布百分比 → 直接填进轨道 transform/box。'
+        + '⚠️ 能力边界（**别按旧说辞理解**）：bbox 给的是"满足阈值的像素的整体包络"，不是连通域。深色目标落在深色背景上时它会退化成整张图 —— 这时用 mode:"grid" 看空间分布，或先用 region 限定目标附近再跑 bbox。'
+        + '用法：先 mode:"profile" 看尺寸 → mode:"grid"（32×18 亮度表 + 最暗/最亮块坐标）看"目标在画面哪一块" → 用 region 圈出目标附近 → mode:"bbox-dark"（threshold 缺省 40）或 "bbox-bright"（缺省 215）拿精确矩形 → 直接填进轨道 transform/box。'
         + 'mode:"colors" 返回量化主色 top-N（每通道 16 级）。返回的 bbox 中心/宽高已是画布百分比（与 render_composition 的 box 同口径：x/y 是中心、w/h 是宽高），无需再换算。'
         + 'JPG/WEBP/隔行 PNG 会显式报错并给替代路径。',
       parameters: {
         filePath: { type: 'string' as const, description: '图像文件的绝对路径（PNG）。项目资产、画布素材、截图落盘文件均可' },
         mode: {
           type: 'string' as const,
-          enum: ['profile', 'bbox-dark', 'bbox-bright', 'colors'] as const,
-          description: 'profile = 尺寸/位深/色彩类型；bbox-dark / bbox-bright = 亮度阈值包围盒（含画布百分比中心与宽高）；colors = 主色 top-N',
+          enum: ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid'] as const,
+          description: 'profile = 尺寸/位深/色彩类型；grid = 亮度网格（空间分布，定位"目标在画面哪一块"首选）；bbox-dark / bbox-bright = 亮度阈值包围盒（含画布百分比中心与宽高）；colors = 主色 top-N',
         },
         threshold: { type: 'number' as const, description: '可选：亮度阈值 0-255（bbox 模式用）。dark 缺省 40（≤ 阈值算命中），bright 缺省 215（≥ 阈值算命中）。屏幕纯黑用 30-60；浅灰界面提到 120-180' },
+        region: {
+          type: 'object' as const,
+          additionalProperties: false,
+          description: '可选（bbox 模式用）：把扫描限定在这块矩形内。画布百分比，x/y 是**中心**（与 render_composition 的 box 同口径）。例：{"x":64,"y":50,"w":30,"h":55} = 画面右侧那块竖长区域',
+          properties: {
+            x: { type: 'number' as const, description: '中心 x（0-100 百分比）' },
+            y: { type: 'number' as const, description: '中心 y（0-100 百分比）' },
+            w: { type: 'number' as const, description: '宽度（百分比）' },
+            h: { type: 'number' as const, description: '高度（百分比）' },
+          },
+        },
+        cols: { type: 'number' as const, description: '可选：grid 模式的列数 4-96，缺省 32' },
+        rows: { type: 'number' as const, description: '可选：grid 模式的行数 4-96，缺省 18' },
         topN: { type: 'number' as const, description: '可选：colors 模式返回的主色数量，1-16，缺省 8' },
       },
       output: {
@@ -3113,16 +3162,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         render: renderTextResult,
       },
       async execute(args) {
-        const a = args as { filePath?: unknown; mode?: unknown; threshold?: unknown; topN?: unknown }
+        const a = args as { filePath?: unknown; mode?: unknown; threshold?: unknown; topN?: unknown; cols?: unknown; rows?: unknown; region?: unknown }
         const filePath = typeof a.filePath === 'string' ? a.filePath.trim() : ''
         if (filePath === '' || !filePath.startsWith(sep)) {
           throwError('CS-USER-ERR', { message: '缺少 filePath 或不是绝对路径。' })
         }
-        const mode = a.mode === 'bbox-dark' || a.mode === 'bbox-bright' || a.mode === 'colors' || a.mode === 'profile'
+        const mode = a.mode === 'bbox-dark' || a.mode === 'bbox-bright' || a.mode === 'colors' || a.mode === 'profile' || a.mode === 'grid'
           ? a.mode
           : undefined
         if (mode === undefined) {
-          throwError('CS-USER-ERR', { message: `mode 非法（${String(a.mode)}）—— 只允许 profile / bbox-dark / bbox-bright / colors` })
+          throwError('CS-USER-ERR', { message: `mode 非法（${String(a.mode)}）—— 只允许 profile / bbox-dark / bbox-bright / colors / grid` })
         }
         let buf: Uint8Array
         let stat: { size: number; isFile: () => boolean }
@@ -3148,6 +3197,28 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const topN = typeof a.topN === 'number' && Number.isFinite(a.topN)
           ? Math.max(1, Math.min(16, Math.round(a.topN)))
           : 8
+        const cols = typeof a.cols === 'number' && Number.isFinite(a.cols)
+          ? Math.max(4, Math.min(96, Math.round(a.cols)))
+          : 32
+        const rows = typeof a.rows === 'number' && Number.isFinite(a.rows)
+          ? Math.max(4, Math.min(96, Math.round(a.rows)))
+          : 18
+        // REQ-035 F-06：扫描区（画布百分比，x/y = 中心，与 render_composition 的 box 同口径）。
+        // 深色屏幕落在深色背景上时，全图 bbox 会退化成整张图，必须能限定区域。
+        const regionPct = ((): { x: number; y: number; w: number; h: number } | undefined => {
+          const raw = (a as { region?: unknown }).region
+          if (typeof raw !== 'object' || raw === null) return undefined
+          const r = raw as Record<string, unknown>
+          const num = (key: string): number | undefined =>
+            typeof r[key] === 'number' && Number.isFinite(r[key]) ? r[key] as number : undefined
+          const x = num('x')
+          const y = num('y')
+          const w = num('w')
+          const h = num('h')
+          if (x === undefined || y === undefined || w === undefined || h === undefined) return undefined
+          if (w <= 0 || h <= 0) return undefined
+          return { x, y, w, h }
+        })()
         if (mode === 'profile') {
           const profile = profileImage(buf)
           return {
@@ -3160,6 +3231,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         } catch (cause) {
           throwError('CS-USER-ERR', { message: cause instanceof Error ? cause.message : String(cause) })
         }
+        // 百分比 → 像素（中心语义）；越界一律 clamp 到图内，不报错（画布外没有像素可扫）。
+        const pixelRegion = regionPct === undefined
+          ? undefined
+          : {
+            x0: Math.max(0, Math.round(((regionPct.x - regionPct.w / 2) / 100) * decoded.width)),
+            y0: Math.max(0, Math.round(((regionPct.y - regionPct.h / 2) / 100) * decoded.height)),
+            x1: Math.min(decoded.width - 1, Math.round(((regionPct.x + regionPct.w / 2) / 100) * decoded.width) - 1),
+            y1: Math.min(decoded.height - 1, Math.round(((regionPct.y + regionPct.h / 2) / 100) * decoded.height) - 1),
+          }
         if (mode === 'colors') {
           const colors = dominantColors(decoded, topN)
           if (colors.length === 0) {
@@ -3172,18 +3252,39 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             ].join('\n'),
           }
         }
+        if (mode === 'grid') {
+          const grid = luminanceGrid(decoded, cols, rows)
+          const open = ' .:-=+*#%@'
+          const table = grid.matrix.map((line) => line
+            .map((lum) => open[Math.min(open.length - 1, Math.floor((lum / 255) * (open.length - 1)))])
+            .join(''))
+          return {
+            text: [
+              `${decoded.width}×${decoded.height} 亮度网格 ${grid.cols}×${grid.rows}（行从上到下、列从左到右；字符越靠后越亮）：`,
+              ...table.map((line, index) => `r${String(index).padStart(2, '0')} ${line}`),
+              '',
+              `最暗块 r${grid.darkest.row}c${grid.darkest.col}：亮度 ${grid.darkest.meanLum}，中心 cx=${grid.darkest.centerX} cy=${grid.darkest.centerY}，块尺寸 w=${grid.darkest.widthPct} h=${grid.darkest.heightPct}`,
+              `最亮块 r${grid.brightest.row}c${grid.brightest.col}：亮度 ${grid.brightest.meanLum}，中心 cx=${grid.brightest.centerX} cy=${grid.brightest.centerY}`,
+              '要更精确的矩形：用同一 region 限定这块区域再跑 bbox-dark（threshold 收到目标像素值附近）。',
+            ].join('\n'),
+          }
+        }
         const polarity = mode === 'bbox-dark' ? 'dark' as const : 'bright' as const
         const effective = threshold ?? (polarity === 'dark' ? 40 : 215)
-        const bbox = luminanceBBox(decoded, polarity, effective)
+        const bbox = luminanceBBox(decoded, polarity, effective, pixelRegion)
         if (bbox === null) {
           return { text: `无命中像素（${polarity}，阈值 ${effective}）——阈值不合合适：dark 调高 / bright 调低后重试` }
         }
+        const degraded = bbox.coveragePct > 90
         return {
           text: [
-            `${decoded.width}×${decoded.height} 中亮度${polarity === 'dark' ? ' ≤' : ' ≥'}${bbox.threshold} 的包围盒：`,
+            `${decoded.width}×${decoded.height} 中亮度${polarity === 'dark' ? ' ≤' : ' ≥'}${bbox.threshold} 的包围盒${pixelRegion === undefined ? '' : '（限定 region）'}：`,
             `像素范围 x ${bbox.x0}-${bbox.x1}，y ${bbox.y0}-${bbox.y1}`,
             `画布百分比（render_composition box 口径，x/y=中心）：cx=${bbox.centerX} cy=${bbox.centerY} w=${bbox.widthPct} h=${bbox.heightPct}`,
-            `命中覆盖 ${bbox.coveragePct}%（命中过广说明阈值混入了背景，按需收紧；过小说明目标更亮/更暗，放宽阈值）`,
+            `命中覆盖 ${bbox.coveragePct}%（分母是扫描区）`,
+            degraded
+              ? '⚠️ 包围盒已退化成整块扫描区（覆盖率 >90%）——阈值把背景也算进来了。**这次结果不能用来定位**：改用 mode:"grid" 先看大概位置，或用 region 限定目标附近后再跑 bbox-dark。'
+              : '要更小的框：收紧 threshold（dark 调低 / bright 调高），或用 region 限定目标附近。',
           ].join('\n'),
         }
       },

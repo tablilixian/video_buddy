@@ -147,6 +147,10 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   filePath: '绝对路径（PNG 文件），存在性/尺寸由 statSync 校验，无文本占位形态',
   threshold: '数值（亮度阈值 0-255），越界由 execute 钳制',
   topN: '数值（主色数量 1-16），越界由 execute 钳制',
+  // REQ-035（F-06）：grid 模式的行列数与 bbox 的扫描区。都不指向别处产出的对象。
+  cols: '数值（亮度网格列数 4-96），越界由 execute 钳制',
+  rows: '数值（亮度网格行数 4-96），越界由 execute 钳制',
+  region: '数值矩形（画布百分比中心语义），越界由 execute clamp 到图内',
   // —— CV-361 render_composition ——
   manifestPath: '绝对路径（manifest JSON 文件），内容由 JSON.parse + validateManifest + 尾部完整性校验拒收，比通用占位尺子更准',
   // —— 布尔 / 数值：不存在文本占位形态 ——

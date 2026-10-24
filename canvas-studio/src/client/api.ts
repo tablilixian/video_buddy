@@ -795,7 +795,7 @@ export async function saveStudioCanvas(
 export async function gcStudioAssets(
   projectId: string,
   signal?: AbortSignal,
-): Promise<{ ok: boolean; restored: number; purged: number; orphansRemoved: number }> {
+): Promise<{ ok: boolean; restored: number; purged: number; orphans: string[] }> {
   return readJson(await fetch('/canvas-studio/asset-gc', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

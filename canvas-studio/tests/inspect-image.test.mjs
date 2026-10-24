@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { deflateSync } from 'node:zlib'
 import { createStudioTools } from '../lib/host-tools.js'
 import {
-  decodePng, dominantColors, luminanceBBox, profileImage,
+  decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage,
 } from '../lib/inspect-image.js'
 
 // ── 最小 PNG 编码器（仅为本测试服务：RGBA8 / 灰度16 / 调色板8，filter 0-2）──
@@ -223,14 +223,79 @@ function inspectTool() {
 
 test('inspect_image：mode 枚举与 filePath 已在 JSON Schema 声明', () => {
   const params = inspectTool().parameters?.properties ?? {}
-  assert.deepEqual(params.mode?.enum, ['profile', 'bbox-dark', 'bbox-bright', 'colors'])
+  assert.deepEqual(params.mode?.enum, ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid'])
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'filePath'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'threshold'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'topN'))
+  // REQ-035 F-06：空间分布与扫描区
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'region'))
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'cols'))
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'rows'))
 })
 
-test('inspect_image：描述写明「唯一像素真值来源」禁止手写解码脚本（模型可见）', () => {
+test('F-06：描述不再谎称「唯一真值来源」，而是说清 bbox 会退化 + 给 grid/region 出路', () => {
   const desc = inspectTool().description
-  assert.ok(desc.includes('不要再手写 PNG 解码脚本'))
+  // 旧文案「这是唯一的像素真值来源——不要再手写 PNG 解码脚本」已被实测证伪：
+  // 深色屏幕落在深色背景上时 bbox 退化为整图（threshold 收到 8 仍占 97.3% 宽），
+  // agent 只能自写解码器。描述必须如实交代边界。
+  assert.ok(!desc.includes('不要再手写 PNG 解码脚本'), '不得再给不可兑现的承诺')
+  assert.ok(desc.includes('退化成整张图'), '必须说清 bbox 的退化场景')
+  assert.ok(desc.includes('grid'), '必须给 grid 出口')
+  assert.ok(desc.includes('region'), '必须给 region 出口')
   assert.ok(desc.includes('画布百分比'))
+})
+
+
+// ── REQ-035 F-06：region 限定扫描区 + 亮度网格 ──────────────────────────────
+
+/** 100×100：背景灰（亮度≈20），黑屏区 x∈[60,79] y∈[20,39]（亮度≈5）——
+ *  这正是真机场景：深色屏幕上叠深色背景，全图 bbox 一定退化成整张图。 */
+function screenOnDarkPng() {
+  const BG = [20, 20, 20, 255]
+  const SCREEN = [5, 5, 5, 255]
+  return rgbaPng(100, 100, (x, y) => (x >= 60 && x < 80 && y >= 20 && y < 40 ? SCREEN : BG))
+}
+
+test('F-06：阈值混入背景时 bbox 会退化成整张图（旧行为的真实缺陷）', () => {
+  const decoded = decodePng(new Uint8Array(screenOnDarkPng()))
+  const bbox = luminanceBBox(decoded, 'dark', 25) // 背景 20 也命中
+  assert.ok(bbox !== null)
+  assert.equal(bbox.widthPct, 100, '全图命中 ⇒ 包络就是整张图')
+  assert.equal(bbox.heightPct, 100)
+})
+
+test('F-06：region 限定扫描区后，同一个阈值就能给出屏幕矩形', () => {
+  const decoded = decodePng(new Uint8Array(screenOnDarkPng()))
+  // 只扫右半区 + 阈值收到底色以下
+  const bbox = luminanceBBox(decoded, 'dark', 8, { x0: 50, y0: 0, x1: 99, y1: 99 })
+  assert.ok(bbox !== null)
+  assert.equal(bbox.x0, 60)
+  assert.equal(bbox.x1, 79)
+  assert.equal(bbox.y0, 20)
+  assert.equal(bbox.y1, 39)
+  assert.equal(bbox.widthPct, 20)
+  assert.equal(bbox.heightPct, 20)
+  // 覆盖率分母 = 扫描区（50×100=5000），命中 = 屏幕 400 ⇒ 8%（不是全图的 4%）
+  assert.equal(bbox.coveragePct, 8, '覆盖率分母应为扫描区，而不是全图')
+})
+
+test('F-06：region 完全避开目标 ⇒ 无命中返回 null（不会假装测到东西）', () => {
+  const decoded = decodePng(new Uint8Array(screenOnDarkPng()))
+  assert.equal(luminanceBBox(decoded, 'dark', 8, { x0: 0, y0: 0, x1: 49, y1: 99 }), null)
+})
+
+test('F-06：grid 给出空间分布，最暗块落在屏幕位置', () => {
+  const decoded = decodePng(new Uint8Array(screenOnDarkPng()))
+  const grid = luminanceGrid(decoded, 10, 10)
+  assert.equal(grid.cols, 10)
+  assert.equal(grid.rows, 10)
+  assert.equal(grid.matrix.length, 10)
+  assert.equal(grid.matrix[0].length, 10)
+  // 屏幕在 x 60-79 → col 6-7；y 20-39 → row 2-3
+  assert.ok(grid.darkest.col === 6 || grid.darkest.col === 7, `最暗块列应落在 6/7，实际 ${grid.darkest.col}`)
+  assert.ok(grid.darkest.row === 2 || grid.darkest.row === 3, `最暗块行应落在 2/3，实际 ${grid.darkest.row}`)
+  assert.equal(grid.darkest.meanLum, 5)
+  assert.equal(grid.darkest.widthPct, 10)
+  assert.equal(grid.darkest.heightPct, 10)
+  assert.ok(grid.brightest.meanLum >= 20, '背景块应是最亮的')
 })

@@ -134,7 +134,10 @@ test('CV-243：GC 清理——trash 未引用物理删、根孤儿物理删、ma
     await registry.writeCanvas(projectId, [node({ id: 'n1', url: '/canvas-studio/assets/p/live.png' })])
     const result = await gcProjectAssets(registry, projectId)
     assert.equal(result.purged, 1)
-    assert.equal(result.orphansRemoved, 1)
+    // REQ-035 F-08：孤儿只登记不删除（删掉会连带清掉 agent 裁出来的中间图，
+    // 事故里 watch-hero.png / watch-720.png / glow-baked.png 就是这么丢的）
+    assert.deepEqual(result.orphans, ['orphan.png'])
+    assert.equal(await readFile(join(assetsDir, 'orphan.png')).then(() => true).catch(() => false), true, '孤儿必须仍在盘上')
     assert.equal(await readFile(join(assetsDir, 'live.png')).then(() => true).catch(() => false), true, '引用文件不动')
     assert.equal(await readFile(join(assetsDir, 'reference-manifest.json')).then(() => true).catch(() => false), true, 'manifest 结构文件保留')
     assert.equal(await readdir(join(assetsDir, TRASH)).then(names => names.length), 0, 'trash 已清空')

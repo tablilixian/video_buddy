@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStudioTools } from '../lib/host-tools.js'
+import { collapseLintWarnings, createStudioTools, relaxJsonSmartQuotes } from '../lib/host-tools.js'
 
 function renderTool() {
   const tool = createStudioTools({}, 3000).find((entry) => entry.name === 'render_composition')
@@ -168,4 +168,44 @@ test('F-01：结果 schema 声明 job 诊断，且返回文本会渲染它', () 
 test('F-05：探针结果没有 nodeId 时不得冒出「画布节点 id」', () => {
   const text = renderText('render_composition', composeResultValue({ nodeId: undefined, probe: true }))
   assert.ok(!text.includes('画布节点 id'), `探针不落节点就不该报节点 id，实际：\n${text}`)
+})
+
+
+// ── REQ-035 B1：F-14 / F-16 / F-18 ─────────────────────────────────────────
+
+test('F-14：≥3 条体检告警折叠成一行计数，逐条定位留在 report.lint', () => {
+  const warnings = [
+    '[编排体检 ML-04] glowWide：动画长 900 帧但位移极小。建议压到 18–30 帧。',
+    '[编排体检 ML-04] glowCore：动画长 760 帧但位移极小。建议压到 18–30 帧。',
+    '[编排体检 ML-07] sub-1：字幕超行。建议拆句。',
+    '[分辨率] imgWatch 上采样约 1.4×',
+  ]
+  const out = collapseLintWarnings(warnings)
+  assert.equal(out.length, 2, `4 条应折叠成 1 条摘要 + 1 条非体检告警，实际 ${out.length}`)
+  assert.match(out[0], /命中 3 条/u)
+  assert.match(out[0], /ML-04×2/u, '同类要点出条数')
+  assert.match(out[0], /ML-07/u)
+  assert.match(out[0], /report\.lint/u, '要告诉模型去哪拿逐条定位')
+  assert.equal(out[1], '[分辨率] imgWatch 上采样约 1.4×', '非体检告警原样保留')
+})
+
+test('F-14：1–2 条时不折叠（此时细节比上下文更值钱）', () => {
+  const two = ['[编排体检 ML-03] a：短。建议 ≥10 帧。', '[编排体检 ML-04] b：长。建议压到 30 帧。']
+  assert.deepEqual(collapseLintWarnings(two), two)
+})
+
+test('F-18：通篇中文弯引号可救；正文里带 ASCII 引号时不猜', () => {
+  assert.equal(relaxJsonSmartQuotes('{“genre”:“民国悬疑”}'), '{"genre":"民国悬疑"}')
+  // 已经有 ASCII 双引号 ⇒ 弯引号多半是正文，宁可不改
+  assert.equal(relaxJsonSmartQuotes('{"brief":"他说“别动”"}'), null)
+  // 替换后仍解析不了 ⇒ 不假装成功
+  assert.equal(relaxJsonSmartQuotes('{“a”:}'), null)
+  assert.equal(relaxJsonSmartQuotes('["没有弯引号"]'), null)
+})
+
+test('F-16：image2vl 描述明确「不做像素级定位」并指向 inspect_image', () => {
+  const tool = createStudioTools({}, 3000).find((entry) => entry.name === 'image2vl')
+  assert.ok(tool, 'image2vl 必须存在')
+  assert.ok(tool.description.includes('不做像素级定位'), '必须写明不能定位（事故里被拿去量屏幕位置）')
+  assert.ok(tool.description.includes('inspect_image'), '必须给出替代工具')
 })

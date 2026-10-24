@@ -4,6 +4,7 @@
 > **本文是结案版**：不再推断，用独立实验台把 v2/v3 里的三个根因假设逐个拉上台验证。
 > 落地计划见 **`canvas-studio/docs/plans/REQ-035-渲染可靠性修复计划-20261024.md`**（32 项问题 → 20 个修复项 → 8 个待拍板）
 > 实验台：`canvas-studio/scripts/render-forensics/`（可重放，`README.md` 有跑法）
+> 方法论：本文按 `canvas-studio/docs/postmortem-method.md` 的规则写（结论标证据等级 / 无宿主日志不下根因 / 工具自报字段先自洽校验 / 必须有「被证伪的假设」一节）。
 > 执行时间：2026-10-24 16:49–17:05 · 同一台机器（Intel x64 / 8 核 / 16GB）· Electron 43.4.0 / Chrome 150
 
 ---

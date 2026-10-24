@@ -20,6 +20,7 @@ import { newAssetId } from '../config.js'
 import { makeCanvasError } from '../error-system.js'
 import { probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
+import { recordTransientAsset } from '../asset-gc.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
@@ -790,6 +791,9 @@ export async function recordRenderSample(
     `remotion-sample-${newAssetId()}.png`,
     png,
   )
+  // F-17：抽帧天生是中间产物 —— 登记进 `.transient-assets.json`，让 GC 能**单独报**出来
+  // （不自动删；要清必须显式 purgeTransient）。
+  await recordTransientAsset(registry.assetsDir(job.projectId), saved.assetFile)
   const sample: RenderSampleResult = { frame: safeFrame, url: saved.url }
   job.samples.push(sample)
   return sample

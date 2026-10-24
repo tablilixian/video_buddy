@@ -334,6 +334,61 @@ const speechResultSchema = {
 export type SpeechSchemaCoverage = MustBeNever<MissingInSchema<typeof speechResultSchema, SpeechResult>>
 
 /**
+ * REQ-035 F-18：救回"通篇用中文弯引号当 JSON 分隔符"的输入。
+ *
+ * 只在**通篇没有 ASCII 双引号**时才替换 —— 那种情况下弯引号只可能是分隔符；
+ * 一旦出现过 `"`，弯引号更可能是正文内容（中文文案里太常见），宁可不猜：
+ * 误改正文比让模型改一次 JSON 贵得多。
+ *
+ * @returns 修正后**且已能 parse** 的文本；不适用或仍解析不了返回 `null`。
+ */
+export function relaxJsonSmartQuotes(raw: string): string | null {
+  if (raw.includes('"')) return null
+  if (!/[\u201c\u201d]/u.test(raw)) return null
+  const relaxed = raw.replace(/[\u201c\u201d]/gu, '"')
+  try {
+    JSON.parse(relaxed)
+    return relaxed
+  } catch {
+    return null
+  }
+}
+
+/**
+ * REQ-035 F-15：落库的**瞬时**文件错误（并发写 / 句柄耗尽）重试一次就成，
+ * 不该把一次抖动变成"用户的选择丢了"（事故里表现为返回 `interrupted`）。
+ */
+function isTransientFsError(cause: unknown): boolean {
+  const code = (cause as { code?: unknown } | null)?.code
+  return code === 'EAGAIN' || code === 'EBUSY' || code === 'EMFILE' || code === 'ENFILE'
+}
+
+/**
+ * REQ-035 F-14：把成串的编排体检告警折叠成一行计数。
+ *
+ * 为什么：体检文案每条都带「问题 + 建议」两段，25 轨的片子一次能刷 8–12 条；
+ * 这些文本全部进上下文，是 2026-10-24 会话 5 次压缩的直接推手之一。而 agent 真正
+ * 需要的是**哪几类**（然后去 `report.lint[]` 拿定位），不是每条的完整措辞。
+ *
+ * 只在 ≥3 条时折叠：1–2 条保留原文（此时细节比上下文更值钱）。
+ */
+export function collapseLintWarnings(warnings: readonly string[]): string[] {
+  const lint = warnings.filter((w) => w.startsWith('[编排体检'))
+  if (lint.length < 3) return [...warnings]
+  const rest = warnings.filter((w) => !w.startsWith('[编排体检'))
+  const counts = new Map<string, number>()
+  for (const text of lint) {
+    const code = /ML-\d{2}/u.exec(text)?.[0] ?? '其它'
+    counts.set(code, (counts.get(code) ?? 0) + 1)
+  }
+  const brief = [...counts.entries()].map(([code, n]) => (n > 1 ? `${code}×${n}` : code)).join(' / ')
+  return [
+    `[编排体检] 命中 ${lint.length} 条：${brief}（逐条定位见 report.lint[]；文案已折叠以免挤占上下文）`,
+    ...rest,
+  ]
+}
+
+/**
  * REQ-035 F-08：素材缺失时的"相近文件名"提示。
  *
  * 为什么需要：`watch-hero.png` 被 GC 删掉后，同目录还有 `watch-720.png` 和原始出图，
@@ -2190,7 +2245,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'image2vl',
       description:
-        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ 你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。',
+        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ 你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。⚠️ **不做像素级定位**：本工具只回自然语言描述，拿不到坐标 / 边界框；问"屏幕在画面哪个位置、占多大"只会得到含糊甚至编造的比例。定位请用 `inspect_image`（`grid` 看分布、`bbox-*` + `region` 拿画布百分比矩形）。',
       parameters: {
         // CV-155：补上「产物名不可直接用」——本工具最常被喂的就是刚生成图的产物名。
         filename: { type: 'string' as const, required: true, description: '可用句柄（`upload_image` 的返回），或 `@ref[显示名]` 引用标记（Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传。' },
@@ -2372,7 +2427,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(a.allowFreeText === false ? { allowFreeText: false } : {}),
           ...(a.multiSelect === true ? { multiSelect: true } : {}),
         }
-        await registry.setPendingQuestion(projectId, pending)
+        // F-15：落库抖动重试一次 —— 否则卡片没挂上，模型只能拿到一个 interrupted。
+        try {
+          await registry.setPendingQuestion(projectId, pending)
+        } catch (first) {
+          if (!isTransientFsError(first)) throw first
+          await sleep(120)
+          await registry.setPendingQuestion(projectId, pending)
+        }
         try {
           const deadline = Date.now() + QUESTION_WAIT_MS
           while (Date.now() < deadline) {
@@ -2888,7 +2950,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         ]
         // F-05：探针渲染跳过体检 —— `validateManifest` 末尾会把体检文案并进 warnings，
         // 只跳过 `lintMotion()` 不够，这里要一并滤掉（否则探针照样刷一屏告警）。
-        const effectiveWarnings = probe ? warnings.filter((w) => !w.startsWith('[编排体检')) : warnings
+        // F-14：≥3 条时折叠成一行计数 —— 逐条措辞不该占掉上下文预算。
+        const effectiveWarnings = probe
+          ? warnings.filter((w) => !w.startsWith('[编排体检'))
+          : collapseLintWarnings(warnings)
         const payload: ComposeToolResult = {
           url: job.url,
           width: job.width ?? COMPOSED_FALLBACK.width,
@@ -2984,6 +3049,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           })
         }
 
+        const parseNotes: string[] = []
         const parse = (label: string, raw: unknown): unknown => {
           if (raw === undefined) return undefined
           if (typeof raw !== 'string' || raw.trim() === '') {
@@ -2992,6 +3058,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           try {
             return JSON.parse(raw) as unknown
           } catch (cause) {
+            // REQ-035 F-18：模型偶尔把 JSON 的分隔符写成中文弯引号（“…”），整段就解析不了。
+            const relaxed = relaxJsonSmartQuotes(raw)
+            if (relaxed !== null) {
+              parseNotes.push(`${label}：把中文弯引号当作 JSON 分隔符自动修正了（正文若有弯引号请自行核对）`)
+              return JSON.parse(relaxed) as unknown
+            }
             throwError('CS-USER-ERR', {
               message: `${label} 不是合法 JSON，已拒绝落盘：${String(cause)}。请修正该段后重试；**不要**用占位内容顶替。`,
             })
@@ -3111,6 +3183,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               ? '落地完成度：无阻断项。'
               : `落地阻断项 ${String(blockers.length)} 条（不影响落盘，但落地前必须补）：${blockers.join('；')}`,
             ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
+            // F-18：自动修过什么必须说出来，不能让"悄悄改了输入"变成新的坑。
+            ...(parseNotes.length === 0 ? [] : [`已自动修正：${parseNotes.join('；')}`]),
             concludedForLanding
               ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
               : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',

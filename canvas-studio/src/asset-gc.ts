@@ -17,7 +17,8 @@
  * 本模块刻意只依赖 ProjectRegistry 的目录方法与 canvas 读取——文件操作集中在
  * 这里一处，删除/回收语义只有一个实现（CV-116 式收口）。
  */
-import { readdir, rename, rm } from 'node:fs/promises'
+import { readdir, readFile, rename, rm } from 'node:fs/promises'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { Dirent } from 'node:fs'
 import { join } from 'node:path'
 import { ASSET_TRASH_DIR } from './config.js'
@@ -130,6 +131,48 @@ export interface AssetGcResult {
    * 磁盘治理交给人：这里只把名单报出来，需要清理时由用户/显式接口决定。
    */
   orphans: string[]
+  /**
+   * 抽帧 / 探针产物（`REQ-035 F-17`）：登记在 `.transient-assets.json` 且仍在盘上的文件名。
+   * 它们天生是中间产物，但**同样不自动删** —— 只在 `purgeTransient` 显式开启时清。
+   */
+  transient: string[]
+  /** 本次显式清理掉的抽帧/探针产物数（默认 0）。 */
+  purgedTransient: number
+}
+
+/** 抽帧 / 探针产物的登记表（放在资产目录内，跟资产一起迁移）。 */
+export const TRANSIENT_LEDGER = '.transient-assets.json'
+
+/** 记一次抽帧/探针产物落盘（失败静默：登记表坏了不该影响渲染主流程）。 */
+export async function recordTransientAsset(assetsDir: string, name: string): Promise<void> {
+  if (name.length === 0) return
+  const path = join(assetsDir, TRANSIENT_LEDGER)
+  const files: Record<string, number> = {}
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as { files?: Record<string, number> }
+    for (const [key, value] of Object.entries(parsed.files ?? {})) {
+      if (typeof value === 'number' && Number.isFinite(value)) files[key] = value
+    }
+  } catch {
+    // 没有登记表 / 内容坏了：从空表重建（旧产物本来就无从追溯）
+  }
+  files[name] = Date.now()
+  try {
+    // AR-03①：JSON 状态档一律原子写（裸 writeFile 会被守卫判红，也会留半截文件）。
+    await writeFileAtomic(path, `${JSON.stringify({ files }, null, 2)}\n`, { mode: 0o600, dirMode: 0o700 })
+  } catch {
+    // 静默：登记失败最多是"下次 GC 报不出这类文件"
+  }
+}
+
+/** 读登记表，只返回**仍在盘上**的名字（不在这里删任何东西）。 */
+async function listTransientOnDisk(assetsDir: string, onDisk: ReadonlySet<string>): Promise<string[]> {
+  try {
+    const parsed = JSON.parse(await readFile(join(assetsDir, TRANSIENT_LEDGER), 'utf8')) as { files?: Record<string, number> }
+    return Object.keys(parsed.files ?? {}).filter((name) => onDisk.has(name))
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -144,8 +187,9 @@ export interface AssetGcResult {
 export async function gcProjectAssets(
   registry: ProjectRegistry,
   projectId: string,
+  options: { purgeTransient?: boolean } = {},
 ): Promise<AssetGcResult> {
-  const result: AssetGcResult = { restored: 0, purged: 0, orphans: [] }
+  const result: AssetGcResult = { restored: 0, purged: 0, orphans: [], transient: [], purgedTransient: 0 }
   const doc = await registry.readCanvas(projectId)
   const referenced = collectReferencedBasenames(doc)
   // CV-246：并入历史保护名单——「画布引用 ∪ 历史未删条目」都不动。
@@ -163,6 +207,8 @@ export async function gcProjectAssets(
     if (!entry.isFile()) continue
     if (entry.name === 'reference-manifest.json') continue
     if (entry.name === 'history.json') continue
+    // F-17：登记表是结构文件，不是资产
+    if (entry.name === TRANSIENT_LEDGER) continue
     rootFiles.add(entry.name)
   }
   // ③ 根目录孤儿（历史遗留）：画布不引用 **且** 历史未保护 → **只登记，不删除**（F-08）。
@@ -171,6 +217,25 @@ export async function gcProjectAssets(
     if (referenced.has(name) || protectedNames.has(name)) continue
     result.orphans.push(name)
   }
+  // ③.5 抽帧 / 探针产物（F-17）：只报告；显式开 purgeTransient 才清。
+  // 自动清理一律不做 —— 本轮事故的教训就是"自动删掉看起来没用的中间产物"。
+  result.transient = await listTransientOnDisk(assetsDir, rootFiles)
+  // 两个名单互斥：抽帧归 transient，不该同时出现在 orphans 里（否则面板会重复计数）。
+  if (result.transient.length > 0) {
+    const transientSet = new Set(result.transient)
+    result.orphans = result.orphans.filter((name) => !transientSet.has(name))
+  }
+  if (options.purgeTransient === true) {
+    for (const name of result.transient) {
+      try {
+        await rm(join(assetsDir, name))
+        result.purgedTransient += 1
+      } catch {
+        // 尽力而为：删不掉就留在名单里，下次再报
+      }
+    }
+  }
+
   // ①② trash：仍被画布引用的移回根目录；画布不引用 **且** 历史未保护的物理
   // 删除；历史保护但未被画布引用的**留在 .trash**（回活会成为下次孤儿；面板
   // 预览走资产路由的 .trash fallback，不受影响）。

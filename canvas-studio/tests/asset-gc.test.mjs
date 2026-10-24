@@ -25,6 +25,8 @@ import {
   collectReferencedBasenames,
   gcProjectAssets,
   deleteUnreferencedAssets,
+  recordTransientAsset,
+  TRANSIENT_LEDGER,
 } from '../lib/asset-gc.js'
 import { pruneReferenceManifest } from '../lib/generate.js'
 import { recordAssetHistory } from '../lib/asset-history.js'
@@ -168,5 +170,37 @@ test('CV-243：pruneReferenceManifest 幂等且无变化不写盘', async () => 
     const before = await readFile(join(assetsDir, 'reference-manifest.json'), 'utf8')
     await pruneReferenceManifest(registry, projectId, () => true)
     assert.equal(await readFile(join(assetsDir, 'reference-manifest.json'), 'utf8'), before, '全保留不写盘')
+  })
+})
+
+
+// ── REQ-035 F-17：抽帧/探针产物登记与显式清理 ──────────────────────────────
+
+test('F-17：抽帧产物进 transient 名单，且**不会被自动删**（与 orphans 互斥）', async () => {
+  await withRegistry(async (registry, projectId, assetsDir) => {
+    await writeFileSet(assetsDir, ['frame-a.png', 'keep.png'])
+    await registry.writeCanvas(projectId, [node({ id: 'n1', url: '/canvas-studio/assets/p/keep.png' })])
+    await recordTransientAsset(assetsDir, 'frame-a.png')
+
+    const result = await gcProjectAssets(registry, projectId)
+    assert.deepEqual(result.transient, ['frame-a.png'], '抽帧必须被单独报出来')
+    assert.deepEqual(result.orphans, [], '抽帧不该同时算孤儿（名单互斥）')
+    assert.equal(result.purgedTransient, 0, '默认绝不自动删')
+    assert.equal(await readFile(join(assetsDir, 'frame-a.png')).then(() => true).catch(() => false), true, '文件必须还在盘上')
+    // 登记表本身不算资产
+    assert.equal(result.orphans.includes(TRANSIENT_LEDGER), false)
+  })
+})
+
+test('F-17：只有显式 purgeTransient 才清（并计数）', async () => {
+  await withRegistry(async (registry, projectId, assetsDir) => {
+    await writeFileSet(assetsDir, ['frame-b.png', 'keep.png'])
+    await registry.writeCanvas(projectId, [node({ id: 'n1', url: '/canvas-studio/assets/p/keep.png' })])
+    await recordTransientAsset(assetsDir, 'frame-b.png')
+
+    const result = await gcProjectAssets(registry, projectId, { purgeTransient: true })
+    assert.equal(result.purgedTransient, 1)
+    assert.equal(await readFile(join(assetsDir, 'frame-b.png')).then(() => true).catch(() => false), false, '显式清理后应消失')
+    assert.equal(await readFile(join(assetsDir, 'keep.png')).then(() => true).catch(() => false), true, '被引用的资产不受影响')
   })
 })

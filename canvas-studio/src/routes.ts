@@ -1561,12 +1561,15 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       req.once('aborted', () => controller.abort())
       res.once('close', () => { if (!res.writableEnded) controller.abort() })
       try {
-        const body = await readJson(req, controller.signal) as { projectId?: unknown }
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; purgeTransient?: unknown }
         if (typeof body.projectId !== 'string') {
           sendJson(res, 400, { error: '缺少 projectId' })
           return
         }
-        const result = await gcProjectAssets(registry, body.projectId)
+        // F-17：抽帧/探针产物默认只报告；`purgeTransient: true` 才真的清（显式动作）。
+        const result = await gcProjectAssets(registry, body.projectId, {
+          ...(body.purgeTransient === true ? { purgeTransient: true } : {}),
+        })
         // REQ-001 §8-L：项目 GC 的同一次手动触发顺带清全局库孤儿（目录/文件两档）。
         const libResult = await gcLibraryAssets(library)
         sendJson(res, 200, { ok: true, ...result, library: libResult })

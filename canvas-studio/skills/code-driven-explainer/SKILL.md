@@ -38,6 +38,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 组装要点（细则已下沉分册）
 
+- **工具地图**：每个工具干什么、参数与返回见 `../canvas-studio-creation/references/toolchain.md`——本 skill 只讲做法，别靠工具名猜用途。
 - **素材轨时长硬口径**：video 轨 `durationInFrames` 必须来自 `list_shots` 真值，禁止目测或估算 → `references/source-duration.md`。
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。

@@ -50,6 +50,17 @@
 - 已修：SKILL 工作流第 2 步改为"**先 `scaffold_manifest` 拿骨架**，再往 tracks 加轨"；
   契约硬约束第 0 条也指向它。
 
+### G1b · 解释器 skill 不指向"工具总表"（B 级）
+
+- 证据：`code-driven-explainer/SKILL.md` 只引用 6 个分册（explainer-patterns / fonts /
+  manifest-contract / motion-patterns / source-duration / subtitle-timing），**没有一处**提到
+  `canvas-studio-creation/references/toolchain.md` —— 而那张表才是"每个工具干什么、参数是什么"的
+  唯一清单（`grep toolchain` 在该 SKILL 里 0 次）。
+- 后果：模型拿到的是"流程"，不是"工具地图"。它得自己从 26 个工具的描述里推断该用哪个，
+  这一步失败就会去读源码（16 分钟窗口里的 6 次 read 就是它）。
+- 建议（低成本）：在"前置"或"工作流"开头加一行「工具清单与参数见
+  `../canvas-studio-creation/references/toolchain.md`」，约 60 字节。
+
 ### G2 · 顶层 `id` 只写"唯一 id"，没写"必填"（C 级，源码）
 
 - 证据：`validateManifest` 对缺 `id` 直接报 `manifest.id 必须是非空字符串`；而契约「顶层结构」

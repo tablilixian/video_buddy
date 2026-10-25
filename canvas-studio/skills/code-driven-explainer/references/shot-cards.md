@@ -197,6 +197,27 @@ animate，否则会被动效体检查判「动画拖沓」。
 > `path-growth` / `outro-fade`）：完整可渲样本在 `scripts/render-forensics/cards.mjs`。
 > 改这些卡前先跑 `node scripts/render-forensics/run.mjs --only=Q12` 确认没渲崩。
 
+## SFX 建议索引（CV-371）
+
+`assets/audio/sfx/` 现有 12 个可溯源音效（Mixkit 免署名可商用，授权与 SHA-256 见
+`assets/audio/sfx/ATTRIBUTION.md`）。**这只是排轨时的建议标注，渲染链完全忽略** ——
+混音/音频构成属后续产品线，manifest 里**不要**写任何 sfx 字段（白名单校验会拒收）。
+
+| 卡 | 建议 SFX | 钉点 |
+|---|---|---|
+| F1 长卷急刹 | `sweep-fast-small` | 刹停那帧 |
+| F2 数据飞线 | `sweep-scifi-fast` | 弧线开始生长 |
+| F3 扫描标注 | `glitch-electric-small` | 括号合围完成 |
+| F4 马克笔下划线 | `camera-shutter-hard` | 线描完落定 |
+| F5 首词组装 | `impact-zoom-quick` | 大字砸落帧 |
+| F6 词槽轮换 | `camera-autofocus` | 每次换词 |
+| F7 高光扫过 | `shimmer-sparkle-sweep` | 光带起扫 |
+| F8 UI 蒸发收尾 | `transition-snap` | 定版词进场 |
+| F9 里程碑时间轴 | `click-camera` | 每个节点亮起 |
+| F10 进度环揭晓 | `bass-hit-short` | 数字跳出 |
+| A3 落版 / 段首重音 | `impact-deep-whoosh` | 段首首帧 |
+| 任意转场 | `whoosh-fast` | 转场起点 |
+
 ---
 
 ## F 类 · shotcraft 吸收批（CV-370，10 张）

@@ -8,6 +8,9 @@
  *   ① Remotion 能力边界  ② 产品调用参数  ③ 窗口/进程环境  ④ manifest 内容
  */
 import { readFileSync } from 'node:fs'
+import { REAL_ASSETS, PROJECT_ASSET_PREFIX } from './fixtures.mjs'
+import * as cardsMod from './cards.mjs'
+export { REAL_ASSETS, PROJECT_ASSET_PREFIX } from './fixtures.mjs'
 import { dirname, join } from 'node:path'
 
 const REAL_MANIFEST_HINT = '/Users/lilixian/.videobuddy/canvas-studio/projects/使用技能「代码驱动科普成片」（code- 2/build/manifest.json'
@@ -16,17 +19,6 @@ export const DEFAULT_REAL_MANIFEST = process.env.RF_MANIFEST ?? REAL_MANIFEST_HI
 
 /** 会话里 agent 手搓出来的中间产物目录（48 份 manifest，含所有"超时刺客"）。 */
 export const REAL_BUILD_DIR = process.env.RF_BUILD_DIR ?? dirname(DEFAULT_REAL_MANIFEST)
-
-/** 会话里真实用到的三个素材（同目录）。缺失时相关场景自动跳过。 */
-export const REAL_ASSETS = {
-  image: 'watch-hero.png',            // 会话中已被删；服务端会回退到源图
-  imageFallback: '4b4283d5-3c38-4036-a22e-01bf667085d8.png',
-  video: '76559d60-9bf9-423a-a797-981e10cd56f1.mp4', // 首渲成功的那条 9.07s 片段
-  audio: 'a3ca636c-7880-4516-8a20-81c3b60c5c22.mp3', // 第 1 句旁白 5s
-  bgm: 'ef337d77-98d0-457b-9ba0-91167c6269e7.mp3',
-}
-
-export const PROJECT_ASSET_PREFIX = '/canvas-studio/assets/e02ba1ca-37f4-47c6-b324-e4ff743f3b43/'
 
 /* ─────────────────────────── manifest 工具 ─────────────────────────── */
 
@@ -280,6 +272,26 @@ export function buildMatrix(env) {
       }
     }),
   })
+
+  // ── REQ-035 / shotcraft 吸收方案：镜头卡与主题预设的**实证**（不是纸面判断）──
+  // 每张卡 = 一份完整 manifest；渲染成功 + 采样三帧亮度有变化，才算"这张卡能用"。
+  try {
+    groups.push({
+      id: 'Q12',
+      title: '镜头卡验证（12+2 张）',
+      question: '我们现在这套 manifest 字段，能不能把常用镜头写成"可直接粘的片段"，并且真的渲得出来？',
+      runs: cardsMod.buildCardMatrix(),
+    })
+    groups.push({
+      id: 'Q13',
+      title: '主题预设验证（同一内容两套设计语言）',
+      question: '换主题（调色 + 配色）能不能在**不改内容轨**的前提下改变观感？',
+      runs: cardsMod.buildThemeMatrix(),
+    })
+  } catch (cause) {
+    // 卡片模块缺失不该让整个实验台挂掉（老版本 checkout 仍要能跑 Q1–Q11）
+    console.warn(`[rf] 跳过 Q12/Q13：${String(cause)}`)
+  }
 
   return { groups }
 }

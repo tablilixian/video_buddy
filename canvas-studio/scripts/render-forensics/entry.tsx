@@ -149,7 +149,54 @@ async function runOne(run, windowMode) {
   let firstFrameAt = null
   let lastFrameAt = null
   let encodeDoneAt = null
-
+  /**
+   * 镜头卡验证用：在 6 个时间点各抓一帧（含首尾），压到 64×36 灰度，
+   * 记录 亮度均值 / 非黑像素占比 / 与上一采样的平均绝对差（MAE）。
+   *
+   * ⚠️ 为什么不能只看亮度均值：位移类（orbit）、取景类（kenBurns）改的是**位置**，
+   * 平均亮度不变 —— 第一轮用均值判，把这两张卡误判成"没动"。MAE 才是"在动"的证据。
+   */
+  const sampleAt = [0.02, 0.15, 0.35, 0.55, 0.75, 0.96]
+    .map((r) => Math.min(frames - 1, Math.max(0, Math.round(frames * r))))
+  type SampleStat = { frame: number; mean: number; std: number; nonBlack: number; mae: number }
+  const samples: SampleStat[] = []
+  let prevGray: Uint8Array | null = null
+  const measure = (frame: unknown, index: number): void => {
+    try {
+      const W = 64
+      const H = 36
+      const canvas = new OffscreenCanvas(W, H)
+      const ctx = canvas.getContext('2d')
+      if (ctx === null) return
+      ctx.drawImage(frame as CanvasImageSource, 0, 0, W, H)
+      const { data } = ctx.getImageData(0, 0, W, H)
+      const n = W * H
+      const gray = new Uint8Array(n)
+      let sum = 0
+      let sumSq = 0
+      let nonBlack = 0
+      for (let i = 0, p = 0; p < n; i += 4, p += 1) {
+        const y = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+        gray[p] = y
+        sum += y
+        sumSq += y * y
+        if (y > 8) nonBlack += 1
+      }
+      const mean = sum / n
+      const std = Math.sqrt(Math.max(0, sumSq / n - mean * mean))
+      let mae = 0
+      if (prevGray !== null) {
+        let diff = 0
+        for (let p = 0; p < n; p += 1) diff += Math.abs(gray[p] - prevGray[p])
+        mae = diff / n
+      }
+      prevGray = gray
+      const r1 = (v: number): number => Math.round(v * 10) / 10
+      samples.push({ frame: index, mean: r1(mean), std: r1(std), nonBlack: r1((nonBlack / n) * 100), mae: r1(mae) })
+    } catch {
+      // 采样是附加证据，失败不影响渲染
+    }
+  }
   const tRender = now()
   let bytes = 0
   let failure = null
@@ -183,6 +230,10 @@ async function runOne(run, windowMode) {
         const at = now() - tRender
         if (firstFrameAt === null) firstFrameAt = Math.round(at)
         lastFrameAt = Math.round(at)
+        while (sampleAt.length > 0 && framesEmitted - 1 >= sampleAt[0]) {
+          const slot = sampleAt.shift() as number
+          measure(frame, slot)
+        }
         return frame
       },
       onProgress: (p) => {
@@ -212,6 +263,7 @@ async function runOne(run, windowMode) {
       totalMs: Math.round(now() - t0),
       msPerFrame: Math.round(((tBlob - tRender) / frames) * 100) / 100,
       framesEmitted,
+      samples,
       firstFrameAt,
       lastFrameAt,
       encodeDoneAt,

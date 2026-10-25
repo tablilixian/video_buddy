@@ -1756,3 +1756,33 @@
   3. **skill 纪律**：`SKILL.md` 补「有下一步就别停轮」（事故里阶段成功后白等 36 分钟）、「先看工单再看内容」（`工单：…` 显示未认领/无首帧、或最小探针 >1s/帧 ⇒ 判环境问题、停止缩 manifest）、`CS-RENDER-TIMEOUT` 按诊断三分类处置。SKILL.md 10.1KB（≤12KB 闸内）。
 - **涉及文件**：`skills/code-driven-explainer/references/manifest-contract.md` / `skills/code-driven-explainer/SKILL.md` / `tests/manifest-contract-doc.test.mjs`（新增 11 条）
 - **落地/验收**：提交 `30c5a51166`。全量 smoke **2143·2143 全绿**（+11）。踩点：文档原本**没有** `inspect_image` 提及，新守卫的「引导不能删」断言一开始红，顺手补了像素定位引导。
+
+#### CV-366 · REQ-035 G1–G4 skill/工具可理解性审计收口
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：审计对象是「模型拿到工具与文档后能不能一次做对」。五处缺口，全部已修：
+  1. **G1 `scaffold_manifest` 未串联**：工具存在但 skill 流程里没有它的位置，agent 仍然手搓 manifest 骨架。
+  2. **G1b 解释器 skill 不指工具总表**：`code-driven-explainer` 遇到工具问题只能去读源码，先补指向 `references/toolchain.md`。
+  3. **G2 `id` 未标必填**：`render_composition` 的 `manifest.id` 缺失是事故第一轮报错的直接原因，参数描述里补必填语义。
+  4. **G3 工具描述瘦身（主要收益）**：`render_composition` 描述 **6,628 → 1,167 字符（-82%）**。原描述把整套 manifest 契约又抄一遍（easing 13 档 / orbit / startAfter / shape 全表 / transition 效果表 / audioViz 参数 / look 参数），与 `manifest-contract.md` 33KB 形成**两套事实 ⇒ 必然漂移**（`inspect_image` 那次「唯一真值来源」失真就是这么来的），且每轮白付上下文。现只留：何时用 / 两条入参通道 / **5 条硬边界** / 质量档 / probe / 返回构成 / 体检提示，细则一律指向契约分册。全部工具描述+schema **41,642 → 36,181 字符**。
+     瘦身被 `remotion-shape-box` 守卫拦下一次 —— 这说明有一批事实是**刻意钉在"永远在场"层**的：确认 **7 条必须留在描述里**（`manifestPath` / 尾部完整性校验 / 时长判据原文 / 隐藏渲染窗口 / 关掉整个 App 会中断渲染 / `x/y` 是形状中心 / 铺满写法 `{x:50,y:50,w:100,h:100}`），其余才允许下沉。
+  5. **G4 错误码对照表**：新增 `skills/code-driven-explainer/references/errors.md` —— 10 个错误码 ×「何时出现 / 该改什么 / 别做什么」，外加 3 条通用原则（不要原样重试 / 定位是准的按点改 / 区分内容问题与环境问题）。SKILL 遇错处理顶部挂指引，不再只有 3 条。
+- **涉及文件**：`src/host-tools.ts` / `skills/code-driven-explainer/SKILL.md` / `skills/code-driven-explainer/references/errors.md`（新增）/ `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md` / `docs/plans/2026-10-25-Remotion-skill与工具可理解性审计.md`
+- **落地/验收**：提交 `2e7c71491f`（G3/G4）+ `f37260856a`/`f84ce72760`（G1/G1b/G2）。守卫：`remotion-shape-box` / `render-tool-contract` / `render-host-executor` / skill 系列 158 条全绿，全量 smoke 0 红。
+- **踩点**：**改工具描述前必须先 grep 测试断言** —— 上述 7 条短语被三个测试文件钉死，删了直接红（这次就是靠它发现的）。
+
+#### CV-367 · 故事板强约束 L1–L4（单一放行点 + auto 落地 + 状态自愈 + 老项目迁移）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **病史**：会话 #5（2026-10-25）187.6 分钟 / 219 步 / 211 次 bash（读源码 89 + python3 88）/ 6 次压缩，而 `render_composition` **0 次**。用户 @36min 当场质问「故事板完成了吗？就开始设计图片？」—— 故事板被跳过从推断变成实证。根因是三份判据互相放水：① `approval-gate` 的 `mode !== 'confirm' → 放行` 让 auto 模式全开；② `state` 判据不看 `landed`；③ `landStoryboard` 内部只管「能不能落」。
+- **四层落地**：
+  1. **L3 auto 自动落地**（`host-tools.ts`）：`write_storyboard` 在 `mode==='auto'` + **收尾信号 `awaitingLanding:true`** + `blockers` 清零 + 开关开 时直接调 `landStoryboard`。**为什么必须要收尾信号**：`blockers` 只答「能不能落」不答「写完没有」—— 推荐的写序在写完 §04 那一笔就已清零（§03/§05 不是 blocker），只看 blockers 会在半途落地，而落地即进 `executing`、后续分节再也写不进去。落地失败**不吞错**（故事板已存、说清「落地失败 + 去哪重试」）。开关 `CANVAS_STUDIO_AUTO_LAND_STORYBOARD=0` 可退回。
+  2. **L1 单一放行点**（新 `src/storyboard-gate.ts`）：`STORYBOARD_GATED_TOOLS`（8 个产线工具 + `write_script`）统一在工具工厂出口套一层 `assertStoryboardLanded`，**判据只看 `storyboard.json.landed`，与 mode / state 无关**。`approval-gate.ts` 的产线拦截分支与 `STORYBOARDING_EXTRA` 一并删除，`FORMAL_TOOLS` 导出供对账测试同时 import 两处。错误码新增 **CS-STORY-001**（文案三条出路、不出现「豁免/跳过」）。
+  3. **L2 状态自愈**（`healStoryboardState` + `GET /canvas-studio/workflow`）：`landed` 存在而 `state` 仍停在 `storyboarding` 时补推 `executing`。**只修显示不放行** —— 否则自愈就成了写坏 state 即可开工的后门。
+  4. **L4 老项目迁移**（新工具 `adopt_canvas_as_storyboard` + 新 `src/storyboard-adopt.ts`）：从画布已有分镜卡反推 §04（`sbRef` 优先、`title` 仅历史卡兜底且留 warning；卡面 `【镜 N】/【运镜】/【声音】/【旁白】/【英文 prompt】/【面部】` 逐行解析；缺时长兜底 3s/90 帧；读不出 id 的卡跳过并计数）。**只还原卡上真有的事实**，§02/§05/§03 原文留空并进阻断项。这是「不豁免存量」能落地的前提。
+- **已知边界**：`approval-gate` 仍保留「未落地时不许**绑镜**出图」这一条旁路拦截（`shotBound` 的 `image_generate` 家族），它仍受 `mode` 影响 ⇒ **auto 模式下绑镜出图不受拦**。彻底收敛需要 gate 能看「本次是否绑镜」，属下一批。
+- **涉及文件**：`src/storyboard-gate.ts`（新）/ `src/storyboard-adopt.ts`（新）/ `src/host-tools.ts` / `src/approval-gate.ts` / `src/errors/catalog.ts` / `src/routes.ts` / `src/tool-presentation.ts` / `skills/canvas-studio-creation/references/screenplay.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md` / `docs/README.md`
+- **测试**：新增 `tests/storyboard-auto-land.test.mjs` 7 条（auto 落地 / blockers 非空不落 / 没信号不落 / confirm 不变 / 开关回滚 / 画布写失败不吞错 / 连调不重复铸卡）、`tests/storyboard-gate.test.mjs` 7 条（名单两处对账 / 9 工具 × confirm·auto 全拦 / 已落地放行 / state 派生 / 损坏不放行 / 开关回滚）、`tests/storyboard-adopt.test.mjs` 7 条（sbRef 优先 / 正文解析 / 标题兜底留痕 / 无号跳过 / 同 scene 合并 / 缺字段兜底 / 非分镜卡）。
+- **连带修**：`tests/workflow-gate.test.mjs`（假 registry 补 `storyboardFile`；放行类用例改用真实落地，因为「只翻 state 就放行」这条路径已不存在）、`tests/approval-gate.test.mjs`（改断言方向：产线拦截已迁出，加回来会红）、`tests/quality-check.test.mjs` / `filename-consumability.test.mjs` / `text-guard.test.mjs`（只测工具自身行为，顶部关闸）。

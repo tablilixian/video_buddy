@@ -21,6 +21,11 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+
+// 本文件只测文案入参守卫（`write_script` 的占位载荷拒收等），不测故事板门禁
+// （故事板强约束 L1）：关掉闸，避免「未落地」环境把 write_script 的正常路径一起挡掉。
+// 门禁本身见 tests/storyboard-gate.test.mjs。
+process.env.CANVAS_STUDIO_ENFORCE_STORYBOARD_LANDED = '0'
 import { readFileSync } from 'node:fs'
 import {
   STUB_PAYLOAD_RULE,

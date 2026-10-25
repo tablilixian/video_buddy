@@ -27,6 +27,9 @@
  * 2. **「还没落到画布」**（`storyboarding`）—— 正式产线动作（视频、逐镜关键帧、
  *    资产卡、质检、BGM、成片）一律不放行；但 Look 阶段的样张/定妆照要放行
  *    （它们在澄清阶段就得能出，那时 state 也是 `storyboarding`）。
+ *    ⚠️ **2026-10-25 起这一级的主体已迁出**：产线工具与 `write_script` 由
+ *    `storyboard-gate.ts` 判定（只看 `landed`，与 mode/state 无关）。本模块只剩
+ *    「未落地时不许**绑镜**出图」这一条旁路拦截 —— 原因见 `approvalGateMessage` 尾部注释。
  *
  * 判据用 `shotBound`（本次调用是否绑定了分镜）区分「逐镜关键帧」与「Look 图」：
  * 绑定到某一镜的图才是产线产物。这与 `generate.ts` 的 `operationTypeOf` 同源 ——
@@ -49,8 +52,8 @@
  *   `write_storyboard` 由 `host-tools` 的阶段守卫锁死在 `storyboarding`（CV-304：落地后
  *   不许整体重写，`keyframe_review` / `executing` 一律拒）；关键帧驳回走的是
  *   「打回即把 state 退回 `executing`」那条路（CV-051），不靠本模块放行写作工具。
- *   本模块只管**产出**（`write_script` 例外：阶段一写文案会在画布上留一份可能与
- *   故事版不一致的副本，见 `STORYBOARDING_EXTRA`）。
+ *   本模块只管**产出**（`write_script` 与全部产线工具已于 2026-10-25 迁到
+ *   `storyboard-gate.ts` 的单一放行点，见该文件）。
  *
  * 纯函数、无 IO、无 React —— 判定表在 `tests/approval-gate.test.mjs` 里逐格验。
  */
@@ -72,7 +75,7 @@ const REVIEW_STATES: ReadonlySet<string> = new Set([
  * 自主决定做不做，落地前不拦 —— 它只在审阅态（keyframe_review）经 PRODUCING_TOOLS
  * 被拦。过去它在 FORMAL_TOOLS 里，与「样张/定妆照不受限」的 skill 口径互相矛盾。
  */
-const FORMAL_TOOLS: ReadonlySet<string> = new Set([
+export const FORMAL_TOOLS: ReadonlySet<string> = new Set([
   'video_generate',
   'video_composite',
   'compose_video',
@@ -110,24 +113,19 @@ const REVIEW_MESSAGES: Readonly<Record<string, string>> = {
 /**
  * 尚未落地时的拒绝文案（REQ-022：`storyboarding` 态）。
  *
+ * 2026-10-25 起**只服务一条路径**：绑镜出图（`shotBound` 的 `image_generate` 家族）。
+ * 产线工具与 `write_script` 的拦截已迁到 `storyboard-gate.ts`（故事板强约束 L1），
+ * 那里与 mode / state 解耦、只认 `landed`。
+ *
  * 旧文案指向已下线的 `write_screenplay → submit_screenplay_for_approval →
  * submit_storyboard_for_approval` 三步门；三态化后阶段一的终点是**写拍摄定稿**
  * （`write_storyboard`），由用户在覆盖层点「确认落地」，所以出路只有一条。
  */
-const STORYBOARDING_MESSAGE = '当前项目还在「拍摄定稿」阶段（尚未落到画布）：请先完成需求澄清与故事板（write_storyboard），由用户在画布顶条「拍摄定稿」里审阅并点「确认落地」。落地前不能调用产线生成工具（Look 阶段的基调样张 / 定妆照不受限），也不要在阶段一写文案节点（文案由落地后的画布节点承接）。'
+const STORYBOARDING_MESSAGE = '当前项目还在「拍摄定稿」阶段（尚未落到画布）：请先完成需求澄清与故事板（write_storyboard），由用户在画布顶条「拍摄定稿」里审阅并点「确认落地」。落地前不能按分镜出图（Look 阶段的基调样张 / 定妆照不受限，但不要绑分镜），也不要在阶段一写文案节点（文案由落地后的画布节点承接）。'
 
-/**
- * `storyboarding` 态额外拦截的**写作类**工具（契约 §3.2）。
- *
- * 阶段一只写 `storyboard.json`，文案/剧本节点由落地后的画布承接 —— 提前写等于
- * 在画布上留下一份与故事版可能不一致的副本。
- *
- * 刻意**不并进 `FORMAL_TOOLS`**：那张表同时被 `PRODUCING_TOOLS` 复用，并进去会
- * 连带把关键帧期也拦掉，而关键帧期恰恰需要允许「按意见改写」以免流程卡死。
- */
-const STORYBOARDING_EXTRA: ReadonlySet<string> = new Set([
-  'write_script',
-])
+// `STORYBOARDING_EXTRA`（原先只有 `write_script`）已于 2026-10-25 迁入
+// `storyboard-gate.ts` 的 `STORYBOARD_GATED_TOOLS` —— 那里与 mode/state 解耦，
+// 正好只锁「未落地」这一件事，且不会连带把关键帧期的「按意见改写文案」拦掉。
 
 /** `approvalGateMessage` 的入参。 */
 export interface ApprovalGateInput {
@@ -157,7 +155,13 @@ export function approvalGateMessage(input: ApprovalGateInput): string | null {
   }
 
   // 到这里 state 只可能是 storyboarding（三态取值已穷尽）。
-  if (FORMAL_TOOLS.has(tool) || STORYBOARDING_EXTRA.has(tool)) return STORYBOARDING_MESSAGE
+  //
+  // **产线工具（`FORMAL_TOOLS`）与 `write_script` 已不在此拦** —— 故事板强约束 L1 把它们
+  // 迁到 `storyboard-gate.ts` 的单一放行点（判据只看 `landed`，与 mode/state 无关）。
+  // 本行以下只剩一条**绑镜出图**的旁路拦截：未落地时按 storyboard 的 shot id 出图，
+  // 等于绕开故事板直接干产线的活（会话 #5 正是这么跑了 3 小时）。
+  // ⚠️ 已知边界：这条仍受上面的 `mode !== 'confirm' → 放行` 影响，即 auto 模式下绑镜出图
+  // 不受拦。彻底收敛需要 gate 能看「本次是否绑镜」，属下一批（见路线图 §3.0 备注）。
   if (shotBound && (tool === 'image_generate' || tool === 'image_generate_withtxt' || tool === 'character_generate')) {
     return STORYBOARDING_MESSAGE
   }

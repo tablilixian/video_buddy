@@ -90,6 +90,7 @@
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
 | `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON 不落画布**；落画布由用户在「拍摄定稿」覆盖层点「确认落地」 |
+| `adopt_canvas_as_storyboard` | **老项目迁移**（故事板强约束 L4，2026-10-25）：从画布上已有的分镜卡反推 §04 骨架（scene·shot 号 / 时长 / 运镜 / 视觉 / 声音 / 英文 prompt），用项目预置补 `meta`，落 `storyboard.json` 并返回**剩余阻断项**。只还原卡上真有的事实（§02 视觉规范 / §05 角色 / §03 旁白原文拿不到）；**不落画布**，不覆盖已落地项目 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
 | `submit_screenplay_for_approval` | 剧本审批门禁 |
 | `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |

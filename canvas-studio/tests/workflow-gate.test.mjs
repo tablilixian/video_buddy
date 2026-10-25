@@ -20,6 +20,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createStudioTools } from '../lib/host-tools.js'
+import { saveStoryboard } from '../lib/storyboard-store.js'
+import { landStoryboard } from '../lib/storyboard-land.js'
+import { createStoryboard, emptyStoryboardSections } from '../lib/contracts/storyboard.js'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
@@ -87,6 +90,9 @@ function makeRegistry({ initialWorkflow, nodes = [], assetsDir }) {
     },
     readCanvas: async () => ({ version: 3, nodes: store.nodes }),
     writeCanvas: async (id, ns) => { store.nodes = [...ns] },
+    // 故事板强约束 L1（2026-10-25）：产线工具的放行判据已从 `workflow.state` 改成
+    // `storyboard.json.landed`，所以假 registry 必须能读写故事板文件。
+    storyboardFile: (id) => join(assetsDir, `${id}.storyboard.json`),
     appendCanvasNode: async (id, node) => { store.nodes.push(node) },
     setPendingQuestion: async (id, q) => { store.pendingQuestion = q },
     answerPendingQuestion: async (id, value) => {
@@ -97,6 +103,32 @@ function makeRegistry({ initialWorkflow, nodes = [], assetsDir }) {
     _project: project,
     _store: store,
   }
+}
+
+/**
+ * 故事板强约束 L1（2026-10-25）：产线放行的前置从「state 翻成 executing」改成
+ * 「故事板已落地」（`storyboard.json.landed`）。真实链路上落地自己就会把 state 推成
+ * executing，两者在现实里是同一件事 —— 所以这里用**真实落地**替代手工 updateWorkflow，
+ * 否则测的是一条已经不存在的放行路径。
+ */
+async function preLandStoryboard(reg) {
+  await saveStoryboard(reg, 'p1', createStoryboard({
+    projectId: 'p1',
+    title: '测试片',
+    meta: { genre: '悬疑', targetDuration: 30, aspect: '16:9' },
+    sections: {
+      ...emptyStoryboardSections(),
+      '02_visual': { tokens: [{ k: '色调', v: '冷调' }] },
+      '04_storyboard': {
+        scenes: [{
+          id: 'S1',
+          title: '开场',
+          shots: [{ id: 'S1-Sh1', duration: 5, frames: 120, camera: '推进', visual: '走廊', audio: '滴水', backup: false }],
+        }],
+      },
+    },
+  }))
+  await landStoryboard(reg, 'p1')
 }
 
 const cfg = {
@@ -178,8 +210,9 @@ test('确认继续：approve 把 state 翻成 executing 后，受控工具真正
     const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'storyboarding' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
-    // 这一步复刻 /workflow POST approve → registry.updateWorkflow({state:'executing'})
-    await reg.updateWorkflow('p1', { state: 'executing' })
+    // L1（2026-10-25）：放行条件已从 `state` 改为 `landed`。真实链路上「确认落地」本身就会
+    // 把 state 推成 executing，所以这里用**真实落地**代替手工翻状态 —— 只翻状态不再放行。
+    await preLandStoryboard(reg)
     assert.equal(reg._project.workflow.state, 'executing')
     const result = await runTool(tools, 'video_generate', { prompt: 'x' }, dir)
     assert.ok(result.url, 'generate 应返回产物 url')
@@ -212,6 +245,8 @@ test('放手跑覆盖：关键帧等待下切到 auto 模式应解除等待（st
     const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
+    // keyframe_review 只可能出现在「已落地」的项目上，先补上真实的落地料（L1 判据是 landed）
+    await preLandStoryboard(reg)
     // 复刻 /workflow POST setMode=auto（resolveSetModePatch：keyframe_review + auto → executing）
     await reg.updateWorkflow('p1', { mode: 'auto', state: 'executing' })
     assert.equal(reg._project.workflow.state, 'executing')
@@ -300,6 +335,10 @@ test('关键帧闸门：keyframe_review 下受控工具 video_generate 被拦截
     const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
+    // keyframe_review 只可能出现在已落地的项目上：先补落地料，再把状态设回关键帧审阅。
+    // 否则 L1 的「未落地」闸先拦（文案是 CS-STORY-001），测不到本用例要测的那道闸。
+    await preLandStoryboard(reg)
+    await reg.updateWorkflow('p1', { state: 'keyframe_review' })
     await assert.rejects(
       () => runTool(tools, 'video_generate', { prompt: 'x' }, dir),
       /确认关键帧|关键帧/u,
@@ -316,6 +355,8 @@ test('关键帧确认放行：confirm_keyframes 翻成 executing 后，video_gen
     const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
+    // L1：keyframe_review 的项目必然已落地，先补落地料；再复刻确认关键帧翻 state
+    await preLandStoryboard(reg)
     // 复刻 /workflow POST confirm_keyframes → registry.updateWorkflow({state:'executing'})
     await reg.updateWorkflow('p1', { state: 'executing' })
     assert.equal(reg._project.workflow.state, 'executing')

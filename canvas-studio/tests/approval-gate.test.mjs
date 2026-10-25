@@ -104,9 +104,14 @@ test('审阅态放行写作 / 提交 / 只读类 —— 否则驳回后流程会
   }
 })
 
-test('storyboarding（尚未落到画布）：正式产线动作全拦', () => {
+test('storyboarding：产线工具已迁到 storyboard-gate（本模块不再拦，防两套判据并存）', () => {
+  // 故事板强约束 L1（2026-10-25）：`mode !== 'confirm' → 放行` 这条旧判据让 auto 模式
+  // 全放行，是本批要根治的病灶。产线工具的拦截整体迁到 `storyboard-gate.ts`（只认 landed），
+  // 覆盖见 tests/storyboard-gate.test.mjs 的 ②③（9 工具 × confirm/auto）。
+  // 本用例留在原处的价值：一旦有人把这行判定加回来，就会变红 —— 两处判据并存必然分叉。
   for (const tool of FORMAL) {
-    assert.ok(gate(tool, 'storyboarding') !== null, `${tool} @ storyboarding 必须被拦`)
+    assert.equal(gate(tool, 'storyboarding'), null,
+      `${tool} 的「未落地」拦截已迁到 storyboard-gate.ts；本模块不许再拦一份`)
   }
 })
 
@@ -126,7 +131,10 @@ test('拒因必须可操作：说清在等什么 + 明令不要重试', () => {
     assert.ok(message.includes('不要重试'), `${state} 的拒因必须明令不要重试`)
     assert.ok(!message.includes('image_generate 出概念图不受限'), '旧文案「image_generate 不受限」必须已删除')
   }
-  assert.ok(gate('video_generate', 'storyboarding').includes('write_storyboard'), 'storyboarding 拒因要给出路')
+  // 产线工具的未落地拦截已迁到 storyboard-gate（CS-STORY-001 文案在那边），本模块只剩
+  // 「绑镜出图」这一条旁路 —— 所以出路断言打在这条上。
+  assert.ok(String(gate('image_generate', 'storyboarding', { shotBound: true })).includes('write_storyboard'),
+    '未落地的拒因要给出路（write_storyboard）')
   // 2026-10-22 拍板：定妆照在落地前不拦（模型按片型自主决定），只在审阅态拦。
   assert.equal(gate('character_sheet', 'storyboarding'), null, '定妆照 / 角色卡落地前放行')
   assert.ok(gate('character_sheet', 'keyframe_review') !== null, '关键帧审阅期仍拦——等待期不该产出新东西')

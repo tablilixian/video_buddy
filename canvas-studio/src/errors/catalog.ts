@@ -13,7 +13,7 @@
  * 命名：`CS-<MODULE>-<NN>`
  *   MODULE: GEN 任务/超时 · PROV 供应商 · USER 工具入参 · COMP 合成 ·
  *           NODE 重试 · EFFECT 效果测试 · NET 后端通信 · H3IR H3 预检 ·
- *           REF 参考素材 · FFMPEG 基础设施 · AUTH 登录态
+ *           REF 参考素材 · FFMPEG 基础设施 · AUTH 登录态 · STORY 故事板门禁
  */
 
 import { registerError, type CanvasErrorSpec } from '../error-system.js'
@@ -337,6 +337,31 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '成片渲染超时（{seconds} 秒内未完成）：{diagnosis}',
     devMessage: 'runRenderJob timeout after {seconds}s: {diagnosis}',
     recoveryHint: '这不是画面复杂度问题。若诊断为「未认领 / 无进度」，属渲染执行器链路故障，请查看应用日志中的 render-job 记录后重试；若为「已在渲染」，再考虑缩短时长或降分辨率。',
+  },
+
+  // ── L 故事板门禁（故事板强约束 L1，2026-10-25）────────────────────────────
+  {
+    // 病史：会话 #5（187.6 分钟 / 219 步 / `render_composition` **0 次**）里用户 @36 分钟
+    // 当场质问「故事板完成了吗？就开始设计图片？」。旧判据分三份且互相放水 ——
+    // `approval-gate` 的 `mode !== 'confirm' → 放行` 让 auto 模式全开、`state` 判据不看
+    // landed、`landStoryboard` 内部只管「能不能落」。收敛成一个闸 + 一个名单后，这里就是
+    // **唯一**会被 agent 看到的那句话，所以路线必须写全、且不许指向不存在的工具。
+    code: 'CS-STORY-001',
+    module: 'STORY',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '本项目还没有落地故事板，产线工具「{tool}」暂不可用。\n'
+      + '为什么拦你：故事板（storyboard.json）是全片规划的唯一事实源，画布上的分镜卡由它铸出来。'
+      + '跳过它直接出片，画布会与规划脱节，返工成本更高。\n'
+      + '怎么继续（按推荐顺序）：\n'
+      + '1) 写故事板：用 write_storyboard 补 §02 视觉规范 + §04 分镜（至少 1 个 scene、每 scene ≥1 个 shot）；'
+      + '阻断项清零后 —— confirm 模式请用户在画布顶条「拍摄定稿」点「确认落地」，auto 模式由 Host 自动落地。\n'
+      + '2) 老项目迁移：画布上已经有分镜卡的，用 adopt_canvas_as_storyboard 从现有画布反推故事板骨架，'
+      + '补齐阻断项后再落地。',
+    devMessage: 'storyboard gate: landed === null for project {projectId} (tool {tool})',
+    recoveryHint: '先落地故事板，再调产线工具。没有「豁免 / 跳过」这条路（按拍板：不豁免存量）。',
   },
 
   // ── I 波形（仅开发者示例：用户无需也不应看到 ffmpeg 内部缺失）──────────────

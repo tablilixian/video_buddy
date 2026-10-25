@@ -8,6 +8,11 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+
+// 本文件只测 `qc_shot` 自身行为，不测故事板门禁（故事板强约束 L1）：关掉闸，
+// 否则「未落地」环境会把所有产线工具用例挡在门口。门禁本身由
+// tests/storyboard-gate.test.mjs 覆盖（9 工具 × confirm/auto × 落地/未落地）。
+process.env.CANVAS_STUDIO_ENFORCE_STORYBOARD_LANDED = '0'
 import {
   buildQcPrompt,
   parseQcVerdict,

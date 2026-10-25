@@ -32,11 +32,12 @@ import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
-/** 实测 27 = `host-tools.ts` 26 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 27
+/** 实测 28 = `host-tools.ts` 27 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
+const EXPECTED_TOOL_COUNT = 28
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
+  'adopt_canvas_as_storyboard',
   'ask_user_choice',
   'character_generate',
   'character_sheet',

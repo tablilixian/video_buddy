@@ -22,6 +22,9 @@ import { approvalGateMessage } from './approval-gate.js'
 // REQ-022（CV-293）：拍摄定稿 —— 形状与判定在 contracts/storyboard.ts，
 // 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
+import { landStoryboard } from './storyboard-land.js'
+import { assertStoryboardLanded, withStoryboardGate } from './storyboard-gate.js'
+import { sectionsFromShotCards } from './storyboard-adopt.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
@@ -870,6 +873,15 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
 }
 
 /**
+ * 故事板强约束 L3 的开关（默认开，`CANVAS_STUDIO_AUTO_LAND_STORYBOARD=0` 可一键退回旧行为）。
+ *
+ * 每次调用时读 env 而不是模块加载时求值 —— 测试要能在一个进程内分别验证两种模式。
+ */
+function autoLandStoryboardEnabled(): boolean {
+  return process.env.CANVAS_STUDIO_AUTO_LAND_STORYBOARD !== '0'
+}
+
+/**
  * 从会话工作区目录解析绑定的 Canvas Studio 项目 id。
  * 项目的工作区目录即 `project.dir`；精确匹配优先，否则取最长前缀匹配
  * （会话 cwd 落在项目目录内的子路径时也能命中）。
@@ -1605,7 +1617,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     request: (method, path) => dramaJobRequest(method, path),
     settle: (record) => settleDramaVideoJob(record, registry),
   })
-  return [
+  const tools = [
     defineTool({
       name: 'image_generate',
       description:
@@ -2968,7 +2980,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'write_storyboard',
       description:
-        '产出 / 更新本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。**分节合并语义：本次传了的分节替换对应节内容，没传的分节保留现值不动（不会把之前写的冲掉）**；要把某一节清空必须显式传空内容（如 `"[]"` / `{"brief":""}`），空串会被拒收。**例外：图片引用不归本工具管** —— `§02` 的基调样张引用 `lookRef` 与 `§04` 各 shot 的效果图引用 `refImage` 由 Host 的挂图通道维护（你在 `image_generate` 里传 `storyboardRef` 即自动写入），**重写这两节也不会冲掉它们**，你也不必在 JSON 里带这类字段（确需纠错时可显式传引用对象覆盖，传 `null` 清空）。各入参收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。整体重写 = 九节全传（当前活副本会先自动存成一版，不丢内容）。首稿会自动存为版本 v1。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
+        '产出 / 更新本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。**分节合并语义：本次传了的分节替换对应节内容，没传的分节保留现值不动（不会把之前写的冲掉）**；要把某一节清空必须显式传空内容（如 `"[]"` / `{"brief":""}`），空串会被拒收。**例外：图片引用不归本工具管** —— `§02` 的基调样张引用 `lookRef` 与 `§04` 各 shot 的效果图引用 `refImage` 由 Host 的挂图通道维护（你在 `image_generate` 里传 `storyboardRef` 即自动写入），**重写这两节也不会冲掉它们**，你也不必在 JSON 里带这类字段（确需纠错时可显式传引用对象覆盖，传 `null` 清空）。各入参收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。整体重写 = 九节全传（当前活副本会先自动存成一版，不丢内容）。首稿会自动存为版本 v1。本工具**只写 JSON 不落画布**，也不生成任何图片/视频。落画布有两条路：**confirm 模式**由用户在覆盖层点「确认落地」；**auto 模式**则在你传收尾信号（`awaitingLanding:true`）且落地阻断项清零时由 Host **自动落地**，无需用户点击。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
         + '\n\n字段口径（各段 JSON 的键名与形态）：'
         + '\n- meta：{"genre":"民国悬疑","targetDuration":30,"aspect":"16:9","audience":"可选"}'
         + '\n- creative：{"brief":"一句话意图（季节/时间/地域前提也写这里，它决定全片用词）"}'
@@ -2993,7 +3005,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
         assets: { type: 'string' as const, description: '可选 JSON：需要上传/搜集的素材清单（只存引用）' },
         constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
-        awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容），故事板进入待用户审阅状态。Host 校验落地阻断项清零后会自动结束你的回合、把裁决权交给覆盖层；有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
+        awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容）。**confirm 模式**：阻断项清零后 Host 自动结束你的回合、把裁决权交给覆盖层；**auto 模式：阻断项清零后 Host 立即自动落地**（画布出现分镜卡、直接进产出阶段，此后不能再整体重写故事板）。有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
       },
       output: {
         schema: {
@@ -3133,6 +3145,41 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
 
         const summary = summarizeStoryboard(normalized.sections)
+
+        // ── 故事板强约束 L3：auto 模式自动落地 ─────────────────────────────────
+        //
+        // 为什么必须在这一层补：`screenplay.md` 第 6 条和下面 `concludedForLanding` 的注释
+        // 都已向 agent 承诺「auto 模式写完故事板由 Host 自动落地」，但实现一直不存在。于是
+        // auto 跑完本工具后 agent 按承诺继续，而 approval-gate 的 `mode !== 'confirm'
+        // → return null` 又全放行 ⇒ **未落地的故事板直接出片**。会话 #5 是实证：3 小时里
+        // `render_composition` 一次没跑，却已经在出图、量像素（用户 @36min 当场质问）。
+        //
+        // 为什么除 `blockers` 之外还要求 `awaitingLanding`：`blockers` 只回答「能不能落地」，
+        // 不回答「写完了没有」。推荐的写序是 meta+visual → storyboard → characters/narration
+        // → facts/assets/constraints，而**在写完 §04 那一笔 blockers 就已清零**（§03 旁白、
+        // §05 角色都不是 blocker）⇒ 只看 blockers 会在半途落地；落地即进 `executing`，
+        // 后续 §03/§05 再写会被上面 3022 行的阶段守卫拦死。`awaitingLanding` 是模型显式
+        // 声明的「本次规划已没有更多要写的节」，正好就是收尾信号。
+        //
+        // 幂等与失败：`landStoryboard` 自身幂等（已落地抛「版本已冻结」、落半截走
+        // `resumeLanding()` 自愈、WAL 先落料再写画布）。落地成功后 state 变 `executing`，
+        // 重写会在阶段守卫处被拒 ⇒ 连调两次不会重复铸节点。失败**不吞错**：故事板已落盘
+        // （上面那步已成功），失败的是投影/写画布，必须让 agent 与用户看见并知道去哪重试。
+        let autoLandText: string | undefined
+        if (a.awaitingLanding === true
+          && workflow.mode === 'auto'
+          && state === 'storyboarding'
+          && blockers.length === 0
+          && autoLandStoryboardEnabled()) {
+          try {
+            const landed = await landStoryboard(registry, projectId)
+            autoLandText = `✅ **已自动落地**（auto 模式）：${String(landed.shots)} 张分镜卡 / ${String(landed.nodes)} 个节点 / ${String(landed.assets)} 个资产（版本 ${landed.version}）`
+              + `${landed.resumed ? '，本次为续做补全' : ''}。画布已可开工，直接进入产出阶段（此后不能再整体重写故事板）。`
+          } catch (cause) {
+            autoLandText = `⚠️ 故事板已保存，但**自动落地失败**：${cause instanceof Error ? cause.message : String(cause)}`
+              + '\n画布未变更。请让用户在画布顶条「拍摄定稿」点「确认落地」重试；**不要**反复调用本工具重试（重写不改落地结果）。'
+          }
+        }
         // P0-2（2026-10-22 拍板，审计收尾）：显式收尾信号 + 硬停。模型在收尾笔传
         // `awaitingLanding:true`，且落地阻断项清零（与落地闸同一份 `validateForSeed`）
         // 时自动结束回合 —— 「提示词停不住」是 2026-09-14 与 2026-10-22 两次真机事故
@@ -3163,12 +3210,128 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             blockers.length === 0
               ? '落地完成度：无阻断项。'
               : `落地阻断项 ${String(blockers.length)} 条（不影响落盘，但落地前必须补）：${blockers.join('；')}`,
+            ...(autoLandText === undefined ? [] : [autoLandText]),
             ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
             // F-18：自动修过什么必须说出来，不能让"悄悄改了输入"变成新的坑。
             ...(parseNotes.length === 0 ? [] : [`已自动修正：${parseNotes.join('；')}`]),
-            concludedForLanding
-              ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
-              : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',
+            // 下一步指引：auto 与 confirm 是两条不同的路，文案必须分开说 —— 让 agent 在
+            // auto 模式下去"请用户点按钮"就是空转（用户根本没开那个界面）。
+            ...(autoLandText !== undefined ? [] : [
+              workflow.mode === 'auto'
+                ? (blockers.length === 0
+                  ? '当前是 **auto 模式**：这一笔已可落地 —— 但本笔没传 `awaitingLanding:true`（收尾信号），故 Host 未自动落地。**确认本次规划已无更多要写的节**后，用收尾笔再写一次（可只重传同一节），Host 即自动落地。'
+                  : `当前是 **auto 模式**：补齐上面 ${String(blockers.length)} 条阻断项后，用收尾笔（\`awaitingLanding:true\`）再写一次，Host 会自动落地。`)
+                : (concludedForLanding
+                  ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
+                  : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。'),
+            ]),
+          ].join('\n'),
+        }
+      },
+    }),
+    defineTool({
+      // 故事板强约束 L4（2026-10-25）：既然拍板「不豁免存量」，就必须给存量一条**能走通**的路。
+      // 没有这个工具，L1 上线那一刻所有「画布已有分镜卡、但没有 storyboard.json」的老项目
+      // 会永久停摆 —— 而 CS-STORY-001 的文案会把 agent 指过来，指向不存在的工具正是 CV-304 那类错。
+      name: 'adopt_canvas_as_storyboard',
+      description:
+        '把**画布上已有的分镜卡**反推成一份故事板骨架（storyboard.json）—— 只给「故事板强制之前就落了画布」的老项目用。'
+        + '为什么需要它：故事板已落地是产线工具的前置（未落地时 `video_generate` / `render_composition` 等会被拦），而老项目没有 §04 分镜数据。'
+        + '行为：读画布 → 按分镜卡的 `sbRef` / 卡面正文反推 §04（scene·shot 号、时长、运镜、视觉、声音、英文 prompt）→ 用项目预置补 `meta`（画幅 / 目标时长）→ 落盘 → 返回**还缺哪些阻断项**。'
+        + '**只还原卡上真有的事实**：§02 视觉规范 / §05 角色 / §03 旁白原文都拿不到，会留空并在阻断项里点名 —— 之后用 `write_storyboard` 补齐再落地。'
+        + '不覆盖已落地的项目（无需迁移）；本工具**不落画布**（落地仍走用户确认，auto 模式自动落地）。',
+      parameters: {},
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '反推结果（分镜数量、剩余阻断项与下一步）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(_args, exec) {
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const project = await registry.getProject(projectId)
+        const canvas = await registry.readCanvas(projectId)
+
+        const adopted = sectionsFromShotCards(canvas.nodes)
+        if (adopted.shots === 0) {
+          throwError('CS-USER-ERR', {
+            message: '画布上没有可反推的分镜卡：需要「分镜 N · 场景-镜号 · 运镜」这类卡（或带 sbRef 的结构化卡）。'
+              + '这类项目请直接用 write_storyboard 写一份新故事板，不要用本工具。',
+          })
+        }
+
+        const loaded = await loadStoryboard(registry, projectId)
+        if (loaded.status === 'corrupt') {
+          throwError('CS-USER-ERR', {
+            message: `已有故事板文件读不出来（已留证为 ${loaded.backup}），为免覆盖，本次不落盘。请先处理该文件。`,
+          })
+        }
+        if (loaded.status === 'stale') {
+          throwError('CS-USER-ERR', {
+            message: `这个项目的故事板是旧格式（schemaVersion ${String(loaded.found)}），不需要迁移画布 —— 请直接用 write_storyboard 重新写一份。`,
+          })
+        }
+        if (loaded.status === 'ok' && loaded.document.landed !== null) {
+          throwError('CS-USER-ERR', {
+            message: `本项目已经落地过故事板（${loaded.document.landed.sourceVersion}），无需迁移。`,
+          })
+        }
+
+        const base = loaded.status === 'ok' ? loaded.document : undefined
+        const totalDuration = adopted.storyboard.scenes
+          .flatMap((scene) => scene.shots)
+          .reduce((sum, shot) => sum + shot.duration, 0)
+        // meta 的全片规格取项目预置（`plan`）；没有预置时按卡上时长合计兜底。
+        const meta = {
+          genre: '',
+          targetDuration: project?.plan?.targetDuration ?? Math.max(1, Math.round(totalDuration)),
+          aspect: project?.plan?.aspectRatio ?? '16:9',
+        }
+        const merged = mergeStoryboardWrite(base, {
+          title: base?.title ?? project?.name ?? '未命名项目',
+          meta,
+          '04_storyboard': adopted.storyboard,
+        })
+        const normalized = normalizeStoryboard({
+          projectId,
+          title: merged.title,
+          meta: merged.meta,
+          sections: merged.sections,
+        })
+        if (normalized === undefined) {
+          throwError('CS-DEV-ERR', { detail: 'adopt_canvas_as_storyboard 归一化失败（反推结果不合法）' })
+        }
+
+        if (base === undefined) {
+          await saveStoryboard(registry, projectId, createStoryboard({
+            projectId,
+            title: normalized.title,
+            meta: normalized.meta,
+            sections: normalized.sections,
+          }))
+        } else {
+          await updateStoryboard(registry, projectId, (current) => ({
+            ...current,
+            title: normalized.title,
+            meta: normalized.meta,
+            sections: normalized.sections,
+          }))
+        }
+
+        const { blockers, warnings } = validateForSeed(normalized)
+        return {
+          text: [
+            `已从画布反推故事板：${String(adopted.scenes)} 个分镜 · ${String(adopted.shots)} 个 shot（Σ ${totalDuration.toFixed(1)}s，目标 ${normalized.meta.targetDuration.toFixed(1)}s）。`,
+            ...(adopted.warnings.length === 0 ? [] : [`反推提示：${adopted.warnings.join('；')}`]),
+            blockers.length === 0
+              ? '落地完成度：无阻断项 —— 现在可以落地了（confirm 模式请用户在画布顶条点「确认落地」；auto 模式由 Host 自动落地）。'
+              : `还差 ${String(blockers.length)} 条阻断项（补齐后才能落地）：\n- ${blockers.join('\n- ')}\n`
+                + '用 write_storyboard **只传缺的那几节**（分节合并、不动已反推的 §04），补齐后再落地。',
+            ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
           ].join('\n'),
         }
       },
@@ -3454,4 +3617,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
     }),
   ]
+  // 故事板强约束 L1：**单一放行点**。所有产出类工具在这里统一套「故事板已落地」前置，
+  // 与 mode / state 彻底解耦（判据只看 `storyboard.json.landed`）。
+  // 名单与闸的判定在 `storyboard-gate.ts`，八条矩阵与「新工具不能漏」见
+  // `tests/storyboard-gate.test.mjs`。
+  return withStoryboardGate(tools, async (toolName, exec) => {
+    const cwd = (exec as { agent?: { session?: { header?: { cwd?: string } } } } | undefined)
+      ?.agent?.session?.header?.cwd
+    const projectId = await resolveProjectId(registry, cwd)
+    await assertStoryboardLanded(registry, projectId, toolName)
+  })
 }

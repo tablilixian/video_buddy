@@ -18,6 +18,11 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+
+// 本文件只测 filename 可消费性（CV-238 等），不测故事板门禁（故事板强约束 L1）：
+// 关掉闸，避免「未落地」环境把 video_generate 的用例挡在门口。门禁见
+// tests/storyboard-gate.test.mjs。
+process.env.CANVAS_STUDIO_ENFORCE_STORYBOARD_LANDED = '0'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

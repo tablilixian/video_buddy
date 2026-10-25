@@ -50,6 +50,7 @@ import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
 import { ensureStoryboardSkeleton, loadStoryboard, loadStoryboardOrFail, updateStoryboardOrFail } from './storyboard-store.js'
 import { landStoryboard } from './storyboard-land.js'
+import { healStoryboardState } from './storyboard-gate.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt, renderStoryboardNotice, filledSectionCount } from './storyboard-render.js'
 import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionById } from './storyboard-history.js'
@@ -2378,6 +2379,13 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         if (!res.destroyed) {
           const workflow = normalizeWorkflow(project.workflow)
+          // 故事板强约束 L2（2026-10-25）：`state` 降级为**派生显示**，事实源是
+          // `storyboard.json.landed`。两者不一致（历史数据 / 迁移写坏）时在这里补推，
+          // 免得覆盖层永远停在「拍摄定稿」而画布其实早就能开工了。
+          // 注意：只修显示 —— 放行仍由 `assertStoryboardLanded` 只认 landed（见 storyboard-gate.ts）。
+          if (await healStoryboardState(registry, projectId, workflow.state)) {
+            workflow.state = 'executing'
+          }
           sendJson(res, 200, { workflow, pendingQuestion: workflow.pendingQuestion ?? null })
         }
         return

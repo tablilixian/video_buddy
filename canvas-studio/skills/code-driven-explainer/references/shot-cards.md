@@ -3,8 +3,8 @@
 > **用法**：先在这里挑卡，再填参数。不要从空 `tracks` 开始想 —— 每次从零组装是过去
 > 时长失控与结构试错的主因。
 >
-> **每条片段都实测可渲**（`scripts/render-forensics/cards.mjs`，Q12/Q13：14/14 通过，
-> 判定「非黑 > 50% 且相邻帧 MAE ≥ 0.5」）。`id` 可改，`startFrame` / `durationInFrames`
+> **每条片段都实测可渲**（`scripts/render-forensics/cards.mjs`，Q12/Q13：24/24 通过 —— A–E 14 张
+> + F 类 10 张，判定「非黑 > 50% 且相邻帧 MAE ≥ 0.5」）。`id` 可改，`startFrame` / `durationInFrames`
 > 按你的时间轴调；`meta.durationInFrames` 必须始终 = 最大结束帧。
 >
 > 卡里的数字是**画布百分比、x/y 是中心**（与 `render_composition` 的 `box` 同口径）。
@@ -28,9 +28,10 @@
 | D1 擦除转场 / D2 呼吸光效 | **无** | —— |
 | E1 素材推拉 | **1 张图**（按项目画幅；`kenburns` 会裁掉边缘） | `user` / `library` / `generated` |
 | E2 路径生长 / E3 公转徽标 | **无** | —— |
+| F1–F10（shotcraft 吸收批） | **无**（全部纯代码绘制） | —— |
 
 **两个结论，直接影响排期**：
-1. **14 张卡里只有 2 张要外部素材**（C2、E1）⇒ "素材组织慢"的主要矛盾不在选卡，在**素材本身从哪来**（尤其"把产品图里的表盘裁出来"这类，我们目前没有抠图工具）。
+1. **24 张卡里只有 2 张要外部素材**（C2、E1）⇒ "素材组织慢"的主要矛盾不在选卡，在**素材本身从哪来**（尤其"把产品图里的表盘裁出来"这类，我们目前没有抠图工具）。
 2. 需要素材的卡**必须**在故事板 §07 里登记一条（`neededBy` 指向它服务的 shot，`source` 说明去哪拿）；
    漏登记 = 落地后才发现缺图 = 又要临时找。这条已由门禁兜住（pending 会拦落地）。
 
@@ -198,7 +199,147 @@ animate，否则会被动效体检查判「动画拖沓」。
 
 ---
 
-## 与 shotcraft 157 张卡的对照（骨架，逐卡待填）
+## F 类 · shotcraft 吸收批（CV-370，10 张）
+
+> 来源：shotcraft 124 卡按 D18 门槛筛选（白名单可组合 + 复用频次 + 成本 ≤ 中），10 张全部取证通过。
+> **成本口径**：F 类数字来自 2026-10-25T22-48-40 轮，与 A–E 类（04-16-46 轮）不同轮，轮间有 ±4ms
+> 漂移 —— 比卡时看档位与量级，别抠小数。
+
+### F1 长卷急刹 `scroll-brake`
+**适用**：长列表/多项指标「快滚→急刹→停点揭晓」。**观感**：滚得越快，刹得越脆；停点行抬亮配打字小结。
+**成本**：中（25.7 ms/帧；`bullets` 多行 + 三段关键帧）
+```jsonc
+{ "id": "list", "type": "textCard", "variant": "bullets",
+  "text": ["静息心率 62", "深睡 1h42m", "血氧 98%", "压力指数 18", "步数 8,432"],
+  "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "animate": [
+    { "from": { "y": 66 }, "to": { "y": 40 }, "durationInFrames": 10, "easing": "easeOut" },
+    { "from": { "y": 40 }, "to": { "y": 34 }, "durationInFrames": 8, "easing": "easeOut", "startAfter": "previous" },
+    { "from": { "y": 34 }, "to": { "y": 35 }, "durationInFrames": 4, "easing": "easeInOut", "startAfter": "previous" }
+  ] }
+```
+**注意**：过冲段只回弹 1 个百分点 —— 急刹的「脆」靠**末段短**（4 帧），不靠回弹幅度。停点抬亮配
+`fx:"stroke"` 的 rect + `opacity` 淡入（完整样本 `scroll-brake`）。
+
+### F2 数据飞线 `flyline-arc`
+**适用**：卡到卡的因果/能量流（摄入→消耗、源头→结果）。**观感**：弧线生长到落点，脉冲一圈消散。
+**成本**：中（11.6 ms/帧）
+```jsonc
+{ "id": "fly", "type": "shape", "shape": "path", "color": "#7DD3FC", "strokeWidth": 0.9, "fx": "glow",
+  "d": "M 18 64 C 40 22, 58 72, 78 30", "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "draw": { "to": 1, "durationInFrames": 40, "easing": "easeInOut" } }
+```
+**注意**：落点脉冲 = 同位大一号 `circle + fx:glow`，animate 两段「亮起→扩散消失」用 `startAfter:"previous"`
+串联；起终点各放一个小 `circle` 当锚。
+
+### F3 扫描标注 `scanline-annotate`
+**适用**：逐项识别/体检式揭示（扫过即标注）。**观感**：细光带匀速过境 + 四角括号合围 + 打字贴标。
+**成本**：中（16.8 ms/帧）
+```jsonc
+{ "id": "scan", "type": "shape", "shape": "rect", "color": "#7DD3FC",
+  "box": { "x": 50, "y": 17, "w": 46, "h": 0.8 }, "fx": "glow",
+  "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "animate": { "from": { "y": 17 }, "to": { "y": 75 }, "startFrame": 8, "durationInFrames": 46, "easing": "easeInOut" } }
+```
+**注意**：四角括号 = 4 条两笔 `path`（`M 27 26 L 27 18 L 35 18` 这类），`draw` 6 帧错峰；扫描线先走完，
+括号与标签再上（时序：扫 8–54f，括 56f 起，标 62f 起）。底板 `rect` 先铺。
+
+### F4 马克笔下划线 `marker-underline`
+**适用**：关键词强调的最便宜形态。**观感**：标题落定后一条微上斜的手绘线快描而过。
+**成本**：中（15.7 ms/帧；大头是 typewriter 标题本体）
+```jsonc
+{ "id": "u", "type": "shape", "shape": "path", "color": "#F59E0B", "strokeWidth": 1.4,
+  "d": "M 36 63 C 48 62.2, 62 63.6, 88 62.4", "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "draw": { "to": 1, "durationInFrames": 12, "easing": "easeOut" } }
+```
+**注意**：线要「手绘感」就别水平 —— 端点 y 差 0.6–1 个百分点、用 `C` 带一点弯；12 帧描完，宁快勿慢。
+
+### F5 首词组装 `lead-word-zoom`
+**适用**：数字/钩子开场（大字砸下来）。**观感**：首词 2.2 倍缩回落位到上方，余词推进成句。
+**成本**：中（15.5 ms/帧）
+```jsonc
+{ "id": "w1", "type": "textCard", "variant": "title", "text": "3.8 亿",
+  "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "animate": { "from": { "y": 46, "scale": 2.2, "opacity": 0 }, "to": { "y": 32, "scale": 1, "opacity": 1 },
+               "startFrame": 2, "durationInFrames": 16, "easing": "easeOut" } }
+```
+**注意**：两条 `title` 都居中渲染，**用 animate 的 y 把它们摆开**（首词 y32、句子 y54）—— textCard
+版位固定，位置全靠 `animate` 位移，这是 CV-334 后的标准摆位手法。
+
+### F6 词槽轮换 `pill-slot-cycle`
+**适用**：同句干换词的排比强调（更快/更稳/更准）。**观感**：句干钉死，同位词卡逐个上翻替换。
+**成本**：低（9.6 ms/帧）
+```jsonc
+{ "id": "w1", "type": "textCard", "variant": "title", "text": "更快",
+  "startFrame": 4, "durationInFrames": 30, "fadeFrames": 0,
+  "exit": { "to": { "opacity": 0, "y": 44 }, "durationInFrames": 8 } }
+```
+**注意**：三个词轨**同位交替**（都走 title 居中位），后一词在前一词 exit 中段进场（前 4f 后 36f 这样错）；
+最后一个词不退出，可加 scale 0.9→1 微弹落定。
+
+### F7 高光扫过 `sheen-sweep`
+**适用**：成果/奖杯时刻的加冕。**观感**：一道亮带单程擦过主角卡。
+**成本**：中（10.9 ms/帧）
+```jsonc
+{ "id": "sheen", "type": "shape", "shape": "rect", "color": "#F8FAFC",
+  "box": { "x": 24, "y": 50, "w": 2.4, "h": 36 }, "fx": "glow",
+  "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "animate": [
+    { "from": { "x": 24, "opacity": 0 }, "to": { "x": 30, "opacity": 0.85 }, "durationInFrames": 3, "easing": "easeInOut" },
+    { "from": { "x": 30, "opacity": 0.85 }, "to": { "x": 76, "opacity": 0 }, "durationInFrames": 12, "easing": "easeInOut", "startAfter": "previous" }
+  ] }
+```
+**注意**：没有 rotate，**只能做竖直光带**（45° 斜带做不了，缺口清单有记）；光带要**超出主角卡高度**，
+扫过才有「掠过表面」感。
+
+### F8 UI 蒸发收尾 `strip-away-outro`
+**适用**：复杂界面收束到一个结论。**观感**：外围元素错峰蒸发，唯一结论放大定版。
+**成本**：中（12.7 ms/帧）
+```jsonc
+{ "id": "bar", "type": "shape", "shape": "rect", "color": "#1F2937",
+  "box": { "x": 50, "y": 16, "w": 70, "h": 7 },
+  "startFrame": 0, "durationInFrames": 44, "fadeFrames": 0,
+  "exit": { "to": { "opacity": 0, "y": 12 }, "durationInFrames": 8 } }
+```
+**注意**：蒸发时序 = 外围→中心逐个错峰（每个元素自身 duration 结束前 8 帧走 exit）；**每个元素的
+退场方向指向画面外**（顶条向上、左栏向左下、右栏向右下）；最后的定版词配 `fx:glow` 光晕 + typewriter。
+
+### F9 里程碑时间轴 `timeline-marks`
+**适用**：阶段/进度叙事（第 1 周→第 4 周→第 8 周）。**观感**：轴线生长，节点错峰亮起，要点逐条落位。
+**成本**：中（29.6 ms/帧；F 类最贵 —— 轴 + 3 节点 + bullets 三层叠）
+```jsonc
+{ "id": "axis", "type": "shape", "shape": "path", "color": "#475569", "strokeWidth": 0.7,
+  "d": "M 12 72 L 88 72", "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "draw": { "to": 1, "durationInFrames": 26, "easing": "easeInOut" } }
+```
+**注意**：节点 = 小 `circle` 沿轴 x 排开、`scale 0.2→1` 错峰 8 帧进场（中间节点可加 `fx:glow` 当当前站）；
+bullets 放轴上方避免压线。要「变速旅行」效果得靠多段 x 关键帧，成本会再上去，先别叠。
+
+### F10 进度环揭晓 `progress-ring`
+**适用**：达成率/百分比揭晓。**观感**：圆环描完，中心数字打字跳出。
+**成本**：中（11.6 ms/帧）
+```jsonc
+{ "id": "ring", "type": "shape", "shape": "path", "color": "#38BDF8", "strokeWidth": 1.6, "fx": "glow",
+  "d": "M 50 20 A 30 30 0 1 1 49.9 20", "startFrame": 0, "durationInFrames": 90, "fadeFrames": 0,
+  "draw": { "to": 1, "durationInFrames": 56, "easing": "easeInOut" } }
+```
+**注意**：整圆弧用 `A` 命令（终点 x 差 0.1 绕满一圈）；`strokeWidth` 是画布高度百分比（1.6 ≈ 11px）；
+数字用 typewriter 在 draw 过半（约 34f）时进场。
+
+### 能力缺口清单（想吸收但白名单拼不出 —— 进 backlog，勿做成伪卡）
+
+| 缺口卡（shotcraft） | 缺什么字段/能力 |
+|---|---|
+| 对比拉杆 before-after-slider | 图像层缺按杆位的 clip/mask 揭示（`fx.maskFade` 只有整层淡入） |
+| 空心词点亮 outline-word-fill | textCard 缺描边空心字样式 + 瞬时填充帧 |
+| 渐变充能 gradient-word-sweep | 缺渐变填充 + 扫过波前 mask |
+| 满弧扫针 gauge-readout(A) | `animate` 缺 `rotate`（指针甩弧/圆环自转全依赖它） |
+| 点阵重组 chart-live(B) | 缺点群编排（数百点聚形拼数字），且成本必超标 |
+| 数位滚动 DigitRoll | 缺计数滚动组件（现只能多轨文本阶跃近似，见 F6 的近似法） |
+
+---
+
+## 与 shotcraft 124 卡的对照（CV-370 已完成第一批）
 
 不引它的资产、也不移植它的 TSX（`demos/*.tsx` 是 React 组件，我们的产物是 manifest DSL，
 且"模型不写代码"是架构约束）。只借它的**分类词汇**：
@@ -208,9 +349,10 @@ animate，否则会被动效体检查判「动画拖沓」。
 | camera（推拉摇移） | `animate.scale` + `orbit` + `transform` | 只有等比 scale，无 `scaleX/Y`、无真实透视 |
 | typography（文字动效） | 4 种 `anim` 预设 + `textCard` 4 个 variant | 无 per-character 自定义时序（只有等间隔） |
 | UI entrance（元素入场） | `animate` 的 `x/y/opacity/scale` | 无弹性/回弹曲线族（只有 easing 档位） |
-| data emphasis（数据强调） | `dataCard` + `shape:rect` 手绘柱/条 | 无图表组件（柱/线/饼都得手拼） |
+| data emphasis（数据强调） | `dataCard` + `shape:rect` 手绘柱/条 + F1/F9/F10 | 无图表组件（柱/线/饼都得手拼） |
 | transition（转场） | `transition` 效果表 | 无 3D / 遮罩形状转场 |
-| outro（落版） | `exit` + `fadeFrames` | —— |
+| effects（强调/扫描） | F2 飞线 / F3 扫描 / F4 下划线 / F7 高光 | 缺 rotate（见缺口清单） |
+| outro（落版） | `exit` + `fadeFrames` + F8 蒸发收尾 | —— |
 
-**逐卡对照需要 `git clone --depth 1` 到 `/tmp` 后按 Gallery 挑 10 张填这张表**（约 2 小时，
-不引入依赖、不改构建）。填完会明确分出两堆：「现有字段能复刻」→ 补进本册；「缺字段」→ 进 backlog。
+第一批已按 D18 门槛筛出 13 张候选：10 张用现有字段复刻成 F 类（上文），其余 3 张与 6 条
+**字段级缺口**进上面「能力缺口清单」——扩 manifest 字段后才能做，勿做成伪卡。

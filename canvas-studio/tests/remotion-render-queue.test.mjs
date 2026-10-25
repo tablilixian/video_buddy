@@ -124,17 +124,20 @@ test('排队中被取消：只从等待队列摘掉，不递减并发计数', ()
   })
 })
 
-test('进度上报：只有 rendering 态可写，写入前 clamp 到 0–1', () => {
+test('进度上报：只有 rendering 态可写，clamp 到 0–1 且单调不回退（CV-373）', () => {
   withFreshQueue(() => {
     reserveRenderSlot(slot('run'))
     const queued = reserveRenderSlot(slot('wait'))
 
     assert.equal(reportRenderProgress('run', 0.42), true)
     assert.equal(listRenderJobs('p1').find((i) => i.jobId === 'run').progress, 0.42)
+    // CV-373：报活心跳是 progress=0 —— 不能把真实进度打回去。
+    assert.equal(reportRenderProgress('run', 0), true)
+    assert.equal(listRenderJobs('p1').find((i) => i.jobId === 'run').progress, 0.42, '0 心跳不回退进度')
     assert.equal(reportRenderProgress('run', 8), true)
     assert.equal(listRenderJobs('p1').find((i) => i.jobId === 'run').progress, 1, '超上界夹到 1')
     assert.equal(reportRenderProgress('run', -3), true)
-    assert.equal(listRenderJobs('p1').find((i) => i.jobId === 'run').progress, 0, '负值夹到 0')
+    assert.equal(listRenderJobs('p1').find((i) => i.jobId === 'run').progress, 1, '负值不回退（单调）')
 
     assert.equal(reportRenderProgress('wait', 0.5), false, '排队中的单不接收进度')
     assert.equal(reportRenderProgress('nope', 0.5), false, '未知单不接收进度')

@@ -183,7 +183,9 @@ export function reportRenderProgress(jobId: string, progress: number): boolean {
   const entry = entries.get(jobId)
   if (entry === undefined || entry.state !== 'rendering') return false
   if (!Number.isFinite(progress)) return false
-  entry.progress = Math.max(0, Math.min(1, progress))
+  // CV-373：进度只进不退 —— 报活心跳是 progress=0，不能把真实进度打回 0
+  //（旧实现 `Math.max(0, ...)` 只防负数不防回退，心跳会把角标闪回 0%）。
+  entry.progress = Math.max(entry.progress, Math.min(1, Math.max(0, progress)))
   return true
 }
 

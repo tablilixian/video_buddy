@@ -1021,6 +1021,8 @@ export interface PendingStudioRenderJob {
   fps: number
   /** 三期 W5-3：质量档（`draft` 跳过预览闸门）。 */
   quality?: 'draft' | 'standard' | 'high'
+  /** CV-373：探针渲染（诊断渲）—— 客户端据此跳过预览闸门。 */
+  probe?: boolean
   /** 三期 W5-4：宿主已探到的素材真值（客户端直接复用，不再探一遍）。 */
   realDurations?: Record<string, number>
   /** 三期 W6-1：宿主建议的抽帧位置。 */

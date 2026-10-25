@@ -72,6 +72,8 @@ export interface PendingRenderJob {
   fps: number
   /** 三期 W5-3：质量档（客户端据此选编码参数，并决定是否跳过预览闸门）。 */
   quality: RenderQuality
+  /** CV-373：探针渲染 —— 客户端据此跳过预览闸门（诊断渲不打扰用户）。 */
+  probe: boolean
   /**
    * 三期 W5-4：宿主 ffprobe 已探到的真值时长（`src → 秒`）。
    * 客户端**直接复用**，不再自己探一遍（原来 10 段素材要白等 1.5–8s）。
@@ -180,6 +182,8 @@ export interface RunRenderJobOptions {
   signal?: AbortSignal
   /** 三期 W5-3：质量档（缺省 `standard`）。 */
   quality?: RenderQuality
+  /** CV-373：探针渲染（REQ-035 F-05）—— 客户端据此跳过预览闸门（诊断渲不打扰用户）。 */
+  probe?: boolean
   /** 三期 W5-4：宿主探测到的素材真值时长（透传给客户端，免二次探测）。 */
   realDurations?: Record<string, number>
   /** 三期 W6-1：抽帧位置（缺省由客户端按 4 张 + 转场中点自选）。 */
@@ -223,6 +227,8 @@ interface ActiveRenderJob {
   fps: number
   /** 三期 W5-3：质量档。 */
   quality: RenderQuality
+  /** CV-373：探针渲染 —— 透传给客户端跳过预览闸门。 */
+  probe: boolean
   /** 三期 W5-4：宿主已探到的素材真值（透传客户端）。 */
   realDurations: Record<string, number>
   /** 三期 W6-1：建议抽帧位置。 */
@@ -305,6 +311,7 @@ export function claimRenderJobFor(
       manifest: job.manifest,
       fps: job.fps,
       quality: job.quality,
+      probe: job.probe,
       realDurations: job.realDurations,
       sampleFrames: job.sampleFrames,
       deadlineAt: job.deadlineAt,
@@ -321,6 +328,7 @@ export function claimRenderJobFor(
         manifest: takeover.manifest,
         fps: takeover.fps,
         quality: takeover.quality,
+        probe: takeover.probe,
         realDurations: takeover.realDurations,
         sampleFrames: takeover.sampleFrames,
         deadlineAt: takeover.deadlineAt,
@@ -411,8 +419,13 @@ function clientJobOrphanReason(
     return now - dispatchedAt >= graceMs ? '宽限期内画布页未认领' : null
   }
   if (job.maxProgress <= 0) {
-    const waited = now - job.clientClaimedAt
-    return waited >= claimStallMs ? `画布页认领后 ${Math.round(waited / 1000)}s 无任何进度` : null
+    // CV-373：判死计时落在**最后一次活性证据**上 —— 页面取单后会打报活心跳
+    //（progress=0，`reportRenderJobProgress` 照样刷新 `lastProgressAt`）。
+    // warmup（首帧前 ~80s）与预览闸门等人本来就会让 maxProgress 长期为 0，
+    // 旧实现只看 `clientClaimedAt`，把「活着只是慢/在等人」误判成「死了」
+    //（2026-10-25 会话 9 渲 7 死的根因）。页面停止报活 ⇒ 依旧是死，照常判。
+    const waited = now - Math.max(job.clientClaimedAt, job.lastProgressAt)
+    return waited >= claimStallMs ? `画布页认领后 ${Math.round(waited / 1000)}s 无任何进度（含报活）` : null
   }
   const stalled = now - job.lastProgressAt
   return stalled >= progressStallMs ? `画布页进度停滞 ${Math.round(stalled / 1000)}s` : null
@@ -479,14 +492,18 @@ export function listRenderJobViews(projectId?: string): RenderJobView[] {
   return listRenderJobs(projectId)
 }
 
-/** 客户端上报渲染进度（0–1）；单不存在 / 未在渲染返回 `false`。 */
-export function reportRenderJobProgress(jobId: string, progress: number): boolean {
+/** 客户端上报渲染进度（0–1）；单不存在 / 未在渲染返回 `false`。`now` 供假时钟测试。 */
+export function reportRenderJobProgress(
+  jobId: string,
+  progress: number,
+  options: { now?: number } = {},
+): boolean {
   const applied = reportRenderProgress(jobId, progress)
   // O-06：进度也是「页面还活着」的证据 —— 看门狗用它兜住「主线程被编码器按住」的窗口。
   if (applied) {
     const job = activeJobs.get(jobId)
     if (job !== undefined) {
-      job.lastProgressAt = Date.now()
+      job.lastProgressAt = options.now ?? Date.now()
       // `maxProgress > 0` 是「真的开渲了」的唯一硬证据，改派与看门狗都靠它区分
       // 「取单没动」和「在渲只是慢」。
       if (Number.isFinite(progress) && progress > job.maxProgress) {
@@ -616,15 +633,17 @@ function silenceOf(
       detail: `render host heartbeat lost for ${Math.round(silentFor / 1000)}s`,
     }
   }
-  // client：没有自报可看，只能看「有没有真的动起来」
+  // client：看「有没有真的动起来」+「有没有报活」（CV-373：报活也是活性证据，
+  // 口径与 clientJobOrphanReason 一致 —— 最后一次活性证据起算 20s）。
   if (job.maxProgress <= 0) {
-    const waited = now - (job.clientClaimedAt ?? job.dispatchedAt ?? now)
+    const lastAlive = Math.max(job.clientClaimedAt ?? job.dispatchedAt ?? now, job.lastProgressAt)
+    const waited = now - lastAlive
     if (waited < job.claimStallMs) return null
     // 有窗口能干活 ⇒ 把「救活」的机会留给改派（它会重渲这一单），别在这里判死。
     if (renderHostCanTakeOver(now)) return null
     return {
       message: '画布页取单后一直没开始渲染，已中止本次渲染。请重试。',
-      detail: `client claimed but produced no progress for ${Math.round(waited / 1000)}s`,
+      detail: `client claimed but produced no progress for ${Math.round(waited / 1000)}s (last liveness ${Math.round((now - job.lastProgressAt) / 1000)}s ago)`,
     }
   }
   const stalled = now - job.lastProgressAt
@@ -699,6 +718,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       manifest,
       fps,
       quality: options.quality ?? manifest.meta.quality ?? 'standard',
+      probe: options.probe === true,
       realDurations: options.realDurations ?? {},
       sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
       samples: [],

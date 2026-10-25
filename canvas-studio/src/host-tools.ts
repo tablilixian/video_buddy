@@ -2983,6 +2983,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           fps: source.meta.fps,
           signal: exec.signal,
           ...(quality !== undefined ? { quality } : {}),
+          // CV-373：探针贯通到客户端 —— 诊断渲跳过预览闸门，不再弹「帧 3/9」打断用户。
+          ...(probe ? { probe } : {}),
           realDurations: pre.realDurations,
           sampleFrames: probe ? [] : pickSampleFrames(renderManifest),
         })

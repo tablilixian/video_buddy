@@ -155,6 +155,33 @@ test('F-02b：已开渲且进度新鲜 ⇒ 不得改派（防止抢掉正在渲�
   })
 })
 
+test('CV-373：取单后只有报活心跳（progress=0）也不判死 —— warmup/预览等人不被误杀', async () => {
+  const t = Date.now()
+  recordRenderHostReport({ state: 'idle' }, t)
+  await withClientJob(async ({ jobId, claim }) => {
+    // 画布页取单，随后只打报活心跳（首帧前的 warmup / 预览闸门等人期间就是这个形态）
+    claim()
+    const pingAt = t + 15_000
+    assert.equal(reportRenderJobProgress(jobId, 0, { now: pingAt }), true)
+
+    // 22s 没有真实进度 —— 但最后一次活性证据是 15s 前，还不到 20s 死线
+    const tooEarly = claimRenderJobFor(null, 'render-host', { now: t + CLIENT_CLAIM_STALL_MS + 2_000 })
+    assert.equal(tooEarly, null, '报活把死线往后推了 ⇒ 不许抢')
+
+    // 心跳也停了：最后一次活性证据 15s + 21s = 36s 前的事 ⇒ 可以接管
+    //（接管还要求窗口活着 —— 自报 30s 过期，所以按接管时刻重新自报一次）
+    const reasons = []
+    const takeoverAt = pingAt + CLIENT_CLAIM_STALL_MS + 1_000
+    recordRenderHostReport({ state: 'idle' }, takeoverAt)
+    const taken = claimRenderJobFor(null, 'render-host', {
+      now: takeoverAt,
+      onTakeover: (_id, reason) => reasons.push(reason),
+    })
+    assert.equal(taken?.jobId, jobId, '活性证据也断了 ⇒ 照常接管')
+    assert.match(reasons[0], /无任何进度（含报活）/u)
+  })
+})
+
 test('F-02b：已开渲但进度停滞超过阈值 ⇒ 允许改派', async () => {
   const t = Date.now()
   await withClientJob(async ({ jobId, claim }) => {

@@ -77,3 +77,13 @@ export function resolveRenderPreview(jobId: string, approved: boolean): boolean 
   if (done !== null) done(approved)
   return true
 }
+
+/**
+ * CV-373：外部解除当前挂起的预览 —— 工单已在别处结算（看门狗/超时/撤单），弹窗
+ * 成了僵尸（agent 已继续干活，面板点了也没用）。`resolve(false)` 让挂起的渲染调用
+ * 走「用户取消」收尾（对已结算单的撤单是 no-op）。没有挂起的预览时返回 `false`。
+ */
+export function abortRenderPreview(): boolean {
+  if (current === null || resolver === null) return false
+  return resolveRenderPreview(current.jobId, false)
+}

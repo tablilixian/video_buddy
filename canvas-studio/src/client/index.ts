@@ -28,7 +28,7 @@ import { bumpStoryboardRev } from './storyboard-signal.js'
 import { refreshCreditsAfterGeneration } from './credits-store.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
-import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, type PendingStudioRenderJob } from './api.js'
+import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
 // 2026-10-23：渲染轮询的拍内决策表（纯函数，tests/render-poll-gate.test.mjs 钉住）。
 import { decideRenderPollStep } from '../render-poll-gate.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
@@ -1517,6 +1517,8 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   //（与生成队列轮询同一「空闲即停」纪律，零后台流量）。宿主建单后本端取单 →
   // 用 `@remotion/web-renderer` 在渲染进程里出片 → 回写字节；出片失败 / 被撤单则撤单。
   const RENDER_POLL_MS = 1000
+  /** CV-373：取单后的报活心跳间隔 —— 宿主 claim-stall（20s）按「最后一次活性证据」计死线。 */
+  const CLIENT_LIVENESS_PING_MS = 5_000
   let renderPoll: ReturnType<typeof setInterval> | null = null
   let activeRender: { jobId: string; controller: AbortController } | null = null
   /**
@@ -1526,6 +1528,8 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
    * 没有这个标记就会每拍都重新弹一次预览。有它则同一单在用户决定前只弹一次。
    */
   let previewingJobId: string | null = null
+  /** CV-373：当前挂起的预览闸门（jobId → 同一个决定 Promise）。轮询下一拍重入时原地等它，而不是跳过闸门开渲。 */
+  let pendingPreviewGate: { jobId: string; promise: Promise<boolean> } | null = null
   /** 收工：停轮询 + 中断在飞渲染（宿主侧的工单由它自己结算 / 撤回）。 */
   const stopRenderPoll = (): void => {
     if (renderPoll !== null) {
@@ -1556,6 +1560,14 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         const mirror = await fetchStudioRenderJobViews(projectId).catch(() => [])
         const running = mirror.find((view) => view.state === 'rendering' || view.state === 'queued')
         if (running !== undefined) mirrorRunning = { jobId: running.jobId, progress: running.progress }
+        // CV-373：僵尸弹窗拆除 —— 单没了（被看门狗/超时/撤单结算）而预览闸门还挂着。
+        // 旧实现什么都不做：agent 已收到结算继续干活，用户还对着一个点了也没用的面板。
+        // 镜像正在渲这张单（滞留改派接管）则**不动** —— 用户还能看到进度，弹窗等接管单
+        // 结算（接管本就不该发生：闸门挂起期间页面每 5s 报活，claim-stall 不会触发）。
+        if (pendingPreviewGate !== null && pendingPreviewGate.jobId !== mirrorRunning?.jobId) {
+          const { abortRenderPreview } = await import('./render-preview.js')
+          if (abortRenderPreview()) pendingPreviewGate = null
+        }
       }
     } else if (!warnedRenderPollNoProject && inflightRenderRuns.size > 0) {
       warnedRenderPollNoProject = true
@@ -1584,6 +1596,12 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   /** 对一张已 claim 的工单执行渲染（预览闸门 + 执行器 + 收尾）。 */
   const renderClaimedJob = async (job: PendingStudioRenderJob): Promise<void> => {
     if (activeRender?.jobId === job.jobId) return // 同一单仍在渲染：等它回写
+    // CV-373：取单即报活（progress=0 心跳，5s 一拍，finally 清表）。warmup（首帧前
+    // ~80s）与预览闸门等人的期间宿主 claim-stall 看门狗只看「最后一次活性证据」——
+    // 不报活就会在 20s 被判死/改派（2026-10-25 会话 9 渲 7 死的根因）。
+    const liveness = setInterval(() => {
+      void reportStudioRenderProgress(job.jobId, 0).catch(() => {})
+    }, CLIENT_LIVENESS_PING_MS)
     // CV-334 · B3.3：**渲染前只读预览**闸门 —— 取到单先让人看一眼画面，确认后才真渲染。
     //
     // 为什么要拦：这是一道 10 分钟量级的工单（宿主 `RENDER_JOB_TIMEOUT_MS`），盲等一次
@@ -1593,24 +1611,44 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     //
     // 三期 W5-3：`draft` 档**跳过**闸门 —— 它本身就是「快速看个大概」的那一档
     //（半分辨率 / 低码率 / 10s 关键帧间隔），再让人等一轮预览，等于把省下的时间还回去。
-    const skipPreview = job.quality === 'draft'
-    if (!skipPreview && previewingJobId !== job.jobId) {
-      previewingJobId = job.jobId
-      let approved = true
+    // CV-373：探针渲染（`probe`）同样跳过 —— 诊断渲弹「帧 3/9」只会让用户误以为成片好了。
+    let approved = true
+    const skipPreview = job.quality === 'draft' || job.probe === true
+    if (!skipPreview) {
       try {
-        const { requestRenderPreview } = await import('./render-preview.js')
-        approved = await requestRenderPreview(job.jobId, job.manifest)
+        if (pendingPreviewGate !== null && pendingPreviewGate.jobId === job.jobId) {
+          // CV-373：轮询下一拍又进了同一单 —— 闸门已挂起，**原地等同一个决定**。
+          // 旧实现在这里直接跳过整个闸门块落到开渲 ⇒「弹窗底下照渲」，闸门形同虚设。
+          approved = await pendingPreviewGate.promise
+          if (pendingPreviewGate.jobId === job.jobId) pendingPreviewGate = null
+        } else if (previewingJobId !== job.jobId) {
+          previewingJobId = job.jobId
+          const { requestRenderPreview } = await import('./render-preview.js')
+          const promise = requestRenderPreview(job.jobId, job.manifest)
+          pendingPreviewGate = { jobId: job.jobId, promise }
+          approved = await promise
+          if (pendingPreviewGate.jobId === job.jobId) pendingPreviewGate = null
+        }
       } catch {
         // 预览模块异常 / 面板未挂载（`requestRenderPreview` 在无订阅者时本来就放行）：
         // 一律放行。绝不能因为"预览坏了"把渲染路径卡死。
         approved = true
+        if (pendingPreviewGate !== null) pendingPreviewGate = null
       }
-      if (!approved) {
-        previewingJobId = null
-        stopRenderPoll()
-        void cancelStudioRenderJob(job.jobId, false, '用户在渲染前预览里取消了本次成片').catch(() => {})
-        return
-      }
+    }
+    // CV-373：同拍双进保险 —— 两拍都在等同一个闸门 Promise 时会先后醒来，
+    // 先到者已开渲（activeRender 已置），后来者在这里退场，绝不二连渲。
+    if (activeRender?.jobId === job.jobId) {
+      clearInterval(liveness)
+      return
+    }
+    if (!approved) {
+      previewingJobId = null
+      if (pendingPreviewGate?.jobId === job.jobId) pendingPreviewGate = null
+      stopRenderPoll()
+      clearInterval(liveness)
+      void cancelStudioRenderJob(job.jobId, false, '用户在渲染前预览里取消了本次成片').catch(() => {})
+      return
     }
     activeRender?.controller.abort()
     const controller = new AbortController()
@@ -1637,12 +1675,15 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       // 仍要撤单，让等待中的工具调用立刻结算而非干等超时。执行器内部失败已撤过单。
       void cancelStudioRenderJob(job.jobId, true, reason).catch(() => {})
     } finally {
+      clearInterval(liveness) // CV-373：报活心跳随渲染收工停表
       if (activeRender?.jobId === job.jobId) activeRender = null
       // 1b：收工（成功 / 失败 / 中断）一律清进度条 —— 留着会挂一条永不消失的假进度。
       clearRenderProgress(job.jobId)
       // CV-334 · B3.3：渲染收工（成功 / 失败 / 中断）后清掉预览标记 —— 否则同一 jobId
       // 重新出现在待渲染队列里时会跳过预览。
       if (previewingJobId === job.jobId) previewingJobId = null
+      // CV-373：闸门注册也要清 —— 防止已结算的 gate 残留进僵尸弹窗判定。
+      if (pendingPreviewGate?.jobId === job.jobId) pendingPreviewGate = null
     }
   }
   const ensureRenderPoll = (): void => {

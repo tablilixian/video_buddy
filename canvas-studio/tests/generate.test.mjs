@@ -7,6 +7,11 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+
+// 本文件只测 generate 自身行为（镜号解析 / 血缘合并 / 落位），不测故事板门禁：
+// 关掉闸，避免「未落地」环境把绑镜出图的用例挡在门口（2026-10-25 起绑镜出图
+// 也要求故事板已落地，见 storyboard-gate.ts）。门禁见 tests/storyboard-gate.test.mjs。
+process.env.CANVAS_STUDIO_ENFORCE_STORYBOARD_LANDED = '0'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

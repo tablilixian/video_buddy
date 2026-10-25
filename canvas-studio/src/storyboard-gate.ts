@@ -66,6 +66,16 @@ export function enforceStoryboardLandedEnabled(): boolean {
 }
 
 /**
+ * §07 素材就绪门禁的开关（默认开，`CANVAS_STUDIO_ENFORCE_ASSET_READINESS=0` 退回旧行为）。
+ *
+ * 为什么放在这个模块：它和「故事板已落地」是**同一类闸**（拦的是"还没准备好就动手"），
+ * 而且都必须能被一次 env 全关掉以便回滚。集中在一处，回滚清单就不会漏。
+ */
+export function enforceAssetReadinessEnabled(): boolean {
+  return process.env.CANVAS_STUDIO_ENFORCE_ASSET_READINESS !== '0'
+}
+
+/**
  * 断言本项目故事板已落地；未落地即抛 `CS-STORY-001`。
  *
  * 文件缺失 / 读不出来 / 旧 schema 一律按「未落地」处理 —— 这三种情况下画布上不可能有

@@ -151,6 +151,17 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   cols: '数值（亮度网格列数 4-96），越界由 execute 钳制',
   rows: '数值（亮度网格行数 4-96），越界由 execute 钳制',
   region: '数值矩形（画布百分比中心语义），越界由 execute clamp 到图内',
+  // 2026-10-25：sample 模式的逐点取色坐标串（"30,40;50,60"）。越界点由 execute 夹回并标记。
+  points: '百分比坐标串（"x,y;x,y"，x/y 中心语义），非法项跳过、越界由 execute 夹回并标记',
+  // 2026-10-25：layout_table（项目级布局坐标表，工作台不参与渲染）。
+  // `name` 已在「散文串」表里（同名参数跨工具共用一条分类），这里不重复登记，否则三表打架。
+  action: '枚举（read / write / clear），取值不合规由 execute 拒收',
+  rect: '数值矩形（画布百分比中心语义），w/h ≤ 0 或越出画布由 normalizeLayoutTable 拒收',
+  note: '自由文本备注（说明这块是什么 / 量自哪张图），不指向别处产出的对象',
+  // 2026-10-25：scaffold_manifest 的视觉主题（展开成颜色值，manifest 不存 themeId）。
+  theme: '枚举（cold-tech / ink-press / warm-ember / neon-data），未知值回落缺省并在返回文本里明示',
+  // 2026-10-25：片型配方（段序列 + 时间轴 + 素材需求）。
+  recipe: '枚举（explainer-cards / product-walkthrough / story-arc），未知值由 execute 显式拒收',
   // —— CV-361 render_composition ——
   manifestPath: '绝对路径（manifest JSON 文件），内容由 JSON.parse + validateManifest + 尾部完整性校验拒收，比通用占位尺子更准',
   // —— 布尔 / 数值：不存在文本占位形态 ——

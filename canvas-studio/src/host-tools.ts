@@ -9,7 +9,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { sep } from 'node:path'
+import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
@@ -23,8 +23,12 @@ import { approvalGateMessage } from './approval-gate.js'
 // 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
 import { landStoryboard } from './storyboard-land.js'
-import { assertStoryboardLanded, withStoryboardGate } from './storyboard-gate.js'
+import { assertStoryboardLanded, enforceAssetReadinessEnabled, withStoryboardGate } from './storyboard-gate.js'
 import { sectionsFromShotCards } from './storyboard-adopt.js'
+import { layoutTableToManifestSnippet, loadLayoutFile, normalizeLayoutTable, saveLayoutFile } from './layout-table.js'
+import { expandGroups } from './remotion/groups.js'
+import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
+import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
@@ -64,7 +68,7 @@ import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
 import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
-import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage } from './inspect-image.js'
+import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage, samplePixels } from './inspect-image.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
@@ -873,6 +877,44 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
 }
 
 /**
+ * 解析 `inspect_image` 的 `points` 入参：`"30,40;50,60"`（画布百分比，x/y 中心语义）。
+ *
+ * 越界坐标**不在这里拒收** —— 交由 `samplePixels` 夹回并标记 `clamped`，因为「我要的是
+ * 屏幕边缘」与「我给错坐标了」必须能从结果里分辨，而不是在入口一起报错。
+ * 非法项（非数字 / 缺一维）静默跳过：一条写错的点不该让整批测量失败。
+ */
+function parseSamplePoints(raw: unknown): { x: number; y: number }[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return []
+  const points: { x: number; y: number }[] = []
+  for (const chunk of raw.split(';')) {
+    const [rawX, rawY] = chunk.split(',')
+    const x = Number(rawX)
+    const y = Number(rawY)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+    points.push({ x, y })
+    if (points.length >= 32) break
+  }
+  return points
+}
+
+/**
+ * 布局表的统一输出形态（read / write / clear 三处共用 —— 三份文案必然漂移）。
+ */
+function renderLayoutTable(
+  table: ReturnType<typeof normalizeLayoutTable>['table'],
+  dropped: readonly string[],
+): string {
+  const names = Object.keys(table)
+  return [
+    names.length === 0
+      ? '布局表为空（还没量过任何区域）。'
+      : `布局表共 ${String(names.length)} 块（画布百分比，x/y 是中心，与 render_composition 的 box 同口径）：\n${layoutTableToManifestSnippet(table)}`,
+    ...(dropped.length === 0 ? [] : [`⚠️ 已丢弃 ${String(dropped.length)} 条非法条目：${dropped.join('；')}`]),
+    ...(names.length === 0 ? [] : ['把上面的片段**展开进 manifest** —— `render_composition` 不读 layout.json，manifest 里写下的数字才是真值。']),
+  ].join('\n\n')
+}
+
+/**
  * 故事板强约束 L3 的开关（默认开，`CANVAS_STUDIO_AUTO_LAND_STORYBOARD=0` 可一键退回旧行为）。
  *
  * 每次调用时读 env 而不是模块加载时求值 —— 测试要能在一个进程内分别验证两种模式。
@@ -1146,7 +1188,29 @@ function runGeneration(
     // 2026-10-22 真机漏网：绑镜有两条通道，`shotRefs` 之外的 `storyboardRef=<shot id>`
     // 过去不进 shotBound，storyboarding 态被 agent 当成绕道（详见 approval-gate.ts
     // 头注释）。shot id 形态的 storyboardRef 由调用方并入 shotBound 一起判。
+    // 故事板强约束 L1 的**参数形态补充**（2026-10-25）：绑分镜出图同样要求故事板已落地。
+    //
+    // 为什么不并进 `STORYBOARD_GATED_TOOLS`：那张表按**工具名**无条件拦，会把 Look 阶段的
+    // 样张 / 定妆照一起拦掉（它们在澄清期就得能出）。绑镜是**参数**形态，只能在这里判
+    // （`shotBound` 已由调用方把两条通道 —— `shotRefs` 与 shot 形态的 `storyboardRef` —— 并进来）。
+    //
+    // 这条补的是 `approval-gate` 留下的残余：那条旁路仍受 `mode !== 'confirm' → 放行` 影响，
+    // 即 **auto 模式下按分镜出图不受拦**。会话 #5 里 3 小时出的图走的就是这条路。
+    if (shotBound) {
+      await assertStoryboardLanded(registry, projectId, `${tool}（绑分镜出图）`)
+    }
     await assertApprovalAllowed(registry, projectId, tool, shotBound)
+    // B4-2（2026-10-25）：**出图工具未显式指定画幅时，跟随项目预置画幅**（设置里的 plan），
+    // 而不是全局默认 16:9。病史：竖屏（9:16）项目里出一张 16:9 的图再裁，素材有效像素
+    // 白丢一半，且 agent 要额外做一次裁切 —— 是过去反复返工的一个来源。
+    // 只作用于出图类：视频轨的画幅由首帧/端点决定（i2v 无 aspectRatio），填了反而是假承诺。
+    const isImageTool = tool.startsWith('image_') || tool === 'character_generate'
+    if (isImageTool && params.aspectRatio === undefined) {
+      const planAspect = (await registry.getProject(projectId))?.plan?.aspectRatio
+      // 就地补默认（而不是另造一个 params 副本）：`generateAsset` 的调用形态是运行期
+      // 守卫钉住的形状，改动它会连带让「门禁必须在 generateAsset 之前」这类顺序断言失效。
+      if (planAspect !== undefined) params.aspectRatio = planAspect
+    }
     return generateAsset(registry, tool, projectId, params, signal)
   })
 }
@@ -2835,18 +2899,31 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (normalized.errors.length > 0) {
           throwError('CS-USER-ERR', { message: `manifest 顺序衔接解析失败：${normalized.errors.join('；')}` })
         }
-        const validation = validateManifest(normalized.manifest)
+        // 分组展开（2026-10-25 · shotcraft P1 / 解析用户 @143min 那句「做到一起就不用管全局坐标」）：
+        // `groups` 是**写作者糖** —— 组声明一个绝对矩形，组内轨道的 `box` 用组内百分比，
+        // 在这里展开成画布绝对坐标。渲染器 / 校验器 / 客户端一律看不到组，
+        // 否则「组内 x」与「画布 x」就会变成两套互相打架的坐标体系。
+        const expanded = expandGroups(normalized.manifest)
+        // 分组有降级（未知组名 / 组内轨缺 box / 组 id 重复）时**直接拒收**而不是静默按原样渲：
+        // 静默降级的结果是「画面位置对不上但没人报错」，比一次明确的拒收难查得多。
+        if (expanded.warnings.length > 0) {
+          throwError('CS-USER-ERR', {
+            message: `分组声明有问题，已拒收（避免静默降级成错位的画面）：${expanded.warnings.join('；')}。`
+              + 'groups 里每条需要 {id, box:{x,y,w,h}}；成员轨用 `group` 引用组 id 且必须自带 `box`（组内 0–100 百分比）。',
+          })
+        }
+        const validation = validateManifest(expanded.manifest)
         if (!validation.ok) {
           throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
         }
         // CV-360：尾部截断检测（宿主入口专属，客户端校正路径不用 —— 真值校正会合法缩短轨道）。
         // 真机教训：截断的 manifest（meta 声明 60s、轨道只排到 21s）通过了当时的校验，
         // 照样发起渲染白烧一次窗口。这里按「总时长应 = 最大结束帧」的明文契约硬拦。
-        const truncation = manifestTruncationError(normalized.manifest)
+        const truncation = manifestTruncationError(expanded.manifest)
         if (truncation !== null) {
           throwError('CS-USER-ERR', { message: truncation })
         }
-        const manifest = normalized.manifest
+        const manifest = expanded.manifest
         // 1.5) 素材物化（R3）：域内本地绝对路径 → 同源 URL；域外路径**显式拒收**。
         //      route B 的渲染发生在渲染进程的**浏览器环境**，域外绝对路径会被解析成
         //      `http://<origin>/…` 而必然 404，且失败只发生在渲染进程、宿主无感 ⇒ 不能放行。
@@ -2990,7 +3067,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","facesVisible"? true,"backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词。**`facesVisible:false` 只给微距 / 背影 / 空镜**：它会让 `qc_shot` 跳过外貌核对，不要拿它掩盖「该露脸却没露脸」）'
         + '\n- characters：[{"id":"C1","label":"ROLE A","name":"苏婉","tags":["女","26岁"],"profile":{"temperament":"…","face":"…","costume":"…"},"palette":{"base":"…","accent":"…"},"appearsIn":["S1"],"gen":{"lockedPrompt":"英文冻结主体段","negativePrompt":"…"}}]（profile 人读；gen 机读、要落画布，**lockedPrompt 必填**）'
         + '\n- sound：{"bgm":{"bpm":52,"lufs":-16,"sidechain":"1.5–3kHz 避让人声"},"sfx":["雨声床"]}'
-        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending","ref":{"kind":"canvasNode|file","id":"…"}}]}（**只存引用不存副本**）'
+        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending|waived","ref":{"kind":"canvasNode|file","id":"…"},"neededBy":["S1-Sh1"],"source":"generated|user|library|stock"}]}（**只存引用不存副本**。`neededBy` = 这条素材服务哪些 shot，空表示全片通用；`source` = 去哪儿拿。**`status:"pending"` 会阻断落地** —— 先备齐再动手；确实不要了就标 `"waived"`，那是唯一的「放弃」写法）'
         + '\n- constraints：{"constraints":["每个 shot prompt 只保留一个 camera motion 动词"]}'
         + '\n\n语义 ID（S1 / S1-Sh1 / C1 / V1）**一次铸造、永不复用**；改了内容不要改已有 ID，只增不重排。',
       parameters: {
@@ -3003,7 +3080,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         characters: { type: 'string' as const, description: '可选 JSON：角色设定数组（人读 profile 与机读 gen 分离）' },
         sound: { type: 'string' as const, description: '可选 JSON：声音设计（BGM 参数 + 音效点）' },
         facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
-        assets: { type: 'string' as const, description: '可选 JSON：需要上传/搜集的素材清单（只存引用）' },
+        assets: { type: 'string' as const, description: '可选 JSON：素材采购单（只存引用）。**`status:"pending"` 会阻断落地**（先备齐再动手）；每条可写 `neededBy`（服务哪些 shot）与 `source`（generated/user/library/stock）；确实不要的标 `"waived"`' },
         constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
         awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容）。**confirm 模式**：阻断项清零后 Host 自动结束你的回合、把裁决权交给覆盖层；**auto 模式：阻断项清零后 Host 立即自动落地**（画布出现分镜卡、直接进产出阶段，此后不能再整体重写故事板）。有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
       },
@@ -3104,7 +3181,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
 
         // 落地完成度只报不拦：blocker 是「能不能落地」的判据，不是「能不能存」的判据。
         const preview = { ...normalized, sections: normalized.sections }
-        const { blockers, warnings } = validateForSeed(preview)
+        const { blockers, warnings } = validateForSeed(preview, { enforceAssetReadiness: enforceAssetReadinessEnabled() })
 
         // REQ-022（方案 §3.2）：重复调用**不打点**。打点只发生在 首稿 / 用户手动存档 /
         // 回退前 / 落地固化 四个时刻 —— 否则「分次写」的每一笔都会刷出一条机械命名的
@@ -3322,7 +3399,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           }))
         }
 
-        const { blockers, warnings } = validateForSeed(normalized)
+        const { blockers, warnings } = validateForSeed(normalized, { enforceAssetReadiness: enforceAssetReadinessEnabled() })
         return {
           text: [
             `已从画布反推故事板：${String(adopted.scenes)} 个分镜 · ${String(adopted.shots)} 个 shot（Σ ${totalDuration.toFixed(1)}s，目标 ${normalized.meta.targetDuration.toFixed(1)}s）。`,
@@ -3334,6 +3411,81 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
           ].join('\n'),
         }
+      },
+    }),
+    defineTool({
+      // 2026-10-25（shotcraft 本地化 P0-a）：项目级布局坐标表。
+      // 病史：会话 #5 里 88 次 python3，大量是**每镜重算**「表盘在哪、占多大」。
+      name: 'layout_table',
+      description:
+        '项目级**布局坐标表**（项目目录 `layout.json`）：把「表盘区 / 左栏 / 字幕带 / 安全边」这类区域一次量清，**全片复用**。'
+        + '为什么值得用：不这么做时同一块区域会在每个 shot 里被重新手算一遍（实测一支片子为此跑了 88 次 python3）。'
+        + '用法：`action:"read"` 看全表；`action:"write"` 写一块（`name` + `rect`{x,y,w,h}，画布百分比、**x/y 是中心**、与 render_composition 的 box 同口径；同名覆盖、其它块保留）；`action:"clear"` 清空。'
+        + '数据从哪来：先用 `inspect_image` 的 `bbox-dark` / `bbox-bright` / `sample` 量出矩形，再写进来。'
+        + '⚠️ 它是**工作台，不是渲染输入**：`render_composition` 不读它 —— 你必须把这些数字**展开**进 manifest 的 `box` / `transform`（本工具会直接给可粘片段），否则会出现「layout 说 30、manifest 写 32」的两套事实。',
+      parameters: {
+        action: {
+          type: 'string' as const,
+          required: true,
+          enum: ['read', 'write', 'clear'] as const,
+          description: 'read = 看全表 + 可粘片段；write = 写 / 覆盖一块；clear = 清空整表',
+        },
+        name: { type: 'string' as const, description: 'write 必填：块名（英文字母开头，如 dialArea / leftRail / subtitleBand / safeArea）' },
+        rect: {
+          type: 'object' as const,
+          additionalProperties: false,
+          description: 'write 必填：画布百分比矩形。x/y 是**中心**、w/h 是宽高；整个矩形必须落在 0–100 内',
+          properties: {
+            x: { type: 'number' as const, description: '中心 x（0-100 百分比）' },
+            y: { type: 'number' as const, description: '中心 y（0-100 百分比）' },
+            w: { type: 'number' as const, description: '宽度（百分比，必须 > 0）' },
+            h: { type: 'number' as const, description: '高度（百分比，必须 > 0）' },
+          },
+        },
+        note: { type: 'string' as const, description: '可选：这块是什么 / 量自哪张图（下次复用不靠记忆）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '当前全表 + 可直接粘进 manifest 的 box 片段' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as Record<string, unknown>
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const file = join(registry.dirOf(projectId), 'layout.json')
+        const loaded = loadLayoutFile(file)
+
+        if (a.action === 'read') {
+          return { text: renderLayoutTable(loaded.table, loaded.dropped) }
+        }
+        if (a.action === 'clear') {
+          await saveLayoutFile(file, {})
+          return { text: '布局表已清空（layout.json 写成空对象）。' }
+        }
+        if (a.action === 'write') {
+          const name = typeof a.name === 'string' ? a.name.trim() : ''
+          if (name === '') {
+            throwError('CS-USER-ERR', { message: 'action:"write" 需要 name（如 "dialArea"）。' })
+          }
+          const { table, dropped } = normalizeLayoutTable({
+            [name]: { rect: a.rect, ...(a.note === undefined ? {} : { note: a.note }) },
+          })
+          const entry = table[name]
+          if (entry === undefined) {
+            throwError('CS-USER-ERR', {
+              message: `写入被拒：${dropped.join('；') || 'name 或 rect 不合法'}。rect 需要 x/y/w/h 四个数字、w/h > 0，且整个矩形落在 0–100 内（x/y 是中心）。`,
+            })
+          }
+          const next = { ...loaded.table, [name]: entry }
+          await saveLayoutFile(file, next)
+          return { text: renderLayoutTable(next, loaded.dropped) }
+        }
+        throwError('CS-USER-ERR', { message: 'action 只能是 "read" / "write" / "clear"。' })
       },
     }),
     defineTool({
@@ -3352,6 +3504,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         durationSeconds: { type: 'number' as const, required: true, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧' },
         fps: { type: 'number' as const, description: '可选：24 / 25 / 30 / 60，缺省 30' },
         aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1280×720 / 720×1280 / 720×720）' },
+        theme: {
+          type: 'string' as const,
+          enum: ['cold-tech', 'ink-press', 'warm-ember', 'neon-data'] as const,
+          description: '可选：视觉主题（缺省 cold-tech）。一次展开成底色 / 背景层 / 强调色 / 动效基线建议 —— manifest 里只存**颜色值**，不存 themeId（避免「主题说 A、轨道写 B」两套事实）',
+        },
+        recipe: {
+          type: 'string' as const,
+          enum: ['explainer-cards', 'product-walkthrough', 'story-arc'] as const,
+          description: '可选：**片型配方**（结构起点）—— 给出段序列 + 时间轴 + 素材需求，并接管 tracks 骨架。explainer-cards = 零素材科普图卡；product-walkthrough = 需 1 张产品图；story-arc = 需 2 张场景图。给了它就不按「片头+片尾」三轨出，而是按段出占位卡',
+        },
       },
       output: {
         schema: {
@@ -3364,7 +3526,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         render: renderTextResult,
       },
       async execute(args) {
-        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown }
+        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown; recipe?: unknown }
         const title = typeof a.title === 'string' ? a.title.trim() : ''
         if (title.length === 0) throwError('CS-USER-ERR', { message: 'title 不能为空' })
         const seconds = typeof a.durationSeconds === 'number' && Number.isFinite(a.durationSeconds) ? a.durationSeconds : 0
@@ -3378,12 +3540,25 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
         const aspect = typeof a.aspect === 'string' && SIZES[a.aspect] !== undefined ? a.aspect : '16:9'
         const size = SIZES[aspect] ?? { width: 1280, height: 720 }
+        // 片型配方（2026-10-25）：先解析 recipe，再定主题 —— recipe 自带的推荐主题只作**缺省**
+        // （显式传 theme 优先），这样「选配方」和「改配色」互不干扰。
+        const recipe = a.recipe === undefined
+          ? undefined
+          : (RECIPES[String(a.recipe)] ?? (throwError('CS-USER-ERR', {
+            message: `没有这个 recipe：${String(a.recipe)}。可选：${Object.keys(RECIPES).join(' / ')}`,
+          }) as never))
+        // 主题（2026-10-25）：只在这里展开成颜色值 —— manifest 不记 themeId，
+        // 所以不存在「主题说 A、轨道写 B」的漂移面。不传 = cold-tech = 与既有骨架同色。
+        const { theme, fellBack } = resolveTheme(a.theme ?? recipe?.theme)
         const total = Math.max(fps, Math.round(seconds * fps))
         // 片头/片尾各不超过全片 1/3，且不超过 2.5s —— 短片（<5s）也不会被两卡占满。
         const cap = Math.max(2, Math.floor(total / 3))
         const head = Math.min(Math.round(fps * 2.5), cap)
         const tail = Math.min(Math.round(fps * 2.5), cap)
         const exitFrames = Math.min(10, head, tail)
+        // 片型配方（2026-10-25）：给了 recipe 就让它接管段结构与时间轴，
+        // 否则走原来的「底色 + 片头 + 片尾」三轨骨架。
+        const plan = recipe === undefined ? undefined : planRecipe({ title, totalFrames: total, recipe })
         const manifest = {
           // `manifest.id` 必填 —— 这正是事故里第一轮报错（"manifest.id 必须是非空字符串"）。
           id: `comp-${Date.now().toString(36)}`,
@@ -3393,14 +3568,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             height: size.height,
             fps,
             durationInFrames: total,
-            backgroundColor: '#0B1220',
+            backgroundColor: theme.backgroundColor,
           },
-          tracks: [
+          tracks: plan === undefined ? [
             {
               id: 'bg',
               type: 'shape' as const,
               shape: 'gradient' as const,
-              color: '#111827',
+              color: theme.backgroundLayer,
               box: { x: 50, y: 50, w: 100, h: 100 },
               startFrame: 0,
               durationInFrames: total,
@@ -3425,7 +3600,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               durationInFrames: tail,
               fadeFrames: 0,
             },
-          ],
+          ] : plan.tracks,
         }
         // 出厂自检：骨架必须自己能过校验，否则这个工具就没意义。
         const check = validateManifest(manifest as unknown as CompositionManifest)
@@ -3439,6 +3614,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             '```json',
             json,
             '```',
+            ...(fellBack ? [`⚠️ 没找到主题 \`${String(a.theme)}\`，已回落到 ${theme.id}（可选：${Object.keys(THEMES).join(' / ')}）`] : []),
+            themeGuidance(theme),
+            ...(plan === undefined || recipe === undefined ? [] : [
+              `**配方 ${recipe.id}**（${recipe.title}）段结构与时间轴：`,
+              ...plan.timeline.map((slot) =>
+                `· ${slot.id}「${slot.label}」（${slot.card}）帧 ${String(slot.startFrame)}–${String(slot.startFrame + slot.durationInFrames - 1)}`),
+              `素材清单（**先备齐再动手**：status 为 "pending" 会阻断落地）：\n${recipeAssetsJson(recipe)}`,
+              recipe.note,
+            ]),
             '下一步：① 改 `text` 文案；② 往 `tracks` 追加你的轨（每轨需要唯一 id、startFrame、durationInFrames）；',
             `③ **任何改动末尾轨时长的操作都要同步 meta.durationInFrames**（当前 ${total}，必须始终 = 最大结束帧），否则会被尾部完整性校验拒收。`,
           ].join('\n'),
@@ -3453,14 +3637,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '核对素材构图（表体在右 1/3？）与主色（背景色 / 主题色提取）。'
         + '⚠️ 能力边界（**别按旧说辞理解**）：bbox 给的是"满足阈值的像素的整体包络"，不是连通域。深色目标落在深色背景上时它会退化成整张图 —— 这时用 mode:"grid" 看空间分布，或先用 region 限定目标附近再跑 bbox。'
         + '用法：先 mode:"profile" 看尺寸 → mode:"grid"（32×18 亮度表 + 最暗/最亮块坐标）看"目标在画面哪一块" → 用 region 圈出目标附近 → mode:"bbox-dark"（threshold 缺省 40）或 "bbox-bright"（缺省 215）拿精确矩形 → 直接填进轨道 transform/box。'
+        + '要「这个点是什么颜色 / 多亮」（判断纯色还是渐变、表盘底色与主题色差多少、发光边缘色值）用 mode:"sample" + points（"30,40;50,60"）—— **不要**再手搓 PNG 解码脚本。'
         + 'mode:"colors" 返回量化主色 top-N（每通道 16 级）。返回的 bbox 中心/宽高已是画布百分比（与 render_composition 的 box 同口径：x/y 是中心、w/h 是宽高），无需再换算。'
         + 'JPG/WEBP/隔行 PNG 会显式报错并给替代路径。',
       parameters: {
         filePath: { type: 'string' as const, description: '图像文件的绝对路径（PNG）。项目资产、画布素材、截图落盘文件均可' },
         mode: {
           type: 'string' as const,
-          enum: ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid'] as const,
-          description: 'profile = 尺寸/位深/色彩类型；grid = 亮度网格（空间分布，定位"目标在画面哪一块"首选）；bbox-dark / bbox-bright = 亮度阈值包围盒（含画布百分比中心与宽高）；colors = 主色 top-N',
+          enum: ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid', 'sample'] as const,
+          description: 'profile = 尺寸/位深/色彩类型；grid = 亮度网格（空间分布，定位"目标在画面哪一块"首选）；bbox-dark / bbox-bright = 亮度阈值包围盒（含画布百分比中心与宽高）；colors = 主色 top-N；sample = 逐点取色（配 points 用，答"这个点是什么颜色、多亮"）',
         },
         threshold: { type: 'number' as const, description: '可选：亮度阈值 0-255（bbox 模式用）。dark 缺省 40（≤ 阈值算命中），bright 缺省 215（≥ 阈值算命中）。屏幕纯黑用 30-60；浅灰界面提到 120-180' },
         region: {
@@ -3477,6 +3662,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         cols: { type: 'number' as const, description: '可选：grid 模式的列数 4-96，缺省 32' },
         rows: { type: 'number' as const, description: '可选：grid 模式的行数 4-96，缺省 18' },
         topN: { type: 'number' as const, description: '可选：colors 模式返回的主色数量，1-16，缺省 8' },
+        points: { type: 'string' as const, description: 'sample 模式必填：逐点取色坐标，画布百分比、x/y 是中心（与 render_composition 的 box 同口径）。格式 "30,40;50,60"，最多 32 点' },
       },
       output: {
         schema: {
@@ -3494,7 +3680,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (filePath === '' || !filePath.startsWith(sep)) {
           throwError('CS-USER-ERR', { message: '缺少 filePath 或不是绝对路径。' })
         }
-        const mode = a.mode === 'bbox-dark' || a.mode === 'bbox-bright' || a.mode === 'colors' || a.mode === 'profile' || a.mode === 'grid'
+        const mode = a.mode === 'bbox-dark' || a.mode === 'bbox-bright' || a.mode === 'colors' || a.mode === 'profile' || a.mode === 'grid' || a.mode === 'sample'
           ? a.mode
           : undefined
         if (mode === undefined) {
@@ -3557,6 +3743,28 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           decoded = decodePng(buf)
         } catch (cause) {
           throwError('CS-USER-ERR', { message: cause instanceof Error ? cause.message : String(cause) })
+        }
+        // mode:"sample"（2026-10-25）：逐点取色。与 bbox/grid 的分工 —— 那两个答「区域」，
+        // 这个答「这个点是什么颜色、多亮」。会话 #5 里 agent 为了这个问题手搓了十几个
+        // PNG 解码脚本，本模式就是为了让那种脚本不再出现。
+        if (mode === 'sample') {
+          const points = parseSamplePoints((a as { points?: unknown }).points)
+          if (points.length === 0) {
+            throwError('CS-USER-ERR', {
+              message: 'mode:"sample" 需要 points：画布百分比坐标串，格式 "30,40;50,60"（x,y 为中心语义），最多 32 点。',
+            })
+          }
+          const sampled = samplePixels(decoded, points)
+          return {
+            text: [
+              `${decoded.width}×${decoded.height} 逐点取色（${String(sampled.length)} 点）：`,
+              ...sampled.map((p) =>
+                `· (${String(p.x)}%, ${String(p.y)}%) → 像素 (${String(p.pixelX)}, ${String(p.pixelY)}) `
+                + `${p.hex} rgb(${String(p.r)},${String(p.g)},${String(p.b)}) 亮度 ${String(p.luminance)}`
+                + (p.clamped ? ' ⚠️ 坐标越界，已夹回图内边缘' : '')),
+              '用途：判断某区域是纯色还是渐变、表盘底色与主题色差多少、发光边缘的实际色值。',
+            ].join('\n'),
+          }
         }
         // 百分比 → 像素（中心语义）；越界一律 clamp 到图内，不报错（画布外没有像素可扫）。
         const pixelRegion = regionPct === undefined

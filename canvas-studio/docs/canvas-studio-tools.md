@@ -89,6 +89,7 @@
 | `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
+| `layout_table` | **项目级布局坐标表**（shotcraft 本地化 P0-a，2026-10-25）：`layout.json` 存命名矩形（画布百分比、x/y 中心语义），一次量清「表盘区 / 左栏 / 字幕带 / 安全边」全片复用。`action`: read / write / clear。**工作台不是渲染输入** —— 返回可粘的 `box` 片段，须展开进 manifest |
 | `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON 不落画布**；落画布由用户在「拍摄定稿」覆盖层点「确认落地」 |
 | `adopt_canvas_as_storyboard` | **老项目迁移**（故事板强约束 L4，2026-10-25）：从画布上已有的分镜卡反推 §04 骨架（scene·shot 号 / 时长 / 运镜 / 视觉 / 声音 / 英文 prompt），用项目预置补 `meta`，落 `storyboard.json` 并返回**剩余阻断项**。只还原卡上真有的事实（§02 视觉规范 / §05 角色 / §03 旁白原文拿不到）；**不落画布**，不覆盖已落地项目 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
@@ -109,7 +110,7 @@
 | 工具名 | 用途 |
 |--------|------|
 | `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
-| `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect`）→ 返回「全片底色 + 片头标题 + 片尾落版」的 JSON，返回前已跑 `validateManifest`。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对，省掉「校验失败→改→再失败」循环。只产 JSON，不落盘/不渲染/不动画布 |
+| `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect` / **`theme`** / **`recipe`**）→ 返回合法 JSON。`theme` 四选一（cold-tech / ink-press / warm-ember / neon-data）展开成底色 + 背景层 + 强调色 + 动效基线建议（**manifest 只存颜色值、不存 themeId**）。`recipe` 三选一（explainer-cards 零素材 / product-walkthrough 需 1 张产品图 / story-arc 需 2 张场景图）→ **接管 tracks 骨架**：按段出占位卡 + 给时间轴 + 给可直接填 §07 的素材清单。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对。只产 JSON，不落盘/不渲染/不动画布 |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 

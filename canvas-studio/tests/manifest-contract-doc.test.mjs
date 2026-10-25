@@ -115,3 +115,84 @@ test('F-12：文档不得残留「不要手写脚本」式的旧口径（inspect
   // 但"用 inspect_image 拿像素真值"这个正确引导要保留
   assert.ok(doc.includes('inspect_image'), '像素真值引导不能一起删掉')
 })
+
+// ── 故事板强约束 L5 / G6（2026-10-25）：`animation-and-assets.md` 与源码对码 ──────
+//
+// 这一册补的是「字段写了会怎样」—— 全是读源码才拿得到的事实。它们的失效方式最隐蔽：
+// 源码改了而文档没改，模型照着旧文档写 manifest，渲出来不对却查不到原因。
+// 所以每条都要求「文档里有这句话」+「源码里还是这个实现」双向成立。
+
+const ANIM_DOC = join(ROOT, 'skills/code-driven-explainer/references/animation-and-assets.md')
+
+const ANIMATION_FACTS = [
+  {
+    doc: '`typewriter` = **1**，其它 = **3**',
+    file: 'src/remotion/timing.ts',
+    pattern: /options\.preset === 'typewriter' \? 1 : 3/u,
+    hint: 'wordDelayFrames 的缺省值变了？同步改动画分册第 1 节',
+  },
+  {
+    doc: '`unitDurationInFrames`，缺省 **12 帧**',
+    file: 'src/remotion/timing.ts',
+    pattern: /options\.unitDurationInFrames \?\? 12/u,
+    hint: '单元素入场时长缺省变了？同步改动画分册第 1 节',
+  },
+  {
+    doc: '`easeOutCubic`',
+    file: 'src/remotion/timing.ts',
+    pattern: /EASINGS\.easeOutCubic\(raw\)/u,
+    hint: '缓动曲线换了？同步改动画分册第 1 节',
+  },
+  {
+    doc: '**1.0 → 1.08**',
+    file: 'src/remotion/components/ImageClip.tsx',
+    pattern: /1 \+ 0\.08 \* \(frame \/ duration\)/u,
+    hint: 'kenburns 的推幅变了？同步改动画分册第 2 节',
+  },
+  {
+    doc: '**`cover`**',
+    file: 'src/remotion/components/ImageClip.tsx',
+    pattern: /track\.fit \?\? 'cover'/u,
+    hint: 'fit 的缺省变了？同步改动画分册第 2 节',
+  },
+  {
+    doc: '`objectFit` 仍走 `cover`',
+    file: 'src/remotion/components/ImageClip.tsx',
+    pattern: /fit === 'contain' \? 'contain' : 'cover'/u,
+    hint: 'kenburns 是否还落 cover 变了？同步改动画分册第 2 节',
+  },
+  {
+    doc: 'ffmpeg 探**真值时长与真实像素**',
+    file: 'src/remotion/asset-check.ts',
+    pattern: /probeMediaInfo/u,
+    hint: '素材核对不再探真值了？同步改动画分册第 3 节',
+  },
+  {
+    doc: '`innerRatio` 缺省 **0.45**',
+    file: 'src/remotion/shape-geometry.ts',
+    pattern: /innerRatio = 0\.45/u,
+    hint: 'star 的内半径比变了？同步改动画分册第 4 节',
+  },
+  {
+    doc: '起始角 **-90°**',
+    file: 'src/remotion/shape-geometry.ts',
+    pattern: /rotationDeg = -90/u,
+    hint: '多边形的起始角变了？同步改动画分册第 4 节',
+  },
+]
+
+test('L5 · G6 分册与源码对码（动画时序 / 图片轨 / 素材 / 形状）', () => {
+  const doc = readFileSync(ANIM_DOC, 'utf8')
+  for (const fact of ANIMATION_FACTS) {
+    assert.ok(doc.includes(fact.doc), `分册里必须保留这条事实（被删了就失去意义）：${fact.doc}`)
+    const source = readFileSync(join(ROOT, fact.file), 'utf8')
+    assert.match(source, fact.pattern, fact.hint)
+  }
+})
+
+test('L5 · 分册必须保留那句「kenBurns 是死字段」的警告', () => {
+  const doc = readFileSync(ANIM_DOC, 'utf8')
+  assert.ok(doc.includes('**`kenBurns: true` 是死字段**'),
+    '这条是事故里踩过的坑（类型里有、实现从不读）：删了模型会继续写它')
+  assert.ok(doc.includes("`fit:'kenburns'`"), '必须给出正确写法')
+})

@@ -1786,3 +1786,41 @@
 - **涉及文件**：`src/storyboard-gate.ts`（新）/ `src/storyboard-adopt.ts`（新）/ `src/host-tools.ts` / `src/approval-gate.ts` / `src/errors/catalog.ts` / `src/routes.ts` / `src/tool-presentation.ts` / `skills/canvas-studio-creation/references/screenplay.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md` / `docs/README.md`
 - **测试**：新增 `tests/storyboard-auto-land.test.mjs` 7 条（auto 落地 / blockers 非空不落 / 没信号不落 / confirm 不变 / 开关回滚 / 画布写失败不吞错 / 连调不重复铸卡）、`tests/storyboard-gate.test.mjs` 7 条（名单两处对账 / 9 工具 × confirm·auto 全拦 / 已落地放行 / state 派生 / 损坏不放行 / 开关回滚）、`tests/storyboard-adopt.test.mjs` 7 条（sbRef 优先 / 正文解析 / 标题兜底留痕 / 无号跳过 / 同 scene 合并 / 缺字段兜底 / 非分镜卡）。
 - **连带修**：`tests/workflow-gate.test.mjs`（假 registry 补 `storyboardFile`；放行类用例改用真实落地，因为「只翻 state 就放行」这条路径已不存在）、`tests/approval-gate.test.mjs`（改断言方向：产线拦截已迁出，加回来会红）、`tests/quality-check.test.mjs` / `filename-consumability.test.mjs` / `text-guard.test.mjs`（只测工具自身行为，顶部关闸）。
+
+#### CV-368 · shotcraft 本地化 P0/P1（逐点取色 / 布局表 / 分组坐标 / 契约分册 / 卡册）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **病史**：会话 #5（2026-10-25）187.6 分钟里 **88 次 python3**、**24 次源码探索**、`render_composition` 0 次。两件事最贵：① 每镜手算「表盘在哪、占多大」（工具只有区域统计，没有取点色）；② 为了解字段语义去读组件源码。本批正对这两件事，**不引入 video-shotcraft 的任何资产或代码**（`demos/*.tsx` 是 React 组件，我们的产物是 manifest DSL，「模型不写代码」是架构约束）。
+- **六项落地**：
+  1. **`inspect_image` 加 `mode:"sample"`**（`src/inspect-image.ts` `samplePixels()` + 工具分支）：`points:"30,40;50,60"` → 每点返回像素坐标 / `#rrggbb` / rgb / 亮度。越界坐标**夹回并标记 `clamped`**（不静默 —— 「要的是边缘」与「坐标写错了」必须能分辨）。工具描述补「不要再手搓 PNG 解码脚本」。
+  2. **新工具 `layout_table`**（`src/layout-table.ts`）：项目 `layout.json` 存命名矩形（画布百分比、`x/y` 中心语义），`action`: read / write / clear。**关键设计：它是工作台不是渲染输入** —— `render_composition` 不读它，返回的是「可粘进 manifest 的 `box` 片段」。这样不违反「唯一事实源」铁律，也不会出现「layout 说 30、manifest 写 32」。校验：`w/h > 0`、四边落在 0–100、名字字母开头 ≤40 字符；非法条目丢弃**并报数**。
+  3. **manifest `groups` / `group`**（新 `src/remotion/groups.ts` + `render_composition` 入口 `expandGroups`）：组声明绝对矩形，成员轨 `box` 用**组内 0–100**，宿主侧**预展开**成绝对坐标 —— 渲染器 / 校验器 / 客户端都看不到组（否则「组内 x」与「画布 x」变成两套坐标）。**只作用于 `box`**（`animate` 的 `x/y` 始终是绝对百分比，否则「从组外飞入」做不出来）；**不支持嵌套**；未知组名 / 成员轨缺 `box` ⇒ **拒收**（静默降级会得到「位置对不上但没人报错」）；没写 `groups` 时零变化。
+  4. **`references/animation-and-assets.md`（G6）**：逐字动画（`textUnitProgress` 的 delay = `wordDelayFrames × index`、缺省 1/3、`unitDurationInFrames` 缺省 12、`easeOutCubic`、整卡 vs 逐行的边界）、图片轨（`fit` 缺省 `cover`、kenburns 推幅 1.0→1.08、`kenBurns:true` 是死字段、`src` 不接受 `@ref`）、素材核对（宿主侧 `existsSync` + ffmpeg 真值，缺失硬失败）、形状几何（star 内半径 0.45、起始角 -90°、`path` 必须有 `d`、`animate` 覆盖 `box.x/y`）。
+  5. **`references/shot-cards.md` 卡册**：14 张可直接粘的片段（标题/字幕/数据/版式/转场/素材 5 类）+ 与 shotcraft 157 卡的**分类对照骨架**（逐卡待 clone 后填）。守卫 `tests/shot-card-library.test.mjs` 把每个片段包成 manifest 过 `validateManifest` —— **写完当场抓出 3 处错**：`exit.mode` 不存在（真名是 `to`）、`src` 写 `@ref` 被拒、`shape:'path'` 缺 `d`。
+  6. **`image_generate` 跟随项目画幅**（`runGeneration`）：未显式传 `aspectRatio` 时读项目 `plan.aspectRatio`。只作用于出图类（视频画幅由首帧/端点决定）。
+  7. **`scaffold_manifest` 加 `theme` 主题预设**（新 `src/remotion/themes.ts`）：四套（cold-tech 缺省 / ink-press 提亮版 / warm-ember / neon-data），一次展开成底色 + 背景层 + 强调色 + 动效基线建议。**关键设计：manifest 里不存 `themeId`** —— 只存展开后的颜色值，所以不存在「主题说 A、轨道写 B」的漂移面（与 `layout_table` 同一套哲学：工作台可以有抽象，产物只存真值）。未知主题名回落缺省并在返回文本里明示 `fellBack`。只提供深色主题：`textCard` 正文色由 variant 固定为浅色系，浅底主题必然撞车（守卫 `tests/render-themes.test.mjs` ⑤ 用亮度 < 80 钉住）。
+- **补 CV-367 的已知边界**：`runGeneration` 在 `shotBound` 为真时也过 `assertStoryboardLanded` —— **auto 模式下「绑分镜出图」从此同样被拦**（这条旁路过去受 `mode` 影响，是会话 #5 里 3 小时出图的路径）。
+- **涉及文件**：`src/inspect-image.ts` / `src/layout-table.ts`（新）/ `src/remotion/groups.ts`（新）/ `src/host-tools.ts` / `src/param-guard.ts` / `src/tool-presentation.ts` / `src/errors/catalog.ts`（CS-STORY-001 文案第 2 条改指 `adopt_canvas_as_storyboard`）/ `skills/code-driven-explainer/references/{animation-and-assets.md,shot-cards.md}`（新）/ `manifest-contract.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md`
+- **测试**：新增 `tests/layout-table.test.mjs` 7 条、`tests/render-groups.test.mjs` 6 条、`tests/shot-card-library.test.mjs` 2 条（14 片段全过校验）、`tests/render-themes.test.mjs` 5 条（表自洽 / 缺省同色 / 未知回落明示 / guidance 带基线 / 只深色）、`tests/inspect-image.test.mjs` +2 条（sample 取色 / 越界夹回）、`tests/manifest-contract-doc.test.mjs` +2 条（G6 文档↔源码 9 条对码）。连带修 `tests/generate.test.mjs`（顶部关闸：本文件不测故事板门禁）。
+- **未做（明确记账，不是遗漏）**：
+  - **SFX 音效**：不是"缺素材"而是**缺承载能力** —— `TRACK_TYPES` 只有 video/image/textCard/shape/transition/audioViz，**没有音频轨类型**；`audioViz` 是把音频变成可视化，不能播放音效。要做必须先加 `audio` 轨 + 组件 + 混音，属 L 级；且 shotcraft 的 149 个 SFX 是**逐条授权**，选曲与授权审查不能由代码侧决定。
+  - **B4-1 从源图重建素材**：需要完整设计「重建」语义（用哪个 prompt / 是否覆盖节点 / 失败怎么办），`asset-history.ts` 目前只有 load/record/markDeleted/prune，**没有 restore**。M 级，需单独一批。
+  - **B5 字体性能**：等真机 `prepareMs` 基线（没有基线就动打包链等于蒙眼改构建）。
+
+#### CV-369 · 素材就绪门禁 + 卡片素材需求 + 片型配方（"每次临时组织素材"的结构性解法）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **病史**：素材组织是会话 #5 里最贵的一段（@51–@143min 全在这上面），4 次用户纠正全是素材（裁不下来 → 背景色不对 → 换生图工具 → 直接甩图给 agent）。**根因不是缺模板**：`§07 素材清单`当时只在完成度里展示，落地不读它、出片不读它、seed 也不消费它 —— 它是个摆设，所以没有任何环节要求"先想清要什么素材，再动手"。
+- **三层落地**：
+  1. **§07 从「提示」升成「门禁」**（`contracts/storyboard.ts` + `storyboard-gate.ts`）：`status:"pending"` 现在是 **blocker**（`validateForSeed` 的 `enforceAssetReadiness`，默认 true，`CANVAS_STUDIO_ENFORCE_ASSET_READINESS=0` 可回退）。阻断项**逐条点名**素材名 + 类型 + 去哪拿（`需要用户提供 / 要从资产库取 / 要外部素材库 / 要生成`）。
+     **必须配出路**：新增 `status:"waived"`（明确放弃）—— 只拦不给路的门禁等于功能不可用（CV-367 的教训）。
+     新增两个字段：`neededBy`（这条素材服务哪些 shot，空 = 全片通用）+ `source`（`generated|user|library|stock`，缺省 generated）。`neededBy` 指向不存在的 shot ⇒ warning（清单与分镜脱节要能看出来）。
+  2. **卡片册带素材需求**（`references/shot-cards.md` 顶部索引表）：14 张卡逐张标注要不要素材。**结论：只有 C2 左右分栏、E1 素材推拉这两类需要外部素材** ⇒ "素材组织慢"的主要矛盾不在选卡，在素材本身从哪来（尤其"把产品图里的表盘裁出来"，我们目前**没有抠图工具**）。
+  3. **片型配方**（新 `src/remotion/recipes.ts` + `scaffold_manifest` 的 `recipe` 参数）：三套 —— `explainer-cards`（零素材科普图卡）/ `product-walkthrough`（需 1 张产品图）/ `story-arc`（需 2 张场景图）。一次给出**段序列 + 时间轴 + 每段用哪张卡 + 可直接填 §07 的素材清单**，并接管 tracks 骨架（每段一张占位文字卡，合法可渲）。
+     时间轴算法：前 n-1 段向下取整、余数全给最后一段 ⇒ `Σ = 总帧数`（差一帧就被尾部完整性校验拒收）。
+- **为什么是"配方"而不是"模板工程"**：shotcraft 的模板是完整 Remotion 工程（含 TSX），我们产物是 manifest DSL，搬不了也不该搬（"模型不写代码"是架构约束）。所以只固化**结构**：段 / 权重 / 卡片 / 素材需求；画面由卡册填、配色由主题给。
+- **涉及文件**：`src/contracts/storyboard.ts` / `src/storyboard-gate.ts` / `src/storyboard-land.ts` / `src/host-tools.ts` / `src/remotion/recipes.ts`（新）/ `src/param-guard.ts` / `skills/code-driven-explainer/references/shot-cards.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md`
+- **测试**：新增 `tests/storyboard-asset-gate.test.mjs` 6 条（pending 拦 / waived 放行 / 开关回退 / 幽灵 neededBy 告警 / source 缺省 / 多条逐条点名）、`tests/render-recipes.test.mjs` 6 条（配方自洽 / 时间轴严丝合缝 / 极端时长不塌 / 骨架过 validateManifest / 零素材承诺 / §07 片段可直填）。
+- **未做**：**素材复用跨片**（同一主角/场景图在多个项目复用 —— 资产库已有 `@ref[lib:…]`，但没有"按角色/场景检索"的入口）；**抠图/裁切工具**（会话 #5 用户明确要求过，属能力缺口，需单独立项）。

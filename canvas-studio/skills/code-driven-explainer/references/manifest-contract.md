@@ -6,6 +6,8 @@
 
 **时长自洽是硬约束**：组装完成时自查一遍 `meta.durationInFrames == max(track.startFrame + track.durationInFrames)`（字幕末句卡与收尾轨都应到达总时长），不成立先自己改对再调用——别等宿主报「尾部完整性校验失败」再返工。
 
+**字段写了会怎样，看 [`animation-and-assets.md`](./animation-and-assets.md)**：逐字动画的帧语义（`wordDelayFrames` 缺省值、整卡 vs 逐行）、图片 `fit` 三档与 kenburns 的推幅、素材核对何时硬失败、形状几何的顶点与拉伸规则——这些都是**读源码才拿得到**的事实，不要靠字段名推测，也不要为了确认它去读组件源码。
+
 ## 顶层结构
 
 ```jsonc

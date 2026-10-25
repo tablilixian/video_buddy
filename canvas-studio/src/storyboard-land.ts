@@ -47,6 +47,7 @@ import { planSeedFromStoryboard } from './storyboard-seed.js'
 import { archive as archiveVersion, versionById } from './storyboard-history.js'
 import type { StoryboardFileRegistry } from './storyboard-store.js'
 import { loadStoryboardOrFail, updateStoryboardOrFail } from './storyboard-store.js'
+import { enforceAssetReadinessEnabled } from './storyboard-gate.js'
 import { throwError } from './error-system.js'
 // 本模块自己抛的用户可见错误码出自 catalog：按仓库惯例在**使用方**注册一次
 // （`param-guard.ts` 是唯一例外，那里方向必须单向）。不依赖入口模块的先手注册 ——
@@ -188,7 +189,11 @@ async function landFirstTime(
     throwError('CS-USER-ERR', { message: `没有这个版本：${sourceVersion}` })
   }
   const frozen = source === undefined ? document.sections : source.snapshot
-  const { blockers, warnings } = validateForSeed({ ...document, sections: frozen })
+  const { blockers, warnings } = validateForSeed({ ...document, sections: frozen }, {
+    // §07 素材未就绪也算阻断项（2026-10-25）：落地是"开始动手"的那一刻，
+    // 此时素材没齐就该停 —— 否则后面每个 shot 都要临时找图（会话 #5 的主因）。
+    enforceAssetReadiness: enforceAssetReadinessEnabled(),
+  })
   if (blockers.length > 0) {
     throwError('CS-USER-ERR', {
       message: `故事板还有 ${String(blockers.length)} 项未补齐，不能落地：\n- ${blockers.join('\n- ')}`,

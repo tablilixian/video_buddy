@@ -32,8 +32,8 @@ import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
-/** 实测 28 = `host-tools.ts` 27 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 28
+/** 实测 29 = `host-tools.ts` 28 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
+const EXPECTED_TOOL_COUNT = 29
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -49,6 +49,7 @@ const EXPECTED_TOOL_NAMES = [
   'image_generate',
   'image_generate_withtxt',
   'inspect_image',
+  'layout_table',
   'list_references',
   'list_shots',
   'look_card',

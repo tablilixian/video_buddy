@@ -61,6 +61,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
   // 故事板强约束 L4（2026-10-25）：老项目迁移，从画布已有分镜卡反推故事板骨架。
   adopt_canvas_as_storyboard: { tier: 'A', title: '反推故事板', icon: '溯' },
+  // 2026-10-25（shotcraft 本地化 P0-a）：项目级布局坐标表（工作台，不参与渲染）。
+  layout_table: { tier: 'A', title: '布局坐标表', icon: '寸' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },

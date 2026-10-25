@@ -140,8 +140,18 @@ export interface StoryboardSound {
 /** §07 素材类型。 */
 export type StoryboardAssetType = 'text' | 'image' | 'video' | 'audio'
 
-/** §07 素材就绪状态。 */
-export type StoryboardAssetStatus = 'ready' | 'pending'
+/**
+ * §07 素材就绪状态。
+ *
+ * `waived` = **明确放弃**（这个素材不要了 / 用别的方式表达）。它既不算 ready 也不算
+ * pending —— 加这个值是为了给「素材凑不齐」留一**条可执行的出路**：否则门禁一旦把
+ * pending 当阻断项，用户就是被永久卡在落地前（这正是 CV-367 里「不豁免存量」学到的教训：
+ * 拦截必须配出路，否则等于功能不可用）。
+ */
+export type StoryboardAssetStatus = 'ready' | 'pending' | 'waived'
+
+/** §07 素材来源（决定"去哪里拿"，减少每次临时找）。 */
+export type StoryboardAssetSource = 'generated' | 'user' | 'library' | 'stock'
 
 /** §07 素材引用（**只存引用不存副本**；seed 不造新节点，只校验引用）。 */
 export interface StoryboardAssetRef {
@@ -155,6 +165,15 @@ export interface StoryboardAsset {
   readonly type: StoryboardAssetType
   readonly status: StoryboardAssetStatus
   readonly ref: StoryboardAssetRef
+  /**
+   * 这条素材服务于哪些 shot（语义 ID）。空 = 全片通用（背景/主题图）。
+   *
+   * 为什么要有它：没有归属的清单只能回答"还差几张图"，回答不了"哪个镜头拍不了" ——
+   * 而后者才是"素材没备齐就不能落地"这条门禁真正要拦的东西。
+   */
+  readonly neededBy: readonly string[]
+  /** 去哪儿拿（自产 / 用户给 / 资产库 / 外部素材）。缺省 `generated`。 */
+  readonly source: StoryboardAssetSource
 }
 
 /** `sections` 九节（规划内容，**进入版本快照**）。 */
@@ -613,8 +632,12 @@ function normalizeAsset(value: unknown): StoryboardAsset {
   return {
     name: str(record.name),
     type: oneOf(record.type, ['text', 'image', 'video', 'audio'] as const, 'image'),
-    status: oneOf(record.status, ['ready', 'pending'] as const, 'pending'),
+    status: oneOf(record.status, ['ready', 'pending', 'waived'] as const, 'pending'),
     ref: { kind: oneOf(ref.kind, ['canvasNode', 'file'] as const, 'file'), id: str(ref.id) },
+    neededBy: Array.isArray(record.neededBy)
+      ? record.neededBy.map((id) => str(id)).filter((id) => id !== '')
+      : [],
+    source: oneOf(record.source, ['generated', 'user', 'library', 'stock'] as const, 'generated'),
   }
 }
 
@@ -807,10 +830,25 @@ const ID_PATTERN = /^(?:C\d+|S\d+-Sh\d+|S\d+|V\d+)$/u
  * 判据只回答「能不能落地」，**不回答「好不好」**：时长偏差、待核实条数、缺 `promptEn`
  * 都是 warning（列进确认清单让用户自己拍板），不是 blocker。
  */
-export function validateForSeed(document: StoryboardDocument): StoryboardValidation {
+export interface ValidateForSeedOptions {
+  /**
+   * §07 有 pending 素材时是否算阻断项（**默认 true**：先备齐再动手）。
+   *
+   * 关掉（`CANVAS_STUDIO_ENFORCE_ASSET_READINESS=0`）就退回旧行为 —— 素材只提示不拦。
+   * 之所以做成选项而不是读 env：本函数是纯函数，被落地闸与工具入口共用（同一份判据），
+   * env 由调用方读，保证"两处同一个值"这件事可被测试直接验。
+   */
+  readonly enforceAssetReadiness?: boolean
+}
+
+export function validateForSeed(
+  document: StoryboardDocument,
+  options: ValidateForSeedOptions = {},
+): StoryboardValidation {
   const blockers: string[] = []
   const warnings: string[] = []
   const { sections, meta, title } = document
+  const enforceAssetReadiness = options.enforceAssetReadiness ?? true
 
   // ── meta / 标题 ──
   if (title.trim() === '') blockers.push('缺少标题（title）')
@@ -895,11 +933,40 @@ export function validateForSeed(document: StoryboardDocument): StoryboardValidat
     }
   }
 
-  // ── §01 待核实 / §07 待上传 ──
+  // ── §01 待核实 / §07 素材就绪 ──
   const pendingFacts = sections['01_facts'].facts.filter((fact) => fact.status === 'pending').length
   if (pendingFacts > 0) warnings.push(`§01 还有 ${pendingFacts} 条事实待核实（落地时会被丢弃）`)
-  const pendingAssets = sections['07_assets'].filter((asset) => asset.status === 'pending').length
-  if (pendingAssets > 0) warnings.push(`§07 还有 ${pendingAssets} 条素材待上传`)
+  // §07 从「提示」升成「门禁」（2026-10-25）：素材清单过去只在完成度里展示，落地与出片
+  // 都不读 ⇒ 素材只能边做边找（会话 #5 里 4 次用户纠正全在这里：裁不下来 / 背景色 /
+  // 换工具 / 直接给图）。现在 pending 算阻断项：**先备齐再动手**。
+  // 出路是 `status:'waived'`（明确放弃）—— 拦截必须配一条走得通的动作，否则就是功能不可用。
+  const knownShots = allShotIds(sections)
+  const assets = sections['07_assets']
+  // 幽灵引用对所有条目都查（ready 的清单也可能指着一个已被删掉的 shot）。
+  for (const asset of assets) {
+    const label = asset.name.trim() === '' ? '(未命名素材)' : asset.name
+    const ghostRefs = (asset.neededBy ?? []).filter((id) => !knownShots.has(id))
+    if (ghostRefs.length > 0) {
+      warnings.push(`素材「${label}」标了不存在的 shot（${ghostRefs.join('、')}）`)
+    }
+  }
+  const pendingAssets = assets.filter((asset) => asset.status === 'pending')
+  for (const asset of pendingAssets) {
+    const label = asset.name.trim() === '' ? '(未命名素材)' : asset.name
+    if (enforceAssetReadiness) {
+      const where = asset.source === 'user'
+        ? '需要用户提供'
+        : asset.source === 'library'
+          ? '要从资产库取'
+          : asset.source === 'stock'
+            ? '要外部素材库'
+            : '要生成'
+      blockers.push(`§07 素材「${label}」（${asset.type}）未就绪：${where}；确实不要了就把 status 改成 "waived"`)
+    }
+  }
+  if (pendingAssets.length > 0 && !enforceAssetReadiness) {
+    warnings.push(`§07 还有 ${pendingAssets.length} 条素材待上传`)
+  }
 
   return { blockers, warnings }
 }

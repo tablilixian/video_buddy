@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { deflateSync } from 'node:zlib'
 import { createStudioTools } from '../lib/host-tools.js'
 import {
-  decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage,
+  decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage, samplePixels,
 } from '../lib/inspect-image.js'
 
 // ── 最小 PNG 编码器（仅为本测试服务：RGBA8 / 灰度16 / 调色板8，filter 0-2）──
@@ -223,7 +223,7 @@ function inspectTool() {
 
 test('inspect_image：mode 枚举与 filePath 已在 JSON Schema 声明', () => {
   const params = inspectTool().parameters?.properties ?? {}
-  assert.deepEqual(params.mode?.enum, ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid'])
+  assert.deepEqual(params.mode?.enum, ['profile', 'bbox-dark', 'bbox-bright', 'colors', 'grid', 'sample'])
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'filePath'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'threshold'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'topN'))
@@ -231,6 +231,8 @@ test('inspect_image：mode 枚举与 filePath 已在 JSON Schema 声明', () => 
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'region'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'cols'))
   assert.ok(Object.prototype.hasOwnProperty.call(params, 'rows'))
+  // 2026-10-25：逐点取色（会话 #5 里 88 次 python3 手算像素的对策）
+  assert.ok(Object.prototype.hasOwnProperty.call(params, 'points'))
 })
 
 test('F-06：描述不再谎称「唯一真值来源」，而是说清 bbox 会退化 + 给 grid/region 出路', () => {
@@ -298,4 +300,39 @@ test('F-06：grid 给出空间分布，最暗块落在屏幕位置', () => {
   assert.equal(grid.darkest.widthPct, 10)
   assert.equal(grid.darkest.heightPct, 10)
   assert.ok(grid.brightest.meanLum >= 20, '背景块应是最亮的')
+})
+
+// ── 2026-10-25：sample 模式（逐点取色）────────────────────────────────────
+//
+// 病史：会话 #5 里 agent 写了 88 个 python3 脚本，其中大量是手搓 PNG 解码器逐点算亮度
+// （`import zlib,struct` + `lum(x,y)`）—— 只为回答「这个位置是什么颜色、亮不亮」。
+// bbox/grid 都是区域统计，答不了这个；sample 就是为它加的。
+
+test('sample：百分比换像素、RGB 与亮度逐点可复核', () => {
+  // 4×2：左半红、右半蓝（写成 pixelFn 而不是硬编码行，避免行滤波干扰）
+  const png = rgbaPng(4, 2, (x) => (x < 2 ? [255, 0, 0, 255] : [0, 0, 255, 255]))
+  const decoded = decodePng(new Uint8Array(png))
+  const [left, right] = samplePixels(decoded, [
+    { x: 12.5, y: 25 },
+    { x: 87.5, y: 75 },
+  ])
+  assert.equal(left.hex, '#ff0000')
+  assert.equal(left.luminance, 76, '0.299×255 = 76.245 → 76')
+  assert.equal(left.clamped, false)
+  assert.equal(right.hex, '#0000ff')
+  assert.equal(right.luminance, 29, '0.114×255 = 29.07 → 29')
+})
+
+test('sample：坐标越界夹回图内并标记 clamped（不静默、不报错）', () => {
+  const png = rgbaPng(4, 2, (x) => (x < 2 ? [255, 0, 0, 255] : [0, 0, 255, 255]))
+  const decoded = decodePng(new Uint8Array(png))
+  const [corner, inside] = samplePixels(decoded, [
+    { x: 100, y: 100 }, // 100% × 4 = 4 ⇒ 越界一格
+    { x: 50, y: 50 },
+  ])
+  assert.equal(corner.clamped, true, '越界必须如实标记 —— 「要的是边缘」与「坐标写错了」不能长得一样')
+  assert.equal(corner.pixelX, 3)
+  assert.equal(corner.pixelY, 1)
+  assert.equal(corner.hex, '#0000ff', '夹回后取到的是最右一列')
+  assert.equal(inside.clamped, false)
 })

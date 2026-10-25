@@ -403,3 +403,63 @@ export function dominantColors(decoded: DecodedPng, topN: number): DominantColor
     .slice(0, Math.max(1, Math.min(topN, 16)))
     .map(([key, count]) => ({ hex: hex(key), pct: pct(count, counted) }))
 }
+
+/** 逐点取色请求（画布百分比，`x`/`y` 是**中心**语义，与 `render_composition` 的 `box` 同口径）。 */
+export interface SamplePoint {
+  readonly x: number
+  readonly y: number
+}
+
+export interface SampledPixel {
+  /** 请求的画布百分比坐标（原样回显，便于对齐）。 */
+  readonly x: number
+  readonly y: number
+  /** 实际取样的像素坐标。 */
+  readonly pixelX: number
+  readonly pixelY: number
+  readonly hex: string
+  readonly r: number
+  readonly g: number
+  readonly b: number
+  /** 亮度（0–255，Rec.601，与 `luminanceGrid` 同一公式）。 */
+  readonly luminance: number
+  /** `true` = 请求点在图外，取的是夹回边缘后的像素（结果仍可用，但要知道偏了）。 */
+  readonly clamped: boolean
+}
+
+/**
+ * 逐点取色：画布百分比 → 像素 → 该点的 RGB / 亮度。
+ *
+ * 为什么需要它（会话 #5，2026-10-25）：3 小时里 agent 写了 **88 个 python3 脚本**，其中
+ * 大量是手搓 PNG 解码器逐点算亮度（`import zlib,struct` 解 PNG + `lum(x,y)`）—— 只为回答
+ * 「这个位置是什么颜色 / 亮不亮」。`bbox-*` 与 `grid` 给的都是**区域统计**，答不了取点色。
+ *
+ * 取整后必须夹回 `[0, w-1]`：百分比 100 乘 width 正好越界一格。夹回不静默 —— 用
+ * `clamped` 如实报出来，否则「我要的是屏幕边缘」和「我给错坐标了」看起来一样。
+ */
+export function samplePixels(decoded: DecodedPng, points: readonly SamplePoint[]): SampledPixel[] {
+  const { width, height, rgba } = decoded
+  const toHex = (value: number): string => value.toString(16).padStart(2, '0')
+  return points.map((point) => {
+    const rawX = Math.round((point.x / 100) * width)
+    const rawY = Math.round((point.y / 100) * height)
+    const pixelX = Math.min(width - 1, Math.max(0, rawX))
+    const pixelY = Math.min(height - 1, Math.max(0, rawY))
+    const at = (pixelY * width + pixelX) * 4
+    const r = rgba[at] ?? 0
+    const g = rgba[at + 1] ?? 0
+    const b = rgba[at + 2] ?? 0
+    return {
+      x: point.x,
+      y: point.y,
+      pixelX,
+      pixelY,
+      hex: `#${toHex(r)}${toHex(g)}${toHex(b)}`,
+      r,
+      g,
+      b,
+      luminance: Math.round(0.299 * r + 0.587 * g + 0.114 * b),
+      clamped: rawX !== pixelX || rawY !== pixelY,
+    }
+  })
+}

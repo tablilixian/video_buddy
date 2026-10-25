@@ -26,12 +26,15 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 0. **先问三件事（confirm 模式）**：开工前用 `ask_user_choice`（一次一个问题，≤3 问）确认**只有用户能答**的项——
    **音轨**（纯 BGM / 要旁白 / 不要声音）、**时长与画幅**（用户没明说时）、**素材来源**（用哪张图 / 要不要先生成）。
-   为什么必须前置：实测有会话把"音轨怎么配"拖到第 33 步才问（前面 16 分钟都在按**默认假设**规划，答案一变就要返工）。
+   为什么必须前置：实测有会话把音轨问题拖到第 33 步才问，答案一变全返工。
    **auto 模式不问**（`autoAnswerFor` 直接给默认，见工具描述）；这是需求澄清，**不是审批门**。
    问完就往下走，不要在第 3 步重复问同一件事。
 
 1. **取真值**：`list_shots` 读每个视频片段的**真实时长**（素材轨时长的唯一合法来源）；`list_references` 取角色 / 风格资产卡与图片。有旁白时以 `tts_voiceover` 结果里的真值时长为准。
-2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨；手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
+2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
+`recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
+单镜头动效从 `references/shot-cards.md` 挑卡填参（每卡实测可渲，带素材需求与每帧成本档）。
+手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
@@ -47,14 +50,10 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 动感基线（默认开，避免成片像 PPT）
 
-成片「像幻灯片」的根因几乎从不是 Remotion 能力不够，而是 manifest **没写动画**。Remotion 的
-`animate` / `kenBurns` / `transition` 都是合法的、逐帧确定的运动手段（见 `references/manifest-contract.md` §46），
-且 **CV-336 后多段关键帧已正确插值**（公转 / 呼吸 / 旋转这类跨段同维度动画不再被钉死）。**组装时默认就给画面加
-动感基线**，不要等宿主回「静态图文」提示才补——那是补救，不是目标。
-
-**怎么加、加哪些、怎么让运动「被看懂」——全部下沉到主题无关的 `references/motion-patterns.md`**
-（含轨道 / 平移 / 呼吸 / 旋转 / 序列揭示 / 拖尾 / 量级对比 / 收敛发散 等可复制范式 + 决策表 + 复用代码）。
-组装任何科普内容时都应按该分册的「决策表」为画面选运动，而不是只放静态卡片。
+成片「像幻灯片」的根因几乎从不是 Remotion 能力不够，而是 manifest **没写动画**。`animate` / `kenBurns` /
+`transition` 都是逐帧确定的合法手段（CV-336 后多段关键帧已正确插值）。**组装时默认就加动感基线**，不要等宿主回
+「静态图文」提示才补——那是补救，不是目标。范式怎么选、怎么让运动「被看懂」：全部下沉在
+`references/motion-patterns.md`（可复制范式 + 决策表），按决策表为画面选运动，而不是只放静态卡片。
 
 默认基线（每条都应在组装时落地，除非有明确理由静态）：
 

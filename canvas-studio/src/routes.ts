@@ -60,6 +60,7 @@ import { validateForSeed } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import { invalidateActiveSkillsPromptCache, refreshActiveSkillsPromptCache } from './active-skills-prompt.js'
 import { resetLookBudget } from './look-budget.js'
+import { invalidateWorkflowModeCache } from './workflow-mode-prompt.js'
 // CV-331/332/333：用户上传 skill 面（列表 / 导入 / 删除 / 回收站）。
 import { SKILL_CATALOG, VISIBLE_CATALOG, builtinSlotOwners } from './skill-catalog.js'
 import { validateImport } from './skill-import-validate.js'
@@ -2451,6 +2452,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           // CV-052：状态决策抽为纯函数 resolveSetModePatch（contracts/project.ts），
           // 模式未变化时短路只写 mode 不碰 state；tests/workflow-mode.test.mjs 覆盖。
           project = await registry.updateWorkflow(body.projectId, resolveSetModePatch(current, body.mode))
+          // 会话效率优化（2026-10-26）：mode 会话中期热切换不发事件，主动失效
+          // workflow-mode 小节缓存，provider 下一轮 assemble 自愈刷新新值。
+          invalidateWorkflowModeCache()
         } else {
           sendJson(res, 400, { error: `未知 action: ${body.action}` })
           return

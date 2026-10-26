@@ -1,0 +1,215 @@
+{
+  "id": "comp-news-layout-demo",
+  "meta": {
+    "title": "新闻直播版式 · 布局表达力压测 v2",
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "durationInFrames": 360,
+    "backgroundColor": "#05080f"
+  },
+  "tracks": [
+    {
+      "id": "bar-2023",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#38bdf8",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 60,
+        "y": 76.5,
+        "w": 7,
+        "h": 19
+      },
+      "animate": {
+        "from": {
+          "x": 60,
+          "y": 86
+        },
+        "to": {
+          "x": 60,
+          "y": 76.5
+        },
+        "durationInFrames": 20
+      }
+    },
+    {
+      "id": "bar-2024",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#818cf8",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 71,
+        "y": 74.5,
+        "w": 7,
+        "h": 23
+      },
+      "animate": {
+        "from": {
+          "x": 71,
+          "y": 86
+        },
+        "to": {
+          "x": 71,
+          "y": 74.5
+        },
+        "durationInFrames": 26
+      }
+    },
+    {
+      "id": "bar-2025",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#f472b6",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 82,
+        "y": 72.5,
+        "w": 7,
+        "h": 27
+      },
+      "animate": {
+        "from": {
+          "x": 82,
+          "y": 86
+        },
+        "to": {
+          "x": 82,
+          "y": 72.5
+        },
+        "durationInFrames": 32
+      }
+    },
+    {
+      "id": "chart-title",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "中国 GDP（模拟，万亿元）",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 65,
+        "y": 51.5,
+        "w": 70,
+        "h": 14
+      },
+      "accentColor": "#38bdf8"
+    },
+    {
+      "id": "gdp-strip",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "2023: 126.1   2024: 134.9   2025: 140.5",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 50,
+        "y": 92.5,
+        "w": 96,
+        "h": 14
+      }
+    },
+    {
+      "id": "main-title",
+      "type": "textCard",
+      "variant": "title",
+      "text": "晚间新闻",
+      "startFrame": 0,
+      "durationInFrames": 360,
+      "box": {
+        "x": 25,
+        "y": 13,
+        "w": 50,
+        "h": 16
+      }
+    },
+    {
+      "id": "anchor-1",
+      "type": "video",
+      "src": "/canvas-studio/assets/anchor-a.mp4",
+      "muted": true,
+      "startFrame": 0,
+      "durationInFrames": 90,
+      "box": {
+        "x": 19,
+        "y": 67,
+        "w": 30,
+        "h": 36
+      }
+    },
+    {
+      "id": "news-1",
+      "type": "video",
+      "src": "/canvas-studio/assets/news-a.mp4",
+      "muted": true,
+      "startFrame": 0,
+      "durationInFrames": 90,
+      "box": {
+        "x": 71.5,
+        "y": 25,
+        "w": 43,
+        "h": 38
+      }
+    },
+    {
+      "id": "news-full",
+      "type": "video",
+      "src": "/canvas-studio/assets/news-b.mp4",
+      "muted": true,
+      "startFrame": 90,
+      "durationInFrames": 90,
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      }
+    },
+    {
+      "id": "news-2",
+      "type": "video",
+      "src": "/canvas-studio/assets/news-c.mp4",
+      "muted": true,
+      "startFrame": 180,
+      "durationInFrames": 180,
+      "box": {
+        "x": 71.5,
+        "y": 25,
+        "w": 43,
+        "h": 38
+      }
+    },
+    {
+      "id": "anchor-2",
+      "type": "video",
+      "src": "/canvas-studio/assets/anchor-b.mp4",
+      "muted": true,
+      "startFrame": 180,
+      "durationInFrames": 90,
+      "box": {
+        "x": 19,
+        "y": 67,
+        "w": 30,
+        "h": 36
+      }
+    },
+    {
+      "id": "anchor-full",
+      "type": "video",
+      "src": "/canvas-studio/assets/anchor-c.mp4",
+      "muted": true,
+      "startFrame": 270,
+      "durationInFrames": 90,
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      }
+    }
+  ]
+}

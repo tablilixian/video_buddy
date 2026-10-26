@@ -99,10 +99,11 @@ test('recommendedSkills：在可见条目中 featured 优先、去重、limit �
   assert.ok(recommendedSkills(999).length <= VISIBLE_CATALOG.length)
 })
 
-/** 总纲 8 本分册（骨架里的细则指针指向它们）。 */
+/** 总纲分册（骨架里的细则指针指向它们）。layout-recipes.md 为 2026-10-26 布局配方新增。 */
 const CREATION_BOOKLETS = [
   'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
   'screenplay.md', 'shot-format.md', 'consistency.md', 'look.md',
+  'layout-recipes.md',
 ]
 
 /** 分册指针判据：提到任一分册名、提到 references/ 或用 § 指向章节，都算「已下沉」。 */

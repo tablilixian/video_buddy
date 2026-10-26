@@ -117,6 +117,23 @@ export interface BaseTrack {
   startFrame: number
   durationInFrames: number
   /**
+   * 会话效率优化（2026-10-26）· **区域声明 `box`**：把内容约束到画布的一个子区域，
+   * 模型不再手算 `transform.scale` + 位移（那一整类几何心算错误由此消灭）。
+   *
+   * - 语义与 `ShapeTrack` 的既有 `box` 完全同域（本字段就是从那里上提的）：
+   *   **0–100 画布百分比，`x` / `y` 是区域中心**（渲染层 `translate(-50%,-50%)`
+   *   中心对齐），`w` / `h` 是区域宽高。铺满 = `{x:50,y:50,w:100,h:100}`。
+   * - 只对 **video / image / textCard / shape** 生效；`transition` / `audioViz`
+   *   给出 `box` 会被 `validateManifest` 拒收（它们的位置由别的字段决定）。
+   * - **与位置维度互斥（video / image / textCard）**：`transform.x/y`、`animate` 的
+   *   `from.to.x/y`、`exit.to.x/y`、`orbit` 与 `box` 同时声明 ⇒ 报错（位置来源必须唯一，
+   *   与 orbit 的 D-02 决策同口径）；`scale` / `rotation` / `opacity` 仍可用（绕区域中心生效）。
+   *   **shape 轨豁免**：沿用既有语义（box 是缺省落点，transform/animate 显式 x/y 覆盖之；
+   *   出画布也不查 —— 存量示例本有 x:0,y:0 贴边写法），收紧会拒掉历史 manifest。
+   * - `shape:'path'` 铺满画布，`box` 不生效（校验层 warning）。
+   */
+  box?: ManifestBox
+  /**
    * 静态变换（百分比坐标系，相对画布）。**5 种轨通用**（CV-334 从 `VideoClipTrack` 上提）。
    *
    * 与 `animate` 的分工：`transform` 是"不动的那个姿势"，`animate` 是"从 A 姿势到 B 姿势"。
@@ -227,6 +244,22 @@ export interface ColorShift {
   durationInFrames?: number
   /** 缓动（缺省 `easeInOut`）。 */
   easing?: AnimateEasing
+}
+
+/**
+ * 区域声明（会话效率优化 2026-10-26）：0–100 画布百分比，**`x` / `y` 是区域中心**
+ * （与 `Transform.x/y` / `orbit.center` 同域；渲染层 `translate(-50%,-50%)` 中心对齐）。
+ * 铺满全屏 = `{x:50,y:50,w:100,h:100}`；右半区 = `{x:71,y:50,w:58,h:100}`。
+ */
+export interface ManifestBox {
+  /** 区域中心的水平位置（0–100 画布百分比）。 */
+  x: number
+  /** 区域中心的垂直位置（0–100 画布百分比）。 */
+  y: number
+  /** 区域宽度（0–100 画布百分比）。 */
+  w: number
+  /** 区域高度（0–100 画布百分比）。 */
+  h: number
 }
 
 /**
@@ -427,8 +460,8 @@ export interface ShapeTrack extends BaseTrack {
    */
   shape: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon'
   color: string
-  /** 相对画布的百分比坐标（0–100）。`transform` / `animate` 给出 x/y 时以它们为准。 */
-  box?: { x: number; y: number; w: number; h: number }
+  // `box` 已上提到 `BaseTrack`（会话效率优化 2026-10-26）——语义不变（0–100、x/y 中心），
+  // shape 轨经继承继续持有；`path` 轨铺满画布、`box` 不生效（校验层 warning）。
   /**
    * `shape:'path'` 必填：SVG path 的 `d`。
    *
@@ -650,6 +683,8 @@ const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
 const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint'])
 const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',
+  // 会话效率优化 2026-10-26：区域声明 box（自 ShapeTrack 上提，video/image/textCard/shape 生效）
+  'box',
   // 二期 A1 / A2
   'orbit', 'fx',
   // 三期 W1-1 / W1-2 / W2-3 / W2-5
@@ -659,7 +694,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
   image: new Set(['src', 'fit', 'caption']),
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions']),
-  shape: new Set(['shape', 'color', 'box', 'd', 'strokeWidth', 'draw']),
+  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient']),
 }
@@ -1079,6 +1114,101 @@ function orbitPositionConflict(track: Record<string, unknown>): string | null {
   return null
 }
 
+// ─────────────────── 会话效率优化 2026-10-26 · `box` 区域声明校验 ───────────────────
+
+/** 浮点容差：x+w 这类求和允许 0.01 的长尾（0–100 百分比域）。 */
+const BOX_EDGE_TOLERANCE = 0.01
+
+/**
+ * 校验 `box` 区域取值（fail-closed，错误信息自带修正指引 —— 模型收到 rejection
+ * 后无需重读文档即可自纠）。
+ *
+ * 拦的事故：
+ * - 单位写错（0–1 比例值：`w:0.58` 会被当成 0.58% 宽，渲染出来一条缝）；
+ * - 出画布（内容不可见，人只会看到「东西不见了」）；
+ * - 零/负宽高（除法与裁剪都会出 NaN 或空层）。
+ */
+function validateBoxRegion(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at}.box 必须是对象（如 {"x":71,"y":50,"w":58,"h":100}；x/y 是区域中心，0–100 画布百分比）`)
+    return
+  }
+  for (const key of ['x', 'y', 'w', 'h'] as const) {
+    const raw = value[key]
+    if (raw === undefined) {
+      errors.push(`${at}.box.${key} 缺失（box 必须给全 x/y/w/h 四个分量；x/y 是区域中心，0–100 画布百分比）`)
+      continue
+    }
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      errors.push(`${at}.box.${key} 必须是有限数（0–100 画布百分比），当前为 ${String(raw)}`)
+    }
+  }
+  const x = value.x
+  const y = value.y
+  const w = value.w
+  const h = value.h
+  if (typeof w === 'number' && Number.isFinite(w) && w <= 0) {
+    errors.push(`${at}.box.w 必须是 > 0 的数值（画布百分比宽度；右半区写 58，不要写 0.58）`)
+  } else if (typeof w === 'number' && Number.isFinite(w) && w > 0 && w <= 1) {
+    // 会话效率优化 2026-10-26：0–1 比例值（OPT-2 要拦的典型心算单位错）。≤1% 宽
+    //（1280 画布上 ≈13px）在真实布局里不可能是有意为之，宁可拒收让模型改成 58，
+    // 也不放行一条 7px 的缝。
+    errors.push(`${at}.box.w = ${w} 疑似 0–1 比例值 —— 本契约 box 用 0–100 画布百分比（右半区写 w:58，不是 0.58）`)
+  }
+  if (typeof h === 'number' && Number.isFinite(h) && h <= 0) {
+    errors.push(`${at}.box.h 必须是 > 0 的数值（画布百分比高度）`)
+  } else if (typeof h === 'number' && Number.isFinite(h) && h > 0 && h <= 1) {
+    errors.push(`${at}.box.h = ${h} 疑似 0–1 比例值 —— 本契约 box 用 0–100 画布百分比（全高写 h:100，不是 1）`)
+  }
+  if (typeof x === 'number' && Number.isFinite(x) && typeof w === 'number' && Number.isFinite(w) && w > 0) {
+    const left = x - w / 2
+    const right = x + w / 2
+    if (left < -BOX_EDGE_TOLERANCE || right > 100 + BOX_EDGE_TOLERANCE) {
+      errors.push(`${at}.box 水平方向出画布：区域 [${left.toFixed(2)}, ${right.toFixed(2)}] 超出 [0, 100]。请缩小 w 或把中心 x 移回画内（右半区示例：x:71, w:58 → [42, 100]）`)
+    }
+  }
+  if (typeof y === 'number' && Number.isFinite(y) && typeof h === 'number' && Number.isFinite(h) && h > 0) {
+    const top = y - h / 2
+    const bottom = y + h / 2
+    if (top < -BOX_EDGE_TOLERANCE || bottom > 100 + BOX_EDGE_TOLERANCE) {
+      errors.push(`${at}.box 垂直方向出画布：区域 [${top.toFixed(2)}, ${bottom.toFixed(2)}] 超出 [0, 100]。请缩小 h 或把中心 y 移回画内`)
+    }
+  }
+}
+
+/**
+ * `box` 与位置维度的互斥检查（与 orbit 的 D-02 同口径：位置来源必须唯一，
+ * 报错而非静默择一 —— 静默择一会让模型看到「写了 box 内容却不动/乱动」）。
+ *
+ * `box` 在场时：`transform.x/y`、`animate.from/to.x/y`、`exit.to.x/y`、`orbit`
+ * 任一出现即冲突；`scale` / `rotation` / `opacity` 不受影响（绕区域中心生效）。
+ */
+function boxPositionConflict(track: Record<string, unknown>): string | null {
+  const transform = track.transform
+  if (isRecord(transform) && (transform.x !== undefined || transform.y !== undefined)) {
+    return '位置已由 box 决定，请移除 transform 的 x / y（scale / rotation 可保留）'
+  }
+  const raw = track.animate
+  const list = Array.isArray(raw) ? raw : (raw === undefined ? [] : [raw])
+  for (const item of list) {
+    if (!isRecord(item)) continue
+    for (const side of ['from', 'to'] as const) {
+      const state = item[side]
+      if (isRecord(state) && (state.x !== undefined || state.y !== undefined)) {
+        return '位置已由 box 决定，请移除 animate 中 from / to 的 x / y（scale / rotation / opacity 可保留）'
+      }
+    }
+  }
+  if (isRecord(track.exit) && isRecord(track.exit.to) &&
+    (track.exit.to.x !== undefined || track.exit.to.y !== undefined)) {
+    return '位置已由 box 决定，请移除 exit.to 的 x / y（opacity / scale 可保留）'
+  }
+  if (track.orbit !== undefined) {
+    return '位置已由 box 决定，orbit 与 box 不能同时声明（二者都决定位置）'
+  }
+  return null
+}
+
 /**
  * 校验一段未知输入是否为合法 `CompositionManifest`（纯函数）。
  *
@@ -1197,6 +1327,27 @@ export function validateManifest(input: unknown): ManifestValidation {
     }
     if (track.fx !== undefined && (typeof track.fx !== 'string' || !TRACK_FX.has(track.fx))) {
       errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade`)
+    }
+
+    // 会话效率优化 2026-10-26：`box` 区域声明（video/image/textCard/shape 生效）。
+    // 放在通用字段区（与 transform/orbit 同层），type 此刻已验证过、可直接引用。
+    if (track.box !== undefined) {
+      if (type === 'transition' || type === 'audioViz') {
+        errors.push(`${at}.box 只支持 video / image / textCard / shape 轨（${type} 轨的位置由其它字段决定，box 不适用）`)
+      } else {
+        // 以下两查只对**新获得 box 的三类轨**生效；shape 保持既有语义不动——
+        // ① box 是缺省落点、transform/animate 显式 x/y 时覆盖（manifest-contract.md
+        //    「shape 特例表」第 9 条的存量合法写法）；② 契约示例本就有 x:0,y:0 这类
+        //    中心落在画外/贴边的写法（orbit 节「直接写 0 即可」）。收紧会拒掉历史 manifest。
+        if (type !== 'shape') {
+          validateBoxRegion(track.box, at, errors)
+          const conflict = boxPositionConflict(track)
+          if (conflict !== null) errors.push(`${at}(${String(id)}) ${conflict}`)
+        }
+        if (type === 'shape' && track.shape === 'path') {
+          warnings.push(`${at} 是 shape:'path'（铺满画布），box 不生效（已忽略）`)
+        }
+      }
     }
 
     // 三期：`exit` / `blend` / `colorShift` 同样是「所有内容轨通用」的字段。

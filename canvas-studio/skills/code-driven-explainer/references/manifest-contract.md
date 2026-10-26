@@ -46,6 +46,13 @@
 - `id`：唯一。**video / image 轨的 `id` 必须是该素材的画布节点 id**（宿主据此产出血缘）；textCard / shape / transition 用本地 id 即可。
 - `transform`（可选）：**静态姿势** —— `{ "x"?, "y"?, "scale"?, "rotation"? }`。`x` / `y` 是 0–100 的
   画布百分比坐标（50 = 居中），`scale` 必须 > 0，`rotation` 单位是度。**六种轨通用**。
+- `box`（可选，2026-10-26）：**区域声明** —— `{ "x", "y", "w", "h" }`，0–100 画布百分比，
+  **`x` / `y` 是区域中心**（不是左上角）。把本轨约束到该子区域：video / image / textCard /
+  shape 生效（内容铺满盒子、溢出裁掉）；transition / audioViz 给 box 直接拒收。
+  与 `transform` / `animate` / `exit` 的 `x` / `y` **互斥**（`scale` / `rotation` / `opacity`
+  可同用）；出画布会被拒收（报错带修正算式）。**shape 轨豁免互斥与出画布检查**（沿用其
+  既有语义：box 是缺省落点、显式 x/y 覆盖之）。**分屏 / 画中画 / 底部信息条等布局先抄
+  `canvas-studio-creation/references/layout-recipes.md` 的配方改参数，不要手算 `scale`。**
 - `animate`（可选）：**帧级动画** —— 一条，或一个数组（多条按顺序叠加，后者覆盖它声明过的维度）。
 - `orbit`（可选，二期）：**公转** —— 绕某点做圆周运动，见下节。与 `transform` / `animate` 的
   `x` / `y` **互斥**（同一条轨只能有一处决定位置，同时写直接校验失败）。

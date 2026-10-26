@@ -2822,7 +2822,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '② `src` 只接同源 `/canvas-studio/assets/...` 或本项目资产目录内的绝对路径，外链一律拒收；'
         + '③ video 轨时长以 ffprobe 真值为准并据此校正帧号，校正后不自洽会连明细拒收；'
         + '④ 不要传 `projectId`（省略即当前项目）；'
-        + '⑤ shape 的 box 一律画布百分比，**x/y 是形状中心**：铺满全屏写 {x:50,y:50,w:100,h:100}（写成 0,0 只占左上四分之一）。'
+        + '⑤ `box` 区域声明（video / image / textCard / shape 通用）：画布百分比，**x/y 是区域中心**：铺满全屏写 {x:50,y:50,w:100,h:100}（写成 0,0 只占左上四分之一），右半区写 {x:71,y:50,w:58,h:100}；box 与 transform / animate 的 x/y 互斥（scale/rotation/opacity 可同用；shape 轨豁免互斥与出画布检查），出画布会被拒收。分屏 / 画中画等常见布局直接抄 skill 的 `canvas-studio-creation/references/layout-recipes.md`，不要手算 transform.scale。'
         + '质量档 `quality`：draft（半分辨率 + 低码率 + 不抢主线程，快 2.5×+；画布上只保留一个草稿节点、反复迭代不堆卡）/ standard（缺省）/ high（交付）。'
         + '调试用 `probe:true`：不落画布节点、不抽帧、跳过体检 —— 反复调参时用它，否则成片节点会被试错产物覆盖。'
         + '返回：成片 url / 真实时长与像素 / warnings（时长校正、上采样、体检提示）/ frames[] 抽帧 / report{}（quality、帧数、总耗时、准备、渲染、msPerFrame、码率、体检命中）/ `工单：…` 诊断行（谁认领、有没有出首帧、是否改派过）。'

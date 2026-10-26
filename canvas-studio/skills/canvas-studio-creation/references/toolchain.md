@@ -41,6 +41,8 @@
 11. **`image_fix` 与 `image-edit` 槽位的分工**：去水印 / 去瑕疵 / 局部小修 / 图内文字修复走 `image_fix`；结构性改图（换构图、改风格、重绘）走 `image-edit` 槽位的 skill。**不要对大改用 `image_fix` 硬撑** —— 它是改图接口，prompt 里带场景/角色/风格描述会伤及画面。
 12. **像素真值只有 `inspect_image` 一个来源**：定位素材上的物理区域（表盘屏幕暗区、白底边缘）用 `mode:"bbox-dark"` / `"bbox-bright"`，返回的画布百分比中心与宽高与 `render_composition` 的 box 同口径、直接填轨道；主色用 `mode:"colors"`。**禁止手写 PNG 解码脚本（node:zlib 手解）、禁止找 PIL / ffprobe 探像素**——环境里没有，写了就是白烧 25 分钟（真机实证）。
 13. **临时脚本写进项目内目录**（如项目根 `build/`）：`/tmp` 会被沙箱清空，写进去 = 返工一遍（真机实证）。
+14. **探查宿主实现只查 `canvas-studio/` 子目录**：grep / find 一律限定 `canvas-studio/src` 等明确子目录，**不做仓库根全仓扫描**（全仓 grep 单次 8s+ 且混入上游 submodule 与构建产物噪声）。项目元信息（清单 / 工作流模式）以 system prompt「执行模式」小节给出的 `projects.json` 路径为事实源，不要在 `~/.videobuddy` 下猜路径。
+15. **多行脚本禁止内联 `node -e "…"`，一律 heredoc 落盘再跑**（2026-10-26 真机实证）：宿主 shell 对带引号/中文路径的多行内联脚本会吃掉引号，node 落进 REPL 等 stdin → 挂满 300s 熔断，且持久 shell 里后续命令排队连环挂（一次烧 10 分钟）。正确写法：`cat > build/val.mjs <<'EOF' … EOF` 然后 `node build/val.mjs`（同会话实测秒回）。
 
 ## 调用节奏：图片类逐个来，视频类批量提交（先读这一节）
 

@@ -60,6 +60,8 @@ test('工具描述：render_composition 必须写明 box 的 x/y 是中心、铺
   const tool = createStudioTools({}, 3000).find((entry) => entry.name === 'render_composition')
   assert.ok(tool, 'render_composition 必须存在')
   const description = tool.description ?? ''
-  assert.ok(description.includes('x/y 是形状中心'), '工具描述必须点明中心语义（模型读的是这一段）')
+  // 2026-10-26：box 从 shape 专属上提为四类轨通用，措辞从「形状中心」改为「区域中心」。
+  assert.ok(description.includes('x/y 是区域中心'), '工具描述必须点明中心语义（模型读的是这一段）')
   assert.ok(description.includes('{x:50,y:50,w:100,h:100}'), '必须给出铺满全屏的正确写法')
+  assert.ok(description.includes('layout-recipes'), '必须指向布局配方文档（免手算 transform）')
 })

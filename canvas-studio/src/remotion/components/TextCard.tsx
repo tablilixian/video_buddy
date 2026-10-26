@@ -155,10 +155,24 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   }
   // CV-334：整卡的位置 / 缩放 / 旋转走 `layerTransform`（铺满层上的位移＝把内容移出画布中心）。
   // 缺省参数下它是恒等串 ⇒ 老写法渲染结果不变。
+  // 会话效率优化（2026-10-26）：`track.box` 在场 ⇒ 本层从「铺满画布」改为「盒子尺寸的
+  // 定位层」（left/top/width/height 覆盖 AbsoluteFill 的 inset:0，绝对定位过约束时
+  // right/bottom 被忽略）+ `translate(-50%,-50%)` 中心对齐 + `overflow: hidden`；
+  // scale/rotation 走 `shapeTransform` 绕盒子中心生效。四个 variant 的内部排版
+  // （justifyContent / 贴底字幕等）自然落到盒子内部，无需各自分支。
+  const box = track.box
   const layer: React.CSSProperties = {
     opacity: anim.opacity,
-    transform: anim.layerTransform,
-    transformOrigin: 'center',
+    ...(box === undefined
+      ? { transform: anim.layerTransform, transformOrigin: 'center' }
+      : {
+          left: `${box.x}%`,
+          top: `${box.y}%`,
+          width: `${box.w}%`,
+          height: `${box.h}%`,
+          transform: `translate(-50%, -50%) ${anim.shapeTransform}`,
+          overflow: 'hidden',
+        }),
     ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
     ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
     ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),

@@ -251,6 +251,11 @@ export class ProjectRegistry {
     return this.root
   }
 
+  /** 公开的 registry 文件绝对路径（projects.json；workflow-mode-prompt 注入用）。 */
+  get registryFile(): string {
+    return join(this.root, 'projects.json')
+  }
+
   /** 公开的 projects 目录（storage-info 只读诊断面用，与 registryRoot 同一纪律）。 */
   get projectsRoot(): string {
     return this.projectsDir

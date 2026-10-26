@@ -21,6 +21,7 @@ import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
+import { registerWorkflowModePrompt } from './workflow-mode-prompt.js'
 import { registerActiveSkillsPrompt } from './active-skills-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
@@ -400,4 +401,9 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // system prompt。装载此前是纯 UI 状态（`skills.json` + chips），模型完全看不到，
   // 用户勾选形同虚设。写入侧（`POST /canvas-studio/active-skills`）负责失效缓存。
   ctx.effect(() => registerActiveSkillsPrompt(ctx, registry), 'canvas-studio: active skills prompt')
+  // 会话效率优化（2026-10-26）：执行模式 + 项目记录路径小节（order 155）——
+  // workflow.mode（confirm/auto 语义）与 projects.json 绝对路径注入 system prompt，
+  // 模型不再翻源码 / 猜目录确认执行模式（单会话实测浪费 ~5 min）。setMode 写路径
+  // 经 invalidateWorkflowModeCache 失效缓存。
+  ctx.effect(() => registerWorkflowModePrompt(ctx, registry), 'canvas-studio: workflow mode prompt')
 }

@@ -28,9 +28,12 @@ export const VideoClip: React.FC<{ track: VideoClipTrack }> = ({ track }) => {
   // 本组件此前是全仓唯一的 `track.transform` 消费点，现在四个组件口径一致。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   const box = track.box
-  // 会话效率优化 2026-10-26：box 在场 ⇒ 铺满层变成盒子定位层；无 box 时与老渲染逐像素一致。
+  // OPT-8（2026-10-26）：兜底底色只跟**媒体层**走，不再挂在铺满容器上 ——
+  // 挂容器会让 z 序更高的视频轨把整幅画布涂黑、盖掉下方文字卡（真机实证）。
+  // 无 box 时媒体层即全屏，视觉与老渲染一致；带 transform 位移时底色随素材移动，
+  // 不再「素材移走了、黑底还铺满全画布」。
   const layerStyle: React.CSSProperties = box === undefined
-    ? { transform: anim.layerTransform, transformOrigin: 'center' }
+    ? { transform: anim.layerTransform, transformOrigin: 'center', backgroundColor: '#000' }
     : {
         position: 'absolute',
         overflow: 'hidden',
@@ -41,7 +44,6 @@ export const VideoClip: React.FC<{ track: VideoClipTrack }> = ({ track }) => {
     <AbsoluteFill
       style={{
         opacity: anim.opacity,
-        ...(box === undefined ? { backgroundColor: '#000' } : {}),
         ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
         // 二期 A2：效果由唯一接线点折算，组件只展开。
         ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),

@@ -1824,3 +1824,42 @@
 - **涉及文件**：`src/contracts/storyboard.ts` / `src/storyboard-gate.ts` / `src/storyboard-land.ts` / `src/host-tools.ts` / `src/remotion/recipes.ts`（新）/ `src/param-guard.ts` / `skills/code-driven-explainer/references/shot-cards.md` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md`
 - **测试**：新增 `tests/storyboard-asset-gate.test.mjs` 6 条（pending 拦 / waived 放行 / 开关回退 / 幽灵 neededBy 告警 / source 缺省 / 多条逐条点名）、`tests/render-recipes.test.mjs` 6 条（配方自洽 / 时间轴严丝合缝 / 极端时长不塌 / 骨架过 validateManifest / 零素材承诺 / §07 片段可直填）。
 - **未做**：**素材复用跨片**（同一主角/场景图在多个项目复用 —— 资产库已有 `@ref[lib:…]`，但没有"按角色/场景检索"的入口）；**抠图/裁切工具**（会话 #5 用户明确要求过，属能力缺口，需单独立项）。
+
+#### CV-370 · shotcraft 吸收 R3：第二批镜头卡 F1–F10（取证 24/24 通过）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **内容**：从 shotcraft 124 卡按 D18 门槛筛 13 张候选，10 张用现有白名单字段复刻为 F 类：长卷急刹（多段关键帧）、数据飞线、扫描标注、马克笔下划线、首词组装、词槽轮换、高光扫过、UI 蒸发收尾、里程碑时间轴、进度环揭晓。Q12 取证 `2026-10-25T22-48-40` 全通过，稳态 9.6–29.6 ms/帧，无高成本卡。
+- **涉及文件**：`skills/code-driven-explainer/references/shot-cards.md`（F 类片段 + 素材索引行 + 尾部 124 卡口径对照表）、cards.mjs 新增 10 张可渲样本（24 卡矩阵）
+- **能力缺口登记**：6 条字段级缺口进 backlog（rotate / clip 揭示 / 空心字 / 渐变波前 / 点群 / 计数滚动）
+- **取证**：24/24 通过（Q12 批次）
+
+#### CV-371 · SFX 品类 12 个 + 授权账本（shotcraft 吸收 R4）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **内容**：`assets/audio/sfx/` 12 个 Mixkit 音效（免署名可商用，经 shotcraft 授权账本回溯原始 URL；绕开其 6 个无法溯源项），总量 804KB < 2MB 红线。`ATTRIBUTION.md` 逐文件记录 URL / 用途 / SHA-256；NOASSERTION 来源（talkcraft）声明不取。`shot-cards.md` 加 SFX 建议索引（12 卡 × 钉点），并声明渲染链忽略、manifest 禁写 sfx 字段。
+- **涉及文件**：`assets/audio/sfx/*`、`ATTRIBUTION.md`、`skills/code-driven-explainer/references/shot-cards.md`
+- **边界**：SFX 仅作选型建议（agent 汇报给用户外部补配），渲染链不消费。
+
+#### CV-372 · BGM 卡点建议器 beat-suggest.mjs（shotcraft 吸收 R5）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P3
+- **内容**：纯 JS WAV 解码（16/24-bit PCM）+ 分块 RMS 自适应阈值 onset 检测，输出节拍帧号 JSON（`--fps` / `--offset-ms` 校准）供排轨参考。120bpm 合成波自测通过。
+- **边界**：**离线咨询工具**——不进渲染链、不加 manifest 字段；agent 拿节拍表后自行决定卡点排轨。
+- **涉及文件**：`scripts/beat-suggest.mjs`
+
+#### CV-373 · 渲染看门狗活性语义 + 预览闸门三修（会话6 根因群）
+
+- **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **病史**：会话6（10-25）9 渲 7 死——客户端取单后 warmup（首帧前 ~80s）与预览闸门等人期间，claim-stall 按「取单时刻」计死线，20s 即判死/改派。
+- **六处收口**：
+  1. **claim-stall 改按「最后一次活性证据」计死线**（`clientJobOrphanReason` / 看门狗 settle 两处 `Math.max(clientClaimedAt, lastProgressAt)`）：客户端取单后每 5s 打 `progress=0` 报活心跳（`renderClaimedJob` 里 setInterval，finally 清表）。
+  2. **进度单调不回退**（`reportRenderProgress`）：心跳的 0 不能把真实进度打回 0%。
+  3. **预览闸门重入修复**：轮询下一拍重进同一单时**原地等同一个闸门 Promise**（旧实现跳过整个闸门块直接开渲 ⇒「弹窗底下照渲」）；`pendingPreviewGate` 注册表 + 同拍双进保险。
+  4. **僵尸弹窗拆除**：轮询里发现单已不在队列而闸门还挂着 ⇒ `abortRenderPreview()`（render-preview 新导出）按「用户取消」收尾。
+  5. **probe 贯通**：`runRenderJob` options / ActiveRenderJob / PendingStudioRenderJob 全链加 `probe`，诊断渲跳过预览闸门。
+  6. **errors.md 分流改写**：「已取单但没渲染」不再等于环境问题（先看 last liveness）；`msPerFrame > 1000` 禁止 manifest 二分；探针文件约定写 `build/probe/`。
+- **测试**：新增回归 2 条（心跳推迟死线 / 0 心跳不回退进度）；全量 2217·2217，smoke 门禁 0 新增红。

@@ -21,9 +21,10 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   // 缺省参数下 `layerTransform` 是恒等串，与 CV-334 之前的 `scale(kenBurns)` 等价。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   const box = track.box
-  // box 在场 ⇒ 铺满层变成盒子定位层；无 box 时与老渲染逐像素一致。
+  // OPT-8（2026-10-26）：兜底底色只跟**媒体层**走（与 VideoClip 同修）——
+  // 挂铺满容器会让 z 序更高的图片轨把整幅画布涂成深底、盖掉下方内容轨。
   const layerStyle: React.CSSProperties = box === undefined
-    ? { transform: anim.layerTransform, transformOrigin: 'center' }
+    ? { transform: anim.layerTransform, transformOrigin: 'center', backgroundColor: '#05080f' }
     : {
         position: 'absolute',
         overflow: 'hidden',
@@ -34,7 +35,6 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
     <AbsoluteFill
       style={{
         opacity: anim.opacity,
-        ...(box === undefined ? { backgroundColor: '#05080f' } : {}),
         ...(anim.blend === 'normal' ? {} : { mixBlendMode: anim.blend }),
         // 二期 A2：视觉效果由唯一接线点折算，这里只展开（组件不解读枚举）。
         ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),

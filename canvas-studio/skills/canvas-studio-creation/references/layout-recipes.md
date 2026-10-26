@@ -113,4 +113,4 @@
 
 ## 配方截图（验收锚点）
 
-`assets/layout-demos/` 下每配方一张真实渲染截图（split-lr.png / split-tb.png / picture-in-picture.png / lower-third.png）。**尚未生成**：首次真机验收时用各配方的示例 manifest 以 `quality:"draft"` 渲一次并把抽帧落进去——截图必须来自真实渲染产物，不许手画。
+`assets/layout-demos/` 下每配方一张**真实渲染截图**（split-lr.png / split-tb.png / picture-in-picture.png / lower-third.png / full-bleed.png，2026-10-26 由 `scripts/probe/layout-demo.probe.mjs` 逐配方真渲抽帧产出，final 档 1280×720）。配方 6 的四阶段关键帧在 `docs/demos/layout-demo-20261026/`。截图必须来自真实渲染产物，不许手画。

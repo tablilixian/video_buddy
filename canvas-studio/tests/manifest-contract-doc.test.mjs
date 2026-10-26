@@ -71,11 +71,11 @@ const CLAIMS = [
     hint: 'glow 颜色变成可配了？同步改文档第 11 条',
   },
   {
-    // 第 12 条：temperature 暖= -12deg / 冷= 168deg
-    doc: '`hue-rotate(-12deg)`',
+    // 第 12 条：temperature 角度按 |temperature| 缩放（暖 sepia-12t / 冷 saturate+14t）
+    doc: '`hue-rotate(-12·t)°`',
     file: 'src/remotion/timing.ts',
-    pattern: /hue-rotate\(\$\{temperature > 0 \? -12 : 168\}deg\)/u,
-    hint: '色温实现变了？同步改文档第 12 条（冷调必须给负值这条结论会跟着变）',
+    pattern: /round3\(14 \* t\)/u,
+    hint: '色温实现变了？同步改文档第 12 条（冷调必须给负值、角度按强度缩放这条结论会跟着变）',
   },
   {
     // 第 13 条：path 非等比

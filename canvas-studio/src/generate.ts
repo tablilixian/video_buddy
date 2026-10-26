@@ -42,6 +42,7 @@ import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
 import { groupBoxOf } from './canvas-view.js'
 // CV-184：落点唯一口径（原本本文件自己有一份，已收敛到共享模块）。
 import { deriveNodePlacement } from './canvas-placement.js'
+import { placementResolutionWarning, placementDurationWarning } from './remotion/resolution-check.js'
 // CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
 // CV-188：同一次探测顺带取**真实分辨率**（视频侧声明值以实测为准，见下方落盘段）。
 // 音频侧只要时长（宽高对 mp3 无意义），故两个入口并存 —— 共用同一次 `ffmpeg -i` 实现。
@@ -2647,6 +2648,28 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
   // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
   const canvasNodes = (await registry.readCanvas(projectId)).nodes
+  // OPT-13+14（2026-10-26）：**素材落位预对账** —— 分辨率与分镜窗口在落位时就给
+  // 决策点，不拖到渲染 warning 里重复出现（session 实证：同一「上采样 1.5×」提示
+  // 在 5 次渲染里重复、无人执行「重出」建议 —— 发现太晚，决策成本已被稀释）。
+  // 窗口来源 = 分镜卡节点自带的 declaredDuration/declaredFrames（seed 落卡时写入），
+  // 不需要读 storyboard 文件。纯函数判定在 resolution-check.ts（与渲染链核对同域）。
+  if (isVideo && mediaDuration !== undefined && mediaDuration > 0) {
+    const resolutionNote = placementResolutionWarning(mediaSize.width, mediaSize.height)
+    if (resolutionNote !== null) warnings.push(resolutionNote)
+    const boundShotCards = (params.shotNodeIds ?? [])
+      .map((id) => canvasNodes.find((node) => node.id === id))
+      .filter((node): node is StudioCanvasNode => node !== undefined)
+    for (const card of boundShotCards) {
+      const windowSec = typeof card.declaredDuration === 'number' && card.declaredDuration > 0
+        ? card.declaredDuration
+        : typeof card.declaredFrames === 'number' && card.declaredFrames > 0
+          ? card.declaredFrames / 24 // CV-142：declaredFrames 是 24fps 帧数
+          : undefined
+      if (windowSec === undefined) continue
+      const durationNote = placementDurationWarning(mediaDuration, windowSec)
+      if (durationNote !== null) warnings.push(durationNote)
+    }
+  }
   // A-1 路径 A：血缘反查用自愈后的新句柄——画布上的源节点 filename 已被自愈改写，
   // 用旧句柄查不中（连线缺失）。
   const healedName = (name: string | undefined): string | undefined =>

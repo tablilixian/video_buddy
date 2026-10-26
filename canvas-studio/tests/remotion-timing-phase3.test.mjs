@@ -240,9 +240,26 @@ test('lookStyles：缺省 / 中性值 ⇒ 三层全不挂（老 manifest 逐像�
 test('lookStyles：四个色彩分量拼成一条 filter；暗角与颗粒各自成层', () => {
   const styles = lookStyles({ contrast: 1.06, saturation: 1.12, brightness: 1.02, temperature: 0.12, vignette: 0.35, grain: 0.16 }, 30)
   assert.match(styles.filter, /^contrast\(1\.06\) saturate\(1\.12\) brightness\(1\.02\) sepia\(/)
-  assert.match(styles.filter, /hue-rotate\(-12deg\)$/, '暖色温走负角度')
+  // OPT-9 修复后暖调角度按 |temperature| 缩放：0.12 → -1.44°（旧实现恒 -12°）。
+  assert.match(styles.filter, /hue-rotate\(-1\.44deg\)$/, '暖色温走负角度且按强度缩放')
   assert.match(styles.vignetteBackground, /^radial-gradient\(ellipse at center, rgba\(0,0,0,0\) 42%/)
   assert.equal(styles.grainOpacity, 0.16)
+})
+
+test('lookStyles：暖调满档 t=1 与旧实现一致（sepia(0.28) + hue-rotate(-12deg)）', () => {
+  const styles = lookStyles({ temperature: 1 }, 30)
+  assert.equal(styles.filter, 'sepia(0.28) hue-rotate(-12deg)')
+})
+
+test('lookStyles：冷调 = 低饱和 + 微角度偏青，不垫 sepia、不出现大角度旋转（OPT-9）', () => {
+  // 旧实现：sepia + hue-rotate(168deg) 把冷蓝 220° 拧到 28° 橙棕（真机事故）。
+  const cold = lookStyles({ temperature: -0.55 }, 30)
+  assert.equal(cold.filter, 'saturate(0.879) hue-rotate(7.7deg)', `冷调应为低饱和+微旋：${cold.filter}`)
+  assert.ok(!cold.filter.includes('sepia'), '冷调不该垫 sepia（先弄黄再拧回是事故根源）')
+
+  const full = lookStyles({ temperature: -1 }, 30)
+  assert.equal(full.filter, 'saturate(0.78) hue-rotate(14deg)', '冷调满档 = saturate(0.78) + 14° 微旋')
+  assert.ok(!full.filter.includes('168'), '任何冷调都不该再出现 168° 大角度（反向变异靶：恢复恒定角即红）')
 })
 
 test('lookStyles：颗粒偏移只依赖帧号（同帧可重复；相邻帧不同；恒在 0–255）', () => {

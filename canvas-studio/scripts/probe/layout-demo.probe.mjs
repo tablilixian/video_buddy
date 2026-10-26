@@ -8,18 +8,25 @@
 //   env -u ELECTRON_RUN_AS_NODE ELECTRON_DISABLE_SANDBOX=1 \
 //     ../dsh-plugin-desktop/node_modules/.bin/electron scripts/probe/layout-demo.probe.mjs
 //
-// 输入：/tmp/cs-layout-demo/manifest.json + /tmp/cs-layout-demo/assets/*.mp4
-// 输出：/tmp/cs-layout-demo/out.mp4（成片）；/tmp/cs-layout-demo/steps.log（过程）。
+// 输入：<workDir>/manifest.json + <workDir>/assets/*（OPT-19 起 env 可覆盖，逐配方复用）：
+//   LAYOUT_DEMO_DIR     工作目录（缺省 /tmp/cs-layout-demo）
+//   LAYOUT_DEMO_OUT     成片落盘路径（缺省 <workDir>/out.mp4）
+//   LAYOUT_DEMO_QUALITY 渲染质量档（缺省 final；draft=半分辨率更快）
+//   LAYOUT_DEMO_JOBID   工单 id（缺省 rj-layout-demo-0001）
+// 输出：<outPath>（成片）；<workDir>/steps.log（过程）。
 
 import { createServer } from 'node:http'
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app } from 'electron'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const packageRoot = join(here, '..', '..')
-const workDir = '/tmp/cs-layout-demo'
+const workDir = process.env.LAYOUT_DEMO_DIR ?? '/tmp/cs-layout-demo'
+const outPath = process.env.LAYOUT_DEMO_OUT ?? join(workDir, 'out.mp4')
+const quality = process.env.LAYOUT_DEMO_QUALITY ?? 'final'
+const jobId = process.env.LAYOUT_DEMO_JOBID ?? 'rj-layout-demo-0001'
 mkdirSync(workDir, { recursive: true })
 const stepLog = join(workDir, 'steps.log')
 const step = (tag, extra) => {
@@ -35,23 +42,20 @@ const { recordRenderHostReport, resetRenderHostReport, renderHostReady } = await
 const renderHostBundle = readFileSync(join(packageRoot, 'lib', 'render-host.js'))
 
 const manifest = JSON.parse(readFileSync(join(workDir, 'manifest.json'), 'utf8'))
-const assets = {
-  '/canvas-studio/assets/news-a.mp4': readFileSync(join(workDir, 'assets', 'news-a.mp4')),
-  '/canvas-studio/assets/news-b.mp4': readFileSync(join(workDir, 'assets', 'news-b.mp4')),
-  '/canvas-studio/assets/news-c.mp4': readFileSync(join(workDir, 'assets', 'news-c.mp4')),
-  '/canvas-studio/assets/anchor-a.mp4': readFileSync(join(workDir, 'assets', 'anchor-a.mp4')),
-  '/canvas-studio/assets/anchor-b.mp4': readFileSync(join(workDir, 'assets', 'anchor-b.mp4')),
-  '/canvas-studio/assets/anchor-c.mp4': readFileSync(join(workDir, 'assets', 'anchor-c.mp4')),
+// OPT-19：assets 目录整目录托管（文件名 → /canvas-studio/assets/<名>），配方间复用素材。
+const assets = {}
+for (const file of readdirSync(join(workDir, 'assets'))) {
+  assets[`/canvas-studio/assets/${file}`] = readFileSync(join(workDir, 'assets', file))
 }
 
 const job = {
-  jobId: 'rj-layout-demo-0001',
+  jobId,
   projectId: 'proj-layout-demo',
   manifest,
   fps: manifest.meta.fps,
-  quality: 'final',
+  quality,
   realDurations: {},
-  sampleFrames: [0, 90, 180, 270, manifest.meta.durationInFrames - 1],
+  sampleFrames: [0, 45, manifest.meta.durationInFrames - 1],
 }
 
 let jobDispatchable = false
@@ -171,7 +175,6 @@ async function main() {
   const bytes = committedBytes
   const isMp4 = bytes.length > 32 && bytes.subarray(4, 8).toString('latin1') === 'ftyp'
   if (!isMp4) throw new Error(`回写字节不是 mp4（len=${bytes.length}）`)
-  const outPath = join(workDir, 'out.mp4')
   writeFileSync(outPath, bytes)
   step('done', { bytes: bytes.length, outPath, wallMs: Date.now() - startedAt })
   console.log(`\n✅ 成片：${outPath}（${bytes.length} 字节，全程 ${Math.round((Date.now() - startedAt) / 1000)}s）`)

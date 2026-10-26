@@ -815,12 +815,24 @@ export function lookStyles(look: ManifestLook | undefined, frame: number): LookS
   if (typeof brightness === 'number' && Number.isFinite(brightness) && Math.abs(brightness - 1) > 1e-6) {
     filters.push(`brightness(${round3(brightness)})`)
   }
-  // 色温用 `sepia` + `hue-rotate` 近似：暖 = 微 sepia 偏黄；冷 = sepia 后转 180° 偏青。
+  // 色温近似（OPT-9，2026-10-26 修）：旧实现 hue-rotate 恒定 -12°/168°，大角度把
+  // 整幅画面的**所有**色相拧到错误象限 —— 冷蓝 #161f38（色相 220°）被 168° 转到
+  // 28° 橙棕，与风格规范直接冲突（真机实证，agent 手算颜色矩阵才定位）。
+  // 修复：角度按 |temperature| 缩放，且冷调不再垫 sepia（sepia 本身偏黄，冷调垫它
+  // 等于先弄脏再拧回）：
+  //   暖（t>0）：sepia(t·0.28) 微黄 + hue-rotate(−12·t)° → 琥珀感（t=1 与旧实现一致）；
+  //   冷（t<0）：saturate(1−0.22·t) 低饱和 + hue-rotate(+14·t)° → 青蓝冷峻，
+  //              最大 14° 的微旋不破坏原有色相（220° 蓝 → 234° 仍蓝）。
   const temperature = look.temperature
   if (typeof temperature === 'number' && Number.isFinite(temperature) && Math.abs(temperature) > 1e-6) {
-    const amount = Math.min(1, Math.abs(temperature)) * 0.28
-    filters.push(`sepia(${round3(amount)})`)
-    filters.push(`hue-rotate(${temperature > 0 ? -12 : 168}deg)`)
+    const t = Math.min(1, Math.abs(temperature))
+    if (temperature > 0) {
+      filters.push(`sepia(${round3(t * 0.28)})`)
+      filters.push(`hue-rotate(${round3(-12 * t)}deg)`)
+    } else {
+      filters.push(`saturate(${round3(1 - 0.22 * t)})`)
+      filters.push(`hue-rotate(${round3(14 * t)}deg)`)
+    }
   }
   const vignette = look.vignette
   const vignetteBackground =

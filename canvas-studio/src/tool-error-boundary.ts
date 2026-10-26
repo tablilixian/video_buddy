@@ -27,6 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
+import { assertRequiredToolParams } from './tool-required-params.js'
 import './errors/catalog.js'
 
 /** 结构化错误在工具结果 `error.info` 里的 `name`（客户端据此认出码来自本系统）。 */
@@ -93,6 +94,8 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
   wrapped.execute = async (args: unknown, exec: unknown): Promise<unknown> => {
     try {
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
+      // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
+      assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       return await original.call(source, args, exec)
     } catch (cause) {
       throw recordStudioToolFailure(cause, exec)

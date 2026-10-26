@@ -49,6 +49,7 @@ import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
+import { runVideoShotQc, aggregateVideoQc, buildVideoQcRecord, validateQcTargetInput, VIDEO_QC_BUDGET } from './video-qc.js'
 import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
@@ -67,7 +68,7 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
-import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
+import { ASSET_URL_PREFIX, collectAnimationWindows, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
 import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage, samplePixels } from './inspect-image.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
@@ -137,6 +138,29 @@ const resultSchema = {
         width: { type: 'integer' as const, description: '成片真实宽度（像素）' },
         height: { type: 'integer' as const, description: '成片真实高度（像素）' },
         sampledFrames: { type: 'integer' as const, description: '实际落盘抽帧数' },
+        animationWindows: {
+          type: 'array' as const,
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string' as const, description: '轨 id' },
+              start: { type: 'integer' as const, description: '窗口起点（绝对帧）' },
+              end: { type: 'integer' as const, description: '窗口终点（绝对帧）' },
+              kinds: { type: 'array' as const, items: { type: 'string' as const }, description: '动画种类（animate / exit / orbit）' },
+            },
+          },
+          description: 'OPT-15 动画窗口表（仅带动画的轨）。**QC 铁律：抽帧号落在某轨窗口内 = 该帧在动画飞行中，先看窗口末帧再下结论**——动画中段的位移/透明度不是布局 bug',
+        },
+        audio: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            mutedVideoTracks: { type: 'integer' as const, description: '声明了 muted:true 的 video 轨数' },
+            audibleSources: { type: 'integer' as const, description: '成片可能出声的源数量（未静音 video 轨 + BGM + 旁白）。**0 = 平台保证成片无声，无需再做任何音频验证**' },
+          },
+          description: 'OPT-11 音频平台保证：由 manifest 确定性推导（非探测）。audibleSources=0 时不要再用 ffprobe 采电平验证静音',
+        },
         lint: {
           type: 'array' as const,
           items: {
@@ -269,6 +293,10 @@ interface ComposeToolResult {
     width: number
     height: number
     sampledFrames: number
+    /** OPT-11：音频平台保证（manifest 确定性推导；audibleSources=0 ⇒ 成片必然无声）。 */
+    audio?: { mutedVideoTracks: number; audibleSources: number }
+    /** OPT-15：带动画轨的动画窗口表（QC 拿抽帧号对窗口，先看末帧再定论）。 */
+    animationWindows?: { id: string; start: number; end: number; kinds: string[] }[]
     /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位；详细文案在 `warnings` 里）。 */
     lint?: { code: string; at: string }[]
   }
@@ -470,6 +498,21 @@ function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): s
   if (report.encodeDoneAtMs > 0) parts.push(`编码完成于 ${(report.encodeDoneAtMs / 1000).toFixed(1)}s`)
   if (report.bytes > 0) parts.push(`${(report.bytes / 1024 / 1024).toFixed(2)}MB`)
   if (report.bitrateKbps > 0) parts.push(`${Math.round(report.bitrateKbps)}kbps`)
+  // OPT-11：音频平台保证 —— 无声是确定性推论，直接给结论省掉 agent 的采电平验证。
+  if (report.audio !== undefined) {
+    parts.push(
+      report.audio.audibleSources === 0
+        ? '音频=无声（平台保证，muted/无音源，无需验证）'
+        : `音频=${report.audio.audibleSources} 个出声源（muted 轨 ${report.audio.mutedVideoTracks}）`,
+    )
+  }
+  // OPT-15：动画窗口表进可见文本（QC 铁律的载体——只列轨号不展开，细节在结构化字段里）。
+  const windows = report.animationWindows ?? []
+  if (windows.length > 0) {
+    const brief = windows.slice(0, 4).map((w) => `${w.id}[${w.start}–${w.end}:${w.kinds.join('+')}]`).join('、')
+    const more = windows.length > 4 ? ` 等 ${String(windows.length)} 轨` : ''
+    parts.push(`动画窗口=${brief}${more}（抽帧落在窗口内=动画飞行中，先看末帧再定论）`)
+  }
   return `渲染报告：${parts.join(' · ')}`
 }
 
@@ -1690,7 +1733,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。**传了 shotRefs（分镜效果图）时必传**——从分镜 meta.aspect 取，Host 会拒收缺省调用' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 4 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
@@ -1761,7 +1804,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词：包含**要渲染到画面里的文字**（逐字写清内容与位置/字体/排版）+ 其余画面描述' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。**传了 shotRefs（分镜效果图）时必传**——从分镜 meta.aspect 取，Host 会拒收缺省调用' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
@@ -1814,7 +1857,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         '基于一张角色设计图生成角色立绘图（四视图：正面特写 / 正面全身 / 侧面全身 / 背面全身）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
       parameters: {
         filename: { type: 'string' as const, required: true, description: '角色设计图：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。**传了 shotRefs（分镜效果图）时必传**——从分镜 meta.aspect 取，Host 会拒收缺省调用' },
         sourceUrls: { type: 'array' as const, description: '设计图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）' },
       },
@@ -1970,11 +2013,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       name: 'qc_shot',
       description:
         '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-240：质检不参与生成过程**——本工具仅在**成片交付后**用于产出《质检报告》：逐镜运行后把结果汇总成报告随交付输出，**仅供参考，不触发返工**（PASS/FAIL 都不需要据此重出镜头，用户主动要求重做才传 `replaces`）；生成过程中调用本工具属于流程违规。FAIL/WARN 一律不自动重跑（CV-214：VLM 识别不可靠，自动重跑会烧预算把对的图改坏）。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）。'
-        + '⚠️ **O-11：基准只按本镜判** —— 传了 shotRefs 时，Host 会从**该镜分镜卡正文**取它自己的「运镜 / 视觉」作为本镜基准，质检员不得拿别的镜的景别/机位语汇评价本镜；分镜卡里声明 `facesVisible:false`（微距 / 背影 / 空镜）会自动跳过外貌核对（也可显式传 facesVisible:false）。',
+        + '⚠️ **O-11：基准只按本镜判** —— 传了 shotRefs 时，Host 会从**该镜分镜卡正文**取它自己的「运镜 / 视觉」作为本镜基准，质检员不得拿别的镜的景别/机位语汇评价本镜；分镜卡里声明 `facesVisible:false`（微距 / 背影 / 空镜）会自动跳过外貌核对（也可显式传 facesVisible:false）。'
+        + '⚠️ **图片镜头传 filename，视频镜头传 videoRefs（二选一）**：视频镜头 Host 自动抽首/中/末三帧逐帧核对后聚合（最差档），无需再自己抽帧上传。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
-        filename: { type: 'string' as const, required: true, description: '被检镜头图的**可用句柄**（`upload_image` 的返回，或 `@ref[显示名]`——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 不要把生成工具结果里的产物名（形如 img_01287_.png）直接传进来。' },
+        filename: { type: 'string' as const, description: '被检镜头图的**可用句柄**（`upload_image` 的返回，或 `@ref[显示名]`——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 不要把生成工具结果里的产物名（形如 img_01287_.png）直接传进来。**与 videoRefs 二选一**：图片镜头必传。' },
+        videoRefs: { type: 'array' as const, description: '视频镜头被检对象（与 filename 二选一）：画布**视频节点**的 id / 标题 / url。Host 自动抽首/中/末三帧逐帧质检并按最差档聚合，结论写回视频节点' },
         expect: { type: 'string' as const, description: '判定基准：该镜必须保持的固定要素描述。缺省拼接本项目全部一致性资产卡的 lockedPrompt' },
         shotRefs: { type: 'array' as const, description: '该镜所属分镜卡（写法同 image_generate 的 shotRefs：卡片标题 / 「分镜 N」/ 节点 id）。**务必传**——重跑会生成新节点，不传则每次质检都算第 1 次，重跑预算会失效' },
         budget: { type: 'number' as const, description: `重跑预算，默认 ${DEFAULT_QC_BUDGET}。FAIL 次数达到预算时 exhausted=true，应停止自动重跑并把该镜上报用户仲裁` },
@@ -2003,7 +2048,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         },
       },
       async execute(args, exec) {
-        const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number; facesVisible?: boolean }
+        const a = args as { filename?: string; videoRefs?: unknown[]; expect?: string; shotRefs?: unknown[]; budget?: number; facesVisible?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'qc_shot', false)
         // CV-196：放手跑模式逐镜质检整体关闭（机器闸，不靠提示词自觉）——
@@ -2012,7 +2057,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (workflow.mode === 'auto') {
           return { skipped: true, reason: QC_AUTO_MODE_NOTICE }
         }
-        const filename = await resolveRefValue(registry, projectId, a.filename, library, 'image')
+        // OPT-10：图片镜头 filename / 视频镜头 videoRefs，二选一（都传或都缺都拒）。
+        const { videoRefs, filename: filenameArg } = validateQcTargetInput(a.filename, a.videoRefs)
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
         if (expect.length === 0) {
@@ -2032,10 +2078,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const cardNoFace = cardContexts.length > 0 && cardContexts.every((ctx) => ctx.noFace)
         // 显式参数优先于卡上声明。
         const facesVisible = a.facesVisible !== undefined ? a.facesVisible : (cardNoFace ? false : undefined)
-        const result = await runShotQc(doc.nodes, filename, {
+        const qcOptions = {
           // CV-155：带上 registry/projectId，让 analyzeImage 拿到产物名（本工具最常见
           // 的输入）时能自愈换句柄。不传 = 关掉自愈，qc_shot 会退回 0 成功。
-          analyze: (name, prompt, systemPrompt, signal) =>
+          analyze: (name: string, prompt: string, systemPrompt: string, signal?: AbortSignal) =>
             analyzeImage(name, prompt, systemPrompt, signal, { registry, projectId }),
           expect,
           shotCardIds,
@@ -2043,7 +2089,34 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(facesVisible !== undefined ? { facesVisible } : {}),
           ...(cardFocus !== undefined ? { shotFocus: cardFocus } : {}),
           signal: exec.signal,
-        })
+        }
+
+        // OPT-10：视频镜头 —— 抽帧逐帧质检 + 最差档聚合，结论写回每个源视频节点。
+        if (videoRefs.length > 0) {
+          const results = []
+          for (const ref of videoRefs) {
+            results.push(await runVideoShotQc(doc.nodes, registry, projectId, ref, qcOptions))
+          }
+          const merged = aggregateVideoQc(results.flatMap((result) => result.frames))
+          const record = buildVideoQcRecord(merged, expect, Date.now())
+          const nodeIds = results.map((result) => result.nodeId).filter((id): id is string => id !== null)
+          if (nodeIds.length > 0) {
+            const nodes = doc.nodes.map((node) => (nodeIds.includes(node.id) ? { ...node, qc: record } : node))
+            await registry.writeCanvas(projectId, nodes, doc.view, doc.assets)
+          }
+          return {
+            verdict: merged.verdict,
+            drifts: merged.drifts,
+            reason: merged.reason,
+            attempts: 1,
+            budget: VIDEO_QC_BUDGET,
+            exhausted: false,
+            ...(nodeIds.length > 0 ? { nodeId: nodeIds[0] as string } : {}),
+          }
+        }
+
+        const filename = await resolveRefValue(registry, projectId, filenameArg, library, 'image')
+        const result = await runShotQc(doc.nodes, filename, qcOptions)
         if (result.nodeId !== null) {
           const nodes = doc.nodes.map((node) => (node.id === result.nodeId ? { ...node, qc: result.record } : node))
           await registry.writeCanvas(projectId, nodes, doc.view, doc.assets)
@@ -3008,6 +3081,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 三期 W1-3：取一次体检结果，既给报告里的计数，也让「置顶提醒」有统一来源。
         // F-05：探针渲染跳过体检 —— 调试期的画面本来就不完整，体检只会生产噪声。
         const lintIssues = probe ? [] : lintMotion(renderManifest)
+        // OPT-15：动画窗口表 —— QC 抽帧号对窗口用，防止把动画中段当布局 bug 排查。
+        const animationWindows = probe ? [] : collectAnimationWindows(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
         const warnings = [
           ...validation.warnings,
@@ -3048,6 +3123,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // `renderManifest` 结果必然一致 —— 不会出现「报告 3 条、warnings 4 条」的分叉。
           report: {
             ...job.report,
+            ...(animationWindows.length > 0 ? { animationWindows } : {}),
             ...(lintIssues.length > 0
               ? { lint: lintIssues.map((issue) => ({ code: issue.code, at: issue.at })) }
               : {}),

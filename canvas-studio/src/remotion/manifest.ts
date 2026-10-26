@@ -82,7 +82,8 @@ export const RENDER_QUALITY_SCALE: Readonly<Record<RenderQuality, number>> = {
  * 三期 W2-4：全片调色参数。全部可选、全部有缺省中性值（缺省 = 不产生任何样式）。
  *
  * - `contrast` / `saturation` / `brightness`：CSS `filter` 倍率（1 = 不变）；
- * - `temperature`：-1（冷）~ 1（暖），用 `sepia + hue-rotate` 近似；
+ * - `temperature`：-1（冷）~ 1（暖）。暖 = sepia + 微负角度；冷 = 低饱和 + 微正角度
+ *   （角度按强度缩放，OPT-9 修复后不再使用恒定大角度 hue-rotate）；
  * - `vignette`：0–1，四角压暗强度；
  * - `grain`：0–1，胶片颗粒不透明度（按帧整数偏移，逐帧确定）。
  */
@@ -1604,9 +1605,130 @@ export function validateManifest(input: unknown): ManifestValidation {
   // 再报「6 个元素同帧入场」只会淹没真问题。
   if (errors.length === 0) {
     warnings.push(...formatMotionLint(lintMotion(input as unknown as CompositionManifest)))
+    warnings.push(...lintZOrder(input.tracks as unknown[]))
   }
 
   return { ok: errors.length === 0, errors, warnings }
+}
+
+/**
+ * OPT-8（2026-10-26）：**z-order 风险体检**（只 warning）。
+ *
+ * track 数组序 = 层叠序（靠后在上）。无 box 的 video/image 轨铺满画布，排在
+ * 内容轨（textCard / shape）之后时，重叠时间段内下方内容会被画面整体盖住 ——
+ * 真机实证：全屏视频轨放在 title 卡之后 → 卡片「消失」，agent 只能改轨序绕过。
+ * 渲染端底色已改为只跟媒体元素（同日修复），但视频画面本身仍是不透明覆盖，
+ * 所以这条体检仍有价值：模型在收稿前就该看到提醒，而不是等渲染返工。
+ *
+ * 豁免：媒体轨带 box（只覆盖子区域）；下方 shape 的 box 铺满画布（本来就是
+ * 全屏背景层，被盖住是预期）；时间不重叠（先后出场互不遮挡）。每条媒体轨只报一次。
+ */
+function lintZOrder(tracks: unknown[]): string[] {
+  const out: string[] = []
+  const isMedia = (t: unknown): t is Record<string, unknown> =>
+    isRecord(t) && (t.type === 'video' || t.type === 'image')
+  const isContent = (t: unknown): t is Record<string, unknown> =>
+    isRecord(t) && (t.type === 'textCard' || t.type === 'shape')
+  const span = (t: Record<string, unknown>): [number, number] => {
+    const start = typeof t.startFrame === 'number' && Number.isFinite(t.startFrame) ? t.startFrame : 0
+    const duration = typeof t.durationInFrames === 'number' && Number.isFinite(t.durationInFrames) ? t.durationInFrames : 0
+    return [start, start + duration]
+  }
+  for (let i = 0; i < tracks.length; i += 1) {
+    const media = tracks[i]
+    if (!isMedia(media) || media.box !== undefined) continue
+    const [mStart, mEnd] = span(media)
+    for (let j = 0; j < i; j += 1) {
+      const below = tracks[j]
+      if (!isContent(below)) continue
+      if (below.type === 'shape') {
+        const box = below.box
+        // 全屏背景 shape（无 box 缺省 30×20 也不是全屏；显式铺满才豁免）：
+        const full = isRecord(box)
+          && typeof box.x === 'number' && typeof box.y === 'number'
+          && typeof box.w === 'number' && typeof box.h === 'number'
+          && box.w >= 95 && box.h >= 95
+        if (full) continue
+      }
+      const [bStart, bEnd] = span(below)
+      if (Math.min(mEnd, bEnd) - Math.max(mStart, bStart) <= 0) continue
+      const mid = typeof media.id === 'string' ? media.id : `#${i}`
+      const bid = typeof below.id === 'string' ? below.id : `#${j}`
+      out.push(
+        `z-order 风险：全屏 ${String(media.type)} 轨 "${mid}" 排在内容轨 "${bid}" 之后（数组靠后 = 更上层），重叠时间段内下方内容会被画面盖住 —— `
+        + `若需内容浮于视频上，把内容轨移到数组更后；若媒体只该占局部区域，给它加 box`,
+      )
+      break
+    }
+  }
+  return out
+}
+
+/**
+ * OPT-15（2026-10-26）：收集**带动画轨的动画窗口表**（纯函数，进渲染报告）。
+ *
+ * 背景：QC 曾把 maskReveal **动画中段**的标题判成「偏移 ~100px」—— 末帧其实是
+ * 居中的，agent 烧了 ~4 轮排查一个不存在的 bug。有了窗口表，agent 拿抽帧的
+ * 绝对帧号一对就知道「这帧在动画飞行中」，先看窗口末帧再下结论。
+ */
+export interface TrackAnimationWindow {
+  /** 轨 id。 */
+  id: string
+  /** 窗口起点（绝对帧）。 */
+  start: number
+  /** 窗口终点（绝对帧）。 */
+  end: number
+  /** 动画种类（animate / exit / orbit，按轨实际声明）。 */
+  kinds: string[]
+}
+
+export function collectAnimationWindows(manifest: CompositionManifest): TrackAnimationWindow[] {
+  const out: TrackAnimationWindow[] = []
+  for (const track of manifest.tracks) {
+    const kinds: string[] = []
+    if (track.animate !== undefined) kinds.push('animate')
+    if (track.exit !== undefined) kinds.push('exit')
+    if (track.orbit !== undefined) kinds.push('orbit')
+    if (kinds.length === 0) continue
+    const start = track.startFrame
+    out.push({ id: track.id, start, end: start + track.durationInFrames, kinds })
+  }
+  return out
+}
+
+/**
+ * OPT-11（2026-10-26）：成片音频构成摘要（**纯函数，由 manifest 确定性推导**）。
+ *
+ * 背景：真机上 agent 为了确认 `muted:true` 是否真静音，要自己 ffprobe 采电平
+ * 对比（session 实证 ~1.5min）。其实「成片有没有任何出声源」是 manifest 的
+ * 确定性推论，不需要探测 —— 挂进渲染报告后，`audibleSources === 0` 即平台
+ * 保证成片无声，agent 无需再做任何音频验证。
+ *
+ * 统计口径：出声源 = 未 muted 的 video 轨 + `audio.bgmUrl` + `audio.voiceOverUrl`
+ * + `audio.voiceOver[]` 条数。image/textCard/shape 天然无声，不计。
+ */
+export interface ManifestAudioSummary {
+  /** 声明了 `muted: true` 的 video 轨数。 */
+  mutedVideoTracks: number
+  /** 成片可能出声的源数量；`0` ⇒ 成片必然无声（平台保证）。 */
+  audibleSources: number
+}
+
+export function summarizeManifestAudio(manifest: CompositionManifest): ManifestAudioSummary {
+  let mutedVideoTracks = 0
+  let audibleSources = 0
+  for (const track of manifest.tracks) {
+    if (track.type !== 'video') continue
+    if (track.muted === true) mutedVideoTracks += 1
+    else audibleSources += 1
+  }
+  const audio = manifest.audio
+  if (audio !== undefined) {
+    if (audio.bgmUrl !== undefined) audibleSources += 1
+    if (audio.voiceOverUrl !== undefined) audibleSources += 1
+    if (Array.isArray(audio.voiceOver)) audibleSources += audio.voiceOver.length
+  }
+  return { mutedVideoTracks, audibleSources }
 }
 
 /**

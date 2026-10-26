@@ -24,6 +24,7 @@ import { recordTransientAsset } from '../asset-gc.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
+import { summarizeManifestAudio, type ManifestAudioSummary } from './manifest.js'
 import {
   listRenderJobs,
   reportRenderProgress,
@@ -109,6 +110,8 @@ export interface RenderJobReport {
   width: number
   height: number
   sampledFrames: number
+  /** OPT-11：音频平台保证 —— 由 manifest 确定性推导（非探测）。`audibleSources=0` ⇒ 成片必然无声。 */
+  audio?: ManifestAudioSummary
 }
 
 /**
@@ -868,6 +871,9 @@ export async function commitRenderJob(
     width: info.width ?? input.report?.width ?? 0,
     height: info.height ?? input.report?.height ?? 0,
     sampledFrames: frames.length,
+    // OPT-11：音频平台保证随报告回传 —— agent 拿 `audibleSources=0` 就不必再做
+    // ffprobe 采电平之类的自行验证（真机实证的重复成本）。
+    audio: summarizeManifestAudio(job.manifest),
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,

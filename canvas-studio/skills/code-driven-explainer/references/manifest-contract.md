@@ -488,7 +488,7 @@
 | 9 | 但 `animate.from/to` 里的 `x/y` **会覆盖 `box.x/y`**（`positionDeclared` 以 animate 为准） | "以 `box` 定初始位置、只动 y"是可行的：`animate` 里只写 `y`，`x` 保持 `box` |
 | 10 | `transition` 作用于 `fromTrackId` / `toTrackId` 的**整条轨**，不是单个元素 | "只擦除某一行/某个块"做不到；要么拆轨，要么用 `exit` 淡出模拟 |
 | 11 | `fx:"glow"` 的发光色**固定冷蓝** `rgba(120,190,255,…)`，不可配 | 要暖色光晕就用 `shape` + 半透明径向渐变自己画 |
-| 12 | `meta.look.temperature > 0` 走 `hue-rotate(-12deg)`（偏暖）；`≤ 0` 走 168°（偏青） | **要冷调必须给负值**（如 `-0.55`），给 0 等于不调、给正数是反方向 |
+| 12 | `meta.look.temperature` 的角度**按强度缩放**：暖（正）= `sepia(0.28·t)` + `hue-rotate(-12·t)°`；冷（负）= `saturate(1-0.22·t)` + `hue-rotate(+14·t)°`（`t=|temperature|`，不垫 sepia） | **要冷调必须给负值**（如 `-0.55`），给 0 等于不调、给正数是反方向；冷调是「低饱和+微偏青」，不是整幅换色相 |
 | 13 | `shape:"path"` 的 `d` 是 **0–100 双轴百分比**且 `preserveAspectRatio="none"`（非等比） | 16:9 下画"正圆感"的曲线要按 `rx : ry ≈ 1 : 0.5625` 补偿 |
 | 14 | `box` 的 `w` / `h` 是**画布百分比**，不是像素；父容器变了它跟着变 | 换算像素时一律 `百分比 × 画布宽/高 ÷ 100`，别写死 px |
 | 15 | `meta.durationInFrames` 必须 **等于** `max(startFrame + durationInFrames)`；`exit.durationInFrames` 必须 **≤ 轨道时长** | 改末尾轨的时长后同步改 `meta`；`exit` 只能在长轨上用，别给 1 帧轨写 10 帧退场 |

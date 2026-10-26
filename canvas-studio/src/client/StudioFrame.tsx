@@ -2485,6 +2485,10 @@ export function StudioFrame(props: StudioFrameProps) {
             fitPendingRef.current = true
             setFitRequestedAt(Date.now())
           }}
+          // REQ-036：历程瀑布流视图开关 —— 随视口持久化（view.waterfall），
+          // 默认关闭（老项目零迁移）。布局投影与一次性适配都在 CanvasSurface 内。
+          waterfall={view.waterfall === true}
+          onToggleWaterfall={() => { handleViewChange({ waterfall: view.waterfall !== true }) }}
           onAddNode={kind => { if (projectId !== null) persistAfter(() => actions.addNode(projectId, kind)) }}
           onUploadFile={async (file) => {
             // CV-241 D3：一个入口，四类自动分发（与拖放共用 handleDroppedFiles 规则）。

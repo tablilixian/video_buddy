@@ -18,6 +18,9 @@ export interface CanvasToolbarProps {
   onUngroup(): void
   /** One-click overlap-free arrange (the only layout action by design). */
   onAutoArrange(): void
+  /** REQ-036：历程瀑布流视图开关（true = 历程视图，只读投影渲染）。 */
+  waterfall: boolean
+  onToggleWaterfall(): void
   onAddNode(kind: ManualNodeKind): void
   /** P8.1 → CV-241 D3：打开本地文件选择器上传**四类文件**（自动分类落对应节点）。 */
   onUploadFile(file: File): void
@@ -90,7 +93,7 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, onOpenLibrary, hideRetired, onToggleHideRetired, showAuxiliary, onToggleShowAuxiliary, historyOpen, onToggleHistory } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, waterfall, onToggleWaterfall, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, onOpenLibrary, hideRetired, onToggleHideRetired, showAuxiliary, onToggleShowAuxiliary, historyOpen, onToggleHistory } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
@@ -149,6 +152,22 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           原设置按钮位；设置入口移至 app 左下角全局入口，按钮已删）。 */}
       {(TOOLBAR_VISIBILITY.arrange || TOOLBAR_VISIBILITY.layers || TOOLBAR_VISIBILITY.minimap) && (
       <div className="csToolbarGroup csToolbarGroupEnd">
+        {/* REQ-036：历程视图开关 —— 与「整理布局」同属布局/视图语义，排在其左。
+            激活态高亮（与小地图/图层同款 csToolbarIconActive）。 */}
+        <button
+          type="button"
+          className={waterfall ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
+          title={waterfall ? '退出历程视图（回到自由画布）' : '历程视图：按阶段自上而下浏览创作产出'}
+          aria-label="历程视图"
+          aria-pressed={waterfall}
+          onClick={onToggleWaterfall}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="14" height="4" rx="1" />
+            <rect x="3" y="10" width="10" height="4" rx="1" />
+            <rect x="3" y="17" width="12" height="4" rx="1" />
+          </svg>
+        </button>
         {TOOLBAR_VISIBILITY.arrange && (
           <button type="button" className="csToolbarButton csToolbarIconButton" title="整理布局：消除重叠并适配视野" aria-label="整理布局" onClick={onAutoArrange}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

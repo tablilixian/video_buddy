@@ -277,8 +277,11 @@ test('参考视频接线：能力路由 + Drama 落字段 + fal 明确拒收（�
 test('参考视频接线：video_composite 独家收参数（CV-269 拆分），上层做官方规格预检', () => {
   // CV-269 拆分：video_generate 恒为首尾帧通道（fl2va），参考视频/音频只在
   // video_composite（恒 ref2va）上声明 —— 「选工具 = 选通道」。
+  // 2026-10-26 基线修正：镜头质检工具（check_shot）同日批次的合法接线也声明了
+  // videoRefs（视频镜头被检对象），守卫基线 1 → 2 —— 任何**第三处**（尤其
+  // video_generate 首尾帧通道收回 videoRefs）仍会被此计数当场抓出。
   const declared = (HOST_TOOLS_CODE.match(/videoRefs: \{ type: 'array' as const/g) ?? []).length
-  assert.equal(declared, 1, '只有 video_composite 声明 videoRefs（拆分后 video_generate 不再收）')
+  assert.equal(declared, 2, 'videoRefs 只许两处：video_composite（生成）+ 镜头质检；video_generate 不收')
   const resolved = (HOST_TOOLS_CODE.match(/params\.videoRefs = await resolveRefValues/g) ?? []).length
   assert.equal(resolved, 1, 'video_composite 必须做 @ref 解析（否则 @ref[显示名] 传不进去）')
   // 不预检就会白打一次后端（后端是同步阻塞的，一次几百万毫秒）

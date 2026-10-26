@@ -112,6 +112,13 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
     ? raw.composeExcluded as string[]
     : undefined
   const composeBgmNodeId = typeof raw.composeBgmNodeId === 'string' ? raw.composeBgmNodeId : undefined
+  // REQ-036：历程瀑布流三字段 —— 与 timeline / composeExcluded 同一容忍策略，
+  // 非法整体丢弃，缺省 = 关闭（老文档零迁移，自由画布行为逐字节不变）。
+  const waterfall = boolOr(raw.waterfall, false)
+  const waterfallShowText = boolOr(raw.waterfallShowText, false)
+  const waterfallOrder = Array.isArray(raw.waterfallOrder) && raw.waterfallOrder.every(id => typeof id === 'string')
+    ? raw.waterfallOrder as string[]
+    : undefined
   return {
     x: numberOr(raw.x, VIEW_DEFAULTS.x),
     y: numberOr(raw.y, VIEW_DEFAULTS.y),
@@ -121,6 +128,9 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
     ...(timeline !== undefined ? { timeline } : {}),
     ...(composeExcluded !== undefined ? { composeExcluded } : {}),
     ...(composeBgmNodeId !== undefined ? { composeBgmNodeId } : {}),
+    ...(waterfall ? { waterfall } : {}),
+    ...(waterfallShowText ? { waterfallShowText } : {}),
+    ...(waterfallOrder !== undefined ? { waterfallOrder } : {}),
   }
 }
 
@@ -390,6 +400,62 @@ function shotNumberOfTitle(title: string | undefined): number | undefined {
   return match !== null ? Number(match[1]) : undefined
 }
 
+/**
+ * 镜号传播与关键帧判据的**共享语义**（REQ-036 抽公共）。
+ *
+ * `arrangeCanvas`（CV-223 整理布局）与 `computeWaterfallLayout`（REQ-036 历程
+ * 瀑布流）都要回答同一组问题——「这个节点属于第几镜」「这张图是不是绑镜关键帧」。
+ * 语义只有一份：本函数是唯一实现，两个布局函数共同调用（CV-224 注释的既定
+ * 纪律：渲染层/布局层自己再解析一遍镜号，就是第二份实现，那条路不走）。
+ *
+ * 三趟传播（与原 arrangeCanvas 内联版逐语义一致）：
+ *   ① 分镜卡：title 解析「分镜 N」→ 登记镜号；
+ *   ② 视频：血缘里能找到已登记的分镜卡 → 继承镜号（compose 成片除外）；
+ *   ③ 末帧（extract_last_frame）：血缘里的视频已登记 → 继承；其余 image：
+ *      血缘直接引用分镜卡 ⇒ 判为**绑镜关键帧**并继承镜号（2026-09-22 拍板：
+ *      图只看「有没有绑镜」，不看「被谁消费」）。
+ */
+export interface ShotSemantics {
+  /** nodeId → 镜号（含沿血缘传播所得）。 */
+  readonly shotNo: ReadonlyMap<string, number>
+  /** 绑镜关键帧 image 的 id 集合（血缘直接引用分镜卡的图）。 */
+  readonly keyframes: ReadonlySet<string>
+}
+
+export function deriveShotSemantics(nodes: readonly StudioCanvasNode[]): ShotSemantics {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const shotNo = new Map<string, number>()
+  const keyframes = new Set<string>()
+  for (const node of nodes) {
+    if (!isShotCard(node)) continue
+    const no = shotNumberOfTitle(node.title)
+    if (no !== undefined) shotNo.set(node.id, no)
+  }
+  for (const node of nodes) {
+    if (node.kind !== 'video' || node.toolName === 'compose') continue
+    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
+    if (card !== undefined) shotNo.set(node.id, shotNo.get(card.id)!)
+  }
+  for (const node of nodes) {
+    if (node.toolName === 'extract_last_frame') {
+      const video = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
+      if (video !== undefined) shotNo.set(node.id, shotNo.get(video.id)!)
+      continue
+    }
+    if (node.kind !== 'image') continue
+    // 图引用分镜卡 = 绑了镜 = 该镜的关键帧（构图参考）。
+    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined
+      && isShotCard(src) && shotNo.has(src.id))
+    if (card !== undefined) {
+      keyframes.add(node.id)
+      // 顺手继承镜号 —— 不继承的话关键帧就没有行、会被下面的兜底排到画布最后
+      // （原实现的隐藏缺陷：罗大佑画布一张关键帧都没有，所以一直没暴露）。
+      shotNo.set(node.id, shotNo.get(card.id)!)
+    }
+  }
+  return { shotNo, keyframes }
+}
+
 /** One top-level layout unit: a node plus the children that travel with it. */
 interface ArrangeUnit {
   node: StudioCanvasNode
@@ -484,41 +550,15 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
   if (nodes.length === 0) return { positions, shotLanes: [] }
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
-  // ---- 镜号解析（血缘传播，三趟）：卡 → 视频 → 末帧/关键帧 ----
-  // 图只认「有没有绑镜」：agent 传了 shotRefs ⇒ 解析进 shotNodeIds ⇒ 并入 sourceIds
-  // （generate.ts）⇒ 这里认出它引用分镜卡 ⇒ 关键帧。其余图一律创意区，**不看它被谁
-  // 消费** —— 那趟"被视频消费过的无血缘图 = 该镜场景图"的推断已于 2026-09-22 删除，
-  // 因为它把"被当参考用了"读成了"是这一镜的场景图"，实测把 9 张跨镜色彩参考图塞进了
-  // 分镜栏（其中一张被 6 个镜共用，却被安到"镜 3"那一行）。
-  const shotNo = new Map<string, number>()
-  const keyframes = new Set<string>()
-  for (const node of nodes) {
-    if (!isShotCard(node)) continue
-    const no = shotNumberOfTitle(node.title)
-    if (no !== undefined) shotNo.set(node.id, no)
-  }
-  for (const node of nodes) {
-    if (node.kind !== 'video' || node.toolName === 'compose') continue
-    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
-    if (card !== undefined) shotNo.set(node.id, shotNo.get(card.id)!)
-  }
-  for (const node of nodes) {
-    if (node.toolName === 'extract_last_frame') {
-      const video = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
-      if (video !== undefined) shotNo.set(node.id, shotNo.get(video.id)!)
-      continue
-    }
-    if (node.kind !== 'image') continue
-    // 图引用分镜卡 = 绑了镜 = 该镜的关键帧（构图参考）。
-    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined
-      && isShotCard(src) && shotNo.has(src.id))
-    if (card !== undefined) {
-      keyframes.add(node.id)
-      // 顺手继承镜号 —— 不继承的话关键帧就没有行、会被下面的兜底排到画布最后
-      // （原实现的隐藏缺陷：罗大佑画布一张关键帧都没有，所以一直没暴露）。
-      shotNo.set(node.id, shotNo.get(card.id)!)
-    }
-  }
+  // ---- 镜号解析（血缘传播）----
+  // REQ-036 抽公共：三趟传播收进 `deriveShotSemantics`（本文件上方），这里与
+  // 历程瀑布流共用同一份实现。图只认「有没有绑镜」：agent 传了 shotRefs ⇒
+  // 解析进 shotNodeIds ⇒ 并入 sourceIds（generate.ts）⇒ 这里认出它引用分镜卡
+  // ⇒ 关键帧。其余图一律创意区，**不看它被谁消费** —— 那趟"被视频消费过的
+  // 无血缘图 = 该镜场景图"的推断已于 2026-09-22 删除，因为它把"被当参考用了"
+  // 读成了"是这一镜的场景图"，实测把 9 张跨镜色彩参考图塞进了分镜栏（其中一张
+  // 被 6 个镜共用，却被安到"镜 3"那一行）。
+  const { shotNo, keyframes } = deriveShotSemantics(nodes)
 
   // ---- 顶层单元 + 组随行（沿用既有机制：成员相对偏移保持）----
   const units: ArrangeUnit[] = []

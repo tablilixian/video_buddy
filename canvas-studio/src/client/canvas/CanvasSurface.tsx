@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { centerViewOf, computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { computeWaterfallLayout } from '../../canvas-waterfall.js'
 import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
@@ -430,6 +431,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onFitClampedRef = useRef(onFitClamped)
   onFitClampedRef.current = onFitClamped
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
+  // REQ-036：历程瀑布流的**投影节点表**（waterfallNodes 的 ref 镜像）。
+  // ref 容器在此提前声明（fitToContent / zoomToSelection / revealNodes 这些
+  // useCallback([]) 稳定回调都经它读投影坐标）；memo 在下方渲染期回填 ——
+  // 回调体是延迟执行，ref 先建后填没有时序问题。
+  const waterfallNodesRef = useRef<readonly StudioCanvasNode[]>([])
+  /** 历程模式下以投影盒为界，自由画布以存储坐标为界（deps 稳定的统一取数口）。 */
+  const layoutTargets = useCallback((): readonly StudioCanvasNode[] =>
+    (viewRef.current.waterfall === true ? waterfallNodesRef.current : nodesRef.current), [])
 
   // CR-060 / CV-071：手势期间把 pointer 捕获到容器，指针拖出画布边界仍能收到
   // pointermove/pointerup，落定/框选才不提前中断。释放用 try/catch 兜底
@@ -602,8 +611,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
       // CV-017：方向键微调选中节点（1px，Shift 10px）。连发算一次编辑。
+      // REQ-036：历程模式是只读投影 —— 微调会写存储坐标、破坏自由画布布局，禁用。
       const nudgeDelta = NUDGE_DELTAS[event.key]
-      if (nudgeDelta !== undefined && selectedNodeIds.length > 0) {
+      if (nudgeDelta !== undefined && selectedNodeIds.length > 0 && viewRef.current.waterfall !== true) {
         event.preventDefault()
         const step = event.shiftKey ? 10 : 1
         const now = Date.now()
@@ -647,13 +657,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const fitToContent = useCallback((): FitResult | null => {
     // BUG-020：fit 以「当前实际渲染的内容」为界——废弃节点隐藏时不进视野账，
     // 否则会把视野拉到一片空白上。
-    const bounds = contentBounds(showDeprecatedNodes ? nodesRef.current : nodesRef.current.filter(node => !isDeprecatedNode(node)))
+    // REQ-036：历程模式下以**投影盒**为界（布局坐标 ≠ 存储坐标）。
+    const source = layoutTargets()
+    const bounds = contentBounds(showDeprecatedNodes ? source : source.filter(node => !isDeprecatedNode(node)))
     if (bounds === null) {
       onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
       return null
     }
     return fitToBounds(bounds)
-  }, [fitToBounds, showDeprecatedNodes])
+  }, [fitToBounds, showDeprecatedNodes, layoutTargets])
 
   /** CV-185：整理布局要按「视口形状」排，才谈得上「整张图铺满一屏」。 */
   const viewportSize = useCallback((): { width: number; height: number } | null => {
@@ -668,7 +680,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       fitToContent()
       return
     }
-    const selected = nodesRef.current.filter(node => selectedNodeIds.includes(node.id))
+    // REQ-036：历程模式下选中节点也在投影表里（点击选中走投影节点）。
+    const selected = layoutTargets().filter(node => selectedNodeIds.includes(node.id))
     const bounds = contentBounds(selected)
     if (bounds === null) {
       fitToContent()
@@ -841,6 +854,22 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     armPointer(event)
     setLinkLine({ fromX: anchor.x, fromY: anchor.y, toX: world.x, toY: world.y })
   }, [])
+
+  // REQ-036 P1：历程视图 = 只读投影。拖拽 / 缩放 / 连线手势都会写存储坐标
+  // （onMoveNode / onUpdateNode / onLinkLayers）或以存储坐标画起草线，破坏
+  // 自由画布 —— 历程模式下全部替换为「只保留点击选中语义」的变体。
+  // P2 将把拖拽改写为 waterfallOrder 排序覆盖（方案 §4.5）。
+  const onNodePointerDownWaterfall = useCallback((event: React.PointerEvent, node: StudioCanvasNode): void => {
+    if (event.ctrlKey || event.metaKey) {
+      onSelectNodeRef.current(node.id, true)
+      return
+    }
+    onSelectNodeRef.current(node.id)
+  }, [])
+  const onResizePointerDownNoop = useCallback((_event: React.PointerEvent, node: StudioCanvasNode): void => {
+    onSelectNodeRef.current(node.id)
+  }, [])
+  const onLinkPointerDownNoop = useCallback((_event: React.PointerEvent, _node: StudioCanvasNode): void => {}, [])
 
   const onPointerMove = (event: React.PointerEvent): void => {
     const current = gesture.current
@@ -1057,6 +1086,49 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     [nodes, showDeprecatedNodes],
   )
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
+  // REQ-036：历程瀑布流 —— view.waterfall 开启时，节点按 `computeWaterfallLayout`
+  // 的**运行时投影**渲染（boxes 替换 x/y/width/height），绝不写回 store、绝不落盘；
+  // 关闭时走原路径（waterfallNodes === ordered，引用不变，CanvasNode memo 不破）。
+  // 文本类 / 辅助卡的显隐在布局函数内按开关过滤（waterfallShowText 拍板默认隐藏）。
+  const waterfallOn = view.waterfall === true
+  const waterfallLayout = useMemo(
+    () => (waterfallOn ? computeWaterfallLayout(visibleNodes, { showText: view.waterfallShowText === true }) : null),
+    [waterfallOn, visibleNodes, view.waterfallShowText],
+  )
+  const waterfallNodes = useMemo(() => {
+    if (waterfallLayout === null) return ordered
+    const projected: StudioCanvasNode[] = []
+    for (const node of ordered) {
+      const box = waterfallLayout.boxes.get(node.id)
+      if (box !== undefined) projected.push({ ...node, x: box.x, y: box.y, width: box.width, height: box.height })
+    }
+    return projected
+  }, [waterfallLayout, ordered])
+  // ref 容器与 layoutTargets 在上方（viewRef 旁）声明 —— 这里只做渲染期回填。
+  waterfallNodesRef.current = waterfallNodes
+  // REQ-036 P1：进入历程视图时适配一次内容（投影盒为界）；退出不劫持视口，
+  // 用户回自由画布看到的是离开时的位置。
+  const waterfallFitRef = useRef(waterfallLayout)
+  waterfallFitRef.current = waterfallLayout
+  useEffect(() => {
+    if (!waterfallOn) return
+    const layout = waterfallFitRef.current
+    if (layout === null || layout.boxes.size === 0) return
+    const el = containerRef.current
+    if (el === null) return
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const box of layout.boxes.values()) {
+      minX = Math.min(minX, box.x)
+      minY = Math.min(minY, box.y)
+      maxX = Math.max(maxX, box.x + box.width)
+      maxY = Math.max(maxY, box.y + box.height)
+    }
+    const result = computeFitView({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, { width: el.clientWidth, height: el.clientHeight })
+    onViewChangeRef.current({ x: result.x, y: result.y, scale: result.scale })
+  }, [waterfallOn])
   // CV-224 镜位框：`computeShotLanes` 只告诉我们「哪些节点属于同一个镜」（与整理布局
   // **同一份**镜号传播），**框坐标在这里按节点当前的坐标现算** —— 若用布局算出的
   // 整理后坐标，用户还没点整理布局时，框就会画在空地上（节点还在原处）。
@@ -1132,8 +1204,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (selectedNodeIds.length !== 1 || primaryDragId !== null) return null
     const target = selectedNodeIds[0]
     if (target === undefined) return null
-    return visibleNodes.find(node => node.id === target) ?? null
-  }, [selectedNodeIds, primaryDragId, visibleNodes])
+    // REQ-036：历程模式下就近工具条锚到**投影节点**（waterfallNodes 关闭时 ===
+    // ordered，成员与 visibleNodes 相同，行为不变）。
+    return waterfallNodes.find(node => node.id === target) ?? null
+  }, [selectedNodeIds, primaryDragId, waterfallNodes])
 
   // REQ-003 Step 2：就地提示词编辑（原浮层）。存 **id** 而不是节点快照 —— 提交后节点
   // 对象会换，编辑面必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
@@ -1161,8 +1235,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 宿主经 promptEditNodeId（CV-272 两入口）打开的也走本卡（两路 id 并一个口径）。
   const cardNodeId = inputCardNodeId ?? promptEditNodeId ?? null
   const cardNode = useMemo(
-    () => (cardNodeId === null ? null : nodes.find(node => node.id === cardNodeId) ?? null),
-    [nodes, cardNodeId],
+    () => {
+      const found = cardNodeId === null ? null : nodes.find(node => node.id === cardNodeId) ?? null
+      // REQ-036：历程模式下输入框卡锚到**投影节点**（存储节点查不到布局坐标）。
+      if (found === null || waterfallLayout === null) return found
+      const box = waterfallLayout.boxes.get(found.id)
+      return box !== undefined ? { ...found, x: box.x, y: box.y, width: box.width, height: box.height } : found
+    },
+    [nodes, cardNodeId, waterfallLayout],
   )
 
   /**
@@ -1176,7 +1256,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null || ids.length === 0) return
     if (gesture.current.mode !== 'none') return
-    const targets = nodesRef.current.filter(node => ids.includes(node.id))
+    // REQ-036：历程模式下按投影盒带进视野（存储坐标 ≠ 屏幕上的布局位置）。
+    const targets = layoutTargets().filter(node => ids.includes(node.id))
     if (targets.length === 0) return
     // BUG-020：从图层面板等入口「带进视野」的若是被隐藏的废弃节点，先自动打开
     // 显示开关——否则视野平移过去只能看到空白，入口和画布互相矛盾。（deps 保持
@@ -1203,7 +1284,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null || ids.length === 0) return
     if (gesture.current.mode !== 'none') return
-    const targets = nodesRef.current.filter(node => ids.includes(node.id))
+    // REQ-036：历程模式下按投影盒带进视野（存储坐标 ≠ 屏幕上的布局位置）。
+    const targets = layoutTargets().filter(node => ids.includes(node.id))
     if (targets.length === 0) return
     if (targets.some(isDeprecatedNode)) setShowDeprecatedNodes(true)
     const bounds = contentBounds(targets)
@@ -1281,7 +1363,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             `pointerEvents: none` 是必须的 —— 否则整片框会吃掉画布的拖拽与框选。
             CV-252：「镜 N」chip 不在这里渲染 —— 框是背景层，框里的 chip 会被
             不透明卡片盖掉下半截；chip 统一在节点之后的最顶层单独画（见下）。 */}
-        {shotLanes.map((lane) => (
+        {/* REQ-036：历程模式下镜位框退场（托盘框取而代之，见下）。 */}
+        {!waterfallOn && shotLanes.map((lane) => (
           <div
             key={`shot-lane-${lane.shot}`}
             aria-hidden
@@ -1300,21 +1383,65 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             }}
           />
         ))}
-        <CanvasEdges
-          nodes={visibleNodes}
-          selectedNodeIds={selectedNodeIds}
-          scale={view.scale}
-          selectedEdge={selectedEdge}
-          onEdgeSelect={handleEdgeSelect}
-          {...(edgeViewport !== undefined ? { viewport: edgeViewport } : {})}
-        />
+        {/* REQ-036：历程托盘框 —— 每镜一个容器（分镜卡 = 头部锚点），品牌绿区分
+            自由画布的琥珀镜位框。纯视觉：不创建 group 节点、不写 parentId。 */}
+        {waterfallOn && waterfallLayout?.trays.map(tray => (
+          <div
+            key={`wf-tray-${tray.shot}`}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: tray.box.x,
+              top: tray.box.y,
+              width: tray.box.width,
+              height: tray.box.height,
+              border: `${1.6 / view.scale}px solid rgba(15,220,120,.4)`,
+              borderRadius: 12 / view.scale,
+              background: 'rgba(15,220,120,.045)',
+              pointerEvents: 'none',
+            }}
+          />
+        ))}
+        {/* REQ-036：历程节头 —— 每节的名称 + 计数，画布空间定位、字号按屏幕
+            恒定（除以 scale），不参与任何指针交互。 */}
+        {waterfallOn && waterfallLayout?.sections.map(section => (
+          <div
+            key={`wf-sec-${section.stage}`}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: section.box.x,
+              top: section.box.y + 6,
+              fontSize: 17 / view.scale,
+              fontWeight: 600,
+              color: 'rgba(233,233,240,.92)',
+              textShadow: '0 1px 4px rgba(0,0,0,.55)',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+            }}
+          >
+            {section.title} · {section.nodeIds.length}
+          </div>
+        ))}
+        {!waterfallOn && (
+          <CanvasEdges
+            nodes={visibleNodes}
+            selectedNodeIds={selectedNodeIds}
+            scale={view.scale}
+            selectedEdge={selectedEdge}
+            onEdgeSelect={handleEdgeSelect}
+            {...(edgeViewport !== undefined ? { viewport: edgeViewport } : {})}
+          />
+        )}
         {guides.vertical.map(position => (
           <div key={`gv-${position}`} className="csGuide csGuideVertical" style={{ left: position }} />
         ))}
         {guides.horizontal.map(position => (
           <div key={`gh-${position}`} className="csGuide csGuideHorizontal" style={{ top: position }} />
         ))}
-        {ordered.map(node => {
+        {/* REQ-036：历程模式下渲染**投影节点**（waterfallNodes），交互语义不变，
+            拖拽/缩放/连线手势替换为只读变体（见 onNodePointerDownWaterfall）。 */}
+        {(waterfallOn ? waterfallNodes : ordered).map(node => {
           const shotIndex = shotIndexOf?.get(node.id)
           const tier = spotlightTierOf(spotlight, node.id)
           return (
@@ -1333,9 +1460,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               {...(shotIndex !== undefined ? { shotIndex } : {})}
               // CV-177：只有托盘需要成员数（一张还是多张决定拖动语义的读法）。
               {...(node.kind === 'group' ? { groupCount: groupCounts.get(node.id) ?? 0 } : {})}
-              onNodePointerDown={onNodePointerDown}
-              onResizePointerDown={onResizePointerDown}
-              onLinkPointerDown={onLinkPointerDown}
+              onNodePointerDown={waterfallOn ? onNodePointerDownWaterfall : onNodePointerDown}
+              onResizePointerDown={waterfallOn ? onResizePointerDownNoop : onResizePointerDown}
+              onLinkPointerDown={waterfallOn ? onLinkPointerDownNoop : onLinkPointerDown}
               onCenterNode={centerNode}
               onRenameSubmit={onRename}
               onTextSubmit={onNodeTextSubmit}
@@ -1360,7 +1487,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             CV-254：视觉升级为 .csShotChip 琥珀胶囊（见 styles.ts），跟随缩放、居中框头带
             （top+3），不遮挡不变；低缩放下字小是 transform:scale 物理限制，镜号由节点头部
             「#N」与底部时间轴同源兜底。 */}
-        {shotLanes.map(lane => (
+        {!waterfallOn && shotLanes.map(lane => (
           <span
             key={`shot-chip-${lane.shot}`}
             aria-hidden
@@ -1373,6 +1500,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             }}
           >
             镜 {lane.shot}
+          </span>
+        ))}
+        {/* REQ-036：历程模式下托盘「镜 N」角标 —— 复用 csShotChip 胶囊样式，
+            挂在托盘框头（分镜卡头部自带镜号信息，角标只做加强）。 */}
+        {waterfallOn && waterfallLayout?.trays.map(tray => (
+          <span
+            key={`wf-tray-chip-${tray.shot}`}
+            aria-hidden
+            className="csShotChip"
+            style={{
+              position: 'absolute',
+              left: tray.box.x + 10 / view.scale,
+              top: tray.box.y + 3,
+              pointerEvents: 'none',
+            }}
+          >
+            镜 {tray.shot}
           </span>
         ))}
         {linkLine !== null && (
@@ -1440,7 +1584,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )}
       {minimapVisible && (
         <Minimap
-          nodes={visibleNodes}
+          nodes={waterfallOn ? waterfallNodes : visibleNodes}
           offset={{ x: view.x, y: view.y }}
           scale={view.scale}
           onSetOffset={next => { onViewChangeRef.current({ x: next.x, y: next.y }) }}

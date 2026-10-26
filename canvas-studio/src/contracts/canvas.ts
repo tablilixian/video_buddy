@@ -443,6 +443,23 @@ export interface StudioCanvasView {
    * 回退「不使用」（resolveComposeSelection 的 bgmInvalid 路径）。
    */
   composeBgmNodeId?: string | undefined
+  /**
+   * REQ-036：历程瀑布流视图开关。true 时画布按 `computeWaterfallLayout` 的
+   * 运行时投影渲染（**不写回节点坐标**），自由画布数据与交互零影响。
+   * 缺省/非法 = false = 自由画布（老文档零迁移）。
+   */
+  waterfall?: boolean
+  /**
+   * REQ-036：历程视图是否显示纯文本类节点（创意需求/剧本/口播文案/便签/提示卡）。
+   * 用户拍板默认隐藏（2026-10-26）；分镜卡是托盘归属锚点，不受此开关影响。
+   * 缺省 = false。
+   */
+  waterfallShowText?: boolean
+  /**
+   * REQ-036（P2）：历程视图手动拖拽后的节点顺序覆盖（id 有序列表），语义同
+   * P9.1 timeline —— 列表内按列表序，未列入的按 createdAt 追后。缺省 = 无覆盖。
+   */
+  waterfallOrder?: string[]
 }
 
 /**

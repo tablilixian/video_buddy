@@ -50,6 +50,13 @@ export interface AnimatedStyle {
   shapeTransform: string
   /** 本轨是否**显式声明过**位置（`shape` 据此决定是否覆盖 `box` 的落点）。 */
   positionDeclared: boolean
+  /**
+   * 逐轴声明标志（2026-10-26 布局压测实证补位）：`positionDeclared` 是单标志位，
+   * animate 只声明 y 时 x 也被当「已声明」取缺省中心 50，`box.x` 被静默丢弃
+   * （多柱图表全部叠在画布中心只露一根）。`shape` 落点回退按**轴**判断。
+   */
+  xDeclared: boolean
+  yDeclared: boolean
   /** 本轨是否声明过 `transform` / `animate` / `orbit` / `exit`（诊断与守卫用）。 */
   animated: boolean
   /** 二期 A2：`fx` 折算出的 CSS 片段（空对象 = 没有效果）。组件只展开，不解读枚举。 */
@@ -117,7 +124,9 @@ export function resolveAnimatedStyle(
   const rotation = exitState?.rotation ?? state.rotation ?? 0
   const opacity = clampUnit(fade * (exitState?.opacity ?? state.opacity ?? 1))
   const declared = track.animate !== undefined || track.transform !== undefined || track.orbit !== undefined
-  const exitDeclaresPosition = exitState !== null && (exitState.x !== undefined || exitState.y !== undefined)
+  // 逐轴声明判定（orbit 视为双轴都声明；exit 与 transform/animate 按字段在不在算）。
+  const xDeclared = exitState?.x !== undefined || orbitPoint !== null || (declared && state.x !== undefined)
+  const yDeclared = exitState?.y !== undefined || orbitPoint !== null || (declared && state.y !== undefined)
   return {
     opacity,
     x,
@@ -127,7 +136,9 @@ export function resolveAnimatedStyle(
     layerTransform: `translate(${x - 50}%, ${y - 50}%) scale(${scale}) rotate(${rotation}deg)`,
     shapeTransform: `scale(${scale}) rotate(${rotation}deg)`,
     // orbit 时位置同样"已声明"：否则 `Shape.tsx` 仍用 `box` 落点，orbit 白算（这条曾在计划里被点名）。
-    positionDeclared: exitDeclaresPosition || orbitPoint !== null || (declared && (state.x !== undefined || state.y !== undefined)),
+    positionDeclared: xDeclared || yDeclared,
+    xDeclared,
+    yDeclared,
     animated: declared || track.exit !== undefined,
     fx: fxStyles(track.fx),
     blend: track.blend ?? 'normal',

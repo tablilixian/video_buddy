@@ -35,9 +35,11 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   // 三期 W2-3：`colorShift` 覆盖静态 `color`（缺省 `null` ⇒ 原色，老 manifest 不变）。
   const color = colorShiftAt(track, frame) ?? track.color
   const box = track.box ?? { x: 50, y: 50, w: 30, h: 20 }
-  // `transform` / `animate` / `orbit` 显式给出位置时以它们为准；否则 `box` 仍是落点来源（老写法不变）。
-  const left = anim.positionDeclared ? anim.x : box.x
-  const top = anim.positionDeclared ? anim.y : box.y
+  // `transform` / `animate` / `orbit` / `exit` 显式给出**某轴**位置时该轴以它们为准，
+  // 未声明的轴仍用 `box` 落点（2026-10-26 布局压测实证：旧的单标志位会把只声明 y 的
+  // animate 当成双轴都声明，`box.x` 被静默丢弃 → 多柱图表全叠画布中心）。
+  const left = anim.xDeclared ? anim.x : box.x
+  const top = anim.yDeclared ? anim.y : box.y
 
   // ── A1：`path` 轨 —— 全画布 SVG，坐标 = 0–100 双轴百分比 ──
   if (track.shape === 'path') {

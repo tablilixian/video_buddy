@@ -194,13 +194,26 @@ export interface VideoDurationCheck {
 export const VIDEO_DURATION_DRIFT_TOLERANCE_SEC = 0.5
 
 /**
- * 核对单条 video 轨的声明时长与真值（§10.4）：偏差 > 0.5s → warning 并按真值修正；
- * 真值不可用（非有限 / ≤0）时原样返回，不臆造。真值来自 `list_shots`（`probeMediaInfo`）。
+ * 核对单条 video 轨的声明时长与真值（§10.4）：**声明超过素材可用长度** → warning 并
+ * 缩短到可用长度；声明在可用长度内则原样保留（**绝不拉长**）。
+ *
+ * 2026-10-26 语义修正（布局压测实证）：旧实现拿「声明 vs 素材总长」双向对账，偏差
+ * 超 0.5s 就把轨长改写成素材总长 —— 两个场景被误伤：
+ * 1. **有意取子片段**（12s 素材只用前 3s）：轨被拉回 12s，后续轨道全被顶位；
+ * 2. **`trimBeforeFrames` 分段续播**（同源素材切多段做「窗口→全屏→回窗口」）：
+ *    每段声明都远小于素材总长，全部被拉满，分段时序瓦解。
+ * 修正后的唯一职责 = 保证**播放到 declared 帧时素材还有货**（真值保护），即只在
+ * `declared > available` 时向下修；「素材比声明长」是合法的子片段用法，不是错误。
+ *
+ * 可用长度 = `round(realDurationSec * fps) - trimBeforeFrames`（trim 语义：从素材
+ * 第 T 帧起播）。真值不可用（非有限 / ≤0）时原样返回，不臆造。真值来自
+ * `list_shots`（`probeMediaInfo`）。
  */
 export function reconcileVideoDuration(
   declaredFrames: number,
   realDurationSec: number | undefined,
   fps: number,
+  trimBeforeFrames = 0,
 ): VideoDurationCheck {
   if (
     realDurationSec === undefined || !Number.isFinite(realDurationSec) || realDurationSec <= 0 ||
@@ -208,22 +221,32 @@ export function reconcileVideoDuration(
   ) {
     return { frames: declaredFrames, driftSec: 0, corrected: false }
   }
-  const realFrames = Math.round(realDurationSec * fps)
-  const driftSec = Math.abs(declaredFrames - realFrames) / fps
-  if (driftSec <= VIDEO_DURATION_DRIFT_TOLERANCE_SEC) {
-    return { frames: declaredFrames, driftSec, corrected: false }
+  const trim = Number.isFinite(trimBeforeFrames) && trimBeforeFrames > 0 ? Math.round(trimBeforeFrames) : 0
+  const availableFrames = Math.round(realDurationSec * fps) - trim
+  if (availableFrames <= 0) {
+    // trim 点已越过素材末尾（或真值为零段）：无从修正，保持声明并显式告警。
+    return {
+      frames: declaredFrames, driftSec: 0, corrected: false,
+      warning: `video 轨素材真值 ${realDurationSec.toFixed(2)}s${trim > 0 ? ` 减去 trimBefore ${trim} 帧后可用长度 ≤ 0` : ' 为 0'}，无法核对时长（请检查素材或 trimBeforeFrames）`,
+    }
   }
+  if (declaredFrames <= availableFrames) {
+    // 声明在可用长度内：合法（含子片段 / trim 分段），一律不动。
+    return { frames: declaredFrames, driftSec: 0, corrected: false }
+  }
+  const driftSec = (declaredFrames - availableFrames) / fps
   return {
-    frames: realFrames,
+    frames: availableFrames,
     driftSec,
     corrected: true,
-    warning: `video 轨声明 ${declaredFrames} 帧（${(declaredFrames / fps).toFixed(2)}s）与真值 ${realDurationSec.toFixed(2)}s 偏差 ${driftSec.toFixed(2)}s，已按真值修正为 ${realFrames} 帧`,
+    warning: `video 轨声明 ${declaredFrames} 帧超出素材可用长度${trim > 0 ? `（真值 ${realDurationSec.toFixed(2)}s − trimBefore ${trim} 帧）` : `（真值 ${realDurationSec.toFixed(2)}s）`}，已缩短为 ${availableFrames} 帧`,
   }
 }
 
 /**
  * 对整份 Manifest 的所有 video 轨做时长核对，返回修正后的轨道副本与聚合 warning。
  * `realDurations` 以素材 `src` 为键（宿主用 `probeMediaInfo` 探得真值后传入）。
+ * 每条轨的 `trimBeforeFrames` 计入可用长度（见 `reconcileVideoDuration`）。
  */
 export function reconcileManifestVideoDurations(
   manifest: CompositionManifest,
@@ -233,7 +256,9 @@ export function reconcileManifestVideoDurations(
   const warnings: string[] = []
   const tracks = manifest.tracks.map((track) => {
     if (track.type !== 'video') return track
-    const check = reconcileVideoDuration(track.durationInFrames, realDurations[track.src], fps)
+    const check = reconcileVideoDuration(
+      track.durationInFrames, realDurations[track.src], fps, track.trimBeforeFrames ?? 0,
+    )
     if (check.warning !== undefined) warnings.push(check.warning)
     if (!check.corrected) return track
     return { ...track, durationInFrames: check.frames }

@@ -115,7 +115,33 @@ test('reconcileVideoDuration：偏差 > 0.5s → 按真值修正 + warning', () 
   assert.ok(check.warning.includes('240'))
 })
 
-test('reconcileVideoDuration：偏差在容差内不动；真值缺失原样返回', () => {
+// 2026-10-26 语义修正（布局压测实证）：只缩短、绝不拉长 —— 「素材比声明长」是合法的
+// 子片段 / trim 分段用法。旧实现会把 90 帧声明拉回素材总长，分段时序瓦解。
+test('reconcileVideoDuration：声明短于素材 = 合法子片段，绝不拉长（反向变异：恢复双向对账即红）', () => {
+  const sub = reconcileVideoDuration(90, 12, 30) // 12s 素材只用 3s
+  assert.equal(sub.corrected, false, '12s 素材取 3s 不允许被改写')
+  assert.equal(sub.frames, 90)
+  assert.equal(sub.warning, undefined)
+})
+
+test('reconcileVideoDuration：trimBeforeFrames 计入可用长度，分段续播不被拉爆', () => {
+  // 12s=360 帧素材，从第 180 帧起播 90 帧：可用 180 帧 ≥ 声明 90 → 不动
+  const ok = reconcileVideoDuration(90, 12, 30, 180)
+  assert.equal(ok.corrected, false)
+  assert.equal(ok.frames, 90)
+  // 声明 200 帧 > 可用 180 帧 → 缩到 180，warning 提及 trim
+  const over = reconcileVideoDuration(200, 12, 30, 180)
+  assert.equal(over.corrected, true)
+  assert.equal(over.frames, 180)
+  assert.ok(over.warning.includes('trimBefore'))
+  // trim 点越过素材末尾：不修正（无从修）但显式告警
+  const past = reconcileVideoDuration(90, 12, 30, 400)
+  assert.equal(past.corrected, false)
+  assert.equal(past.frames, 90)
+  assert.ok(past.warning !== undefined && past.warning.includes('≤ 0'))
+})
+
+test('reconcileVideoDuration：真值缺失原样返回；恰好等于可用长度不动', () => {
   const ok = reconcileVideoDuration(240, 8, 30)
   assert.equal(ok.corrected, false)
   assert.equal(ok.frames, 240)
@@ -124,6 +150,22 @@ test('reconcileVideoDuration：偏差在容差内不动；真值缺失原样返�
   const noTruth = reconcileVideoDuration(300, undefined, 30)
   assert.equal(noTruth.frames, 300)
   assert.equal(noTruth.corrected, false)
+})
+
+test('reconcileManifestVideoDurations：trim 轨按可用长度核对', () => {
+  const manifest = {
+    id: 'c',
+    meta: {},
+    tracks: [
+      { id: 'a', type: 'video', src: '/x.mp4', startFrame: 0, durationInFrames: 90 },
+      { id: 'b', type: 'video', src: '/x.mp4', startFrame: 90, durationInFrames: 200, trimBeforeFrames: 180 },
+    ],
+  }
+  const { tracks, warnings } = reconcileManifestVideoDurations(manifest, { '/x.mp4': 12 }, 30)
+  assert.equal(tracks[0].durationInFrames, 90, '子片段轨不动')
+  assert.equal(tracks[1].durationInFrames, 180, '超可用长度的 trim 轨被缩短')
+  assert.equal(warnings.length, 1)
+  assert.ok(warnings[0].includes('trimBefore'))
 })
 
 test('reconcileManifestVideoDurations：只修偏差轨并聚合 warning', () => {

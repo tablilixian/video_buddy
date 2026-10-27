@@ -396,3 +396,20 @@ test('B-3：视频节点加入资产库被拒（指名道姓 + 正路指引）',
     },
   )
 })
+
+// ---------------------------------------------------------------------------
+// B-4：「音色」分类必须被收口函数认（REQ-032 C1 漏项回归）
+//
+// 背景：`LibCategory` 与 `LIB_CATEGORY_LABELS` 都加了 `voice`，但 `isLibCategory`
+// 漏了它 —— `POST /library` 建音色条目 400、`GET ?category=voice` 400；更隐蔽的是
+// `isLibraryAsset` 也用它做读侧校验，一旦库里存在 voice 条目，整库读取会判「文档
+// 损坏」并拒绝后续写入。这里用枚举全量对拍锁死，今后新增分类漏收口当场变红。
+// ---------------------------------------------------------------------------
+test('B-4：LIB_CATEGORIES 每个分类都被 isLibCategory 收口（含 voice）', async () => {
+  const { LIB_CATEGORIES, LIB_CATEGORY_LABELS, isLibCategory } = await import('../lib/contracts/asset-library.js')
+  for (const category of LIB_CATEGORIES) {
+    assert.equal(isLibCategory(category), true, `isLibCategory 漏收口分类 ${category}`)
+    assert.equal(typeof LIB_CATEGORY_LABELS[category], 'string', `${category} 缺中文标签`)
+  }
+  assert.equal(isLibCategory('narration'), false, '未知分类必须拒收')
+})

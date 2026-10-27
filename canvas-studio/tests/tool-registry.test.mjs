@@ -32,11 +32,12 @@ import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
-/** 实测 29 = `host-tools.ts` 28 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 29
+/** 实测 32 = `host-tools.ts` 31 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
+const EXPECTED_TOOL_COUNT = 32
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
+  'add_to_library',
   'adopt_canvas_as_storyboard',
   'ask_user_choice',
   'character_generate',
@@ -50,6 +51,7 @@ const EXPECTED_TOOL_NAMES = [
   'image_generate_withtxt',
   'inspect_image',
   'layout_table',
+  'list_library_assets',
   'list_references',
   'list_shots',
   'look_card',
@@ -59,6 +61,7 @@ const EXPECTED_TOOL_NAMES = [
   'scaffold_manifest',
   'submit_keyframes_for_approval',
   'subtitle_burn',
+  'tts_narration',
   'tts_voiceover',
   'upload_image',
   'video2vl',
@@ -86,7 +89,7 @@ function registeredToolNames() {
   return definitions.map((definition) => definition.name)
 }
 
-test('AR-06①：Host 工具总数必须等于 26（唯一口径，防文档再次漂移）', () => {
+test('AR-06①：Host 工具总数必须等于基线（唯一口径，防文档再次漂移）', () => {
   const names = registeredToolNames()
   assert.equal(
     names.length,

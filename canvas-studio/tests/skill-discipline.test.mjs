@@ -33,14 +33,21 @@ test('C-16/R-P0-11：分镜↔视频条数映射铁律必须在分镜与剧本�
 })
 
 test('C-5：多段旁白音色一致性纪律必须落在 voiceover skill 与 tts_voiceover 工具描述里', () => {
+  // 2026-10-26 口径升级：旧断言锁的是「复用 instruct_prompt 即可同音色」，实测已证伪
+  // （同一串 instruct 连发 3 次，基频极差 45.1%、时长极差 8.2%）。现行纪律是
+  // 「先造音色锚 → 后段克隆同一锚」。旧文案的反向断言保留，防止回潮。
   const skill = read('skills/voiceover-writing/SKILL.md')
-  assert.match(skill, /多段旁白音色一致性（C-5 铁律）/, '拆段节必须带音色一致性铁律')
-  assert.match(skill, /每段都传\s+同一个 refaudio/, '有参考音时每段必须传同一个 refaudio')
-  assert.match(skill, /逐字复用第一段的 instruct_prompt/, '无参考音时各段七维逐字一致')
+  assert.match(skill, /先造「音色锚」/, '多段旁白必须先定锚（§零 标题）')
+  assert.match(skill, /每段 refaudio 都指向同一个锚/, '后段必须克隆同一锚')
+  assert.match(skill, /instruct_prompt 全片逐字一致/, '锚定后 instruct 仍须逐字一致')
   assert.match(skill, /逐段核对音频节点都已真实落卡/, '首段旁白丢失的规避（生成完数节点）')
-  assert.match(skill, /回退时音色一致性不放松/, '克隆失败回退路径不得放松一致性')
+  assert.match(skill, /克隆已实测生效且稳定/, '克隆已非「未实测」，必须反映实测结论')
+  assert.ok(!skill.includes('克隆通道**未实测**'), '「克隆未实测」旧口径不得回潮')
+  assert.ok(!skill.includes('配音节点不能当'), '「配音不能当 bgmNodeId」旧口径不得回潮（D6 已按旁白轨处理）')
   const hostTools = read('src/host-tools.ts')
   assert.match(hostTools, /多段旁白必须同音色/, 'tts_voiceover 工具描述必须带同音色纪律')
+  assert.match(hostTools, /音色锚/, '工具描述必须点名「音色锚」机制（agent 第一手信息）')
+  assert.match(hostTools, /基频极差 45/, '必须带实测依据，否则会被当成可选建议忽略')
 })
 
 test('C-11：叠加型标注「只在一处加」纪律落在 krea2 / h3 / shot-format 三处', () => {

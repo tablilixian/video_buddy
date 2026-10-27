@@ -52,6 +52,8 @@ const PRODUCTION_TOOLS = [
   'qc_shot',
   'music_generation',
   'tts_voiceover',
+  // P1-1（2026-10-26）：批量旁白 —— 产物与 tts_voiceover 同性质，必须同口径挂闸。
+  'tts_narration',
   'render_composition',
   'write_script',
 ]

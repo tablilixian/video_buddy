@@ -1,0 +1,633 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "startedAt": "2026-10-26T09:37:35.096Z",
+  "contract": {
+    "ttsRequest": {
+      "properties": {
+        "instruct_prompt": {
+          "type": "string",
+          "title": "Instruct Prompt",
+          "description": "audio instruct prompt",
+          "default": ""
+        },
+        "txt_prompt": {
+          "type": "string",
+          "title": "Txt Prompt",
+          "description": "audio txt prompt"
+        },
+        "refaudio": {
+          "type": "string",
+          "title": "Refaudio",
+          "description": "ref audio",
+          "default": ""
+        }
+      },
+      "type": "object",
+      "required": [
+        "txt_prompt"
+      ],
+      "title": "TTSRequest",
+      "description": "TTS request schema.\n声音设计——仅通过自然语言描述（语言、性别、年龄、语气、情感、语速……）即可打造全新声音，无需参考音频.\n\n支持30种语言：阿拉伯语、缅甸语、中文、丹麦语、荷兰语、英语、芬兰语、法语、德语、希腊语、希伯来语、印地语、印度尼西亚语、意大利语、日语、高棉语、韩语、老挝语、马来语、挪威语、波兰语、葡萄牙语、俄语、西班牙语、斯瓦希里语、瑞典语、他加禄语、泰语、土耳其语、越南语\nChinese Dialect: 四川话, 粤语, 吴语, 东北话, 河南话, 陕西话, 山东话, 天津话, 闽南话\n\n例如：60岁女人笑着说，慢速，四川话\n有参考音频后使用参考音频生成后续speech"
+    },
+    "endpoint": {
+      "post": {
+        "tags": [
+          "Generation"
+        ],
+        "summary": "Create Txt2Speech",
+        "description": "Generate audio endpoint.",
+        "operationId": "create_txt2speech_api_v1_generate_txt2speech_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TTSRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Txt2Speech Api V1 Generate Txt2Speech Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "version": "0.1.0"
+  },
+  "cases": [
+    {
+      "id": "zh-no-instruct",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "note": "完全不写声音设计（走后端默认音色）",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5724,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。"
+      },
+      "payload": {
+        "prompt_id": "337978c0-5d79-4ce7-9f04-59fe07e86e22",
+        "filename": "voxcpm_00207.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00207.mp3",
+        "duration": 5.24
+      },
+      "filename": "voxcpm_00207.mp3",
+      "serverDuration": 5.24,
+      "realDuration": 6.26,
+      "chars": 23,
+      "charsPerSec": 3.67,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 136057,
+      "codec": "mp3",
+      "f0": {
+        "median": 208,
+        "mean": 217,
+        "sd": 46,
+        "frames": 184
+      },
+      "file": "zh-no-instruct.mp3"
+    },
+    {
+      "id": "zh-mid",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "青年男性，平静低沉，标准普通话，中速",
+      "note": "基准：与 docs/api-probe 的探针同文案",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 4141,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，中速"
+      },
+      "payload": {
+        "prompt_id": "1e98b078-d6b2-4e37-91d3-83cb371f4bd1",
+        "filename": "voxcpm_00208.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00208.mp3",
+        "duration": 4.1
+      },
+      "filename": "voxcpm_00208.mp3",
+      "serverDuration": 4.1,
+      "realDuration": 4.82,
+      "chars": 23,
+      "charsPerSec": 4.77,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 165228,
+      "codec": "mp3",
+      "f0": {
+        "median": 147,
+        "mean": 148,
+        "sd": 46,
+        "frames": 95
+      },
+      "file": "zh-mid.mp3"
+    },
+    {
+      "id": "zh-slow",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "青年男性，平静低沉，标准普通话，慢速",
+      "note": "只改语速词：慢速",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 6173,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，慢速"
+      },
+      "payload": {
+        "prompt_id": "457ad82b-4728-4357-a4bd-4c2c4f08de3e",
+        "filename": "voxcpm_00209.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00209.mp3",
+        "duration": 6.14
+      },
+      "filename": "voxcpm_00209.mp3",
+      "serverDuration": 6.14,
+      "realDuration": 7.7,
+      "chars": 23,
+      "charsPerSec": 2.99,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 129381,
+      "codec": "mp3",
+      "f0": {
+        "median": 119,
+        "mean": 129,
+        "sd": 37,
+        "frames": 93
+      },
+      "file": "zh-slow.mp3"
+    },
+    {
+      "id": "zh-fast",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "青年男性，平静低沉，标准普通话，快速",
+      "note": "只改语速词：快速",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 4148,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，快速"
+      },
+      "payload": {
+        "prompt_id": "2441f6e2-9ea9-4c11-9cb9-c1eb36e61796",
+        "filename": "voxcpm_00210.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00210.mp3",
+        "duration": 4.12
+      },
+      "filename": "voxcpm_00210.mp3",
+      "serverDuration": 4.12,
+      "realDuration": 5.16,
+      "chars": 23,
+      "charsPerSec": 4.46,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 130989,
+      "codec": "mp3",
+      "f0": {
+        "median": 157,
+        "mean": 162,
+        "sd": 42,
+        "frames": 89
+      },
+      "file": "zh-fast.mp3"
+    },
+    {
+      "id": "zh-sichuan",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "中年男人笑着说，夸张一点，四川话",
+      "note": "方言（四川话）",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5183,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "中年男人笑着说，夸张一点，四川话"
+      },
+      "payload": {
+        "prompt_id": "e2a0fdff-faa6-4e31-adaa-c431e5634ccb",
+        "filename": "voxcpm_00211.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00211.mp3",
+        "duration": 5.15
+      },
+      "filename": "voxcpm_00211.mp3",
+      "serverDuration": 5.15,
+      "realDuration": 6.26,
+      "chars": 23,
+      "charsPerSec": 3.67,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 143352,
+      "codec": "mp3",
+      "f0": {
+        "median": 176,
+        "mean": 169,
+        "sd": 44,
+        "frames": 125
+      },
+      "file": "zh-sichuan.mp3"
+    },
+    {
+      "id": "zh-cantonese",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "50岁女性，爽利泼辣，粤语，中速",
+      "note": "方言（粤语）",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5324,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "50岁女性，爽利泼辣，粤语，中速"
+      },
+      "payload": {
+        "prompt_id": "88fea412-eacd-4697-b2a4-640bf27b5498",
+        "filename": "voxcpm_00212.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00212.mp3",
+        "duration": 5.29
+      },
+      "filename": "voxcpm_00212.mp3",
+      "serverDuration": 5.29,
+      "realDuration": 7.08,
+      "chars": 23,
+      "charsPerSec": 3.25,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 126927,
+      "codec": "mp3",
+      "f0": {
+        "median": 232,
+        "mean": 231,
+        "sd": 36,
+        "frames": 164
+      },
+      "file": "zh-cantonese.mp3"
+    },
+    {
+      "id": "en",
+      "text": "The city was quiet that night, and the old man finally finished his last letter.",
+      "instruct": "Young woman, clear and friendly, standard English, medium pace",
+      "note": "英语",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5186,
+      "body": {
+        "txt_prompt": "The city was quiet that night, and the old man finally finished his last letter.",
+        "instruct_prompt": "Young woman, clear and friendly, standard English, medium pace"
+      },
+      "payload": {
+        "prompt_id": "44014e16-2d8d-4e3f-ab0f-3d8affd6bd8e",
+        "filename": "voxcpm_00213.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00213.mp3",
+        "duration": 5.15
+      },
+      "filename": "voxcpm_00213.mp3",
+      "serverDuration": 5.15,
+      "realDuration": 6.43,
+      "chars": 64,
+      "charsPerSec": 9.95,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 125062,
+      "codec": "mp3",
+      "f0": {
+        "median": 190,
+        "mean": 205,
+        "sd": 41,
+        "frames": 159
+      },
+      "file": "en.mp3"
+    },
+    {
+      "id": "ja",
+      "text": "夜の街は静かで、老人は最後の手紙を書き終えた。",
+      "instruct": "30岁女性，播音腔，端正，日语，中速",
+      "note": "日语",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 4185,
+      "body": {
+        "txt_prompt": "夜の街は静かで、老人は最後の手紙を書き終えた。",
+        "instruct_prompt": "30岁女性，播音腔，端正，日语，中速"
+      },
+      "payload": {
+        "prompt_id": "7afc999b-0c56-497b-bc57-508dc7c6e18b",
+        "filename": "voxcpm_00214.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00214.mp3",
+        "duration": 4.14
+      },
+      "filename": "voxcpm_00214.mp3",
+      "serverDuration": 4.14,
+      "realDuration": 4.82,
+      "chars": 11,
+      "charsPerSec": 2.28,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 128218,
+      "codec": "mp3",
+      "f0": {
+        "median": 281,
+        "mean": 284,
+        "sd": 36,
+        "frames": 149
+      },
+      "file": "ja.mp3"
+    },
+    {
+      "id": "zh-elder",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "70岁男性，沙哑缓慢，带着怀念，普通话，慢速",
+      "note": "克隆段的参考音（低沉老者）",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5249,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "70岁男性，沙哑缓慢，带着怀念，普通话，慢速"
+      },
+      "payload": {
+        "prompt_id": "533e4448-99d9-4bff-b8d7-9ffc5d3d3bc8",
+        "filename": "voxcpm_00215.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00215.mp3",
+        "duration": 5.2
+      },
+      "filename": "voxcpm_00215.mp3",
+      "serverDuration": 5.2,
+      "realDuration": 6.74,
+      "chars": 23,
+      "charsPerSec": 3.41,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 155387,
+      "codec": "mp3",
+      "f0": {
+        "median": 152,
+        "mean": 163,
+        "sd": 63,
+        "frames": 102
+      },
+      "file": "zh-elder.mp3"
+    },
+    {
+      "id": "zh-long",
+      "text": "很多年以后他才明白，那趟列车带走的并不只是一个人。站台上的风一直往北吹，把告示牌吹得吱呀作响。他把手里的车票折成很小的一块，塞进大衣最里层的口袋，然后转身走进人群，像一滴水落进河里，再也没有回头。",
+      "instruct": "40岁男性，沉稳浑厚，标准普通话，中速",
+      "note": "长文（110 字左右）线性度",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 14829,
+      "body": {
+        "txt_prompt": "很多年以后他才明白，那趟列车带走的并不只是一个人。站台上的风一直往北吹，把告示牌吹得吱呀作响。他把手里的车票折成很小的一块，塞进大衣最里层的口袋，然后转身走进人群，像一滴水落进河里，再也没有回头。",
+        "instruct_prompt": "40岁男性，沉稳浑厚，标准普通话，中速"
+      },
+      "payload": {
+        "prompt_id": "8fd5df1d-40e7-427a-accd-4427b7a4fc35",
+        "filename": "voxcpm_00216.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00216.mp3",
+        "duration": 14.79
+      },
+      "filename": "voxcpm_00216.mp3",
+      "serverDuration": 14.79,
+      "realDuration": 21.48,
+      "chars": 89,
+      "charsPerSec": 4.14,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 147373,
+      "codec": "mp3",
+      "f0": {
+        "median": 108,
+        "mean": 128,
+        "sd": 52,
+        "frames": 572
+      },
+      "file": "zh-long.mp3"
+    },
+    {
+      "id": "zh-very-slow",
+      "text": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+      "instruct": "青年男性，平静低沉，标准普通话，语速极慢，每两个字之间都要停顿",
+      "note": "极端措辞：自然语言控语速的天花板",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 5233,
+      "body": {
+        "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，语速极慢，每两个字之间都要停顿"
+      },
+      "payload": {
+        "prompt_id": "eb744d26-b629-452e-9fdb-5fd006fd2ba2",
+        "filename": "voxcpm_00217.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00217.mp3",
+        "duration": 5.1
+      },
+      "filename": "voxcpm_00217.mp3",
+      "serverDuration": 5.1,
+      "realDuration": 7.56,
+      "chars": 23,
+      "charsPerSec": 3.04,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 142162,
+      "codec": "mp3",
+      "f0": {
+        "median": 91,
+        "mean": 102,
+        "sd": 41,
+        "frames": 170
+      },
+      "file": "zh-very-slow.mp3"
+    },
+    {
+      "id": "zh-pause-plain",
+      "text": "他走了。门关上了。",
+      "instruct": "青年男性，平静低沉，标准普通话，中速",
+      "note": "舞台指令对照：纯正文",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 2133,
+      "body": {
+        "txt_prompt": "他走了。门关上了。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，中速"
+      },
+      "payload": {
+        "prompt_id": "72a64470-0315-48e9-8225-0fe197e4c087",
+        "filename": "voxcpm_00218.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00218.mp3",
+        "duration": 2.06
+      },
+      "filename": "voxcpm_00218.mp3",
+      "serverDuration": 2.06,
+      "realDuration": 1.8,
+      "chars": 7,
+      "charsPerSec": 3.89,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 136897,
+      "codec": "mp3",
+      "f0": {
+        "median": 152,
+        "mean": 151,
+        "sd": 31,
+        "frames": 30
+      },
+      "file": "zh-pause-plain.mp3"
+    },
+    {
+      "id": "zh-pause-mark",
+      "text": "他走了。（停顿两秒）门关上了。",
+      "instruct": "青年男性，平静低沉，标准普通话，中速",
+      "note": "正文里写（停顿两秒）：会被念出来吗",
+      "ok": true,
+      "status": 200,
+      "elapsedMs": 1064,
+      "body": {
+        "txt_prompt": "他走了。（停顿两秒）门关上了。",
+        "instruct_prompt": "青年男性，平静低沉，标准普通话，中速"
+      },
+      "payload": {
+        "prompt_id": "94431cc8-f135-499f-9ebe-1a06d832fa35",
+        "filename": "voxcpm_00219.mp3",
+        "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00219.mp3",
+        "duration": 1.03
+      },
+      "filename": "voxcpm_00219.mp3",
+      "serverDuration": 1.03,
+      "realDuration": 1.32,
+      "chars": 11,
+      "charsPerSec": 8.33,
+      "sampleRate": 48000,
+      "channels": 1,
+      "bitRate": 136424,
+      "codec": "mp3",
+      "f0": {
+        "median": 99,
+        "mean": 106,
+        "sd": 19,
+        "frames": 13
+      },
+      "file": "zh-pause-mark.mp3"
+    }
+  ],
+  "clone": {
+    "handle": "zh-elder (2).mp3",
+    "uploadStatus": 200,
+    "ref": {
+      "id": "zh-elder",
+      "f0": {
+        "median": 152,
+        "mean": 163,
+        "sd": 63,
+        "frames": 102
+      },
+      "realDuration": 6.74
+    },
+    "withRef": {
+      "ok": true,
+      "f0": {
+        "median": 152,
+        "mean": 156,
+        "sd": 54,
+        "frames": 86
+      },
+      "realDuration": 4.2,
+      "status": 200
+    },
+    "baseline": {
+      "ok": true,
+      "f0": {
+        "median": 147,
+        "mean": 163,
+        "sd": 47,
+        "frames": 73
+      },
+      "realDuration": 3.72,
+      "status": 200
+    }
+  },
+  "local": {
+    "source": "zh-mid",
+    "baseDuration": 4.82,
+    "baseF0": 147,
+    "rows": [
+      {
+        "id": "post-speed-0.9",
+        "filter": "atempo=0.900000",
+        "expect": "时长 ×1.11，F0 不变",
+        "ok": true,
+        "duration": 5.35,
+        "durationRatio": 1.109,
+        "f0": 138,
+        "f0Ratio": 0.939
+      },
+      {
+        "id": "post-speed-1.15",
+        "filter": "atempo=1.150000",
+        "expect": "时长 ×0.87，F0 不变",
+        "ok": true,
+        "duration": 4.22,
+        "durationRatio": 0.876,
+        "f0": 160,
+        "f0Ratio": 1.088
+      },
+      {
+        "id": "post-pitch-minus3",
+        "filter": "aresample=44100,asetrate=37073,aresample=44100,atempo=1.189207",
+        "expect": "F0 ×0.84（-3 半音），时长不变",
+        "ok": true,
+        "duration": 4.86,
+        "durationRatio": 1.007,
+        "f0": 134,
+        "f0Ratio": 0.912
+      },
+      {
+        "id": "post-pitch-plus3",
+        "filter": "aresample=44100,asetrate=52425,aresample=44100,atempo=0.840896",
+        "expect": "F0 ×1.19（+3 半音），时长不变",
+        "ok": true,
+        "duration": 4.81,
+        "durationRatio": 0.996,
+        "f0": 158,
+        "f0Ratio": 1.075
+      }
+    ]
+  },
+  "variance": {
+    "case": "zh-var（同一 instruct_prompt 原文重复 3 次）",
+    "instruct": "青年男性，平静低沉，标准普通话，中速",
+    "durations": [
+      5.64,
+      6.12,
+      5.78
+    ],
+    "f0s": [
+      115,
+      184,
+      160
+    ],
+    "durationSpread": 0.48,
+    "durationSpreadPct": 8.2,
+    "f0SpreadPct": 45.1
+  }
+}

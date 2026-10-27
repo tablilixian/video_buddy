@@ -103,6 +103,9 @@ const HANDLE_PARAMS: readonly string[] = [
   'shotRefs',
   // REQ-022（创意先行）：生成图回写故事板的语义引用（shot 语义 id / look）
   'storyboardRef',
+  // P1-2（2026-10-26）：add_to_library 的源画布节点 —— 与 clipIds / bgmNodeId 同类，
+  // 合法值只能来自画布上真实存在的节点（模型爱写 `node_1` 这类占位）。
+  'nodeId',
 ]
 
 /**
@@ -122,6 +125,8 @@ const PROSE_PARAMS: readonly string[] = [
   'text',
   // CV-271：tts_voiceover 的声音设计指令（模型自撰的自然语言：语言/性别/年龄/语气/情感/语速/方言）
   'instructPrompt',
+  // P1-2（2026-10-26）：add_to_library 的资产描述（模型自撰，进详情页给人看）。
+  'description',
   'name',
   'summary',
   'question',
@@ -216,6 +221,22 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   aspect: '枚举字符串（16:9 / 9:16 / 1:1），非法值回落 16:9',
   // REQ-035（F-05）：探针渲染开关 —— 不落画布节点 / 不抽帧 / 跳过体检。
   probe: '布尔开关（探针渲染：不落画布节点、不抽帧、跳过编排体检）',
+  // —— P1-1（2026-10-26）tts_narration ——
+  // 这是**对象数组**容器，不是字符串：通用尺子（「整篇只是占位词」）对 `[{...}]` 无从下手。
+  // 真正的拦截点前移到 `narration.ts` 的 `requireText`：逐段拒收空串与占位串（
+  // 「空台词会被合成成静音还烧一次额度」是这里唯一的实质风险）。
+  lines: '对象数组（每段 text / gapSeconds / instructPrompt），逐段的文本由 narration.ts 的 requireText 逐条拒收空串与占位串',
+  // 同样是对象容器：内部只有 instructPrompt（散文，已单独归类）与 refaudio（句柄，
+  // 由 resolveRefValue 解析失败即报错并用真实错误文案指路）。容器本身没有占位形态。
+  voice: '对象容器（instructPrompt / refaudio），内部 refaudio 由 resolveRefValue 解析失败即报错',
+  startFrame: '数值（帧号，≥0），非法值由 planVoiceTimeline 夹到 0',
+  gapSeconds: '数值（秒，负数 = 有意重叠），非法值按缺省间隔处理',
+  // —— P1-2（2026-10-26）资产库工具 ——
+  category: '枚举（character / scene / prop / group / voice），取值不合规由 isLibCategory 拒收',
+  q: '搜索关键词 —— 合法值可以是任意短串甚至单字（「雨」），整篇级尺子会大面积误伤；填错只是 0 命中，不会作为脏数据贯穿到下游',
+  limit: '数值（返回条数上限），越界由 execute 钳制',
+  tags: '短词数组（标签）—— 合法值天然就是一个词，整篇级尺子会误伤；错标签只影响检索',
+  aliases: '短词数组（别名/别称）—— 同 tags：合法值就是短词，错值只影响检索，不贯穿下游',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

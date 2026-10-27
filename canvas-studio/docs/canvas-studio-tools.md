@@ -53,7 +53,7 @@
 
 注册给模型的工具**共 26 个** = **25 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。
 
-### A. 后端生成 / 分析类（13 个）
+### A. 后端生成 / 分析类（14 个）
 
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
@@ -70,6 +70,7 @@
 | `video_composite` | video | `image2videoref2va`（**恒定**，CV-269 拆分） | H3 路线；多参考 + 参考视频 / 参考音频 |
 | `music_generation` | audio | `txt2audio` | Yue2 工作流；后端有偶发 500，工具自动重试 |
 | `tts_voiceover` | audio | `txt2speech` | **配音生成**（VoxCPM2，CV-271 占位升真）：`instruct_prompt` 声音设计自然语言写（30 语种 + 9 方言）；**时长由文本决定**；产物实测 mp3 |
+| `tts_narration` | audio | `txt2speech` × N（内部串行） | **多段旁白批量合成 + 帧级排期**（P1-1，2026-10-26）：一次调用合成 N 段并**由代码算好 `audio.voiceOver[]` 的帧号**。音色锚由参数形状强制成立——不传 `voice.refaudio` 就自动拿第一段当锚，后段全部克隆它。不是事务：中途失败时前 k-1 段已花额度，报错列出已完成节点（不要整批重跑） |
 
 ### B. 本地媒体处理（4 个，不调后端）
 
@@ -80,7 +81,7 @@
 | `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
-### C. 画布 / 流程管控（9 个，不调后端）
+### C. 画布 / 流程管控（11 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -92,6 +93,8 @@
 | `layout_table` | **项目级布局坐标表**（shotcraft 本地化 P0-a，2026-10-25）：`layout.json` 存命名矩形（画布百分比、x/y 中心语义），一次量清「表盘区 / 左栏 / 字幕带 / 安全边」全片复用。`action`: read / write / clear。**工作台不是渲染输入** —— 返回可粘的 `box` 片段，须展开进 manifest |
 | `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON 不落画布**；落画布由用户在「拍摄定稿」覆盖层点「确认落地」 |
 | `adopt_canvas_as_storyboard` | **老项目迁移**（故事板强约束 L4，2026-10-25）：从画布上已有的分镜卡反推 §04 骨架（scene·shot 号 / 时长 / 运镜 / 视觉 / 声音 / 英文 prompt），用项目预置补 `meta`，落 `storyboard.json` 并返回**剩余阻断项**。只还原卡上真有的事实（§02 视觉规范 / §05 角色 / §03 旁白原文拿不到）；**不落画布**，不覆盖已落地项目 |
+| `list_library_assets` | **列资产库**（P1-2，2026-10-26，只读）：拿 `lib:<id>` 句柄。复用角色定妆照 / 场景图 / **音色锚**前先调它；`category?`（character / scene / prop / group / voice）、`q?`、`limit?`（截断时 `truncated=true`） |
+| `add_to_library` | **画布节点入库**（P1-2，2026-10-26）：把音频 / 图片节点存成资产条目（媒体真拷贝进库目录）。音色锚的标准落地：`add_to_library(nodeId, category="voice", name="音色锚 · 女主")` → 之后 `refaudio: "lib:<id>"`。视频不能入库 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
 | `submit_screenplay_for_approval` | 剧本审批门禁 |
 | `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |

@@ -66,6 +66,12 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },
+  // P1-1（2026-10-26）：多段旁白合成 + 帧级排期。与 tts_voiceover 同为「出音频」，
+  // 但它是批量入口且会算出帧号 —— 标题必须区分，否则用户分不清「这次是几段」。
+  tts_narration: { tier: 'A', title: '批量配音排帧', icon: '音' },
+  // P1-2（2026-10-26）：agent 侧资产库读写（此前只有 UI 能操作）。
+  list_library_assets: { tier: 'B', title: '查资产库', icon: '库' },
+  add_to_library: { tier: 'B', title: '存入资产库', icon: '库' },
   ask_user_choice: { tier: 'A', title: '向你提问', icon: '?' },
   // REQ-022：下面三个工具已下线（剧本门/分镜门随「拍摄定稿」删除）。
   // **条目刻意保留** —— 历史 `tool/call` 记录与旧画布节点仍带这些 toolName，
@@ -177,6 +183,27 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   tts_voiceover: (args) => {
     const base = str(args, 'text')
     return base === undefined ? undefined : clip(base, 30)
+  },
+  // P1-1：摘要要点出「几段 + 首句」，否则批量调用在对话流里只显示标题，
+  // 用户看不出这次配了哪几句（批量最容易「合成了但不是要的那版」）。
+  tts_narration: (args) => {
+    const lines = args.lines
+    if (!Array.isArray(lines) || lines.length === 0) return undefined
+    const head = lines[0]
+    const first = typeof head === 'object' && head !== null ? str(head as Record<string, unknown>, 'text') : undefined
+    return first === undefined ? `${lines.length} 段旁白` : `${lines.length} 段 · ${clip(first, 24)}`
+  },
+  // P1-2：库工具摘要给出「查什么 / 存哪条」，两者在对话流里都是高频操作。
+  list_library_assets: (args) => {
+    const category = str(args, 'category')
+    const query = str(args, 'q')
+    const parts = [category === undefined ? undefined : `分类=${category}`, query === undefined ? undefined : `关键词=${clip(query, 20)}`].filter(Boolean)
+    return parts.length > 0 ? parts.join(' · ') : '全部条目'
+  },
+  add_to_library: (args) => {
+    const name = str(args, 'name')
+    const category = str(args, 'category')
+    return name === undefined ? undefined : [clip(name, 24), category].filter(Boolean).join(' · ')
   },
   image2vl: (args) => {
     const base = str(args, 'prompt')

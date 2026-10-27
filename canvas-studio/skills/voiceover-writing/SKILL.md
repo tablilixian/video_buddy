@@ -1,6 +1,6 @@
 ---
 name: voiceover-writing
-description: 配音生成提示词规范（canvas-studio 的 tts_voiceover 工具 / Drama txt2speech，VoxCPM2）。凡调用 tts_voiceover 合成旁白/台词前加载：instruct_prompt 声音设计七维写法（语言/性别/年龄/语气/情感/语速/方言，全部自然语言）、时长控制（无时长参数，文本长度即杠杆）、refaudio 音色克隆纪律、产物与成片接入边界（compose 只挂 BGM，配音走 audioRefs 或独立交付）；完整语言/方言清单与示例库见 references/ 分册。
+description: 配音生成提示词规范（canvas-studio 的 tts_voiceover / tts_narration 工具 / Drama txt2speech，VoxCPM2）。凡合成旁白/台词前加载：**≥2 段旁白直接用 tts_narration（一次调用完成 锚→串行合成→帧级排期→audio.voiceOver[]）**，并必须先造「音色锚」再逐段克隆（后端音色不可复现，实测基频极差 45%）、instruct_prompt 声音设计七维写法（语言/性别/年龄/语气/情感/语速/方言，全部自然语言）、时长控制（无时长参数，文本长度即杠杆，精确时长用 speed 反解）、产物与成片接入边界（单段走 compose_video.bgmNodeId、多句走 render_composition 的 audio.voiceOver[]）；音色跨会话复用走资产库（list_library_assets / add_to_library + refaudio "lib:<id>"）；完整语言/方言清单与示例库见 references/ 分册。
 ---
 
 # 配音生成提示词规范（txt2speech / VoxCPM2）
@@ -17,6 +17,37 @@ description: 配音生成提示词规范（canvas-studio 的 tts_voiceover 工�
 与 `pitchSemitones`（±12 半音，变调不变速）。它们由本地 ffmpeg 后处理实现，**不是**
 后端参数，正确用法见 §六。
 
+## 零、多段旁白：先造「音色锚」（最重要的一条）
+
+**后端音色不可复现**（2026-10-26 实测：同一串 `instruct_prompt` 连发 3 次，基频极差 **45.1%**、
+时长极差 8.2%）。所以「逐字复用 instruct」只能保证**风格相近**，保证不了**同一个人**。
+
+**铁律：多段旁白（≥2 段）必须先定锚，后段全部克隆同一锚。**
+
+**≥2 段一律用 `tts_narration`**（一次调用把它全做了：锚 → 串行合成 → 用 ffprobe 真值
+排帧 → 直接返回 `audio.voiceOver[]`）。**不要**手调 N 次 `tts_voiceover` 再自己算帧号：
+`startFrame = round(秒 × fps)` 的累加是全项目最高频的错位来源，而且只有整片渲完才发现。
+`tts_narration` 的锚由参数形状强制成立（不传 `voice.refaudio` 就自动拿第一段当锚），
+天然不会漏传。下面的手工流程只在「必须逐段试听/逐段改词」时才用。
+
+```
+1) 造锚（二选一）
+   A. 首句语气中性 → 首句就是锚（不传 refaudio），零额外合成
+   B. 首句是哭喊/耳语/嘶吼 → 单造一条 5–10 秒中性样音，节点名「音色锚 · <角色>」，不上时间轴
+2) 后段逐段合成，每段 refaudio 都指向同一个锚（@ref[音色锚 · 角色] 或锚节点 id）
+3) instruct_prompt 全片逐字一致（它控语气/韵律，改一个字声音就飘）
+4) 全部合成完 → 用每段返回的 duration（ffprobe 真值）算 startFrame → 组装 audio.voiceOver[]
+```
+
+**跨会话/跨项目复用音色**：锚造好后 `add_to_library(nodeId=<锚节点>, category="voice", name="音色锚 · <角色>")`
+入库，之后任何项目 `refaudio: "lib:<id>"` 即可复现（`list_library_assets(category="voice")` 先查 id）。
+这是唯一可靠的跨会话音色一致性手段——`instruct_prompt` 抄得再像也复现不了同一个人。
+
+- 锚要**纯净**：单人、无 BGM、无环境声（背景会被一起克隆）。
+- 锚要**听一遍**再往下走：锚定错了全片都错；不合适就重抽一次（别超过 1 次）。
+- 锚节点命名固定 `音色锚 · <角色>`，方便 `@ref` 命中与人工核对。
+- 只有 **1 段**旁白时跳过本节，直接合成。
+
 ## 一、先定两件事
 
 0. **反向判据（REQ-017）**：要**画面里的角色开口说**这句话（对白，要口型）→ 不要用 tts_voiceover，把
@@ -27,16 +58,13 @@ description: 配音生成提示词规范（canvas-studio 的 tts_voiceover 工�
    - **让视频里的角色「用这个声音说话」** → 合成后把音频经 `cut_audio` 裁到
      ≤15s，作 `video_generate` / `video_composite` 的 `audioRefs`（r2v 参考音频，
      官方规格：≤3 段、单段 2–15s、合计 ≤15s、**不能作唯一输入**）。
-   ⚠️ **配音节点不能当 `bgmNodeId`**——compose_video 的 amix 只挂 BGM，把配音
-   传进 bgmNodeId 会在混音里铺满全片。配音入成片的正路只有 audioRefs 一条。
+   - **单段旁白进成片** → 传 `compose_video` 的 `bgmNodeId`（会按节点来源自动识别为
+     旁白轨：满音量、无淡入淡出、允许短于成片，音轨构成报「旁白」）。注意它**从 0 秒
+     铺起**，只能铺一段；**多段旁白必须走 `render_composition` 的 `audio.voiceOver[]`**。
 2. **时长（无「时长」参数，只能靠文本）**：先按 4 字/秒估文本长度；太长的旁白**拆段
    合成**（一次调用一段），不要指望后端压缩语速（真要整体放慢用 `speed`，见 §六）。
-   **多段旁白音色一致性（C-5 铁律）**：拆段前先定一次音色——有参考音就**每段都传
-   同一个 refaudio**；没有参考音就只在第一段写 instruct_prompt 声音设计，之后每段
-   **逐字复用第一段的 instruct_prompt**（七维一字不改）。严禁每段各写各的声音设计
-   ——那是「30s 片旁白出现三个音色」的直接成因。多段旁白入成片走 audioRefs 时
-   合计 ≤15s，超了先用 cut_audio 裁；合成前**逐段核对音频节点都已真实落卡**
-   （首段丢失多半是漏检，生成完数一遍节点数再往下走）。
+   **多段音色一致性见 §零（音色锚）** —— 那是本 skill 唯一正确的多段做法。
+   合成前**逐段核对音频节点都已真实落卡**（首段丢失多半是漏检，生成完数一遍节点数再往下走）。
 
 ## 二、instruct_prompt（声音设计）七维写法
 
@@ -70,20 +98,28 @@ description: 配音生成提示词规范（canvas-studio 的 tts_voiceover 工�
 
 ## 四、refaudio（音色克隆）
 
-- 传**上传句柄**（`upload_image` 返回的 filename，或 `@ref[音频节点标题]` 让 Host
-  换句柄）；生成产物名不可直接作入参（全局 filename 纪律同型）。
+- 传**上传句柄**（`upload_image` 返回的 filename）、`@ref[节点标题]`、节点 id、
+  `lib:<资产库音色id>`，或 `local:<项目内文件名>`；生成产物名不可直接作入参
+  （全局 filename 纪律同型）。
 - 提供后**克隆参考音色**生成后续语音；`instruct_prompt` 仍可写（控制语气/语速），
   但性别/年龄等音色特征以参考音频为准。
-- ⚠️ 克隆通道**未实测**（探针只验证了声音设计路径）——遇到失败按报错处理并回退
-  纯声音设计路径，不要反复重试。**回退时音色一致性不放松**：instruct_prompt 必须
-  逐字沿用第一段（或用户参考音对应）的音色描述，不许按段重写、不许混入不同性别 /
-  年龄的描述。
+- **克隆已实测生效且稳定**（2026-10-26 三轮：带 refaudio 的基频每次都紧贴当轮参考，
+  不带的有 45% 抖动）。所以多段旁白不要走「只复用 instruct」的旧路，见 §零。
+- 克隆会把参考音的**发声方式**一起带过来（推断，未单独实测）：参考音本身是哭喊/
+  耳语时，后面每句都会偏。故锚要选中性语气。
+- **资产库「音色」分类可直接当锚池**：`lib:<id>` 传入即用，跨项目复用。
+  遇到 500 且报「参考音色失效」说明句柄陈旧，重新选一次即可（`local:` 前缀会自动换成新鲜句柄）。
 
 ## 五、纪律与口径
 
 - **串行**：后端同步单任务，多条配音逐个合成（等上一条返回再发下一条）。
 - **时长口径**：工具结果里的 `duration` 是 ffprobe 实测**真值**；后端响应里的
   `duration` 是生成耗时（探针实测两者差 2.8 倍），勿混用。
+- **排帧**：`startFrame = round(秒 × fps)`，fps 取成片 `meta.fps`（24/25/30/60）；
+  句间留 8–15 帧，下一段起点必须 ≥ 上一段结束帧（渲染器**不会自动避让**，重叠就叠字）。
+- **进成片的多句旁白**：写 `render_composition` 的 `audio.voiceOver: [{src, startFrame, volume?}]`
+  （≤64 条），与单句 `audio.voiceOverUrl` **二选一**；`src` 必须是**同源 URL 原样抄**
+  （`/canvas-studio/assets/...` 或本地绝对路径）——写 `@ref` 或节点 id 会被校验直接拒收。
 - **改词 / 重配**：重新调用 `tts_voiceover` 传 `replaces=<旧音频节点 id>` 原地
   重写（保留节点与血缘），不要堆新卡。
 - **逐字正确优先于文采**：配音是念给人听的成品，text 里的每个字都会被念出来。

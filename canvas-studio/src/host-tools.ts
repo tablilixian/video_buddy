@@ -44,13 +44,17 @@ import { resolveRefFilenames } from './reference-resolve.js'
 // 既有测试从 host-tools 取这个纯函数（tests/filename-consumability.test.mjs）—— 保持转出。
 export { refCandidatePool } from './reference-resolve.js'
 // REQ-001：全局资产库（`@ref[lib:<id>]` 的解析 / 物化 / usage 回写都在这条链上）。
-import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
-import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
+import { AssetLibrary, collectNodeMediaSources, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
+import { LIB_CATEGORIES, LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
+// P1-1（2026-10-26）：多段旁白批量合成 + 帧级排期。排帧是纯函数（`voice-timeline.ts`），
+// 编排（锚传递 / 串行 / 进度报错）在 `narration.ts`，工具层只做引用解析与结果渲染。
+import { generateNarration } from './narration.js'
+import { DEFAULT_VOICE_GAP_SECONDS, MAX_NARRATION_LINES, VOICE_FPS, type VoiceFps } from './voice-timeline.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { runVideoShotQc, aggregateVideoQc, buildVideoQcRecord, validateQcTargetInput, VIDEO_QC_BUDGET } from './video-qc.js'
-import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
@@ -367,6 +371,155 @@ const speechResultSchema = {
 }
 /** CV-271 同款守卫：`tts_voiceover` 结果字段必须全部出现在 schema 里。 */
 export type SpeechSchemaCoverage = MustBeNever<MissingInSchema<typeof speechResultSchema, SpeechResult>>
+
+/**
+ * `tts_narration`（2026-10-26，P1-1）结果：批量合成 + 帧级排期的回执。
+ *
+ * 设计要点：`voiceOver` 是**已经算好帧号的 manifest 片段**（`src` 直接取产物同源
+ * URL），模型要做的事从「算 N 段帧号再抄数组」降级为「抄一个现成数组」。
+ */
+export interface NarrationToolResult {
+  /** 音色锚节点 id（`first-line` 时 = 第一段自己的节点）。 */
+  anchorNodeId: string
+  /** `given` = 沿用了调用方给的参考音；`first-line` = 拿第一段当锚。 */
+  anchorSource: 'given' | 'first-line'
+  /** 成片帧率（帧号只在同 fps 下成立）。 */
+  fps: number
+  clips: {
+    index: number
+    nodeId: string
+    url: string
+    duration: number
+    startFrame: number
+    endFrame: number
+    text: string
+  }[]
+  /** 可直接抄进 `manifest.audio.voiceOver` 的数组。 */
+  voiceOver: { src: string; startFrame: number }[]
+  /** 旁白总占帧（最后一段 endFrame）——与 `meta.durationInFrames` 对照。 */
+  totalFrames: number
+  warnings: string[]
+}
+
+const narrationResultSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    anchorNodeId: { type: 'string' as const, description: '音色锚的画布节点 id（多段音色一致的来源）' },
+    anchorSource: { type: 'string' as const, enum: ['given', 'first-line'] as const, description: '锚来源：given=沿用你传的参考音 / first-line=拿第一段当锚（零额外合成）' },
+    fps: { type: 'integer' as const, description: '排期所用帧率——manifest 的 meta.fps 必须与它相同，否则整条旁白按比例错位' },
+    clips: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          index: { type: 'integer' as const, description: '段序号（0 起，与入参 lines 对齐）' },
+          nodeId: { type: 'string' as const, description: '该段落的画布音频节点 id' },
+          url: { type: 'string' as const, description: '同源 URL（`audio.voiceOver[].src` 直接用它）' },
+          duration: { type: 'number' as const, description: 'ffprobe 实测真值（秒）；0 = 探测失败' },
+          startFrame: { type: 'integer' as const, description: '绝对起始帧' },
+          endFrame: { type: 'integer' as const, description: '绝对结束帧（不含）' },
+          text: { type: 'string' as const, description: '该段原文（核对顺序用）' },
+        },
+      },
+      description: '逐段回执（顺序 = 入参顺序）',
+    },
+    voiceOver: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          src: { type: 'string' as const, description: '同源 URL（禁止换成 @ref / 节点 id，manifest 会拒收）' },
+          startFrame: { type: 'integer' as const, description: '绝对帧号' },
+        },
+      },
+      description: '**直接抄进 manifest.audio.voiceOver 的数组**（帧号已算好，不要再改数字）',
+    },
+    totalFrames: { type: 'integer' as const, description: '旁白总占帧（最后一段 endFrame）；manifest 的 durationInFrames 必须 ≥ 它' },
+    warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '非致命提示（时长探测失败 / 段间隔为负 / 后处理未生效）。非空时必须转告用户' },
+  },
+}
+/** CV-146 同款守卫：`tts_narration` 结果字段必须全部出现在 schema 里。 */
+export type NarrationSchemaCoverage = MustBeNever<MissingInSchema<typeof narrationResultSchema, NarrationToolResult>>
+
+/** `list_library_assets` 的一条摘要（只给 agent 用得上的字段，不搬整份库文档）。 */
+export interface LibraryAssetSummary {
+  id: string
+  category: string
+  categoryLabel: string
+  name: string
+  description: string
+  tags: string[]
+  mediaCount: number
+  /** 是否含音频媒体（音色类条目必须有音频才能当 refaudio）。 */
+  hasAudio: boolean
+  /** 引用句柄 `lib:<id>` —— 任何 `@ref` / refaudio / 参考图参数都能直接用。 */
+  refHandle: string
+}
+
+export interface LibraryListToolResult {
+  total: number
+  /** 命中数超过 limit 时为 true（此时只返回前 limit 条）。 */
+  truncated: boolean
+  assets: LibraryAssetSummary[]
+}
+
+const libraryListSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    total: { type: 'integer' as const, description: '命中的库条目总数（过滤后、截断前）' },
+    truncated: { type: 'boolean' as const, description: 'true = 命中数超过 limit，只回了前 limit 条（用 q 收窄或调大 limit 再看）' },
+    assets: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' as const, description: '库资产 id' },
+          category: { type: 'string' as const, description: '分类键（character / scene / prop / group / voice）' },
+          categoryLabel: { type: 'string' as const, description: '分类中文名（角色 / 场景 / 物件 / 群像 / 音色）' },
+          name: { type: 'string' as const, description: '库内名称' },
+          description: { type: 'string' as const, description: '描述（可能为空）' },
+          tags: { type: 'array' as const, items: { type: 'string' as const }, description: '标签' },
+          mediaCount: { type: 'integer' as const, description: '媒体文件数' },
+          hasAudio: { type: 'boolean' as const, description: '是否含音频媒体（音色条目必须为 true 才能当 refaudio 用）' },
+          refHandle: { type: 'string' as const, description: '引用句柄 `lib:<id>`——直接填进 refaudio / 参考图参数，不要用名称' },
+        },
+      },
+      description: '库条目摘要（按更新时间倒序）',
+    },
+  },
+}
+export type LibraryListSchemaCoverage = MustBeNever<MissingInSchema<typeof libraryListSchema, LibraryListToolResult>>
+
+export interface LibraryAddToolResult {
+  id: string
+  name: string
+  category: string
+  categoryLabel: string
+  mediaCount: number
+  refHandle: string
+  /** 一句话说明这个条目以后怎么被引用（音色类会说明 refaudio 怎么传）。 */
+  note: string
+}
+
+const libraryAddSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string' as const, description: '新库资产 id' },
+    name: { type: 'string' as const, description: '入库名称（全局唯一，重名会报错）' },
+    category: { type: 'string' as const, description: '分类键' },
+    categoryLabel: { type: 'string' as const, description: '分类中文名' },
+    mediaCount: { type: 'integer' as const, description: '拷入库的媒体文件数（0 = 纯元数据条目）' },
+    refHandle: { type: 'string' as const, description: '引用句柄 `lib:<id>`' },
+    note: { type: 'string' as const, description: '以后怎么引用这个条目（必须转述给用户）' },
+  },
+}
+export type LibraryAddSchemaCoverage = MustBeNever<MissingInSchema<typeof libraryAddSchema, LibraryAddToolResult>>
 
 /**
  * REQ-035 F-18：救回"通篇用中文弯引号当 JSON 分隔符"的输入。
@@ -809,6 +962,77 @@ function renderSpeechResult(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}${warnNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；也可以走 render_composition 的 audio.voiceOverUrl（多句用 audio.voiceOver 数组，各自带 startFrame）。` }]
 }
 
+/** 结果文本里的一句话截断（表格单元格用：竖线会撕裂 markdown 表）。 */
+function clipCell(text: string, limit: number): string {
+  const flat = text.replace(/\|/gu, '／').replace(/\n+/gu, ' ')
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat
+}
+
+/**
+ * 把 `tts_narration` 的结果渲染成模型可读的文本块。
+ *
+ * 这份文本承担一件事：**把「帧号已验证」这件事说清楚**，并给出可直接抄的
+ * `voiceOver` 数组。模型看到数字之后最常见的两种回退是 ① 自己再算一遍（错位）
+ * ② 把 `src` 换成 `@ref[...]`（manifest 拒收）—— 两条都在这里点名禁止。
+ */
+function renderNarrationResult(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as NarrationToolResult
+  const rows = v.clips.map((clip) => `| ${clip.index + 1} | ${clip.startFrame} | ${clip.endFrame} | ${clip.duration > 0 ? `${clip.duration}s` : '探测失败'} | \`${clip.nodeId}\` | ${clipCell(clip.text, 28)} |`)
+  const anchorNote = v.anchorSource === 'given'
+    ? `沿用你提供的参考音（锚节点 ${v.anchorNodeId} = 第一段产物）`
+    : `第一段即锚（节点 ${v.anchorNodeId}），后 ${v.clips.length - 1} 段都克隆它 —— 零额外合成`
+  const warnNote = v.warnings.length > 0 ? `\n⚠️ ${v.warnings.join('\n⚠️ ')}\n` : ''
+  return [{
+    type: 'text',
+    text: `旁白已批量合成 ${v.clips.length} 段，帧号已按 ${v.fps}fps 算好。\n`
+      + `音色锚：${anchorNote}。\n\n`
+      + '| # | 起帧 | 结束帧 | 时长 | 节点 | 文本 |\n|---|---|---|---|---|---|\n'
+      + `${rows.join('\n')}\n\n`
+      + `旁白总占 0–${v.totalFrames} 帧（${(v.totalFrames / v.fps).toFixed(2)}s）。\n`
+      + `${warnNote}\n`
+      + '**下一步：把下面这个数组原样放进 `render_composition` 的 `manifest.audio.voiceOver`**'
+      + '（帧号已算好——**不要再自己加一遍**；`src` 是同源 URL，**不要换成 @ref / 节点 id**，manifest 只认同源 URL 或本地绝对路径）：\n'
+      + '```json\n' + JSON.stringify(v.voiceOver, null, 2) + '\n```\n'
+      + `并确认 manifest 的 \`meta.fps\` = ${v.fps}、\`meta.durationInFrames\` ≥ ${v.totalFrames}`
+      + '（不够就加片尾静帧或删句）。想让某一段单独移位，改 `startFrame` 后要**同步检查后面的段有没有被压到一起**。\n'
+      + '本片是「旁白 + 有声视频轨」时注意：视频轨原生对白与旁白会同时出声，需要二选一就把视频轨 `muted` 掉。',
+  }]
+}
+
+/** 把 `list_library_assets` 结果渲染成模型可读的文本块（含可直接用的 `lib:` 句柄）。 */
+function renderLibraryList(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as LibraryListToolResult
+  if (v.assets.length === 0) {
+    return [{
+      type: 'text',
+      text: '资产库里没有匹配的条目。\n'
+        + '不要编造 id：可以先用 `add_to_library` 把画布上已有的节点存进去（音色用 category="voice"），或用 `list_references` 看本项目的参考素材。',
+    }]
+  }
+  const rows = v.assets.map((asset) => `| \`${asset.refHandle}\` | ${asset.categoryLabel} | ${clipCell(asset.name, 24)} | ${asset.mediaCount}${asset.hasAudio ? '（含音频）' : ''} | ${clipCell(asset.description, 30)} |`)
+  return [{
+    type: 'text',
+    text: `资产库命中 ${v.total} 条${v.truncated ? `（只回了前 ${v.assets.length} 条，用 q 收窄）` : ''}。\n\n`
+      + '| 引用句柄 | 分类 | 名称 | 媒体 | 描述 |\n|---|---|---|---|---|\n'
+      + `${rows.join('\n')}\n\n`
+      + '引用时**一律用第一列的 `lib:<id>` 句柄**（不是名称、不是 id 裸值）：\n'
+      + '- 音色 → `tts_voiceover` / `tts_narration` 的 `refaudio: "lib:<id>"`（该条目必须含音频）\n'
+      + '- 角色/场景/物件 → 生成类工具的参考图参数、`@ref[lib:<id>]`\n'
+      + '句柄解析由 Host 负责物化（库文件会拷进当前项目的 assets 再换后端句柄），你不必也不该自己拷文件。',
+  }]
+}
+
+/** 把 `add_to_library` 结果渲染成模型可读的文本块。 */
+function renderLibraryCreated(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as LibraryAddToolResult
+  return [{
+    type: 'text',
+    text: `已存入资产库：${v.categoryLabel}「${v.name}」（id \`${v.id}\`，媒体 ${v.mediaCount} 份）。\n`
+      + `以后引用它用 \`${v.refHandle}\`：${v.note}\n`
+      + '跨项目可用（资产库是全局的）；用户也能在资产库界面里改名 / 试听 / 删除。',
+  }]
+}
+
 /** 把文本结果渲染成模型可读的文本块。 */
 function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as { text: string }
@@ -1060,6 +1284,34 @@ async function resolveRefValues(
   expectKind?: 'image' | 'audio' | 'video',
 ): Promise<string[]> {
   return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value, library, expectKind)))
+}
+
+/**
+ * 把**刚合成出来的画布音频节点**换成可作 `refaudio` 的后端句柄（音色锚复用用）。
+ *
+ * 为什么不复用 `resolveRefValue`：它按 `@ref[显示名]` 解析，而锚是**同一轮调用里刚
+ * 落的节点**（标题还是默认的「配音」，按名解析会歧义）；裸节点 id 又会被
+ * `looksLikeCanvasNodeId` 拦成 `CS-USER-002`（那条守卫防的是模型把节点 id 当句柄
+ * 传给后端，这里是我们自己取到的真节点）。所以直接走「节点 → 项目资产文件名 →
+ * promote」这条最短路径，一次 promote 拿到句柄，后续 N 段共用。
+ */
+async function anchorHandleOf(
+  registry: ProjectRegistry,
+  projectId: string,
+  nodeId: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const document = await registry.readCanvas(projectId)
+  const node = document.nodes.find((entry) => entry.id === nodeId)
+  if (node === undefined) {
+    throwError('CS-USER-ERR', { message: `音色锚节点 ${nodeId} 不在画布上（可能已被删除）——换一个锚，或直接给 voice.refaudio。` })
+  }
+  const key = node.url !== undefined ? assetKeyFromUrl(node.url) : null
+  const file = key !== null && key.startsWith(`${projectId}/`) ? key.slice(projectId.length + 1) : null
+  if (file === null) {
+    throwError('CS-USER-ERR', { message: `音色锚节点 ${nodeId} 没有可用的本地音频文件（url 缺失或不在本项目资产目录）——换一个锚。` })
+  }
+  return promoteAssetFile(registry, projectId, file, signal)
 }
 
 /**
@@ -2722,17 +2974,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '写法见技能 voiceover-writing——写配音前先加载它。'
         + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'
         + '**O-09：音色/语速的真实边界** —— 后端没有 `voiceId` 参数，音色（年龄/沙哑/气声）只能靠 instructPrompt 自然语言引导，超出音域时用 `speed`（变速不变调）与 `pitchSemitones`（变调不变速，负数更低沉）补，**不要为「60 岁沙哑」反复重试烧额度**：重试两次音色没变就说明这条路到顶了，改用 pitchSemitones:-3 + speed:0.9 这类确定性参数，或如实告知用户需要后处理。'
-        + 'refaudio 传参考音频（upload_image 句柄或 @ref[音频节点标题]）可克隆其音色生成后续语音（克隆通道未实测，遇到失败按报错处理）；'
-        + '⚠️ **多段旁白必须同音色**（C-5）：拆段合成时每段传同一个 refaudio；不用 refaudio 时各段 instruct_prompt 的音色七维逐字一致，严禁每段各写各的声音设计——详见技能 voiceover-writing。'
+        + 'refaudio 传参考音频（`upload_image` 句柄 / `@ref[音频节点标题]` / 节点 id / `lib:<资产库音色id>` / `local:<项目内文件名>`）克隆其音色；**克隆已实测生效且稳定**。'
+        + '⚠️ **多段旁白必须同音色（音色锚流程）**：先合成第一句作锚（首句语气中性时零额外成本；首句是哭喊/耳语就单造一条中性锚卡，节点名「音色锚 · 角色」），后段每段传**同一个 refaudio** + 与锚**逐字相同**的 instructPrompt。'
+        + '**只靠 instructPrompt 复用不足**——2026-10-26 实测同一串指令连发 3 次，基频极差 45.1%、时长极差 8.2%；不用 refaudio 就是每次抽一个新音色。详见技能 voiceover-writing §零。'
         + '产物 voxcpm_* 前缀 mp3，结果里的 duration 是 ffprobe 实测真值（后端响应里的 duration 是生成耗时，勿混）。'
         + '改词 = 重新调用本工具传新 text（节点重试按钮原地重放）。'
+        + '进成片：**单段**旁白传 `compose_video` 的 `bgmNodeId`（自动识别旁白轨、从 0 秒铺起）；**多句**旁白写 `render_composition` 的 `audio.voiceOver: [{src,startFrame}]`（≤64 条，`src` 必须抄同源 URL，不能写 @ref/节点 id）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         text: { type: 'string' as const, required: true, description: '要合成的文本（要念的话）。成品台词/旁白，不要写占位' },
         instructPrompt: { type: 'string' as const, description: '可选：声音设计指令（自然语言：语言/性别/年龄/语气/情感/语速/方言，如「30岁女性，温柔坚定，普通话，稍慢」）。缺省用后端默认音色' },
         speed: { type: 'number' as const, description: '可选（O-09）：语速倍率 0.5–2.0（0.8 = 放慢 20%）。宿主侧 ffmpeg 变速不变调（`atempo`），**不是**后端参数；与 instructPrompt 里的「稍慢」可叠加，但别用两次描述同一件事。缺省 1' },
         pitchSemitones: { type: 'number' as const, description: '可选（O-09）：音高偏移半音 -12 ~ +12（负数 = 更低沉苍老，-3 约等于「低一档」）。宿主侧变调不变速；**音色本身（沙哑/气声）仍靠 instructPrompt 描述**，它只调基频。缺省 0' },
-        refaudio: { type: 'string' as const, description: '可选：参考音频（upload_image 句柄或 @ref[显示名]）——提供后克隆其音色生成后续语音' },
+        refaudio: { type: 'string' as const, description: '可选：参考音频（**音色锚**）——`upload_image` 句柄 / `@ref[音频节点标题]` / 音频节点 id / `lib:<资产库音色id>` / `local:<项目内文件名>`；提供后克隆其音色。多段旁白每段都传同一个锚' },
         replaces: { type: 'string' as const, description: '可选：要重配的已有音频节点 id —— 传入后**原地重写**该节点（保留节点位置与血缘，替换音频与文本），不堆新卡；改词重配时应传' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
         sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集）' },
@@ -2753,6 +3007,182 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
         }, exec.signal)
+      },
+    }),
+    defineTool({
+      name: 'tts_narration',
+      description:
+        '**多段旁白一条命令搞定**：给一串台词，本工具串行合成 → 用 ffprobe 真值算出每段的绝对帧号 → 直接回一个可抄进 manifest 的 `audio.voiceOver[]`。'
+        + '凡是「旁白分好几段、要按时序铺进时间轴」都用本工具，**不要再手工一段段调 tts_voiceover 再自己算帧号**（手算累加 + 秒帧换算是本项目最高频的错位来源，且只有整片渲完才发现）。'
+        + '**音色锚（本工具的核心）**：`voice.refaudio` 给参考音（`lib:<音色id>` / `@ref[音频节点标题]` / 节点 id / `upload_image` 句柄）⇒ 每段都克隆它；**不给就自动拿第一段当锚**（先合成第一段，再把它的句柄喂给后面所有段，零额外合成）。'
+        + '⚠️ **别只靠 instructPrompt 求一致**：2026-10-26 实测同一串指令连发 3 次，基频极差 45.1%、时长极差 8.2%——不传参考音就是每段抽一个新音色。'
+        + '⚠️ `fps` 必须与成片 `manifest.meta.fps` **完全一致**（24/25/30/60），否则整条旁白按比例错位。'
+        + '返回值里 `voiceOver` 的 `src` 已经是同源 URL，**禁止改成 @ref / 节点 id**（manifest 的 `validateAssetRefField` 只认同源 URL）。'
+        + '⚠️ **不是事务**：第 k 段失败时前 k-1 段已落卡、额度已花（回滚不退），报错里会给出已完成节点，**不要整批重跑**，用剩下的文本再调一次（锚传已完成的第一段）。'
+        + '时长仍由文本决定（无时长参数，按每秒约 4 字估）；要改动已有某段就用 tts_voiceover 的 replaces 原地重配，再回来重跑整批排帧。'
+        + '另：要画面里的角色**开口说话（对口型）**不要用 TTS，写 `<d>[语言]原话</d>` 给视频模型。写法见技能 voiceover-writing。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
+      parameters: {
+        lines: {
+          type: 'array' as const,
+          required: true,
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              text: { type: 'string' as const, required: true, description: '这一段的台词（要念的话）。不能为空串' },
+              gapSeconds: { type: 'number' as const, description: `可选：这一段**之前**的间隔（秒），覆盖全局 gapSeconds。负数 = 与上一段重叠。缺省 ${DEFAULT_VOICE_GAP_SECONDS}` },
+              instructPrompt: { type: 'string' as const, description: '可选：这一段单独的声音设计（**一般不要写**——逐段改写会让音色漂移；只在「这一句是耳语」这类真需要时用）' },
+            },
+          },
+          description: `按顺序要念的段（1–${MAX_NARRATION_LINES} 段）。每段一个对象；顺序即时间顺序。拆段按语义断句（一句一口气），不要把一段话切成词组`,
+        },
+        voice: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            instructPrompt: { type: 'string' as const, description: '整条旁白的声音设计（七维：语言/性别/年龄/语气/情感/语速/方言，如「32岁女性，压低声音，克制紧绷，普通话，中速」）。**全片写一份**，逐段复用' },
+            refaudio: { type: 'string' as const, description: '音色锚：`lib:<音色id>` / `@ref[音频节点标题]` / 音频节点 id / upload_image 句柄。给 ⇒ 每段克隆它；不给 ⇒ 自动拿第一段当锚' },
+          },
+          description: '整条旁白的音色设定（锚在这里）。音色一致靠 refaudio，不靠逐字复用 instructPrompt',
+        },
+        fps: { type: 'integer' as const, required: true, enum: VOICE_FPS, description: '成片帧率（24/25/30/60）。必须与 render_composition 的 manifest.meta.fps 相同——帧号只在同 fps 下成立' },
+        startFrame: { type: 'integer' as const, description: '可选：第一段的起始帧（旁白不从头开始时用，如 `round(3.5 × fps)`）。缺省 0' },
+        gapSeconds: { type: 'number' as const, description: `可选：全局段间隔（秒）。缺省 ${DEFAULT_VOICE_GAP_SECONDS}（≈一句换气的停顿）` },
+        speed: { type: 'number' as const, description: '可选：全片语速倍率 0.5–2.0（宿主 ffmpeg 变速不变调，非后端参数）。缺省 1' },
+        pitchSemitones: { type: 'number' as const, description: '可选：全片音高偏移半音 -12 ~ +12（负数 = 更低沉；只调基频，沙哑/气声仍靠 instructPrompt）' },
+      },
+      output: { schema: narrationResultSchema, render: renderNarrationResult },
+      async execute(args, exec) {
+        const a = args as {
+          lines: { text: string; gapSeconds?: number; instructPrompt?: string }[]
+          voice?: { instructPrompt?: string; refaudio?: string }
+          fps: number
+          startFrame?: number
+          gapSeconds?: number
+          speed?: number
+          pitchSemitones?: number
+        }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'tts_narration', false)
+        // 锚只解析一次：N 段共用同一个后端句柄（每段各解析一次会重复 promote，白等网络）。
+        const rawRef = a.voice?.refaudio
+        const refaudio = rawRef !== undefined && rawRef.trim() !== ''
+          ? await resolveRefValue(registry, projectId, rawRef, library, 'audio')
+          : undefined
+        const instruct = a.voice?.instructPrompt
+        return generateNarration({
+          synthesize: (params) => generateSpeech(registry, projectId, params, exec.signal),
+          resolveHandle: (nodeId) => anchorHandleOf(registry, projectId, nodeId, exec.signal),
+        }, {
+          lines: a.lines.map((line) => ({
+            text: line.text,
+            ...(line.gapSeconds !== undefined ? { gapSeconds: line.gapSeconds } : {}),
+            ...(line.instructPrompt !== undefined ? { instructPrompt: line.instructPrompt } : {}),
+          })),
+          ...(instruct !== undefined || refaudio !== undefined
+            ? {
+              voice: {
+                ...(instruct !== undefined && instruct.trim() !== '' ? { instructPrompt: instruct } : {}),
+                ...(refaudio !== undefined ? { refaudio } : {}),
+              },
+            }
+            : {}),
+          fps: a.fps as VoiceFps,
+          ...(a.startFrame !== undefined ? { startFrame: a.startFrame } : {}),
+          ...(a.gapSeconds !== undefined ? { gapSeconds: a.gapSeconds } : {}),
+          ...(a.speed !== undefined ? { speed: a.speed } : {}),
+          ...(a.pitchSemitones !== undefined ? { pitchSemitones: a.pitchSemitones } : {}),
+        })
+      },
+    }),
+    defineTool({
+      name: 'list_library_assets',
+      description:
+        '**列全局资产库**（跨项目的角色 / 场景 / 物件 / 群像 / **音色**），返回可直接使用的引用句柄 `lib:<id>`。'
+        + '用途：① 用户说「用我库里那个音色 / 上次那个女主」→ 先查再引用，**不要编 id**；② 复用音色的唯一正路（多段旁白要同音色时，把音色入库一次，之后每次 `refaudio: "lib:<id>"`）；'
+        + '③ 查重——入库前先看有没有同名条目（`add_to_library` 重名会直接报错）。'
+        + '`category` 过滤：character / scene / prop / group / voice（音色）。`q` 模糊搜名称/别名/标签/描述。'
+        + '返回的 `refHandle` 直接填进 `refaudio` / 参考图参数；**不要用名称当引用**（名称是自然语言匹配用的，不是句柄）。',
+      parameters: {
+        category: { type: 'string' as const, enum: LIB_CATEGORIES, description: '可选：按分类过滤。要音色就传 voice' },
+        q: { type: 'string' as const, description: '可选：模糊搜索（名称 / 别名 / 标签 / 描述，大小写不敏感）' },
+        limit: { type: 'integer' as const, description: '可选：最多返回几条（1–100，缺省 30）。命中被截断时返回 truncated=true' },
+      },
+      output: { schema: libraryListSchema, render: renderLibraryList },
+      async execute(args) {
+        const a = args as { category?: string; q?: string; limit?: number }
+        const rawLimit = typeof a.limit === 'number' && Number.isFinite(a.limit) ? Math.round(a.limit) : 30
+        const limit = Math.min(100, Math.max(1, rawLimit))
+        const filtered = await library.list({
+          ...(a.category !== undefined ? { category: a.category as (typeof LIB_CATEGORIES)[number] } : {}),
+          ...(a.q !== undefined && a.q.trim() !== '' ? { q: a.q.trim() } : {}),
+        })
+        const page = filtered.slice(0, limit)
+        return {
+          total: filtered.length,
+          truncated: filtered.length > page.length,
+          assets: page.map((asset) => ({
+            id: asset.id,
+            category: asset.category,
+            categoryLabel: LIB_CATEGORY_LABELS[asset.category],
+            name: asset.name,
+            description: asset.description,
+            tags: [...asset.tags],
+            mediaCount: asset.media.length,
+            hasAudio: asset.media.some((media) => media.kind === 'audio'),
+            refHandle: `lib:${asset.id}`,
+          })),
+        }
+      },
+    }),
+    defineTool({
+      name: 'add_to_library',
+      description:
+        '**把画布上已有的节点存入全局资产库**（跨项目复用）。'
+        + '最常用的两种：① `category="voice"` + 一个音频节点 ⇒ 存成**音色**，之后任何项目都能 `refaudio: "lib:<id>"` 复现同一音色（多段旁白音色一致的推荐做法：先造一条中性锚卡，入库，全片引用）；② 角色/场景/物件 ⇒ 存参考图，之后跨项目直接引用。'
+        + '入参只要「节点 id + 分类 + 名称」——媒体由 Host 从项目 assets 拷入库（视频节点不支持入库，视频走画布引用 / 抽帧）。'
+        + '⚠️ 名称全局唯一（大小写不敏感），重名会报错；入库前可先 `list_library_assets` 查一下。'
+        + '⚠️ 入库是**快照**：之后画布上改那个节点不会同步回库，要更新就重新入库（新名称或先删旧条目）。',
+      parameters: {
+        nodeId: { type: 'string' as const, required: true, description: '要入库的画布节点 id（音频 / 图片节点；视频不支持）' },
+        category: { type: 'string' as const, required: true, enum: LIB_CATEGORIES, description: '分类：character 角色 / scene 场景 / prop 物件 / group 群像 / voice 音色' },
+        name: { type: 'string' as const, required: true, description: '库内名称（≤80 字符，全局唯一）。建议写成可自然语言指代的名字，如「音色锚 · 女主」「女主 · 林夏」' },
+        description: { type: 'string' as const, description: '可选：描述（音色建议写清年龄/语气/方言，以后自己或用户都能看懂该用在哪）' },
+        tags: { type: 'array' as const, items: { type: 'string' as const }, description: '可选：标签（便于 q 搜索，如 ["女主","低沉"]）' },
+        aliases: { type: 'array' as const, items: { type: 'string' as const }, description: '可选：别名 / 外号（自然语言匹配与 @ 菜单过滤都算上）' },
+      },
+      output: { schema: libraryAddSchema, render: renderLibraryCreated },
+      async execute(args, exec) {
+        const a = args as { nodeId: string; category: string; name: string; description?: string; tags?: string[]; aliases?: string[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        // 视频节点在 `collectNodeMediaSources` 里统一拒绝（单点，路由与工具共用同一判据）。
+        const { node, sources } = await collectNodeMediaSources(registry, projectId, a.nodeId)
+        const asset = await library.create({
+          category: a.category as (typeof LIB_CATEGORIES)[number],
+          name: a.name,
+          ...(a.description !== undefined ? { description: a.description } : {}),
+          ...(Array.isArray(a.tags) ? { tags: a.tags } : {}),
+          ...(Array.isArray(a.aliases) ? { aliases: a.aliases } : {}),
+          sourceProjectId: projectId,
+          anchors: [{ projectId, nodeId: node.id }],
+          media: sources,
+        })
+        const hasAudio = asset.media.some((media) => media.kind === 'audio')
+        const note = asset.category === 'voice'
+          ? hasAudio
+            ? `以后合成时传 \`refaudio: "lib:${asset.id}"\`（tts_voiceover / tts_narration 的 voice.refaudio），即可复现这个音色。`
+            : '⚠️ 这条音色没有音频媒体（节点无 url）——当 refaudio 用会失败，请换一个有音频的节点重新入库。'
+          : `以后在任何项目里用 \`lib:${asset.id}\`（参考图参数或 @ref[lib:${asset.id}]）引用它。`
+        return {
+          id: asset.id,
+          name: asset.name,
+          category: asset.category,
+          categoryLabel: LIB_CATEGORY_LABELS[asset.category],
+          mediaCount: asset.media.length,
+          refHandle: `lib:${asset.id}`,
+          note,
+        }
       },
     }),
     defineTool({

@@ -89,6 +89,9 @@ export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'aud
   music_generation: 'audio',
   // CV-271：配音产物（txt2speech mp3）—— 同为 appendCanvasNode 的音频路径。
   tts_voiceover: 'audio',
+  // P1-1（2026-10-26）：批量旁白 —— 每段都经 generateSpeech 落一张音频节点。
+  // 漏登记就是 CV-130 的重演：音频已经在盘上，画布要切窗口才出现。
+  tts_narration: 'audio',
   // BUG-002：裁剪产物同样 appendCanvasNode，漏登记 = 裁完画布不刷新（同 CV-130）。
   cut_audio: 'audio',
 }

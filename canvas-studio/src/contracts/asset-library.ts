@@ -29,9 +29,16 @@ export const LIB_CATEGORY_LABELS: Readonly<Record<LibCategory, string>> = {
   voice: '音色',
 }
 
-/** 收口未知输入为合法分类（路由 body / 读侧迁移共用）。 */
+/**
+ * 收口未知输入为合法分类（路由 body / 读侧迁移共用）。
+ *
+ * ⚠️ 必须与 `LIB_CATEGORIES` 逐值对齐：REQ-032 C1 追加「音色」时枚举与标签都加了，
+ * 这里漏了 `voice` —— 后果是 `POST /library` 建音色条目 400、`GET ?category=voice` 400，
+ * 且 `isLibraryAsset` 一旦读到 voice 条目就判非法 ⇒ 整库读取抛错（文档损坏即拒写）。
+ * `tests/asset-library-store.test.mjs` 用 `LIB_CATEGORIES.every(isLibCategory)` 锁这条不变式。
+ */
 export function isLibCategory(value: unknown): value is LibCategory {
-  return value === 'character' || value === 'scene' || value === 'prop' || value === 'group'
+  return value === 'character' || value === 'scene' || value === 'prop' || value === 'group' || value === 'voice'
 }
 
 /** 库媒体文件 URL（详情/卡片/hover 浮层的 `<img src>`；GET 由 requestAllowed 守卫）。 */

@@ -584,7 +584,11 @@ export function NodeInputCard(props: NodeInputCardProps) {
   // ==================== 参考音色槽（REQ-032 Step 3，演示 .ref-slot :932）====================
   /** 仅 voice 模式渲染（design/music 隐藏槽，但状态保留、发送不带 —— §六）。 */
   const refSlotVisible = isAudio && audio.fn === 'voice'
-  /** 三来源候选池：画布 kind==='audio' 有 url 节点 + 资产库「音色」分类音频媒体。 */
+  /**
+   * 三来源候选池：画布 kind==='audio' 且有 url 的节点 + 资产库里带音频媒体的条目 + 本地上传。
+   * 资产库侧**不按分类过滤**（角色/场景资产也可以带音色样本，多一条候选比漏一条好）；
+   * 「音色」分类只是给用户一个专门的收纳 tab。
+   */
   const audioRefCandidates = useMemo(() => {
     const fromCanvas = allNodes
       .filter(candidate => candidate.id !== node.id

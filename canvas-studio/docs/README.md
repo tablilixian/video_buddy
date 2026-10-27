@@ -84,6 +84,8 @@
 | [visual-direction-execution-plan.md](./visual-direction-execution-plan.md) | DD 工程清单（STATUS 活跃引用） | 在役 |
 | [visual-direction-ui-closeout.md](./visual-direction-ui-closeout.md) | 对照 preview 的 UI 差距清单（含 F 补验分区） | 在役 |
 | [competitor-analysis.md](./competitor-analysis.md) | 竞品分析工作区（DA 草案 → 合并 CV/STATUS） | 在役 |
+| **[plans/2026-10-27-文档与散落资产归位方案.md](./plans/2026-10-27-文档与散落资产归位方案.md)** | ★ 仓库级**位置治理**：根目录 12 项 + 根 `docs/` 5 项 + 本目录 6 项 + `api-playground/` 的搬迁清单，含逐文件引用核查（file:line）与「调查后判定不动」的理由。只挪位置、不改内容、不改体积 | 🚩 待执行（未动任何文件） |
+| **[plans/2026-10-27-超大文件清单与拆分方案.md](./plans/2026-10-27-超大文件清单与拆分方案.md)** | ★ 代码侧**可维护性清单**：6 个 P0 超大文件（`styles.ts` / `host-tools.ts` / `generate.ts` / `routes.ts` / `StudioFrame.tsx` / `client/index.ts`）+ 15 个 P1，含结构实测、拆分方案、**读源码测试的阻力矩阵**与落地节奏 | 📋 参考清单（未动代码） |
 
 ## 三、开发流程
 

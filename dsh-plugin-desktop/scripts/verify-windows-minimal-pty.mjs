@@ -14,6 +14,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import * as TerminalBash from '@deepseek-ai/dsh-terminal-bash'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
@@ -52,27 +53,44 @@ function toolText(result) {
  * agent only carries tool-execution identity, so nothing consumes pending work;
  * the stub exists so registry and tool attribution see a well-formed agent.
  */
+/**
+ * Inbox stub matching the upstream `@deepseek-ai/dsh-agent` `Inbox` contract.
+ *
+ * ⚠️ The `target` argument of `append`/`prepend`/`splice` is the kebab-case
+ * `InboxTarget` (`'next-turn'` / `'next-step'`), NOT camelCase. The pending
+ * store must use the same kebab keys, otherwise `pending[target]` is `undefined`
+ * and `append` throws `Cannot read properties of undefined (reading 'push')`
+ * the moment the 0.2.1 agent loop delivers to the inbox. Shape copied from
+ * `deepseek-harness/.../agent-loop-testkit/src/inbox.ts` `createInboxStub()`.
+ */
 function stubInbox() {
-  const pending = { nextTurn: [], nextStep: [] }
+  const pending = { 'next-turn': [], 'next-step': [] }
+  const locate = (messageId) => {
+    for (const target of ['next-turn', 'next-step']) {
+      const index = pending[target].findIndex(item => item.id === messageId)
+      if (index >= 0) return { target, index }
+    }
+    return undefined
+  }
   return {
-    get nextTurn() { return pending.nextTurn },
-    get nextStep() { return pending.nextStep },
+    get nextTurn() { return pending['next-turn'] },
+    get nextStep() { return pending['next-step'] },
     clear() {
-      pending.nextStep.length = 0
-      pending.nextTurn.length = 0
+      pending['next-step'].splice(0)
+      pending['next-turn'].splice(0)
     },
     append(target, message) { pending[target].push(message) },
     prepend(target, message) { pending[target].unshift(message) },
     replace(messageId, newMessage) {
-      const index = pending.nextTurn.findIndex(item => item.id === messageId)
-      if (index === -1) return false
-      pending.nextTurn[index] = newMessage
+      const location = locate(messageId)
+      if (location === undefined) return false
+      pending[location.target].splice(location.index, 1, newMessage)
       return true
     },
     remove(messageId) {
-      const index = pending.nextTurn.findIndex(item => item.id === messageId)
-      if (index === -1) return false
-      pending.nextTurn.splice(index, 1)
+      const location = locate(messageId)
+      if (location === undefined) return false
+      pending[location.target].splice(location.index, 1)
       return true
     },
     splice(target, start, deleteCount, inserted) {
@@ -143,6 +161,11 @@ async function scenario(inputs) {
     }
 
     await context.plugin(SmokeDesktopSubprocess)
+    // 0.2.1：TerminalBash 的 inject 含 `sessionProjections`，由 SessionProjectionRegistry
+    // 提供（上游 testkit 的 mountAgentLoopTestDependencies 同样挂载它）。漏挂会导致
+    // TerminalBash.apply 因依赖不满足而不执行 → `shell` PTY 后端未注册 →
+    // pwsh 工具 spawn 报 "no PTY backend registered for \"shell\""。
+    await context.plugin(SessionProjectionRegistry)
     await context.plugin(TerminalBash, {
       shellDialect: 'pwsh',
       shellPath: inputs.shellPath,

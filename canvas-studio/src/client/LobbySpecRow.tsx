@@ -43,10 +43,11 @@ import {
   LOBBY_DURATION_PRESETS,
   LOBBY_MODELS,
   LOBBY_MODE_COPY,
-  RESOLUTION_DISPLAY,
   durationChipLabel,
   formatChipLabel,
   lobbyModelLabel,
+  RESOLUTION_DISPLAY,
+  resolutionDisplay,
 } from '../lobby-spec.js'
 import {
   LobbyCustomRow,
@@ -128,7 +129,7 @@ export function tagSendButton(frame: Element | null): (() => void) | null {
  * 最先挂载的 lobby 组件，锚打一次就够）。
  */
 export function LobbySpecChips(props: LobbySpecRowProps): ReactElement | null {
-  const { useStudio, setSpec, defaultMode } = props
+  const { useStudio, setSpec, defaultMode, defaultResolution } = props
   const projectId = useStudio(store => store.selectedProjectId)
   const spec = useStudio(store => store.lobbySpec)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -138,6 +139,18 @@ export function LobbySpecChips(props: LobbySpecRowProps): ReactElement | null {
     const fallback = defaultMode()
     if (fallback !== spec.mode) setSpec({ ...spec, mode: fallback })
   }, [projectId, spec, defaultMode, setSpec])
+
+  /**
+   * 清晰度初值同样按设置页对齐一次（2026-10-27，CV-196 同一套口径）。
+   *
+   * 两个独立 effect 而不是塞进上面那个：`spec` 是同一个对象，塞进去会让两个默认值
+   * 互相触发（改 mode 又跑一遍 resolution 对齐）；分开后各自的依赖也说得清。
+   */
+  useEffect(() => {
+    if (projectId !== null || spec.resolutionDirty === true) return
+    const fallback = defaultResolution()
+    if (fallback !== spec.resolution) setSpec({ ...spec, resolution: fallback })
+  }, [projectId, spec, defaultResolution, setSpec])
 
   const tagCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => {
@@ -154,7 +167,13 @@ export function LobbySpecChips(props: LobbySpecRowProps): ReactElement | null {
   }, [projectId])
 
   if (projectId !== null) return null
-  const patch = (part: Partial<LobbySpecDraft>): void => setSpec({ ...spec, ...part })
+  const patch = (part: Partial<LobbySpecDraft>): void => setSpec({
+    ...spec,
+    ...part,
+    // 用户动过清晰度 ⇒ 之后不再被设置页对齐覆盖（与 modeDirty 同一语义）。
+    // `part` 自己带了 `resolutionDirty`（「跟随默认」那一项要把它拨回 false）时以它为准。
+    ...(part.resolution !== undefined && part.resolutionDirty === undefined ? { resolutionDirty: true } : {}),
+  })
   return (
     <div ref={rootRef} className="csLobbySpecChips">
       {/* 模型三选（单选面板，选中即关）。SeedDance 两档是路由预留位：选中值
@@ -222,18 +241,26 @@ export function LobbySpecChips(props: LobbySpecRowProps): ReactElement | null {
               ))}
             </div>
             <LobbyDivider />
-            <LobbyPopHead>输出分辨率</LobbyPopHead>
+            {/* 2026-10-27 拍板：这个面板**只管视频**。图片清晰度在图片节点里调
+                （下限 720P），所以这里敢放 480P —— 它压不到图片。 */}
+            <LobbyPopHead>视频清晰度</LobbyPopHead>
+            <LobbyMenuItem
+              label={`跟随默认 · ${resolutionDisplay(defaultResolution()).label}`}
+              meta="设置页"
+              selected={spec.resolutionDirty !== true}
+              onSelect={() => patch({ resolution: defaultResolution(), resolutionDirty: false })}
+            />
             {RESOLUTION_DISPLAY.map(item => (
               <LobbyMenuItem
                 key={item.value}
                 label={item.label}
                 meta={item.meta}
-                selected={spec.resolution === item.value}
+                selected={spec.resolutionDirty === true && spec.resolution === item.value}
                 onSelect={() => patch({ resolution: item.value })}
               />
             ))}
             <LobbyDivider />
-            <LobbyPopFoot>画幅与分辨率是同一面板里两份独立状态，改比例不会连带改变像素档位。</LobbyPopFoot>
+            <LobbyPopFoot>画幅与清晰度是同一面板里两份独立状态，改比例不会连带改变像素档位。清晰度只作用于视频；图片在图片节点里单独定（下限 720P）。</LobbyPopFoot>
           </>
         )}
       </LobbySel>

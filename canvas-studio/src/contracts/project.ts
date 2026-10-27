@@ -3,7 +3,13 @@
  * the browser client. Pure types plus small pure helpers (normalizeWorkflow /
  * resolveSetModePatch): both halves import them and erase them at build time,
  * so this file never appears in the runtime bundles.
+ *
+ * 例外：`normalizePlan` 会用到 `resolution-tiers.ts` 的 `normalizeResolutionId`
+ * （纯数据模块，无 IO）—— 档位的历史键归一只允许有一份实现，宁可在这里多一个
+ * 运行时 import，也不在三处各写一遍 `'736p' | '2k'` 字面量。
  */
+
+import { normalizeResolutionId, type ResolutionId } from '../resolution-tiers.js'
 
 /** P7 执行模式：confirm 逐步确认；auto 放手跑（跳过审批门禁）。 */
 export type StudioWorkflowMode = 'confirm' | 'auto'
@@ -127,7 +133,7 @@ export const SUGGESTED_SHOT_SECONDS = 10
 /**
  * CV-099：项目创建时锁定的产出规格。
  *
- * 两项都可缺省（未锁定）——创建弹窗允许留空，留空即走旧行为（agent 提问或
+ * 三项都可缺省（未锁定）——创建入口允许留空，留空即走旧行为（agent 提问或
  * 全局设置兜底）。字段整体可选，老项目记录无此字段时按「未锁定」处理，零迁移。
  */
 export interface StudioProjectPlan {
@@ -135,6 +141,20 @@ export interface StudioProjectPlan {
   aspectRatio?: StudioPlanAspectRatio
   /** 成片目标总时长（秒）；未锁定时不出现。 */
   targetDuration?: number
+  /**
+   * **视频**清晰度档位（2026-10-27 拍板：项目预置只管视频）。
+   *
+   * 名字里带 `video` 是为了封死一个歧义：这一项**不影响图片**。图片的档位由
+   * 图片节点自身的 `resolution` 参数决定，缺省走设置页「图片默认分辨率」，
+   * 下限 720P —— 两条链路互不相干（用户拍板原话：「首页这里写明白是给视频用的，
+   * 图片就不需要单独选择分辨率」）。
+   *
+   * 加这一项之前，首页的分辨率 chip 只活在 store 里 —— 不落 plan、不进提示词、
+   * 不影响生成（`tests/lobby-spec.test.mjs` 曾把这条现状锁成断言）。
+   *
+   * 历史键名 `resolution`（2026-10-27 当日上午短暂存在）由 `normalizePlan` 兼容读入。
+   */
+  videoResolution?: ResolutionId
 }
 
 /**
@@ -152,7 +172,14 @@ export function normalizePlan(value: unknown): StudioProjectPlan | undefined {
   if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
     plan.targetDuration = Math.min(MAX_TARGET_DURATION, Math.round(duration))
   }
-  return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan
+  // 档位：历史键（736p / 2k）读时归一为规范键，脏值丢弃该项（不牵连其余两项）。
+  // 键名迁移：`resolution` 是 2026-10-27 当日用过数小时的旧名（语义后来收窄为
+  // 「只作用于视频」），新名 `videoResolution`；两个键都读，新键优先。写路径只写新名。
+  const resolution = normalizeResolutionId(record.videoResolution) ?? normalizeResolutionId(record.resolution)
+  if (resolution !== undefined) plan.videoResolution = resolution
+  return plan.aspectRatio === undefined && plan.targetDuration === undefined && plan.videoResolution === undefined
+    ? undefined
+    : plan
 }
 
 /**

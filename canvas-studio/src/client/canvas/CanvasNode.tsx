@@ -7,6 +7,8 @@ import { formatMediaDuration } from '../../canvas-aspect.js'
 import { generationParamsOf } from '../../node-params.js'
 import { bodyCharCount, estSecondsOf } from '../../voice-dims.js'
 import { resolutionDisplay } from '../../resolution-display.js'
+import { resolveResolution } from '../../resolution-resolve.js'
+import type { ResolutionId } from '../../resolution-tiers.js'
 import { isComposeProduct } from '../../shot-versions.js'
 import { productLabelOf } from '../../workflow-stage.js'
 import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
@@ -83,6 +85,16 @@ export type ResizeCorner = typeof RESIZE_CORNERS[number]
 export interface CanvasNodeProps {
   node: StudioCanvasNode
   selected: boolean
+  /**
+   * 档位继承来源（2026-10-27）：与节点输入卡**同一份**参数，保证卡上角标与
+   * 输入卡 chip 显示同一个生效值（改造前角标写死 `?? '480p'`，与输入卡的
+   * `?? '736p'` 互相矛盾）。缺省 = 只按节点参数与出厂值显示。
+   */
+  resolutionInherit?: {
+    readonly plan?: ResolutionId
+    /** 设置页默认（调用方按节点 kind 选好图片档还是视频档）。 */
+    readonly settings?: ResolutionId
+  } | undefined
   /** CV-089：主被拖节点标记 —— 仅在拖动中被按下那个节点为 true；
    * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
   primary?: boolean
@@ -388,7 +400,14 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     if (params === null) return null
     const aspect = typeof params.aspectRatio === 'string' && params.aspectRatio !== '' ? params.aspectRatio : '16:9'
     const duration = typeof params.duration === 'number' && params.duration > 0 ? Math.round(params.duration) : 5
-    const resolution = typeof params.resolution === 'string' && params.resolution !== '' ? params.resolution : '480p'
+    // 生效档位走唯一 resolver（节点显式 > 项目预置 > 设置页 > 出厂）——与输入卡 chip
+    // 同一份判定。改造前这里写死 `?? '480p'`，而输入卡写死 `?? '736p'`，
+    // 于是同一个节点两处读数互相矛盾（且都与项目预置无关）。
+    const resolution = resolveResolution({
+      nodeValue: params.resolution,
+      planValue: props.resolutionInherit?.plan,
+      settingValue: props.resolutionInherit?.settings,
+    }).id
     return `${aspect} · ${duration}s · ${resolutionDisplay(resolution).label}`
   })()
   // F3（REQ-031 Step 5）：video 生成中的进度环副文案「{模型} · {模式} · {时长}s」

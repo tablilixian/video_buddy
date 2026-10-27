@@ -1,0 +1,37 @@
+[
+  {
+    "kind": "health",
+    "label": "视频组开始前",
+    "at": "2026-10-27T07:50:21.691Z",
+    "status": 200,
+    "ms": 46
+  },
+  {
+    "kind": "health",
+    "label": "megapixels=1 之前",
+    "at": "2026-10-27T07:50:21.783Z",
+    "status": 200,
+    "ms": 27
+  },
+  {
+    "kind": "video",
+    "request": {
+      "megapixels": 1,
+      "aspect": "16:9",
+      "duration": 5,
+      "image1": "krea2_00684_.png"
+    },
+    "note": "H3 表第二行（候选默认）",
+    "status": 502,
+    "ms": 84,
+    "error": "响应无产物 URL",
+    "response": "{\"detail\":\"请求失败: 400 Client Error: Bad Request for url: http://100.104.225.14:8188/prompt\"}"
+  },
+  {
+    "kind": "health",
+    "label": "megapixels=1 之后",
+    "at": "2026-10-27T07:50:21.925Z",
+    "status": 200,
+    "ms": 26
+  }
+]

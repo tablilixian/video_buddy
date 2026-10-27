@@ -36,6 +36,7 @@ import { MODE_COPY } from './ModeSwitch.js'
 import { ModelSettingsPanel } from './ModelSettingsPanel.js'
 import { fetchStudioStorageInfo, type StudioStorageInfo } from './api.js'
 import { clipboardResultMessage, copyTextToClipboard } from '../clipboard-copy.js'
+import { RESOLUTION_OPTIONS, resolutionDisplay, resolutionOptionsWith } from '../resolution-display.js'
 import { clipboardEnv } from './canvas/clipboard-env.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
@@ -462,34 +463,35 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
         <span className="csFieldLabel">图片默认分辨率</span>
         <select
           className="csFieldSelect"
-          value={value.defaultImageResolution}
+          value={resolutionDisplay(value.defaultImageResolution).value}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultImageResolution', event.target.value as CanvasStudioConfig['defaultImageResolution'])}
         >
-          <option value="480p">480p · 864×480（草稿/试拍）</option>
-          <option value="736p">736p · 1280×736（默认）</option>
-          <option value="2k">2k · 1920×1088（交付）</option>
+          {resolutionOptionsWith('image', value.defaultImageResolution).map(option => (
+            <option value={option.value} key={option.value}>{option.text}</option>
+          ))}
         </select>
         <p className="csFieldHint">
           agent 未指定分辨率档位时，图片生成按此兜底（宽高均为 32 的倍数）。
-          竖屏取反宽高（如 736p → 736×1280），1:1 画幅三档共用 1024×1024。
+          <strong>图片下限 720P</strong>（480P 只给视频试片用 —— 图片是定内容的依据，降档会让判断失真）。
+          首页的清晰度与项目预置<strong>不影响图片</strong>。竖屏取反宽高（如 720P → 768×1376），1:1 画幅三档共用 1024×1024。
         </p>
       </label>
       <label className="csField">
         <span className="csFieldLabel">视频默认分辨率</span>
         <select
           className="csFieldSelect"
-          value={value.defaultVideoResolution}
+          value={resolutionDisplay(value.defaultVideoResolution).value}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoResolution', event.target.value as CanvasStudioConfig['defaultVideoResolution'])}
         >
-          {/* C-8（2026-10-02）：视频出厂默认是 480p（defaultVideoResolution），「默认」
-              标记曾错挂在 736p 上——agent 工具描述与此处口径一致后，用户设 480p 就真的出 480p。 */}
-          <option value="480p">480p · 864×480（默认 · 草稿/试拍）</option>
-          <option value="736p">736p · 1280×736</option>
-          <option value="2k">2k · 1920×1088（交付）</option>
+          {RESOLUTION_OPTIONS.map(option => (
+            <option value={option.value} key={option.value}>{option.text}</option>
+          ))}
         </select>
         <p className="csFieldHint">
           agent 未指定分辨率档位时，视频生成按此兜底（宽高均为 32 的倍数）。
-          竖屏取反宽高（如 736p → 736×1280），1:1 画幅三档共用 1024×1024。
+          <strong>首页选过「视频清晰度」的项目按项目走</strong>（没选则用这里的值）。
+          视频侧实际只发 megapixels（480P=0.4 / 720P=1.0 / 1080P=2.0）。
+          先出 480P 看内容、确认后在节点上「升档重出」是推荐用法。
         </p>
       </label>
       <label className="csField">

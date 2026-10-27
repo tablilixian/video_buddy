@@ -18,6 +18,7 @@
 | [video-jobs-20260924](./video-jobs-20260924/report.md) | 09-24 | 后端 0.5.0 异步任务（202 + job_id + jobs 三端点）实测 | api.md 0.3.x、drama.ts 头注 |
 | [txt2image-withtxt-20260930](./txt2image-withtxt-20260930/report.md) | 09-30 | `image_generate_withtxt`（Qwen Image 2.1）接入实测 | api.md 0.4.0（CV-270） |
 | [txt2speech-20260930](./txt2speech-20260930/report.md) | 09-30 | `txt2speech`（VoxCPM2）接入实测，tts_voiceover 转真 | api.md 0.4.0（CV-271） |
+| [video-megapixels-regression-20261027](./video-megapixels-regression-20261027/report.md) | 10-27 | **无结论**：mp=1 与对照组 mp=0.4 同报 502（上游 ComfyUI `/prompt` 400）⇒ 后端 H3 工作流当日故障，720P 真实像素仍未实证；附「502 ≠ 请求体被拒」判据补充 | resolution-unify §12.7-1 |
 
 ## 二、已归档复验链（`archive/`，2026-09-10~09-11）
 

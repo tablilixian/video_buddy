@@ -17,9 +17,9 @@
  *
  * | 层 | 来源 | 覆盖字段 |
  * | --- | --- | --- |
- * | 项目预置 | 新建弹窗锁定的 `project.plan`（CV-099） | 画幅 / 目标时长 |
+ * | 项目预置 | 新建时锁定的 `project.plan`（CV-099 / 2026-10-27 补 `resolution`） | 画幅 / 目标时长 / 清晰度 |
  * | 设置页 | `defaultAspectRatio` / `defaultImageResolution` / `defaultVideoResolution` | 画幅 / 分辨率 |
- * | 硬编码兜底 | 本文件 `FALLBACK_*` | 画幅 16:9 / 时长 30s / 分辨率 736p |
+ * | 硬编码兜底 | 本文件 `FALLBACK_*` | 画幅 16:9 / 时长 30s / 分辨率 720P |
  *
  * 项目预置排在设置页之前是刻意的：用户在**创建这个项目时**点的画幅是具体决定，
  * 设置页那项是「没别的指示时的默认」。
@@ -41,7 +41,8 @@ import {
   type StudioProjectPlan,
   type StudioWorkflowMode,
 } from './contracts/project.js'
-import { DEFAULT_RESOLUTION, isVideoResolution } from './config.js'
+import { DEFAULT_RESOLUTION } from './config.js'
+import { resolveResolution, type ResolutionSource } from './resolution-resolve.js'
 import type { VideoResolution } from './providers/types.js'
 
 /** 兜底画幅（项目未预置、设置页也没读到时的最后一层）。 */
@@ -118,14 +119,23 @@ export function resolveStudioDefaults(input: StudioDefaultsInput = {}): StudioDe
     : FALLBACK_TARGET_DURATION
 
   const settingsImageResolution = settings.defaultImageResolution
-  const imageResolution: VideoResolution = isVideoResolution(settingsImageResolution)
-    ? settingsImageResolution
-    : FALLBACK_RESOLUTION
-
   const settingsVideoResolution = settings.defaultVideoResolution
-  const videoResolution: VideoResolution = isVideoResolution(settingsVideoResolution)
-    ? settingsVideoResolution
-    : FALLBACK_RESOLUTION
+  // 2026-10-27：档位决策走唯一 resolver（项目预置 > 设置页 > 出厂），与生成链、
+  // 客户端读数同一份实现。此前这里只读设置页，于是「项目锁了 1080P」在放手跑的
+  // 自动应答文案里会写成设置页的档位 —— 模型拿到的规格与真实产物不一致。
+  //
+  // 2026-10-27 二次拍板：**只有视频读项目预置**。`plan.videoResolution` 的语义就是
+  // 「这个项目成片要多少」，图片档位归图片节点与会话设置管（下限 720P）。给图片
+  // 也传 plan 会让「首页选了 1080P、出图也变 1080P」重新冒出来 —— 用户明确否掉了
+  // 首页对图片的支配权。
+  const image = resolveResolution({ settingValue: settingsImageResolution })
+  const video = resolveResolution({ planValue: plan?.videoResolution, settingValue: settingsVideoResolution })
+  const imageResolution: VideoResolution = image.id
+  const videoResolution: VideoResolution = video.id
+  // `node` 只可能出现在生成链（节点参数），本函数不传它；防御式折算成 settings
+  // 免得类型上留一个永远不会发生的分支进入 UI 文案。
+  const asDefaultSource = (source: ResolutionSource): StudioDefaultSource =>
+    source === 'node' ? 'settings' : source
 
   return {
     aspectRatio,
@@ -135,9 +145,9 @@ export function resolveStudioDefaults(input: StudioDefaultsInput = {}): StudioDe
     // `suggestShotCount` 对已判合法的时长必返回数字；`?? 1` 只为 noUncheckedIndexedAccess 式的收口习惯。
     shotCount: suggestShotCount(targetDuration) ?? 1,
     imageResolution,
-    imageResolutionSource: isVideoResolution(settingsImageResolution) ? 'settings' : 'fallback',
+    imageResolutionSource: asDefaultSource(image.source),
     videoResolution,
-    videoResolutionSource: isVideoResolution(settingsVideoResolution) ? 'settings' : 'fallback',
+    videoResolutionSource: asDefaultSource(video.source),
   }
 }
 

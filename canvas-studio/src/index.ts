@@ -53,6 +53,7 @@ import {
 } from './host-config.js'
 import { DEFAULT_BRAND_PRESET } from './brand.js'
 import { DEFAULT_RESOLUTION } from './config.js'
+import { DEFAULT_VIDEO_RESOLUTION_ID } from './resolution-tiers.js'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
@@ -88,7 +89,7 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     defaultVideoProvider: 'drama',
     // CV-187：与 host-config schema 的 default 同源（不写重复字面量）。
     defaultImageResolution: DEFAULT_RESOLUTION,
-    defaultVideoResolution: '480p',
+    defaultVideoResolution: DEFAULT_VIDEO_RESOLUTION_ID,
     exportFormat: 'mp4',
     exportDir: '',
     videoQuality: 'standard',

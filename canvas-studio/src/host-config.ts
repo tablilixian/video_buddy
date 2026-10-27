@@ -17,6 +17,7 @@ import { DEFAULT_RESOLUTION } from './config.js'
 // 就会出现「设置页默认 9:16、放手跑兜底 16:9」这种自相矛盾。
 import { FALLBACK_ASPECT_RATIO } from './studio-defaults.js'
 import type { VideoResolution } from './providers/types.js'
+import { DEFAULT_VIDEO_RESOLUTION_ID, RESOLUTION_IDS, RESOLUTION_TIERS, type ResolutionId } from './resolution-tiers.js'
 
 /**
  * 设置命名空间（= Loader entry id，客户端卡片与 Host 两侧共用同一字符串）。
@@ -25,6 +26,20 @@ import type { VideoResolution } from './providers/types.js'
  * 本插件在 profile 里的 entry id 就是 'canvas-studio'，故此处只是同一字符串的具名常量。
  */
 export const CANVAS_STUDIO_NS = 'canvas-studio'
+
+/**
+ * 设置项里「档位」的合法取值 = 规范键 + 历史键。
+ *
+ * 为什么要收历史键：用户机器上的设置文档里可能已经存着 `736p` / `2k`（旧版本写的）。
+ * schema 只认规范键会让那份文档校验失败 —— 一个旧值不该让整页设置读不出来。
+ * 读路径由 `normalizeResolutionId()` 归一（`index.ts` 的 cfg getter），**写路径只写规范键**。
+ *
+ * 类型断言成规范键元组：schema 只是运行期宽容，对外暴露的类型与归一后的值仍只有三档。
+ */
+const RESOLUTION_SETTING_KEYS = [
+  ...RESOLUTION_IDS,
+  ...RESOLUTION_TIERS.flatMap(tier => tier.deprecatedAliases),
+] as unknown as [ResolutionId, ...ResolutionId[]]
 
 /** Drama Backend API 基址默认值（WL 自架后端）。 */
 export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082'
@@ -180,11 +195,11 @@ export const CanvasStudioConfig = z.object({
   // 输出与导出
   defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default(FALLBACK_ASPECT_RATIO),
   defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
-  // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
-  // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。
-  // 图片默认 736p，视频默认 480p。
-  defaultImageResolution: z.union(['480p', '736p', '2k']).default(DEFAULT_RESOLUTION),
-  defaultVideoResolution: z.union(['480p', '736p', '2k']).default('480p'),
+  // CV-187 / 2026-10-27：默认分辨率档位。取值与 `VideoResolution` 由下面的类型标注强绑
+  // （漏改任一侧即编译失败），真值表在 `resolution-tiers.ts`。
+  // 图片默认 720P，视频默认 480P（出厂值刻意不同：图片贵在分辨率、视频贵在时长）。
+  defaultImageResolution: z.union(RESOLUTION_SETTING_KEYS).default(DEFAULT_RESOLUTION),
+  defaultVideoResolution: z.union(RESOLUTION_SETTING_KEYS).default(DEFAULT_VIDEO_RESOLUTION_ID),
   exportFormat: z.string().default('mp4'),
   exportDir: z.string().default(''),
   videoQuality: z.union(['standard', 'high']).default('standard'),

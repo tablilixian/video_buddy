@@ -43,15 +43,19 @@ test('REQ-031 spec chip：画幅两选 + 时长六档写数字 + 清晰度内部
   assert.match(card, /const VIDEO_DURATIONS = \[4, 6, 8, 10, 12, 15\] as const/, '时长必须为预设六档')
   assert.match(card, /commitRaw\('duration', d\)/, '时长必须写 duration 数字参数（clampDuration 消费）')
   assert.match(card, /typeof durationRaw === 'number' \? durationRaw : 5/, '时长缺省读数必须落 5s（video_generate fallback 同值）')
-  // 清晰度：内部键直写。
-  assert.match(card, /commitRaw\('resolution', value\)/, '清晰度必须写内部键参数')
+  // 清晰度：写**规范档位键**（480p/720p/1080p），显示名只用于渲染。
+  // 2026-10-27：明确「跟随项目 / 默认」= 删键（`undefined`），而不是写一个占位档位 ——
+  // 写占位值会把「继承」变成「硬指定」，用户之后改项目预置就再也影响不到这个节点。
+  assert.match(card, /commitRaw\('resolution', display\.value\)/, '清晰度必须写规范档位键参数')
+  assert.match(card, /commitRaw\('resolution', undefined\)/, '「跟随项目 / 默认」必须删键（继承 ≠ 写死默认档）')
+  assert.match(card, /跟随项目 \/ 默认/, '菜单必须有回退到继承的入口')
 })
 
 test('REQ-031 积分明细：演示 costRows 公式逐行 + 脚注 + 预估', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   assert.match(card, /\['模型基准 · MiniMax H3', 20\]/, '基准行必须 = H3 20')
   assert.match(card, /Math\.max\(0, duration - 5\) \* 2/, '时长加长必须 = (dur−5)×2（演示公式）')
-  assert.match(card, /VIDEO_RES_COST: Readonly<Record<string, number>> = \{ '480p': 0, '736p': 6, '2k': 14 \}/, '清晰度计价必须 = 演示 RES_COST 逐值')
+  assert.match(card, /VIDEO_RES_COST: Readonly<Record<string, number>> = \{ '480p': 0, '720p': 6, '1080p': 14 \}/, '清晰度计价必须 = 演示 RES_COST 逐值（键 = 规范档位键）')
   assert.match(card, /图片参考 ×\$\{images\}/, '图片参考计价行必须存在')
   assert.match(card, /images \* 2/, '图片参考单价 = 2')
   assert.match(card, /videos \* 6/, '视频参考单价 = 6')
@@ -84,7 +88,7 @@ test('REQ-031 image 形态零改动：既有 chips 分支原样保留', async ()
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   assert.match(card, /MODEL_OPTIONS: readonly \{ value: string; label: string; hint: string \}\[\]/, 'image 模型高级三选仍在')
   assert.match(card, /commitPrompt\('modelOverride', option\.value\)/, 'image 模型覆盖通路不变')
-  assert.match(card, /CREDIT_ESTIMATE: Readonly<Record<string, number>> = \{ '480p': 15, '736p': 25, '2k': 40 \}/, 'image 积分估算表不变')
+  assert.match(card, /CREDIT_ESTIMATE: Readonly<Record<string, number>> = \{ '480p': 15, '720p': 25, '1080p': 40 \}/, 'image 积分估算表不变（键随档位改名同步）')
   // 双分支结构：image 走条件分支，video 走新分支。
   assert.match(card, /\{form === 'image' \? \(/, '底栏必须按形态双分支')
 })

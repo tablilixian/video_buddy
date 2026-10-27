@@ -130,15 +130,18 @@ test('duration 越界钳制到 [5,15] 并回 warning（3→5，20→15；区间�
   }
 })
 
-test('resolution 映射：三档直通、零 warning；历史 720p/1080p 就地归一（等义、同样零 warning）', async () => {
-  // 直通三档 + 历史两档：历史值归一是**等义映射**（旧 720p 的行为本就是升档到 768P），
+test('resolution 映射：三档直通、零 warning；历史 736p/2k 就地归一（等义、同样零 warning）', async () => {
+  // 直通三档 + 历史两档：历史值归一是**等义映射**（旧 736p 就是现在的 720P 档），
   // 故这里 expectWarning=false —— 回了 warning 会让老节点重试凭空多一条提示。
+  //
+  // fal 端点原生枚举只有 480P / 768P / 2K / 4K —— **没有 736P**，故 720P 档必须
+  // 映射到 768P（原生生成档）。写 736P 会被端点 422。
   const cases = [
     ['480p', '480P'],
-    ['736p', '736P'],
-    ['2k', '2K'],
-    ['720p', '736P'],
+    ['720p', '768P'],
     ['1080p', '2K'],
+    ['736p', '768P'], // 历史键 → 720P → 768P
+    ['2k', '2K'], // 历史键 → 1080P → 2K
   ]
   for (const [raw, mapped] of cases) {
     const { calls, restore } = stubFetch(t2vHandlers())

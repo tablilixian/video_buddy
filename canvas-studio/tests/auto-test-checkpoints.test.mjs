@@ -20,7 +20,7 @@ import {
 import { AUTO_TEST_SCENARIOS, scenarioCheckpointErrors } from '../lib/auto-test-scenarios.js'
 import { OUTPUT_SIZE } from '../lib/output-size.js'
 
-const IMAGE_TIER = OUTPUT_SIZE['736p'] // 设置默认图片档位
+const IMAGE_TIER = OUTPUT_SIZE['720p'] // 设置默认图片档位（H3 官方 1.0MP → 1376×768）
 const VIDEO_TIER = OUTPUT_SIZE['480p'] // 设置默认视频档位
 
 let seq = 0
@@ -101,7 +101,7 @@ function idealSnapshot() {
       { file: 'k.mp3', kind: 'audio', tool: 'tts_voiceover', label: '旁白', createdAt: 11 },
     ],
     queue: { active: null, waiting: [], resumedJobs: 0 },
-    expectedImageResolution: '736p',
+    expectedImageResolution: '720p',
     expectedVideoResolution: '480p',
   }
 }

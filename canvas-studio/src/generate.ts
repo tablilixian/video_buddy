@@ -15,10 +15,11 @@ import {
   ASSET_TRASH_DIR,
   DEFAULT_RESOLUTION,
   DRAMA_ENDPOINTS,
-  isVideoResolution,
   newAssetId,
   sizeForAspectRatio,
 } from './config.js'
+import { resolveResolution } from './resolution-resolve.js'
+import { DEFAULT_VIDEO_RESOLUTION_ID, frameOf } from './resolution-tiers.js'
 import type { ProjectRegistry } from './projects.js'
 import { composeImagePrompt } from './prompt-injection.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
@@ -105,7 +106,7 @@ function runtime(): StudioRuntimeConfig {
     defaultVideoProvider: () => 'drama',
     defaultAspectRatio: () => '16:9',
     defaultImageResolution: () => DEFAULT_RESOLUTION,
-    defaultVideoResolution: () => '480p',
+    defaultVideoResolution: () => DEFAULT_VIDEO_RESOLUTION_ID,
     workflowMode: () => 'confirm',
     hitlStoryboard: () => true,
     hitlKeyframe: () => false,
@@ -171,10 +172,10 @@ export interface GenerateParams {
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
   model?: 'h3' | 'seedance2'
   /**
-   * 分辨率档位（CV-187）：`480p`=草稿/试拍、`736p`=默认、`2k`=交付。
-   * **像素见 `config.ts` 的 `OUTPUT_SIZE`**（H3 推荐表 0.4/1.0/2.0 三行），
+   * 分辨率档位：`480p`=草稿/试拍、`720p`=默认（H3 官方推荐档）、`1080p`=交付。
+   * **像素见 `resolution-tiers.ts` 的 `RESOLUTION_TIERS`**（H3 推荐表 0.4/1.0/2.0 三行），
    * 图片与视频共用同一个像素表，但默认档位可分别配置。
-   * 留空 → 走设置项 `defaultImageResolution` 或 `defaultVideoResolution`。
+   * 留空 → `resolveResolution()` 逐层回落：项目预置 → 设置项 → 出厂默认。
    */
   resolution?: VideoResolution
   /**
@@ -279,24 +280,29 @@ export function clampDuration(value: number | undefined, fallback: number): numb
 export { composeImagePrompt } from './prompt-injection.js'
 
 /**
- * 档位决策（CV-187）：**工具参数 > 全局设置 > `DEFAULT_RESOLUTION`**。
- * 非法值一律按缺省处理（与 `aspectRatio` 在 CV-099 的兜底同构）——绝不把不认识的
- * 档位传下去。
+ * 档位决策（2026-10-27 收口）：**节点/工具参数 > 项目预置 > 全局设置 > `DEFAULT_RESOLUTION`**。
  *
- * **图片与视频共用同一张像素表**（`config.ts` 的 `OUTPUT_SIZE`），这是「声明的分辨率 =
- * 真实产物」这条不变式的前提。故不允许在别处再解析一遍档位（同一规则两份实现必分叉）。
+ * 实现委托 `resolution-resolve.ts` 的 `resolveResolution()` —— 那是唯一判定，
+ * 客户端三处读数（节点 chip / 画布角标 / 详情抽屉）调的是同一个函数，
+ * 这样「UI 显示 720P、实际出 480p」这类读数说谎在结构上不再可能发生。
  *
- * 不做项目 plan 层：`plan?.aspectRatio` 那段兜底只管画幅；「这个项目统一出 2k」
- * 等真有人要再加（见 docs/plans/resolution-tier-dev.md §6）。
+ * ## `kind` 参数是硬边界（2026-10-27 二次拍板）
+ *
+ * **只有视频读项目预置**。`plan.videoResolution` 的语义就是「这个项目成片要多少」，
+ * 图片档位归图片节点与会话设置管，下限 720P。签名收成 `kind` 而不是 `isVideo`
+ * 布尔，是为了让调用点必须显式表态、不能顺手把一个 plan 值传进图片分支。
+ *
+ * **图片与视频共用同一张像素表**（`resolution-tiers.ts` 的 `frames`），这是「声明的
+ * 分辨率 = 真实产物」这条不变式的前提。
  */
-function resolutionOf(params: GenerateParams, isVideo: boolean): VideoResolution {
-  if (isVideoResolution(params.resolution)) return params.resolution
-  // `?.()` 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按未配置处理。
-  // 根据内容类型（图片/视频）使用不同的设置项。
-  const fromSettings = isVideo
-    ? runtime().defaultVideoResolution?.()
-    : runtime().defaultImageResolution?.()
-  return isVideoResolution(fromSettings) ? fromSettings : DEFAULT_RESOLUTION
+function resolutionOf(params: GenerateParams, kind: 'image' | 'video', planVideoResolution?: unknown): VideoResolution {
+  return resolveResolution({
+    nodeValue: params.resolution,
+    // 图片分支**恒定**不读 plan —— 不是调用点自律，是这里结构上不给它机会。
+    planValue: kind === 'video' ? planVideoResolution : undefined,
+    // `?.()` 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按未配置处理。
+    settingValue: kind === 'video' ? runtime().defaultVideoResolution?.() : runtime().defaultImageResolution?.(),
+  }).id
 }
 
 /**
@@ -321,7 +327,7 @@ function effectiveCapabilityOf(tool: string, params: GenerateParams): VideoCapab
   return capabilityOf(tool, params)
 }
 
-function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number): VideoRequest {
+function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number, planValue?: unknown): VideoRequest {
   const capability = effectiveCapabilityOf(tool, params)
   // CV-136：视频画幅只归一为 16:9 / 9:16 两档（方形 1:1 仅图片类工具可用）。历史节点
   // 重放 generationPrompt 时带的 '1:1' 同样落回横屏，不再进请求体。
@@ -345,7 +351,7 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
     prompt: params.prompt,
     duration: clampDuration(params.duration, fallback),
     aspectRatio,
-    resolution: resolutionOf(params, true),
+    resolution: resolutionOf(params, 'video', planValue),
     references,
     ...(audios.length > 0 ? { audios } : {}),
     ...(videos.length > 0 ? { videos } : {}),
@@ -1986,12 +1992,12 @@ export async function generateAsset(
   // 图片端点逐字节按请求出图），视频侧的真实像素以落盘后的 ffmpeg 实测为准
   // （见下方 `mediaSize`）—— 于是这个推算值不再冒充真值。
   const isVideo = tool === 'video_generate' || tool === 'video_composite'
-  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, isVideo))
+  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, isVideo ? 'video' : 'image', project.plan?.videoResolution))
   // CV-028：画布显示框用预览尺寸；size（档位声明值）只进 Drama 请求体与节点框换算。
   // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走
   // frameSizeOf。直接写 previewSizeOf 会让新节点的画面被头/脚挤掉 48px。
   // CV-188：框仍按**声明值**算比例 —— 媒体分辨率只定比例、不定尺寸，而档位之间的
-  // 比例差 <1%（864×480 vs 1280×736 ≈ 0.46%），低于客户端 5% 的校正阈值，
+  // 比例差 <1%（864×480 = 1.800 vs 1376×768 ≈ 1.792，差 0.46%），低于客户端 5% 的校正阈值，
   // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
   // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 实测在共享结算
   // `persistGeneratedAsset` 内覆盖（display 已随之移入）。
@@ -2429,6 +2435,8 @@ export async function generateAsset(
       tool,
       { ...params, prompt: composeImagePrompt(params) },
       perShotFallback(tool === 'video_generate' ? 5 : 10),
+      // 项目预置档位：与下方 size 的决策同源，避免「请求发 1080P、节点框按 720P 算」。
+      project.plan?.videoResolution,
     )
     const ctx: ProviderContext = {
       ...(signal !== undefined ? { signal } : {}),
@@ -2601,7 +2609,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // CV-188：视频侧的真实分辨率**以实测为准**。
   //
   // 为什么不能信 `size`（档位表推算值）：视频端点的像素由**供应商**决定，Drama 现按档
-  // 发 `megapixels`（默认 736p→0.9MP）但后端实际口径仍可能与档位不符，落盘必须以 ffmpeg
+  // 发 `megapixels`（默认 720p→1.0MP）但后端实际口径仍可能与档位不符，落盘必须以 ffmpeg
   // 实测值为准。拿 `size` 落 `mediaWidth/mediaHeight` 会让详情面板给每个视频显示一个假数字，
   // 而且后端哪天改了档位口径，这个假数字会**静默**跟着错（客户端只在 mediaWidth
   // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
@@ -2654,7 +2662,18 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // 窗口来源 = 分镜卡节点自带的 declaredDuration/declaredFrames（seed 落卡时写入），
   // 不需要读 storyboard 文件。纯函数判定在 resolution-check.ts（与渲染链核对同域）。
   if (isVideo && mediaDuration !== undefined && mediaDuration > 0) {
-    const resolutionNote = placementResolutionWarning(mediaSize.width, mediaSize.height)
+    // 交付基线取**项目声明的视频档位**（`plan.videoResolution`），没声明就不判。
+    //
+    // 改造前这里不传 baseline、走写死的 1280×720 —— 那时 480P 只是「草稿档」，
+    // 拿 720p 当基线尚可。2026-10-27 拍板后 480P 成了**正式默认档**，纯 480P 项目
+    // 每一镜都会收到「素材 864×480 低于 1280×720 基线，上采样 1.5×」的误报，
+    // 而成片本来就是 864×480，压根没有上采样。误报的代价比漏报大得多（agent 会
+    // 学会无视整条体检），所以：项目没声明交付档就**不判**。
+    // `?.()` 防御式调用：测试注入的 registry mock 可能不带 getProject。
+    const deliveryId = (await registry.getProject?.(projectId))?.plan?.videoResolution
+    const resolutionNote = deliveryId === undefined
+      ? null
+      : placementResolutionWarning(mediaSize.width, mediaSize.height, frameOf(deliveryId, params.aspectRatio))
     if (resolutionNote !== null) warnings.push(resolutionNote)
     const boundShotCards = (params.shotNodeIds ?? [])
       .map((id) => canvasNodes.find((node) => node.id === id))
@@ -2844,6 +2863,10 @@ export async function settleDramaVideoJob(
     timeoutMs: MEDIA_DOWNLOAD_TIMEOUT_MS,
     label: '恢复结算下载',
   })
+  // 恢复结算这条路径没有 project 对象，但档位决策必须与初次生成同源 —— 同样读项目预置，
+  // 否则「项目锁 1080P」的片子一旦走到恢复路径，节点框会按设置页档位算（比例差虽 <1%，
+  // 但读数会与同一项目的其它节点不一致）。
+  const planResolution = (await registry.getProject(record.projectId))?.plan?.videoResolution
   await persistGeneratedAsset({
     registry,
     tool: record.toolName,
@@ -2852,7 +2875,7 @@ export async function settleDramaVideoJob(
     bytes,
     dramaFilename: result.filename,
     isVideo: true,
-    size: sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, true)),
+    size: sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, 'video', planResolution)),
     warnings: [],
     ...(signal !== undefined ? { signal } : {}),
   })

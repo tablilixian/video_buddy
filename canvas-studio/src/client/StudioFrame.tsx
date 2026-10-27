@@ -5,6 +5,7 @@ import type { StudioProjectListInjected } from './contracts.js'
 // CV-196：只借类型（`import type`）—— host-config 是 Host 侧模块，其值（schemastery /
 // dsh-settings）不进客户端 bundle，这条界线与 SettingsModal 的用法一致。
 import type { CanvasStudioConfig } from '../host-config.js'
+import type { ResolutionId } from '../resolution-tiers.js'
 import { BRIEF_NODE_TOOL, nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
@@ -615,6 +616,36 @@ export function StudioFrame(props: StudioFrameProps) {
   useEffect(() => subscribeCredits(() => { setCreditsState(getCreditsState()) }), [])
   // 页面切回来对一次；TTL 由 Host 判 —— 30s 内回来就是一个零请求的空转。
   useEffect(() => { installCreditsVisibilityRefresh() }, [])
+  // 清晰度继承（2026-10-27）：设置页的图片/视频默认档 —— 节点输入卡的 chip 要显示
+  // **真实生效值**（「跟随项目 1080P」/「跟随默认 720P」），就必须拿到这一层。
+  // 首帧是 `loading`，读到 `ready` 才写：否则把 undefined 当成「用户没配」，
+  // chip 会在设置就绪前后闪一次不同的读数（与 auth 那段同一个坑）。
+  const [resolutionDefaults, setResolutionDefaults] = useState<{ image?: ResolutionId; video?: ResolutionId }>({})
+  useEffect(() => {
+    const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
+    const apply = (): void => {
+      const snapshot = scope.getSnapshot()
+      if (snapshot.status !== 'ready') return
+      const image = snapshot.value?.defaultImageResolution
+      const video = snapshot.value?.defaultVideoResolution
+      setResolutionDefaults({
+        ...(image !== undefined ? { image } : {}),
+        ...(video !== undefined ? { video } : {}),
+      })
+    }
+    apply()
+    return scope.subscribe(apply)
+  }, [settingsScope])
+  /**
+   * 传给画布的档位继承参数：项目预置 + 设置页两层。
+   *
+   * 必须 `useMemo` —— 内联字面量会让 `CanvasNode`（React.memo）每次渲染全部重画。
+   */
+  const resolutionInherit = useMemo(() => ({
+    ...(slateProject?.plan?.videoResolution !== undefined ? { plan: slateProject.plan.videoResolution } : {}),
+    ...(resolutionDefaults.image !== undefined ? { image: resolutionDefaults.image } : {}),
+    ...(resolutionDefaults.video !== undefined ? { video: resolutionDefaults.video } : {}),
+  }), [slateProject?.plan?.videoResolution, resolutionDefaults])
   // 登录态变化：登录成功读一次（Host 的 bootstrap 里也有预取，两层互不冲突：
   // 都在 TTL 里，谁先到谁生效），登出清内存视图 —— 不清就是下一个登录者看到
   // 上一个人的余额。
@@ -2106,6 +2137,7 @@ export function StudioFrame(props: StudioFrameProps) {
               浮层参考区依赖与详情抽屉同一份来源。 */}
           <CanvasSurface
             nodes={visibleNodes}
+            resolutionInherit={resolutionInherit}
             shotIndexOf={shotIndexOf}
             view={view}
             onViewChange={handleViewChange}

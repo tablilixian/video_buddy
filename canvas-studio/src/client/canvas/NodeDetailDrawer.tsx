@@ -6,6 +6,8 @@ import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, refere
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { copyTextToClipboard } from '../../clipboard-copy.js'
+import { resolutionDisplay } from '../../resolution-display.js'
+import { isResolutionIdFor } from '../../resolution-tiers.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS, kindAccentOf } from './labels.js'
 import { clipboardEnv } from './clipboard-env.js'
 import { PromptEditor } from './PromptEditor.js'
@@ -30,7 +32,10 @@ const COPY_STATE_LABELS: Readonly<Record<'idle' | 'ok' | 'fail', string>> = {
  */
 const PARAM_READOUTS: ReadonlyArray<{ key: string; label: string; suffix?: string }> = [
   { key: 'aspectRatio', label: '画幅' },
-  { key: 'resolution', label: '档位' },
+  // 「声明档位」而不是「档位」：它与下栏的「真实产物」（mediaWidth×mediaHeight）
+  // 是两件事 —— 视频侧 1080P 是上采样，声明 1920×1088 但细节止于 1376×768。
+  // 叫同一个名字会让人以为其中一个是错的（2026-10-27 命名收口）。
+  { key: 'resolution', label: '声明档位' },
   { key: 'duration', label: '时长', suffix: 's' },
   { key: 'style', label: '风格' },
   { key: 'model', label: '模型' },
@@ -150,6 +155,17 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
       .map(readout => {
         const value = params[readout.key]
         if (typeof value !== 'string' && typeof value !== 'number') return null
+        // 档位走展示口径归一（2026-10-27）：历史节点里存着 736p / 2k，直接 String()
+        // 会把内部键原样糊到用户脸上（「声明档位 736p」），而同一屏的角标写的是「720P」。
+        // 图片下限 720P 后，存量图片节点里可能还存着 480p —— 就地标「已停用」，
+        // 否则用户会以为这一档现在还能选（改档位在输入卡菜单里选任一档即生效）。
+        if (readout.key === 'resolution') {
+          const label = resolutionDisplay(value).label
+          const scope = node.kind === 'image' ? 'image' : 'video'
+          return isResolutionIdFor(value, scope)
+            ? `${readout.label} ${label}`
+            : `${readout.label} ${label}（该用途已停用）`
+        }
         return `${readout.label} ${String(value)}${readout.suffix ?? ''}`
       })
       .filter((text): text is string => text !== null)
@@ -275,7 +291,7 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
           </div>
           {(node.kind === 'image' || node.kind === 'video') && (
             <div className="csDetailRow">
-              <span className="csDetailLabel">分辨率</span>
+              <span className="csDetailLabel">真实产物</span>
               <span className="csDetailValue">{resolutionText()}</span>
             </div>
           )}

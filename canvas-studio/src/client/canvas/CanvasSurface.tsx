@@ -16,6 +16,7 @@ import type { ResolveRefItem } from '../../contracts/reference.js'
 import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { isDeprecatedNode } from '../../shot-versions.js'
+import type { ResolutionId } from '../../resolution-tiers.js'
 
 /**
  * CV-286：滚轮缩放灵敏度 —— 因子按**滚动量**走指数（`exp(-deltaY / 除数)`），
@@ -130,6 +131,19 @@ interface Gesture {
 /** Props for the pannable / zoomable canvas surface. */
 export interface CanvasSurfaceProps {
   nodes: readonly StudioCanvasNode[]
+  /**
+   * 档位继承来源（2026-10-27）：节点输入卡的清晰度 chip 要显示**真实生效值**，
+   * 就必须知道项目预置与设置页两层。由 StudioFrame 读好传下来；本组件只按节点
+   * kind 选「图片档」还是「视频档」，不做任何判定（判定唯一实现是 resolution-resolve）。
+   */
+  resolutionInherit?: {
+    /** 项目预置 `project.plan.videoResolution`（**只对视频节点生效**）。 */
+    readonly plan?: ResolutionId
+    /** 设置页 `defaultImageResolution`。 */
+    readonly image?: ResolutionId
+    /** 设置页 `defaultVideoResolution`。 */
+    readonly video?: ResolutionId
+  }
   /**
    * C2：镜号表（节点 id → 成片第几段，1 起），由 StudioFrame 按 `isShotClip` +
    * `deriveTimelineOrder` 派生后注入 —— 与底部时间轴同源。缺省 = 不显示镜号
@@ -332,6 +346,27 @@ export interface CanvasSurfaceHandle {
  * box-selection has been removed — type-based selection lives in the layer
  * panel header.
  */
+/**
+ * 单个节点的档位继承入参（按 kind 选图片档 / 视频档）。
+ *
+ * 抽成函数而不是在 JSX 里内联两遍：输入卡与画布角标**必须拿到同一份**继承参数，
+ * 否则两处读数又会分叉（改造前正是分叉的：输入卡显示 720P、角标显示 480P）。
+ */
+function resolutionInheritFor(
+  inherit: CanvasSurfaceProps['resolutionInherit'],
+  kind: StudioCanvasNode['kind'],
+): { plan?: ResolutionId; settings?: ResolutionId } | undefined {
+  if (inherit === undefined) return undefined
+  const isVideo = kind === 'video'
+  const settings = isVideo ? inherit.video : inherit.image
+  return {
+    // 项目预置只作用于视频（2026-10-27 二次拍板）：图片档位归图片节点与会话设置，
+    // 下限 720P。把 plan 递给图片节点＝让首页的选择重新支配图片，已被拍板否掉。
+    ...(isVideo && inherit.plan !== undefined ? { plan: inherit.plan } : {}),
+    ...(settings !== undefined ? { settings } : {}),
+  }
+}
+
 export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>(function CanvasSurface(props, ref) {
   const {
     nodes,
@@ -431,6 +466,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onFitClampedRef = useRef(onFitClamped)
   onFitClampedRef.current = onFitClamped
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
+  /**
+   * 档位继承参数按 kind 预计算一次（2026-10-27）。
+   *
+   * 为什么必须 memo：`CanvasNode` 是 `React.memo` 的，props 引用一变就整屏重渲染
+   * （画布动辄几十上百个节点）。在渲染循环里现造对象会让 memo 彻底失效。
+   */
+  const resolutionInheritByKind = useMemo(
+    () => ({
+      image: resolutionInheritFor(props.resolutionInherit, 'image'),
+      video: resolutionInheritFor(props.resolutionInherit, 'video'),
+    }),
+    [props.resolutionInherit],
+  )
   // REQ-036：历程瀑布流的**投影节点表**（waterfallNodes 的 ref 镜像）。
   // ref 容器在此提前声明（fitToContent / zoomToSelection / revealNodes 这些
   // useCallback([]) 稳定回调都经它读投影坐标）；memo 在下方渲染期回填 ——
@@ -1449,6 +1497,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               key={node.id}
               node={node}
               selected={selectedNodeIds.includes(node.id)}
+              // 档位继承（2026-10-27）：与输入卡同一份参数 —— 角标与 chip 不许各算一遍。
+              {...(resolutionInheritByKind[node.kind === 'video' ? 'video' : 'image'] !== undefined
+                ? { resolutionInherit: resolutionInheritByKind[node.kind === 'video' ? 'video' : 'image'] }
+                : {})}
               // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
@@ -1571,6 +1623,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
+          {...(resolutionInheritByKind[cardNode.kind === 'video' ? 'video' : 'image'] !== undefined
+            ? { resolutionInherit: resolutionInheritByKind[cardNode.kind === 'video' ? 'video' : 'image'] }
+            : {})}
         />
       )}
       {/* BUG-020：废弃节点显示开关（画布右下浮层）。仅当画布上确有废弃节点时

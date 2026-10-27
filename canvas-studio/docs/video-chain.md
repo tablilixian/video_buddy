@@ -69,7 +69,7 @@
 | --- | --- | --- |
 | `duration` | [1,15]，默认 5/10 | clampDuration |
 | `aspectRatio` | 只发 16:9 / 9:16（历史 1:1 就地归一） | dramaAspect |
-| `resolution` | 480p / 736p / 2k → megapixels 0.4/0.9/2.0 | 档位表 |
+| `resolution` | 480p / 720p / 1080p → megapixels 0.4/1.0/2.0（历史 736p/2k 读时归一） | 档位表 |
 | `audioRefs` | ≤3 段、单段 2–15s、合计 ≤15s、不能作唯一输入 | audio-reference.ts（发出前拦） |
 | `videoRefs` | ≤3 段、MP4/MOV ≤50MB、合计 ≤15s、可作唯一输入；仅 drama | video-reference.ts |
 | 图+视频+音频 | 合计 ≤12 | validateH3ReferenceBudget |

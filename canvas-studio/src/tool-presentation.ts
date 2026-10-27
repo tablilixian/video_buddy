@@ -53,6 +53,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // C-9（2026-10-03）：与 compose_video 撞名「成片合成」会让用户把多参考视频生成
   // 误读为最终成片步骤——改名区分；compose_video 保持「成片合成」。
   video_composite: { tier: 'A', title: '多参考生成视频', icon: '▶' },
+  // 2026-10-27：同参数升档重出（480P 试片 → 720P/1080P 定稿）。与视频生成同级，
+  // 但产物是「覆盖已有节点」而不是新节点。
+  video_rerender: { tier: 'A', title: '升档重出视频', icon: '↑' },
   compose_video: { tier: 'A', title: '成片合成', icon: '合' },
   // REQ-034：代码驱动合成（Remotion CSR）。与 compose_video 同为「出成片」但来源不同
   // —— 前者拼已有视频片段，后者按 manifest 渲染字幕卡/数据卡/转场/图文幻灯片。

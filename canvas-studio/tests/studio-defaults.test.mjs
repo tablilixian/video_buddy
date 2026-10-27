@@ -45,7 +45,7 @@ function readSource(rel) {
 test('优先级：项目预置 > 设置页 > 兜底（逐项独立生效）', () => {
   const defaults = resolveStudioDefaults({
     plan: { aspectRatio: '9:16', targetDuration: 60 },
-    settings: { defaultAspectRatio: '1:1', defaultVideoResolution: '2k' },
+    settings: { defaultAspectRatio: '1:1', defaultVideoResolution: '1080p' },
   })
   // 画幅：预置压过设置页
   assert.equal(defaults.aspectRatio, '9:16')
@@ -55,12 +55,22 @@ test('优先级：项目预置 > 设置页 > 兜底（逐项独立生效）', ()
   assert.equal(defaults.targetDurationSource, 'plan')
   // 分辨率 CV-190a 起拆双轨：视频走设置页；图片未设置 → 兜底 —— 两字段逐项独立，
   // plan 里没有分辨率字段（不是「预置压过一切」的粗暴版）
-  assert.equal(defaults.videoResolution, '2k')
+  assert.equal(defaults.videoResolution, '1080p')
   assert.equal(defaults.videoResolutionSource, 'settings')
   assert.equal(defaults.imageResolution, FALLBACK_RESOLUTION)
   assert.equal(defaults.imageResolutionSource, 'fallback')
   // 60s ÷ 10s/镜 = 6 镜
   assert.equal(defaults.shotCount, 6)
+})
+
+test('设置页存的是历史键（2k / 736p）→ 读出来必须是规范键（老配置不失效）', () => {
+  // 用户在旧版本选过的值原样躺在设置 JSON 里；读路径不归一的话，这会直接落到兜底，
+  // 用户「设置过 1080P」被静默降级 —— 而且改设置页也看不出为什么。
+  const defaults = resolveStudioDefaults({ settings: { defaultVideoResolution: '2k', defaultImageResolution: '736p' } })
+  assert.equal(defaults.videoResolution, '1080p')
+  assert.equal(defaults.videoResolutionSource, 'settings')
+  assert.equal(defaults.imageResolution, '720p')
+  assert.equal(defaults.imageResolutionSource, 'settings')
 })
 
 test('项目没预置画幅时落到设置页（两层能各自生效，不是全有或全无）', () => {
@@ -74,7 +84,7 @@ test('项目没预置画幅时落到设置页（两层能各自生效，不是�
   assert.equal(defaults.targetDurationSource, 'plan')
 })
 
-test('什么都不知道时用兜底常量（16:9 / 30s / 736p，导出常量即真值）', () => {
+test('什么都不知道时用兜底常量（16:9 / 30s / 720p，导出常量即真值）', () => {
   const defaults = resolveStudioDefaults()
   assert.equal(defaults.aspectRatio, FALLBACK_ASPECT_RATIO)
   assert.equal(defaults.targetDuration, FALLBACK_TARGET_DURATION)
@@ -90,11 +100,12 @@ test('什么都不知道时用兜底常量（16:9 / 30s / 736p，导出常量即
 test('脏值不传播：非法画幅 / 非法时长 / 非法档位一律回落，不写进规格', () => {
   const defaults = resolveStudioDefaults({
     plan: { aspectRatio: '4:3', targetDuration: -5 },
-    settings: { defaultAspectRatio: 'junk', defaultVideoResolution: '1080p' },
+    // '4k' / '1080P'（大写）：表外值，一律不算「指定过」。
+    settings: { defaultAspectRatio: 'junk', defaultVideoResolution: '4k', defaultImageResolution: '1080P' },
   })
   assert.equal(defaults.aspectRatio, FALLBACK_ASPECT_RATIO, '4:3 不是合法画幅（enum 只有三档）')
   assert.equal(defaults.targetDuration, FALLBACK_TARGET_DURATION, '负数时长必须丢弃')
-  assert.equal(defaults.videoResolution, FALLBACK_RESOLUTION, '1080p 是 CV-187 已删除的旧档位，不许复活')
+  assert.equal(defaults.videoResolution, FALLBACK_RESOLUTION, '4k 是表外档位，不许复活')
   assert.equal(defaults.imageResolution, FALLBACK_RESOLUTION, '脏档位不得串到图片侧')
   assert.equal(defaults.aspectRatioSource, 'fallback')
   assert.equal(defaults.targetDurationSource, 'fallback')
@@ -112,14 +123,14 @@ test('历史脏时长按上限夹取，不因脏输入撑爆分镜预算', () =>
 test('规格文案必须带来源标记 —— 优先级表要真的送达模型，不能只是内部约定', () => {
   const text = describeStudioDefaults(resolveStudioDefaults({
     plan: { aspectRatio: '9:16' },
-    settings: { defaultVideoResolution: '2k' },
+    settings: { defaultVideoResolution: '1080p' },
   }))
   assert.match(text, /画幅 9:16（项目预置）/u)
   assert.match(text, /目标时长 30s（兜底）/u)
   assert.match(text, /建议 3 镜/u)
   // CV-190a 起分辨率拆双轨，两段各自的来源标记都要在
-  assert.match(text, /视频分辨率 2k（设置页）/u)
-  assert.match(text, /图片分辨率 736p（兜底）/u)
+  assert.match(text, /视频分辨率 1080p（设置页）/u)
+  assert.match(text, /图片分辨率 720p（兜底）/u)
 })
 
 test('推荐项挑选：带「推荐」的优先，否则首项（超时兜底与放手跑共用这一份）', () => {

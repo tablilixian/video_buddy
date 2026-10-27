@@ -17,6 +17,8 @@
  * 方案文档：docs/plans/video-provider-abstraction.md
  */
 
+import type { ResolutionId } from '../resolution-tiers.js'
+
 /** 视频生成能力。新增能力需同步更新参数映射矩阵与注册表自述。 */
 export type VideoCapability =
   /** 纯提示词出片（无参考图）。 */
@@ -48,7 +50,16 @@ export type VideoAspectRatio = '16:9' | '9:16'
  * 现在三档直通，不再有隐式升档。历史值由 `fal.ts` 的 `normalizeResolution()`
  * 就地归一（老节点重放 `generationPrompt` 仍可能带着旧枚举）。
  */
-export type VideoResolution = '480p' | '736p' | '2k'
+/**
+ * 视频分辨率档位（三档）。**唯一事实源在 `resolution-tiers.ts`**（2026-10-27 收口）：
+ * 像素 / megapixels / 显示名 / 历史键同表，本类型只是那张表规范键的别名。
+ *
+ * 演变：CV-187 删掉 `720p` / `1080p`（当时它们在 H3 没有对应档，走「就近升档」会
+ * 悄悄提高费用），改用 `480p` / `736p` / `2k`；2026-10-27 拍板把键改成与显示名同形的
+ * `480p` / `720p` / `1080p`，并把 720P 档真值对齐 H3 官方表（1.0MP / 1376×768）。
+ * 历史键 `736p` / `2k` 由 `normalizeResolutionId()` 在读路径归一，写路径不再产生。
+ */
+export type VideoResolution = ResolutionId
 
 /**
  * 参考素材：已解析为**本地绝对路径**，由适配器自行决定转成何种形态

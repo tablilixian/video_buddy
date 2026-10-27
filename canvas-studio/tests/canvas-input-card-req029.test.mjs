@@ -107,7 +107,11 @@ test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板
   assert.match(card, /ASPECT_OPTIONS: readonly \{ value: string; label: string \}\[\] = \[\n?\s*\{ value: '16:9'[\s\S]*?\{ value: '1:1'/, '比例清单必须只上后端 3 种（数据驱动）')
   assert.match(card, /from '\.\.\/\.\.\/resolution-display\.js'/, '档位展示名必须消费共享映射 resolution-display')
   assert.match(card, /commitPrompt\('aspectRatio', option\.value\)/, '画幅必须写 aspectRatio 参数')
-  assert.match(card, /commitPrompt\('resolution', value\)/, '清晰度必须写 resolution 参数（内部键）')
+  // 写的是**规范档位键**（480p/720p/1080p）—— 显示名只用于渲染，不得写回参数。
+  assert.match(card, /commitPrompt\('resolution', display\.value\)/, '清晰度必须写 resolution 参数（规范键，不是显示名）')
+  // 读数走唯一 resolver：chip 显示的就是即将生效的值，且能标出「跟随项目 / 跟随默认」。
+  assert.match(card, /resolveResolution\(\{/, 'chip 读数必须走 resolveResolution（节点 > 项目预置 > 设置页 > 出厂）')
+  assert.match(card, /const resolutionFollow = resolutionResolved\.source === 'plan'/, '继承自项目预置时必须显示「跟随项目」')
   // 风格（CV-288 / D2）：**双写** `styleId`（身份·显示·高亮）+ `stylePrefix`（文本快照·
   // 注入）。走 `commitRaw` 而非 `commitPrompt` —— 选「无风格」要**删键**而不是写空串
   // （空串会被「已定义」判据当真值透传给生成链；`withPromptField` 只能写字符串，删不掉）。
@@ -141,7 +145,15 @@ test('REQ-029 共享映射上提：lobby-spec 再导出保持兼容，卡片直�
   const lobby = await read('src/lobby-spec.ts')
   const display = await read('src/resolution-display.ts')
   assert.match(lobby, /export \{ DEFAULT_LOBBY_RESOLUTION, RESOLUTION_DISPLAY, resolutionDisplay, type ResolutionDisplay \} from '\.\/resolution-display\.js'/, 'lobby-spec 必须再导出（既有消费面不断）')
-  assert.match(display, /RESOLUTION_DISPLAY: readonly ResolutionDisplay\[\] = \[\n\s*\{ value: '480p', label: '480P'[\s\S]*?\{ value: '736p', label: '720P'[\s\S]*?\{ value: '2k', label: '1080P'/, '映射真值必须原样上提（480P/720P/1080P ↔ 480p/736p/2k）')
+  // 2026-10-27：映射表本身也上提到「档位表派生」—— 这里**不许**再出现手抄的三档字面量，
+  // 否则 display / 设置项 / 生成链会各有一份档位表（改造前就是这个病）。
+  //
+  // 「图片下限 720P」之后视频不再直接 map 全表，而是按 scope 取（`resolutionIdsFor('video')`）
+  // —— 仍然是派生，只是多了一层适用范围过滤，过滤规则也只有档位表那一处。
+  assert.match(display, /export const RESOLUTION_DISPLAY: readonly ResolutionDisplay\[\] = resolutionDisplaysFor\('video'\)/, '展示口径必须派生自档位表（视频视图）')
+  assert.match(display, /export const RESOLUTION_OPTIONS: readonly ResolutionOption\[\] = resolutionOptionsFor\('video'\)/, '设置项文案必须派生自档位表（视频视图）')
+  assert.match(display, /resolutionIdsFor\(scope\)\.map/, '按用途出菜单时也必须从档位表派生，不得手写')
+  assert.doesNotMatch(display, /value: '480p'/, 'resolution-display 不得再手抄档位字面量（事实源在 resolution-tiers）')
 })
 
 // ==================== REQ-032 / CV-287 Step 1：audio 形态 ====================

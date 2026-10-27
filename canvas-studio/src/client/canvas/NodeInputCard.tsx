@@ -10,7 +10,9 @@ import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
 import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, toLocalRef, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
-import { resolutionDisplay } from '../../resolution-display.js'
+import { RESOLUTION_DISPLAY, resolutionDisplay, resolutionDisplaysFor, resolutionUpgradeTargets } from '../../resolution-display.js'
+import { resolveResolution } from '../../resolution-resolve.js'
+import type { ResolutionId } from '../../resolution-tiers.js'
 import { styleIdOfPrefix, visualStyleOf } from '../../visual-styles.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
 import { StylePicker } from './StylePicker.js'
@@ -49,6 +51,20 @@ export interface NodeInputCardProps {
   onUploadMedia?(file: File): Promise<{ url: string; assetFile: string } | null>
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
   onClose(): void
+  /**
+   * 档位继承来源（2026-10-27）：节点自己没点过清晰度时的生效值来自哪。
+   *
+   * 为什么要传进来而不是组件内读 store/设置：本组件是纯 props 面（无 useStudio），
+   * 而"真实生效值"必须涵盖项目预置与设置页两层 —— 否则 chip 又会回到
+   * 「自己猜一个 736p」的老毛病（改造前它就是这么在 480p 的项目里显示 720P 的）。
+   * 缺省 = 不显示继承来源，只按节点参数 + 出厂值展示（宿主的既有测试无需提供）。
+   */
+  resolutionInherit?: {
+    /** 项目预置：`project.plan.videoResolution`（画布只会把它递给视频节点）。 */
+    readonly plan?: ResolutionId
+    /** 设置页默认（调用方按节点 kind 选好图片档还是视频档）。 */
+    readonly settings?: ResolutionId
+  } | undefined
 }
 
 /**
@@ -284,7 +300,7 @@ const CAMERA_APERTURES = ['f/1.4', 'f/2', 'f/2.8', 'f/4', 'f/8', 'f/16'] as cons
 const CAMERA_DEFAULT = { body: 0, lens: 0, focal: 2, aperture: 3 } as const
 
 /** 积分预估占位表（拍板⑦：无结算后端，数值为前端占位常量，标「预估」）。 */
-const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '736p': 25, '2k': 40 }
+const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '720p': 25, '1080p': 40 }
 
 /** H3 官方分路上限与合计（与 `video-reference.ts` 常量同源口径）。 */
 const VIDEO_CAPS = { images: 9, videos: 3, audios: 3, total: 12 } as const
@@ -307,7 +323,16 @@ const VIDEO_RATIOS = [
 const VIDEO_DURATIONS = [4, 6, 8, 10, 12, 15] as const
 
 /** 清晰度计价（演示 RES_COST 逐值：480P=0 / 720P=6 / 1080P=14，按内部键）。 */
-const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '736p': 6, '2k': 14 }
+const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '720p': 6, '1080p': 14 }
+
+/**
+ * 图片节点的清晰度菜单 = **图片视图**（720P / 1080P，无 480P）。
+ *
+ * 2026-10-27 拍板「图片下限 720P」：图片是定内容的静态依据（首帧图直接决定视频
+ * 内容），降档省下的 0.6× 远小于判断失真导致的废片。视频侧仍是三档 ——
+ * 视频贵在时长与重出，先出低档看内容再升档才划算。
+ */
+const IMAGE_RESOLUTION_DISPLAY = resolutionDisplaysFor('image')
 
 /** video 模式（演示 Tab）：fl = 首尾帧（fl2va）；omni = 全能参考（ref2va）。 */
 type VideoMode = 'fl' | 'omni'
@@ -827,8 +852,33 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const modelOverride = promptValueOf(node, 'modelOverride')
   const modelLabel = MODEL_OPTIONS.find(option => option.value === modelOverride)?.label ?? '自动（推荐）'
   const aspectRatio = promptValueOf(node, 'aspectRatio') || '16:9'
-  const resolution = promptValueOf(node, 'resolution') || '736p'
-  const specLabel = `${aspectRatio} · ${resolutionDisplay(resolution).label}`
+  /**
+   * 生效档位（2026-10-27）：走唯一 resolver —— 节点显式 > 项目预置 > 设置页 > 出厂。
+   *
+   * 改造前这里是 `promptValueOf(node,'resolution') || '736p'`：节点没点过档位时**假装**
+   * 是 720P，而视频的真实缺省是设置页的 480P ⇒ 「chip 说 720P、出片 480P」。
+   * 现在读数就是即将生效的值，且能看出它是不是继承来的。
+   */
+  /** 节点上**硬指定**的档位（空串 = 没点过，走继承）——菜单高亮与「跟随」项都看它。 */
+  const resolutionExplicit = promptValueOf(node, 'resolution')
+  const resolutionResolved = resolveResolution({
+    nodeValue: resolutionExplicit || undefined,
+    planValue: props.resolutionInherit?.plan,
+    settingValue: props.resolutionInherit?.settings,
+  })
+  const resolution = resolutionResolved.id
+  /** 节点未点时显示「跟随 X」；点了就只显示档位本身（这一格已是硬指定）。 */
+  const resolutionFollow = resolutionResolved.source === 'plan'
+    ? '跟随项目'
+    : resolutionResolved.source === 'settings' ? '跟随默认' : null
+  const specLabel = `${aspectRatio} · ${resolutionFollow === null ? '' : `${resolutionFollow} `}${resolutionDisplay(resolution).label}`
+  /**
+   * 视频节点的「升档重出」候选（严格更高档）。
+   *
+   * 基于**生效档**（resolver 结果）而不是硬指定档：节点没设过、继承项目 480P 时，
+   * 用户看到的也是 480P，那「升 720P」就该拿 480P 当起点。
+   */
+  const upgradeTargets = isVideo ? resolutionUpgradeTargets(resolution, aspectRatio) : []
   const stylePrefix = promptValueOf(node, 'stylePrefix')
   /**
    * CV-288 · D2：选中态读 `styleId`（身份），**不再拿注入文本反查名字**——
@@ -869,7 +919,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
       ? `${CAMERA_BODIES[next.body]} · ${CAMERA_LENSES[next.lens]} · ${CAMERA_FOCALS[next.focal]} · ${CAMERA_APERTURES[next.aperture]}`
       : '')
   }
-  const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['736p'] ?? 25
+  const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['720p'] ?? 25
 
   // ---- video 形态底栏（CV-282 Step 2）：时长读数 + 积分明细（演示 costRows 公式）----
   const durationRaw = generationParamOf(rawRef.current, 'duration')
@@ -1016,6 +1066,27 @@ export function NodeInputCard(props: NodeInputCardProps) {
     deleteEditorDraft(node.id)
     onClose()
   }
+
+  /**
+   * 升档重出（2026-10-27）：**先写参数、再按新参数重放**。
+   *
+   * 为什么不是「重放时覆盖 resolution」：`retryStudioNode` 刻意不收 overrides
+   * （那会造出第二条改参数的路，且改完不留痕）。先写参数 → 进撤销栈、能落盘，
+   * 重放读的就是这份 —— prompt 全程在磁盘快照里，不经 agent 复述，零漂移。
+   *
+   * 顺序也是硬的：`retryNode` 从 store 快照取节点，写在前它才读得到新档位。
+   */
+  const upgradeResolution = (target: ResolutionId): void => {
+    const next = withGenerationParam(node.generationPrompt, 'resolution', target)
+    if (next === null) {
+      setError('该节点的生成参数不可解析，无法升档重出（可改完清晰度后手动点重试）')
+      return
+    }
+    onUpdateNode(node.id, { generationPrompt: next })
+    onRetry?.(node.id)
+    onClose()
+  }
+  const canUpgrade = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
 
   // ---- 放置：先量再放（浮层同款 layout effect 手法）----
   useLayoutEffect(() => {
@@ -1576,7 +1647,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
             <button
               type="button"
               className={openPop === 'spec' ? 'csInputPill csInputPillOn' : 'csInputPill'}
-              title="画幅与清晰度：比例 3 种（拍板⑤）；档位展示名产品化（拍板⑥），内部键 480p/736p/2k"
+              title="画幅与清晰度：比例 3 种；清晰度两档（720P/1080P，图片下限 720P），未指定时跟随项目预置或设置页默认"
               onClick={() => { togglePop('spec') }}
             >
               {specLabel} <span className="csInputPillCaret">▾</span>
@@ -1595,20 +1666,37 @@ export function NodeInputCard(props: NodeInputCardProps) {
                   </button>
                 ))}
                 <span className="csChipPopSection">清晰度</span>
-                {[...['480p', '736p', '2k']].map(value => {
-                  const display = resolutionDisplay(value)
-                  return (
-                    <button
-                      type="button"
-                      className={resolution === value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
-                      key={value}
-                      onClick={() => { commitPrompt('resolution', value) }}
-                    >
-                      <span className="csChipMenuItemLabel">{display.label}</span>
-                      <span className="csChipMenuItemHint">{display.meta}</span>
-                    </button>
-                  )
-                })}
+                {IMAGE_RESOLUTION_DISPLAY.map(display => (
+                  <button
+                    type="button"
+                    className={resolutionExplicit === display.value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                    key={display.value}
+                    onClick={() => { commitPrompt('resolution', display.value) }}
+                  >
+                    <span className="csChipMenuItemLabel">{display.label}</span>
+                    <span className="csChipMenuItemHint">{display.meta}</span>
+                  </button>
+                ))}
+                {/* 存量节点身上可能躺着已停用的档（480P 图片）。按铁律不动存量数据，
+                    但菜单里既然选不到它，就必须明说一句 —— 否则用户看着 chip 上的
+                    480P、在菜单里找不到对应项，只会以为界面坏了。 */}
+                {resolutionExplicit !== '' && !IMAGE_RESOLUTION_DISPLAY.some(display => display.value === resolutionExplicit) && (
+                  <div className="csChipMenuItemHint" style={{ padding: '4px 10px 6px' }}>
+                    当前 {resolutionExplicit} 已停用（图片下限 720P），选任一档即生效
+                  </div>
+                )}
+                {/* 继承项：只有节点被硬指定过才出现 —— 点了就是把键删掉、回到项目/设置。
+                    改造前只能改不能清，用户想「恢复项目默认」没有任何入口。 */}
+                {resolutionExplicit !== '' && (
+                  <button
+                    type="button"
+                    className="csChipMenuItem"
+                    onClick={() => { commitRaw('resolution', undefined) }}
+                  >
+                    <span className="csChipMenuItemLabel">跟随项目 / 默认</span>
+                    <span className="csChipMenuItemHint">{`现为 ${resolutionDisplay(resolution).label}`}</span>
+                  </button>
+                )}
               </span>
             )}
           </span>
@@ -1832,10 +1920,10 @@ export function NodeInputCard(props: NodeInputCardProps) {
               <button
                 type="button"
                 className={openPop === 'spec' ? 'csInputPill csInputPillOn' : 'csInputPill'}
-                title="画幅（16:9/9:16，Host CV-136 枚举）/ 时长六档（拍板④，写 duration 走 clampDuration）/ 清晰度三档（拍板⑥产品化命名）"
+                title="画幅（16:9/9:16）/ 时长六档（写 duration 走 clampDuration）/ 清晰度三档（480P/720P/1080P，未指定时跟随项目预置或设置页默认）"
                 onClick={() => { togglePop('spec') }}
               >
-                {aspectRatio} · {duration}s · {resolutionDisplay(resolution).label} <span className="csInputPillCaret">▾</span>
+                {aspectRatio} · {duration}s · {resolutionFollow === null ? '' : `${resolutionFollow} `}{resolutionDisplay(resolution).label} <span className="csInputPillCaret">▾</span>
               </button>
               {openPop === 'spec' && (
                 <span className="csChipPop">
@@ -1862,20 +1950,45 @@ export function NodeInputCard(props: NodeInputCardProps) {
                     </button>
                   ))}
                   <span className="csChipPopSection">清晰度</span>
-                  {(['480p', '736p', '2k'] as const).map(value => {
-                    const display = resolutionDisplay(value)
-                    return (
-                      <button
-                        type="button"
-                        className={resolution === value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
-                        key={value}
-                        onClick={() => { commitRaw('resolution', value) }}
-                      >
-                        <span className="csChipMenuItemLabel">{display.label}</span>
-                        <span className="csChipMenuItemHint">{display.meta}</span>
-                      </button>
-                    )
-                  })}
+                  {RESOLUTION_DISPLAY.map(display => (
+                    <button
+                      type="button"
+                      className={resolutionExplicit === display.value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                      key={display.value}
+                      onClick={() => { commitRaw('resolution', display.value) }}
+                    >
+                      <span className="csChipMenuItemLabel">{display.label}</span>
+                      <span className="csChipMenuItemHint">{display.meta}</span>
+                    </button>
+                  ))}
+                  {resolutionExplicit !== '' && (
+                    <button
+                      type="button"
+                      className="csChipMenuItem"
+                      onClick={() => { commitRaw('resolution', undefined) }}
+                    >
+                      <span className="csChipMenuItemLabel">跟随项目 / 默认</span>
+                      <span className="csChipMenuItemHint">{`现为 ${resolutionDisplay(resolution).label}`}</span>
+                    </button>
+                  )}
+                  {/* 升档重出（2026-10-27 拍板）：480P 试片看内容 → 确认后同一份参数再出高清。
+                      只列严格更高的档，且必须真的能重放（isReplayable）——有按钮、打不通
+                      是这类入口最容易犯的错。像素按当前画幅算，竖屏显示 768×1376。 */}
+                  {canUpgrade && upgradeTargets.length > 0 && (
+                    <>
+                      <span className="csChipPopSection">升档重出</span>
+                      {upgradeTargets.map(target => (
+                        <button
+                          type="button"
+                          className="csChipMenuItem"
+                          key={target.value}
+                          onClick={() => { upgradeResolution(target.value) }}
+                        >
+                          <span className="csChipMenuItemLabel">{target.action}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </span>
               )}
             </span>

@@ -14,6 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioProjectPlan } from './contracts/project.js'
+import { resolutionTierOf } from './resolution-tiers.js'
 
 /** system prompt 小节名（命名空间化防冲突；重名注册会抛错）。 */
 export const PLAN_SECTION_NAME = 'canvas-studio:project-plan'
@@ -42,10 +43,19 @@ function agentCwdOf(context: unknown): string | undefined {
  * @returns 空串表示该项目无任何预置（调用方跳过注入）。
  */
 export function planSectionText(plan: StudioProjectPlan | undefined): string {
-  if (!plan || (plan.aspectRatio === undefined && plan.targetDuration === undefined)) return ''
+  if (!plan || (plan.aspectRatio === undefined && plan.targetDuration === undefined && plan.videoResolution === undefined)) return ''
   const lines: string[] = []
   if (plan.aspectRatio !== undefined) {
     lines.push(`- 画幅：${plan.aspectRatio}——生成工具未显式指定 aspectRatio 时按此兜底（视频只支持 16:9 / 9:16 两档，1:1 仅对图片生效）。`)
+  }
+  if (plan.videoResolution !== undefined) {
+    // 清晰度也进提示词：只在生成链兜底是不够的 —— agent 会自己"贴心地"传一个
+    // resolution（工具描述允许显式覆盖），那样项目预置就被绕过。写清"已锁定"它才不传。
+    // 2026-10-27 二次拍板：这一项**只管视频**，图片档位由图片节点自己定（下限 720P），
+    // 所以措辞必须点名视频 —— 否则 agent 会以为出图也该按这个档。
+    const tier = resolutionTierOf(plan.videoResolution)
+    const frame = tier.frames['16:9']
+    lines.push(`- 视频清晰度：${tier.label}（16:9 为 ${frame.width}×${frame.height}）——已锁定，视频生成工具**不要**再传 resolution；用户明确要求换档时以用户为准。图片清晰度不受此项约束（在图片节点里定，下限 720P）。`)
   }
   if (plan.targetDuration !== undefined) {
     const total = plan.targetDuration

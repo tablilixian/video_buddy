@@ -10,6 +10,7 @@
  * 一旦「什么时候显示哪一段」散到组件里，卡片与列表的取值口径就会分叉。
  */
 import type { StudioProject, StudioProjectPlan } from './contracts/project.js'
+import { resolutionLabelOf } from './resolution-tiers.js'
 import { relativeTime } from './relative-time.js'
 import { workflowStateStageLabel, type WorkflowStageLabel } from './workflow-stage.js'
 
@@ -36,6 +37,11 @@ export function planSummaryOf(plan: StudioProjectPlan | undefined): string | nul
   if (plan?.aspectRatio !== undefined) parts.push(plan.aspectRatio)
   const duration = plan?.targetDuration
   if (duration !== undefined && Number.isFinite(duration) && duration > 0) parts.push(`${duration}s`)
+  // 2026-10-27：视频清晰度进摘要 —— 项目卡与输入区上下文条共用本函数，所以「这个
+  // 项目锁的是 1080P」在两处同时出现，不需要各自去读 plan。称呼走档位表的 label，
+  // 与首页 chip / 节点 chip / 设置页保持同一套字。前缀写「视频」是刻意的：这一项
+  // **不影响图片**（图片档位在图片节点里定），不标容易被读成整片画质。
+  if (plan?.videoResolution !== undefined) parts.push(`视频 ${resolutionLabelOf(plan.videoResolution)}`)
   return parts.length === 0 ? null : parts.join(' · ')
 }
 

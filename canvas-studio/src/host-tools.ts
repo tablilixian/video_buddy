@@ -51,6 +51,8 @@ import { LIB_CATEGORIES, LIB_CATEGORY_LABELS } from './contracts/asset-library.j
 import { generateNarration } from './narration.js'
 import { DEFAULT_VOICE_GAP_SECONDS, MAX_NARRATION_LINES, VOICE_FPS, type VoiceFps } from './voice-timeline.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
+import { generationParamsOf } from './node-params.js'
+import { normalizeResolutionId, resolutionRank } from './resolution-tiers.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { runVideoShotQc, aggregateVideoQc, buildVideoQcRecord, validateQcTargetInput, VIDEO_QC_BUDGET } from './video-qc.js'
@@ -1549,18 +1551,18 @@ const RESOLUTION_ENUM = Object.keys(OUTPUT_SIZE) as VideoResolution[]
  * 枚举 480P/768P/2K/4K、默认 2K；i2v 只是没有 aspect_ratio，画幅跟随首帧）。
  *
  * ⚠️ C-8（2026-10-02 复核）：视频出厂默认是 **480p**（`defaultVideoResolution`，
- * 与图片默认 736p 是两个字段）——本描述曾写「736p（默认）…用 736p」，agent 照做
- * 显式传 736p，静默盖过用户的 480p 设置。修法：描述只讲机制（缺省走设置、
+ * 与图片默认 720P 是两个字段）——本描述曾把某一档标成「（默认）… 用 X」，agent 照做
+ * 显式传参，静默盖过用户的 480p 设置。修法：描述只讲机制（缺省走设置、
  * 传参即显式覆盖），并写明「未经用户要求不要传」；出厂值用 source 守卫测试钉住
  * （tests/resolution-tier.test.mjs），再漂移会直接红。
  */
 const RESOLUTION_PARAM_DESC =
-  '分辨率档位：480p(864×480) / 736p(1280×736) / 2k(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
-  + '⚠️ 按 H3 规格，480p/736p 是**原生生成**档，2k 是在 736p 基础上**上采样**——'
-  + '2k 不带来更多真实细节，只是画幅更大、更贵。'
-  + '缺省（不传）走设置页「视频默认分辨率」（出厂 480p，供快速试拍；用户可改）。'
-  + '⚠️ 本参数是**显式覆盖**：一旦传值就以传参为准、盖过用户设置——'
-  + '除非用户明确要求更高档位，否则不要传，让用户默认生效。'
+  '分辨率档位：480P(864×480) / 720P(1376×768) / 1080P(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
+  + '⚠️ 按 H3 规格，480P / 720P 是**原生生成**档，1080P 是在 720P 基础上**上采样**——'
+  + '1080P 不带来更多真实细节，只是画幅更大、更贵。'
+  + '缺省（不传）的取值顺序：**项目预置 → 设置页「视频默认分辨率」→ 出厂 480P**。'
+  + '⚠️ 本参数是**显式覆盖**：一旦传值就以传参为准、盖过项目预置与设置——'
+  + '除非用户明确要求更高档位，否则不要传，让项目/用户默认生效。'
   + '⚠️ 首帧图生视频（i2v）的**画幅**跟随首帧图（该端点无 aspectRatio）；'
   + '故首帧图要按目标画幅出好，建议 image_generate 的 resolution 与这里保持一致。'
 
@@ -1571,10 +1573,10 @@ const RESOLUTION_PARAM_DESC =
  * 「它决定后续视频首帧规格」——这是本参数在图片上真正的价值点，必须说清。
  */
 const IMAGE_RESOLUTION_PARAM_DESC =
-  '输出分辨率档位：480p(864×480) / 736p(1280×736，出厂默认) / 2k(1920×1088)，16:9 基准，'
+  '输出分辨率档位：480P(864×480) / 720P(1376×768) / 1080P(1920×1088)，16:9 基准，'
   + '竖屏自动反宽高；1:1 画幅三档共用 1024×1024。'
-  + '缺省（不传）走设置页「图片默认分辨率」（出厂 736p；用户改过则以用户为准）。'
-  + '本参数同样是**显式覆盖**——用户明确要求档位、或确需 480p 提速试拍时才传。'
+  + '缺省（不传）的取值顺序：**项目预置 → 设置页「图片默认分辨率」→ 出厂 720P**。'
+  + '本参数同样是**显式覆盖**——用户明确要求档位、或确需 480P 提速试拍时才传。'
   + '本参数只决定图片产物像素——但图片的**画幅比例**会决定其后续作首帧时的视频画幅'
   + '（i2v 无画幅参数，跟随首帧）。'
 
@@ -2640,6 +2642,58 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (precheckNotes.length > 0) {
           result.warnings = [...(result.warnings ?? []), ...precheckNotes]
         }
+        return result
+      },
+    }),
+    defineTool({
+      name: 'video_rerender',
+      description:
+        '【同参数重出 · 只换清晰度】把画布上一段**已有视频**按它自己保存的那份生成参数重新出一次，只改清晰度档位 —— 提示词、参考图/视频/音频、时长、画幅、供应商全部沿用节点快照，**不接收也不允许重写提示词**（所以不会漂移）。'
+        + '\n\n典型用法：先用 480P 出一版看内容（便宜），用户确认可用后调本工具出 720P/1080P 定稿 —— 不重新编排、不改提示词，出来的就是同一个镜头的更清晰版本。'
+        + '\n\n**硬约束**：① 只能**升档**（目标必须高于该节点当前档，降档请改参数后走普通重试）；② 只能作用于**视频**节点；③ 节点必须有可重放的生成参数（agent 生成的视频节点都有）。结果**原地覆盖**该节点，旧版不保留。'
+        + '\n\n⚠️ 换档 = 用新的推理规格重新生成（不是把旧片放大），构图/动作会有细微差异 —— 出完要让用户再看一眼，不要声称「完全一样只是更清晰」。'
+        + '\n\n除非用户明确要求更高清晰度（或同意为定稿花钱），否则不要主动调用。',
+      parameters: {
+        nodeId: { type: 'string' as const, required: true, description: '要重出的**视频节点 id**（画布节点 id；list_shots 或生成工具结果里能查到）' },
+        resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, required: true, description: `目标清晰度档位，必须高于该节点当前档：${RESOLUTION_ENUM.map((id) => `${id}(${OUTPUT_SIZE[id].width}×${OUTPUT_SIZE[id].height})`).join(' / ')}（16:9 基准，竖屏取反宽高）` },
+      },
+      output: { schema: resultSchema, render: renderResult },
+      async execute(args, exec) {
+        const a = args as { nodeId: string; resolution: VideoResolution }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const canvas = await registry.readCanvas(projectId)
+        const node = canvas.nodes.find(candidate => candidate.id === a.nodeId)
+        if (node === undefined) {
+          throwError('CS-USER-ERR', { message: `画布上找不到节点 ${a.nodeId}；先用 list_shots 查当前镜头的节点 id` })
+        }
+        if (node.kind !== 'video') {
+          throwError('CS-USER-ERR', { message: `节点「${node.title}」不是视频节点（kind=${node.kind}）。本工具只用于把已有视频按同参数重出更高清晰度；图片要换档请改参数后用 image_generate 重出` })
+        }
+        if (node.toolName === undefined) {
+          throwError('CS-USER-ERR', { message: `节点「${node.title}」没有记录工具名，无法重放` })
+        }
+        const base = generationParamsOf(node)
+        if (base === null) {
+          throwError('CS-USER-ERR', { message: `节点「${node.title}」没有可重放的生成参数（旧数据或手工创建），无法按同参数重出` })
+        }
+        const target = normalizeResolutionId(a.resolution)
+        if (target === undefined) {
+          throwError('CS-USER-ERR', { message: `清晰度档位 "${a.resolution}" 不合法，只接受 ${RESOLUTION_ENUM.join(' / ')}` })
+        }
+        // 只准向上：降档没有用户价值（换档必重跑推理、画面会重新演绎，花同样的钱看一眼更糊的版本），
+        // 而且真降档的语义是「改参数」不是「重出」，走普通重试那条路更诚实。
+        const current = normalizeResolutionId(base.resolution)
+        if (current !== undefined && resolutionRank(target) <= resolutionRank(current)) {
+          throwError('CS-USER-ERR', { message: `只能升档：该节点当前是 ${current}，目标是 ${target}。要降档请先改节点参数再重试` })
+        }
+        // 参数整份沿用节点快照，只覆盖清晰度 + 带上 retryOf（原地覆盖该节点）。
+        const params = { ...base, resolution: target, retryOf: node.id } as GenerateParams
+        const result = await runGeneration(registry, node.toolName, params, exec.signal, exec.agent?.session.header.cwd)
+        const notes = [
+          `已按节点保存的同一份参数重出（提示词未改动），清晰度 ${current ?? '继承值'} → ${target}。`,
+          '换档是重新推理而不是放大，构图与动作可能有细微差异 —— 请再看一眼再定稿。',
+        ]
+        result.warnings = [...(result.warnings ?? []), ...notes]
         return result
       },
     }),

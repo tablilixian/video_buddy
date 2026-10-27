@@ -1,38 +1,33 @@
 /**
- * 分辨率档位 → 输出像素表（REQ-021 检查点库与 config.ts 共用的唯一事实源）。
+ * 档位 → 像素 / megapixels 的**派生视图**（不再是事实源）。
  *
- * 从 `config.ts` 抽出的原因：`config.ts` 顶部 import 了 `node:crypto`（Host 专属），
- * 客户端 bundle 与 node:test 直连的纯函数模块都不能拖它。像素表本身是纯数据 ——
- * 独立成模块后，Host（config.ts 再出口）、客户端检查点库（auto-test-checkpoints.ts）、
- * 单测（tests/auto-test-checkpoints.test.mjs）三方共用同一份，不留第二张表。
+ * 2026-10-27 起事实源统一到 `resolution-tiers.ts`（显示名 / 内部键 / 后台真值同表）。
+ * 本模块只把那张表拍平成两个 `Record`，供既有调用点继续用下标访问
+ * （`OUTPUT_SIZE[resolution]` / `MEGAPIXELS_BY_RESOLUTION[resolution]`），
+ * **不要在这里补任何新数字** —— 补进来就又长了第二张表。
+ *
+ * 为什么保留独立文件而不是直接删：`config.ts` 顶部 import 了 `node:crypto`（Host 专属），
+ * 而客户端 bundle 与 node:test 直连的纯函数模块都不能拖它 —— 本文件是纯数据，
+ * 三方（Host / client / 测试）共用同一份。
  */
-import type { VideoResolution } from './providers/types.js'
+import { RESOLUTION_TIERS, type ResolutionFrame, type ResolutionId } from './resolution-tiers.js'
 
 /**
- * 分辨率档位 → 输出像素（16:9 基准，宽高**均为 32 的倍数**）。**唯一事实来源**。
+ * 档位 → 16:9 基准输出像素（宽高均为 32 的倍数）。
  *
- * 数值 = H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，**不是自由取值**：
- * 视频端点（`image2videofl2va` / `image2videoref2va`）只收 `megapixels`，
- * 不收 width/height，像素只能由这张表反推。
- *
- * 为什么必须与真实产物同值：节点落盘写 `mediaWidth/mediaHeight`，而客户端只在
- * `mediaWidth === undefined` 时用自然尺寸回填（StudioFrame.tsx）——**已写入的值永不
- * 被纠正**。填表外的值（如旧的 1280×720）会让「声明的分辨率 ≠ 真实产物」永久留在
- * 画布上（详情面板给每个视频显示错误的数字）。
+ * 视频端点只收 `megapixels`，像素由 H3 表反推；图片端点直接发这组像素
+ * （2026-09-15 实测逐字节一致）⇒ 本表即「声明的分辨率」。
  */
-export const OUTPUT_SIZE: Record<VideoResolution, { width: number; height: number }> = {
-  '480p': { width: 864, height: 480 },
-  '736p': { width: 1280, height: 736 },
-  '2k': { width: 1920, height: 1088 },
-}
+export const OUTPUT_SIZE = Object.fromEntries(
+  RESOLUTION_TIERS.map(tier => [tier.id, { ...tier.frames['16:9'] }]),
+) as Record<ResolutionId, ResolutionFrame>
 
 /**
- * 档位 → megapixels（视频端点只收 `megapixels`，不收 width/height）。
- * 数值取自 H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，与 `OUTPUT_SIZE` 同源。
- * Drama 视频适配器按当前档位取对应值，不再写死 0.4（CV-写死修复）。
+ * 档位 → megapixels（视频端点唯一旋钮，H3 官方表 0.4 / 1.0 / 2.0）。
+ *
+ * 改造前这里是手填的 0.4 / 0.9 / 2.0 —— 0.9 不在任何官方表内，且与 `docs/api.md`
+ * 的另一处（1.0）直接矛盾。现由 `resolution-tiers.ts` 单点定义。
  */
-export const MEGAPIXELS_BY_RESOLUTION: Record<VideoResolution, number> = {
-  '480p': 0.4,
-  '736p': 0.9,
-  '2k': 2.0,
-}
+export const MEGAPIXELS_BY_RESOLUTION = Object.fromEntries(
+  RESOLUTION_TIERS.map(tier => [tier.id, tier.megapixels]),
+) as Record<ResolutionId, number>

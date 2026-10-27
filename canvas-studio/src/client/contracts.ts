@@ -17,6 +17,7 @@ import type { AutoTestScenario } from '../auto-test-scenarios.js'
 // REQ-005 v1.3：首页规格草稿形状（type-only，不引 react 组件）。
 // REQ-028：草稿类型与映射真值搬进 src/lobby-spec.ts（两侧共用，可真 import 单测）。
 import type { LobbySpecDraft } from '../lobby-spec.js'
+import type { ResolutionId } from '../resolution-tiers.js'
 
 /** 某 settings 命名空间的响应式作用域（dsh 0.2.1 `ctx.configForms`，canvas-studio 客户端用）。 */
 export interface CanvasStudioSettingsScope {
@@ -117,6 +118,14 @@ export interface LobbySpecRowInjected {
   setSpec: (spec: LobbySpecDraft) => void
   /** 设置页「默认执行模式」的惰性读取（进首页对齐一次用，CV-196 口径）。 */
   defaultMode(): StudioWorkflowMode
+  /**
+   * 设置页「视频默认分辨率」的惰性读取（2026-10-27）：首页 chip 进页面时按它对齐一次。
+   *
+   * 为什么读视频档而不是图片档：首页这一行是**成片规格**（画幅 + 清晰度 + 时长），
+   * 落 plan 后驱动的是视频生成。改造前 chip 初值硬编码 720P，而出厂视频默认是 480P ——
+   * 用户进首页看到 720P、出片 480P，且这中间没有任何一步会纠正它。
+   */
+  defaultResolution(): ResolutionId
 }
 
 /**

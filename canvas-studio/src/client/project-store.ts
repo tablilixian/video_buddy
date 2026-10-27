@@ -630,7 +630,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       homePinned: false,
       // REQ-005 v1.3：首页规格草稿初值 = 全部「不锁定」+ confirm；真实默认模式由
       // 规格行挂载时按设置页惰性对齐一次（readDefaultCreateMode 口径）。
-      // REQ-028：默认值收拢到 defaultLobbySpec（16:9 · 736p · 15s · H3 · confirm）。
+      // REQ-028：默认值收拢到 defaultLobbySpec（16:9 · 720p · 15s · H3 · confirm）。
       lobbySpec: defaultLobbySpec('confirm'),
       // CV-261：首页暂存初值空 —— 暂存是**本次会话**的用户动作，重启后文件已在
       // 落点目录的上一轮里（或被清扫），不该跨重启复活一个指向已失效文件的条目。

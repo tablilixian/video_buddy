@@ -21,6 +21,7 @@ import { dedupeProjectName, summarizeName } from '../project-naming.js'
 // REQ-005 v1.3（变体 A）：lobby 认领时把规格草稿组装成预置规格（与规格行同一份实现）。
 // REQ-028：首页规格草稿的组装与映射真值（纯模块，tests/lobby-spec.test.mjs 直连）。
 import { buildLobbyPlan } from '../lobby-spec.js'
+import { DEFAULT_RESOLUTION_ID, normalizeResolutionId, type ResolutionId } from '../resolution-tiers.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
@@ -1997,6 +1998,20 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         return 'confirm'
       }
     },
+    /**
+     * 2026-10-27：首页清晰度 chip 的初值 = 设置页「视频默认分辨率」。
+     * 读不到按出厂 720P（与 host-config 的 schema default 同源，不另写字面量）。
+     */
+    defaultResolution: (): ResolutionId => {
+      try {
+        const value = ctx.configForms
+          .get<CanvasStudioConfig>('canvas-studio')
+          .getSnapshot().value?.defaultVideoResolution
+        return normalizeResolutionId(value) ?? DEFAULT_RESOLUTION_ID
+      } catch {
+        return DEFAULT_RESOLUTION_ID
+      }
+    },
   })
   slots.inject(
     'conversation.input.left',
@@ -2641,12 +2656,14 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
             .getSnapshot().value
           // 设置未就绪时按 schema 默认值兜底（与 host-config 的 default 同值；
           // 不 import config.ts 取 DEFAULT_RESOLUTION —— 它有 node:crypto，
-          // 客户端 bundle 拖不动，见 output-size.ts 头注）。
+          // 客户端 bundle 拖不动；档位默认值一律取 `resolution-tiers.ts` 的常量）。
           return {
             aspectRatio: value?.defaultAspectRatio ?? '16:9',
             videoProvider: value?.defaultVideoProvider ?? 'drama',
-            imageResolution: value?.defaultImageResolution ?? '736p',
-            videoResolution: value?.defaultVideoResolution ?? '480p',
+            // 历史键归一：设置文档里可能还存着旧版本写的 736p / 2k。
+            // 兜底值与 host-config 的出厂默认一致：图片 720P、视频 480P。
+            imageResolution: normalizeResolutionId(value?.defaultImageResolution) ?? DEFAULT_RESOLUTION_ID,
+            videoResolution: normalizeResolutionId(value?.defaultVideoResolution) ?? '480p',
           }
         }
         const runAutoTestScenario = async (scenario: AutoTestScenario): Promise<void> => {

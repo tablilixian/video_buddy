@@ -14,6 +14,7 @@
 import { useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CanvasStudioConfig } from '../host-config.js'
+import { RESOLUTION_OPTIONS, resolutionDisplay, resolutionOptionsWith } from '../resolution-display.js'
 import type { CanvasStudioSettingsScope } from './contracts.js'
 
 /** 首启标记：存 localStorage（设备级，清缓存会重新弹）。后续若要按 Profile 持久化，
@@ -142,33 +143,32 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
             <span className="csFieldLabel">图片默认分辨率</span>
             <select
               className="csFieldSelect"
-              value={value.defaultImageResolution}
+              value={resolutionDisplay(value.defaultImageResolution).value}
               onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultImageResolution', event.target.value as CanvasStudioConfig['defaultImageResolution'])}
             >
-              <option value="480p">480p · 864×480（草稿/试拍）</option>
-              <option value="736p">736p · 1280×736（默认）</option>
-              <option value="2k">2k · 1920×1088（交付）</option>
+              {resolutionOptionsWith('image', value.defaultImageResolution).map(option => (
+                <option value={option.value} key={option.value}>{option.text}</option>
+              ))}
             </select>
             <p className="csFieldHint">
               agent 未指定分辨率档位时，图片生成按此兜底（宽高均为 32 的倍数）。
-              竖屏取反宽高，1:1 画幅三档共用 1024×1024。
+              图片下限 720P；首页的清晰度与项目预置不影响图片。
             </p>
           </label>
           <label className="csField">
             <span className="csFieldLabel">视频默认分辨率</span>
             <select
               className="csFieldSelect"
-              value={value.defaultVideoResolution}
+              value={resolutionDisplay(value.defaultVideoResolution).value}
               onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoResolution', event.target.value as CanvasStudioConfig['defaultVideoResolution'])}
             >
-              {/* C-8：视频出厂默认 480p，「默认」标记不挂 736p（与工具描述同口径）。 */}
-              <option value="480p">480p · 864×480（默认 · 草稿/试拍）</option>
-              <option value="736p">736p · 1280×736</option>
-              <option value="2k">2k · 1920×1088（交付）</option>
+              {RESOLUTION_OPTIONS.map(option => (
+                <option value={option.value} key={option.value}>{option.text}</option>
+              ))}
             </select>
             <p className="csFieldHint">
               agent 未指定分辨率档位时，视频生成按此兜底（宽高均为 32 的倍数）。
-              竖屏取反宽高，1:1 画幅三档共用 1024×1024。
+              首页没选「视频清晰度」时用这里的值，选了按项目走。
             </p>
           </label>
         </div>

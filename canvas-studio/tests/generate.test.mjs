@@ -962,13 +962,14 @@ test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来
     assert.ok(placed.x >= 40 + 260 + 60, `来源右侧落位（实际 x=${placed.x}）`)
     assert.equal(placed.y, 40, 'y 对齐来源节点')
     // CV-028 → CV-284：写进节点框的是**画面 + 镜头条 chrome**（frameSizeOf）。
-    // 自然像素规则下画面 = 真实产物 1280×736（CV-187 默认档 736p）本身，
-    // 多出来的 48px 是头/脚。断言带上 chrome 而不是把 784 抄进来，
-    // 是为了让「chrome 改了」这件事在测试里显形，而不是变成一个要手动对数字的谜。
-    assert.equal(placed.width, 1280, '显示框 = 真实像素（100% 视图 1:1）')
-    assert.equal(placed.height, 736 + NODE_CHROME_HEIGHT, '显示框 = 画面 736 + 镜头条 chrome')
-    assert.equal(placed.mediaWidth, 1280, 'mediaWidth 保留真实分辨率（CV-187 默认档 736p）')
-    assert.equal(placed.mediaHeight, 736, 'mediaHeight 保留真实分辨率（CV-187 默认档 736p）')
+    // 自然像素规则下画面 = 真实产物像素（本用例的替身产物随档位表走：图片默认
+    // 720P ⇒ 1376×768）本身，多出来的 48px 是头/脚。断言带上 chrome 而不是把
+    // 816 抄进来，是为了让「chrome 改了」这件事在测试里显形，而不是变成一个要
+    // 手动对数字的谜。
+    assert.equal(placed.width, 1376, '显示框 = 真实像素（100% 视图 1:1）')
+    assert.equal(placed.height, 768 + NODE_CHROME_HEIGHT, '显示框 = 画面 768 + 镜头条 chrome')
+    assert.equal(placed.mediaWidth, 1376, 'mediaWidth 保留真实分辨率（替身产物像素）')
+    assert.equal(placed.mediaHeight, 768, 'mediaHeight 保留真实分辨率（替身产物像素）')
 
     // 无来源：回退网格空位（既有 1 个无 filename 节点 → index=1 → 第二格）。
     const registryEmpty = stubRegistry([{ ...prior[0], filename: undefined }], dir)

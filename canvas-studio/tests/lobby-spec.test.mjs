@@ -29,24 +29,28 @@ import {
   LOBBY_MODE_COPY,
 } from '../lib/lobby-spec.js'
 
-test('REQ-028 拍板②：分辨率展示口径 ↔ 真值档位映射（720P→736p、1080P→2k）', () => {
+test('REQ-028 拍板②：分辨率展示口径 ↔ 真值档位映射（720P→720p、1080P→1080p）', () => {
   // 三档展示名与倍数 meta 逐字对齐演示 HTML（480P 0.4× / 720P 推荐 / 1080P 2.0×）。
   assert.deepEqual(
     RESOLUTION_DISPLAY.map(item => [item.label, item.meta]),
     [['480P', '0.4×'], ['720P', '推荐'], ['1080P', '2.0×']],
   )
-  // 内部映射真值：不新增 1080P 实体档位 —— 1080P 就是 2k，720P 就是 736p。
+  // 2026-10-27 起展示名与内部键**同名**（不再有「界面说 720P、内部写 736p」这层翻译）。
   assert.deepEqual(
     RESOLUTION_DISPLAY.map(item => item.value),
-    ['480p', '736p', '2k'],
+    ['480p', '720p', '1080p'],
   )
-  // 菜单顺序即数组顺序（480P → 720P → 1080P），默认档 = 736p（演示默认 720P）。
-  assert.equal(DEFAULT_LOBBY_RESOLUTION, '736p')
+  // 菜单顺序即数组顺序（480P → 720P → 1080P）。默认档 = **视频出厂 480P**
+  // （2026-10-27 拍板：首页这个面板只管视频，图片档位在图片节点里定）。
+  assert.equal(DEFAULT_LOBBY_RESOLUTION, '480p')
   // 真值 → 展示往返一致；未知值回落默认档而不是 undefined（脏数据不炸 chip）。
   for (const item of RESOLUTION_DISPLAY) {
     assert.equal(resolutionDisplay(item.value).value, item.value)
   }
-  assert.equal(resolutionDisplay('whatever').value, '736p')
+  assert.equal(resolutionDisplay('whatever').value, '720p')
+  // 历史键读路径归一（老项目草稿里可能还存着旧键）。
+  assert.equal(resolutionDisplay('736p').value, '720p')
+  assert.equal(resolutionDisplay('2k').value, '1080p')
 })
 
 test('REQ-028 模型三选：MiniMax H3（推荐）/ SeedDance 2.0 / SeedDance 2.5', () => {
@@ -70,10 +74,13 @@ test('REQ-028 画幅两卡 + 时长三态：预设 10/15/30/60、自定义哨兵
   assert.equal(LOBBY_DURATION_CUSTOM, 'custom')
 })
 
-test('buildLobbyPlan：画幅恒写、时长夹取 300 上限、自定义非法丢弃', () => {
-  // 演示初始态：16:9 · 720P(736p) · 15s —— 画幅/时长都落 plan。
+test('buildLobbyPlan：画幅恒写、清晰度只在显式选过时写、时长夹取 300 上限、自定义非法丢弃', () => {
+  // 演示初始态：16:9 · 未选清晰度 · 15s —— 画幅 / 时长落 plan，**清晰度不落**。
+  // 不写的理由：视频缺省链是 设置页 → 出厂 480P，恒写会让首页默认档顶掉用户的
+  // 设置页偏好，「没选就用 480P」永远走不到（2026-10-27 拍板）。
   const plan = buildLobbyPlan(defaultLobbySpec('auto'))
   assert.deepEqual(plan, { aspectRatio: '16:9', targetDuration: 15 })
+  assert.equal('videoResolution' in (plan ?? {}), false, '没显式选过就不许写 plan（否则压掉设置页默认）')
   // 自定义秒数照落；超上限按 MAX_TARGET_DURATION=300 夹取（分镜预算既有约束，
   // 演示的 600 不跟进 —— 见 lobby-spec.ts 文件头）。
   assert.deepEqual(
@@ -90,10 +97,18 @@ test('buildLobbyPlan：画幅恒写、时长夹取 300 上限、自定义非法�
     const result = buildLobbyPlan({ ...defaultLobbySpec('auto'), duration: 'custom', durationCustom: bad })
     assert.deepEqual(result, { aspectRatio: '16:9' }, `durationCustom=${JSON.stringify(bad)}`)
   }
-  // 分辨率与模型**不落 plan**（StudioProjectPlan 无字段；路由消费属后续 CV）。
-  const withModel = buildLobbyPlan({ ...defaultLobbySpec('auto'), model: 'seeddance-2.5' })
+  // 显式选过（resolutionDirty）→ 落 `plan.videoResolution`，且只影响视频。
+  const withModel = buildLobbyPlan({
+    ...defaultLobbySpec('auto'),
+    model: 'seeddance-2.5',
+    resolution: '1080p',
+    resolutionDirty: true,
+  })
   assert.equal('model' in (withModel ?? {}), false)
-  assert.equal('resolution' in (withModel ?? {}), false)
+  assert.equal(withModel?.videoResolution, '1080p', '首页显式选的清晰度必须落 plan —— 否则生成链读不到，还是按设置页出片')
+  // 键名是 videoResolution 而不是 resolution：语义收窄为「只作用于视频」，
+  // 图片走节点参数 / 设置页图片默认（下限 720P），两条链路互不相干。
+  assert.equal('resolution' in (withModel ?? {}), false, '旧键名不得再产出')
 })
 
 test('chip 读数：时长三态随动（15s / 自定义 45s / 不锁定）、画幅·分辨率合并读数', () => {
@@ -103,8 +118,11 @@ test('chip 读数：时长三态随动（15s / 自定义 45s / 不锁定）、�
   assert.equal(durationChipLabel({ duration: 'custom', durationCustom: '45' }), '自定义 45s')
   // 自定义未填秒数时只写「自定义」（不渲染 "自定义 NaNs" 这类残句）。
   assert.equal(durationChipLabel({ duration: 'custom', durationCustom: '' }), '自定义')
-  assert.equal(formatChipLabel({ aspect: '16:9', resolution: '736p' }), '16:9 · 720P')
-  assert.equal(formatChipLabel({ aspect: '9:16', resolution: '2k' }), '9:16 · 1080P')
+  // 未显式选过 → 读数带「默认」（让人知道现在出的是缺省档，不是自己点的）。
+  assert.equal(formatChipLabel({ aspect: '16:9', resolution: '736p' }), '16:9 · 默认 720P')
+  assert.equal(formatChipLabel({ aspect: '9:16', resolution: '2k' }), '9:16 · 默认 1080P')
+  // 显式选过 → 只写档位本身（这已经是硬指定，不再说「默认」）。
+  assert.equal(formatChipLabel({ aspect: '16:9', resolution: '720p', resolutionDirty: true }), '16:9 · 720P')
 })
 
 test('执行模式口径：演示命名（自动执行/询问执行）+ 诚实脚注（不照抄 REQ-022 演示句）', () => {

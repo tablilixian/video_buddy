@@ -26,7 +26,7 @@ function reportInput(overrides = {}) {
     startedAt: T0,
     finishedAt: T0 + 49 * 60_000,
     appVersion: 'canvas-studio client (dev)',
-    effective: { aspectRatio: '16:9', videoProvider: 'drama', imageResolution: '736p', videoResolution: '480p' },
+    effective: { aspectRatio: '16:9', videoProvider: 'drama', imageResolution: '720p', videoResolution: '480p' },
     results: [
       { turn: 0, id: 'videos-active', label: '镜位视频 = 3 且全部 active', pass: true, evidence: '视频 3 条' },
     ],
@@ -47,7 +47,7 @@ function reportInput(overrides = {}) {
       ],
       history: [],
       queue: { active: null, waiting: [], resumedJobs: 0 },
-      expectedImageResolution: '736p',
+      expectedImageResolution: '720p',
       expectedVideoResolution: '480p',
     },
     sentTurns: ['拍一条 15 秒……'],

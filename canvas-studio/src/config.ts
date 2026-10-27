@@ -7,9 +7,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { VideoResolution } from './providers/types.js'
-// 档位像素表本体已抽到 output-size.ts（下方再出口）；本文件的 sizeForAspectRatio
-// 仍要读它，故同文件内直接 import（同一份实现，无第二张表）。
-import { OUTPUT_SIZE } from './output-size.js'
+// 档位取值全部来自 resolution-tiers.ts（显示名 / 真值 / 历史键同表，2026-10-27 收口）；
+// 本文件只做「默认档常量 + 画幅换算」两件薄事，不再持有像素表。
+import { DEFAULT_RESOLUTION_ID, frameOf, isResolutionId } from './resolution-tiers.js'
 
 /**
  * 生成接口端点（与 WL 适配器对齐）。
@@ -122,7 +122,7 @@ export const DRAMA_VIDEO_ASYNC_HINT =
 export { MEGAPIXELS_BY_RESOLUTION, OUTPUT_SIZE } from './output-size.js'
 
 /** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
-export const DEFAULT_RESOLUTION: VideoResolution = '736p'
+export const DEFAULT_RESOLUTION: VideoResolution = DEFAULT_RESOLUTION_ID
 
 /**
  * CV-243：项目资产回收站目录名（`<项目>/assets/.trash/`）。
@@ -133,30 +133,29 @@ export const DEFAULT_RESOLUTION: VideoResolution = '736p'
  */
 export const ASSET_TRASH_DIR = '.trash'
 
-/** 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。 */
+/**
+ * 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。
+ *
+ * ⚠️ 只认**规范键**（`480p` / `720p` / `1080p`）。历史键 `736p` / `2k` 请走
+ * `normalizeResolutionId()` —— 类型守卫不能对旧键返回 `true`，否则调用方拿着
+ * `'736p'` 去查表会拿到 `undefined`（这正是 CV-187 差点崩掉的老节点重放路径）。
+ */
 export function isVideoResolution(value: unknown): value is VideoResolution {
-  return value === '480p' || value === '736p' || value === '2k'
+  return isResolutionId(value)
 }
 
 /**
  * 宽高比 + 档位 → 像素尺寸（图片与视频**共用同一个档位**，故只用这一份实现）。
  *
  * 9:16 反宽高；1:1 恒 1024×1024（方形不是 H3 输出规格，三档共用，无档位意义）。
- * 第 2 参带默认值 ⇒ 既有调用点（`generate.ts`）与既有测试零改动即可编译。
+ * 具体数值全部来自 `resolution-tiers.ts` 的 `frames`，本函数不持有任何数字。
  */
 export function sizeForAspectRatio(
   aspectRatio: string | undefined,
   resolution: VideoResolution = DEFAULT_RESOLUTION,
 ): { width: number; height: number } {
-  switch (aspectRatio) {
-    case '9:16': {
-      const base = OUTPUT_SIZE[resolution]
-      return { width: base.height, height: base.width }
-    }
-    case '1:1': return { width: 1024, height: 1024 }
-    case '16:9':
-    default: return { ...OUTPUT_SIZE[resolution] }
-  }
+  const frame = frameOf(resolution, aspectRatio)
+  return { width: frame.width, height: frame.height }
 }
 
 /** 生成一个资产文件名用的 UUID。 */

@@ -35,7 +35,7 @@ import type {
   VideoRequest,
   VideoResolution,
 } from './types.js'
-import { isVideoResolution } from '../config.js'
+import { normalizeResolutionId } from '../resolution-tiers.js'
 import { assertFalReferenceSizes, toFalAudioDataUri, toFalDataUri } from './reference.js'
 import { sliceToMax } from './shared.js'
 import { sanitizeForUser, throwError } from '../error-system.js'
@@ -75,42 +75,32 @@ const FAL_DURATION_MIN = 5
 const FAL_DURATION_MAX = 15
 
 /**
- * resolution 映射（CV-187 起三档直通）。fal 原生枚举是 480P/768P/2K/4K，
- * 本仓只发前三档 —— 与 `config.ts` 的 `OUTPUT_SIZE` 一一对应（像素见那张表）。
+ * resolution 映射（CV-187 起三档直通）。fal 原生枚举是 **480P / 768P / 2K / 4K**，
+ * 本仓只发前三档 —— 与 `resolution-tiers.ts` 的 `frames` 一一对应。
  *
- * 改造前 720p/1080p 走「就近升档 + warning」，已删除：升档会**悄悄提高费用**，
- * 而档位表本就该由调用方明确指定。旧枚举值不再合法，由 `normalizeResolution()`
- * 就地归一（见下方 `LEGACY_RESOLUTION`）。
+ * ⚠️ 2026-10-27 修正：此前写的是 `'736p' → '736P'`，而 **fal 没有 736P 这个枚举值**
+ * （官方只有 480P/768P/2K/4K），等于每次都在发一个非法值 —— 只是 fal 侧没报错、
+ * 静默按默认档出片，所以一直没被发现。现在 720P 档对齐 H3/fal 同一张表（1.0MP /
+ * 1376×768），映射到官方枚举 **768P**，第一次真正对上。
  */
 const RESOLUTION_MAP: Record<VideoResolution, string> = {
   '480p': '480P',
-  '736p': '736P',
-  '2k': '2K',
+  '720p': '768P',
+  '1080p': '2K',
 }
 
 /**
- * 历史枚举就地归一 —— 与 `drama.ts` 的 `dramaAspect()` 同一模式（画幅侧先例：
- * 老节点重放 `generationPrompt` 时带着历史 `1:1`，归一为 16:9，绝不把非法值发出去）。
+ * 历史枚举就地归一 —— 委托 `resolution-tiers.ts` 的 `normalizeResolutionId()`。
  *
- * 为什么需要它（**不是防御性编程，是真实数据路径**）：`resolution` 随
- * `generationPromptOf` 原样落进画布节点，所以真实历史节点里存着 `720p` / `1080p`。
- * 删掉这两个键后若直接查 `RESOLUTION_MAP`，`fal.ts` 的取值处会撞上 `undefined` 抛
- * TypeError（节点重试 → 崩溃）。
+ * 为什么必须归一（**不是防御性编程，是真实数据路径**）：`resolution` 随
+ * `generationPromptOf` 原样落进画布节点，所以真实历史节点里存着 `720p` / `1080p`
+ * （fal 时代）与 `736p` / `2k`（CV-187 时代）。不归一就会在查表处撞上 `undefined`
+ * 抛 TypeError（节点重试 → 崩溃）。
  *
- * 映射是**等义**的：旧 `720p` 的行为就是「升档到 736P」，归一后 `736p` → `736P`，
- * 输出与旧行为逐字节一致 ⇒ **不需要回 warning**（回了会让老节点重试凭空多一条提示）。
- * 旧 `1080p` → `2K` 同理。
+ * 归一表只有一份（在档位表里），本文件不再维护第二份 `LEGACY_RESOLUTION`。
  */
-const LEGACY_RESOLUTION: Readonly<Record<string, VideoResolution>> = {
-  '720p': '736p',
-  '1080p': '2k',
-}
-
-/** 把任意来源的 resolution 归一到当前三档；无法识别返回 undefined（不传，走供应商默认）。 */
 export function normalizeResolution(raw: string | undefined): VideoResolution | undefined {
-  if (raw === undefined) return undefined
-  if (isVideoResolution(raw)) return raw
-  return LEGACY_RESOLUTION[raw]
+  return normalizeResolutionId(raw)
 }
 
 /** 取出 falApiKey 注入；未注入或解析为空串都视为「未配置」。 */

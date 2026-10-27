@@ -5,17 +5,18 @@
  * 1. 它要被**两侧**同时消费 —— client 组件（LobbySpecRow 弹出框）读写草稿，
  *    发送拦截分支（index.ts 的 lobby 认领）在组件树之外读同一份去 buildLobbyPlan；
  *    放 client/ 会让 Host 侧的 node:test 只能靠读源码文本守卫（lobby-stash 同款
- *    妥协），而这里的分辨率展示 ↔ 真值映射是拍板钉死的口径（720P→736p、
- *    1080P→2k），值得一条**真 import** 的测试（tests/lobby-spec.test.mjs 从
- *    lib/ 直连本模块）。
+ *    妥协），而这里的分辨率展示 ↔ 真值映射是拍板钉死的口径（2026-10-27 起
+ *    展示名与内部键同名：720P = `720p`），值得一条**真 import** 的测试
+ *    （tests/lobby-spec.test.mjs 从 lib/ 直连本模块）。
  * 2. 纯 TS 无依赖（VideoResolution 只 import type），client 打包时被 tsdown
  *    内联进 client.js，Host 侧走 lib/lobby-spec.js，一份实现两处消费。
  *
  * ## 演示口径（2026-10-06 拍板，1:1 复刻 video-agent-inputbox.html）
  *
  * - 分辨率**展示**跟演示：480P / 720P / 1080P（倍数 0.4× / 推荐 / 2.0×）；
- *   **内部映射真值档位** 480p / 736p / 2k —— 展示名与真值不同名（720P ≠ 736p），
- *   所以这张表是本模块存在的第一理由。不新增 1080P 实体档位（2k 已有）。
+ *   2026-10-27 起**内部真值键与显示名同形**（`480p` / `720p` / `1080p`），
+ *   表本身收口到 `resolution-tiers.ts`，本模块只再导出 —— 改造前那层
+ *   「720P ↔ 736p」翻译正是「界面说 720P、出图 1280×736」的歧义来源。
  * - 模型三选：MiniMax H3（推荐）/ SeedDance 2.0 / SeedDance 2.5。目前视频生成
  *   路由只有 H3（REQ-025 的路由决策点），SeedDance 是预留位 —— 选中值只活在本
  *   草稿里，**不落 plan**（StudioProjectPlan 无此字段，路由消费属后续 CV）。
@@ -112,7 +113,7 @@ export const MIN_LOBBY_DURATION = 1
 export interface LobbySpecDraft {
   /** 画幅（合并入口上段两卡之一；常显真值，无空串档）。 */
   readonly aspect: LobbyAspect
-  /** 输出分辨率（真值档位；chip 展示名经 resolutionDisplay 映射）。 */
+  /** 输出**视频**清晰度档位（真值；chip 展示名经 resolutionDisplay 映射）。图片不受它影响。 */
   readonly resolution: VideoResolution
   /** 目标时长：`''` = 不锁定、数字串 = 秒、`'custom'` = 读 durationCustom。 */
   readonly duration: string
@@ -126,6 +127,14 @@ export interface LobbySpecDraft {
    * 对齐一次（CV-196 口径）；动过就不再覆盖用户的选择。
    */
   readonly modeDirty?: boolean
+  /**
+   * 用户是否**显式选过**视频清晰度（与 `modeDirty` 同一套口径：false 时首页挂载会按
+   * 设置页「视频默认分辨率」对齐一次）。
+   *
+   * 它同时决定 `buildLobbyPlan` 要不要写 `plan.videoResolution` —— 没选过就不写，
+   * 让缺省链（设置页 → 出厂 480P）自己生效；写死等于顶掉用户的设置页偏好。
+   */
+  readonly resolutionDirty?: boolean
 }
 
 /** 首页草稿默认值（演示的初始态：16:9 · 720P · 15s · MiniMax H3 · 自动执行）。 */
@@ -147,17 +156,27 @@ export function defaultLobbySpec(mode: StudioWorkflowMode): LobbySpecDraft {
 /**
  * 把草稿组装成项目预置规格（lobby 认领分支 → createStudioProjectClaimDir）。
  *
- * 画幅**恒写**（草稿没有空串档）；自定义秒数非法（非数字 / 低于下限）时该项
- * 被丢弃而不是让创建失败 —— 规格是伴随参数，不该拦住开工。超上限仍按
- * MAX_TARGET_DURATION 夹取（contracts 的既有纪律，演示的 600 不改变分镜预算）。
- * 分辨率与模型暂不落 plan（StudioProjectPlan 无字段；见文件头「模型三选」）。
+ * 画幅**恒写**（草稿没有空串档）；自定义秒数非法（非数字 / 低于下限）时该项被丢弃
+ * 而不是让创建失败 —— 规格是伴随参数，不该拦住开工。超上限仍按 MAX_TARGET_DURATION
+ * 夹取（contracts 的既有纪律，演示的 600 不改变分镜预算）。
+ *
+ * 2026-10-27：清晰度**只在用户显式选过时才落 plan**（`plan.videoResolution`）。
+ *
+ * 为什么不是恒写：视频出厂默认是 480P、设置页还有一个「视频默认分辨率」，而
+ * plan 的优先级高于设置页。恒写等于「永远都有选择」—— 首页默认档会顶掉用户
+ * 在设置页的偏好，「没选就用 480P」这条永远走不到。所以未动过（`resolutionDirty`
+ * 不为 true）就**不写该键**，让缺省链（设置页 → 出厂）自己生效。
+ *
+ * **只作用于视频**：图片档位不进 plan（见 `StudioProjectPlan.videoResolution`
+ * 的注释）。模型（`spec.model`）也不落 plan：SeedDance 两档是路由预留位。
  */
 export function buildLobbyPlan(spec: LobbySpecDraft): StudioProjectPlan | undefined {
   const plan: StudioProjectPlan = {}
   plan.aspectRatio = spec.aspect
+  if (spec.resolutionDirty === true) plan.videoResolution = spec.resolution
   const seconds = Number.parseInt(spec.duration === LOBBY_DURATION_CUSTOM ? spec.durationCustom : spec.duration, 10)
   if (Number.isFinite(seconds) && seconds > 0) plan.targetDuration = Math.min(MAX_TARGET_DURATION, seconds)
-  return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan
+  return plan
 }
 
 /**
@@ -173,9 +192,10 @@ export function durationChipLabel(spec: Pick<LobbySpecDraft, 'duration' | 'durat
   return `${spec.duration}s`
 }
 
-/** 画幅·分辨率 chip 的收起态读数（演示口径：`16:9 · 720P`）。 */
-export function formatChipLabel(spec: Pick<LobbySpecDraft, 'aspect' | 'resolution'>): string {
-  return `${spec.aspect} · ${resolutionDisplay(spec.resolution).label}`
+/** 画幅·清晰度 chip 的收起态读数（显式选择 `16:9 · 720P`；跟随默认 `16:9 · 默认 480P`）。 */
+export function formatChipLabel(spec: Pick<LobbySpecDraft, 'aspect' | 'resolution' | 'resolutionDirty'>): string {
+  const label = resolutionDisplay(spec.resolution).label
+  return `${spec.aspect} · ${spec.resolutionDirty === true ? label : `默认 ${label}`}`
 }
 
 /* ------------------------------------------------------------------ *

@@ -172,6 +172,25 @@ test('REQ-036 hiddenIds：显式排除优先于一切', () => {
   assert.ok(trayOf(layout, 1).nodeIds.length === 1, '托盘只剩卡头')
 })
 
+test('REQ-036 竖版素材：媒体格按真实分辨率派生高度（封顶 9:16），横版与未知维持 16:9', () => {
+  // 2026-10-27 用户拍板：瀑布流支持横版/竖版两种显示效果，竖图不再被 16:9 格裁成横带。
+  const portrait = node('p1', { toolName: 'image_generate', mediaWidth: 768, mediaHeight: 1376 })
+  const extreme = node('p2', { toolName: 'image_generate', mediaWidth: 300, mediaHeight: 1200 })
+  const landscape = node('l1', { toolName: 'image_generate', mediaWidth: 1920, mediaHeight: 1080 })
+  const square = node('s1', { toolName: 'image_generate', mediaWidth: 1024, mediaHeight: 1024 })
+  const unknown = node('u1', { toolName: 'image_generate' })
+  const layout = computeWaterfallLayout([portrait, extreme, landscape, square, unknown])
+  const box = (id) => layout.boxes.get(id)
+  assert.equal(box('p1').width, 360, '格宽不变（竖版只变高）')
+  assert.equal(box('p1').height, 640, '768×1376 → 360×640（比例 1.79 封顶到 16/9 镜像）')
+  assert.equal(box('p2').height, 640, '1:4 极端长图同封顶，不撑爆行')
+  assert.equal(box('l1').height, Math.round(360 * 9 / 16), '横版维持 16:9')
+  assert.equal(box('s1').height, Math.round(360 * 9 / 16), '正方形不判竖版，维持 16:9')
+  assert.equal(box('u1').height, Math.round(360 * 9 / 16), '分辨率未知（未加载/老数据）维持 16:9 缺省')
+  // 竖卡确实更高 —— 行高取 max，同行横卡落位不重叠由「高压」性质测试兜底。
+  assert.ok(box('p1').height > box('l1').height, '竖版格高于横版格')
+})
+
 test('REQ-036 纯度：入参不被修改；空输入返回空布局', () => {
   const card = cardNode('card1', 1)
   const kf = node('kf1', { toolName: 'image_generate', sourceIds: ['card1'] })

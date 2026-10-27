@@ -89,7 +89,7 @@ export interface WaterfallOptions {
   hiddenIds?: ReadonlySet<string>
   /** 手动排序覆盖（P2 拖拽写 `view.waterfallOrder`）：列表内节点按列表序，未列入的按 createdAt 追后。 */
   order?: readonly string[]
-  /** 标准缩略盒宽（画布空间 px，缺省 360；高按 16:9 派生）。 */
+  /** 标准缩略盒宽（画布空间 px，缺省 360；高按 16:9 派生，竖版媒体按真实比例）。 */
   thumbWidth?: number
 }
 
@@ -113,14 +113,26 @@ const AUDIO_H = 96
 const TEXT_H = 140
 /** 托盘内网格最大列数（原型 auto-fill 的确定性等价：≤4 个一排，更多折行）。 */
 const MAX_COLUMNS = 4
+/** 竖版媒体的高宽比封顶（= 9:16 的镜像）。超过它 cover 只微裁一点点，
+ * 换来极端长图不会把所在行撑成通天柱。 */
+const PORTRAIT_MAX_RATIO = 16 / 9
 
 /** 镜内产物的排列角色（托盘网格顺序）。 */
 const ROLE = { keyframe: 1, video: 2, lastframe: 3, voice: 4 } as const
 
-/** 标准缩略盒高：媒体 16:9，音频矮条，文本卡定高。 */
+/** 标准缩略盒高：媒体 16:9（竖版按真实比例派生、封顶），音频矮条，文本卡定高。
+ *  REQ-036 复核（2026-10-27）：竖版素材（如 768×1376）此前被硬塞 16:9 格，
+ *  渲染层 object-fit:cover 把它裁成中间横带 —— 这里改按 mediaWidth/mediaHeight
+ *  感知方向；两字段缺失（未加载/老数据）时维持 16:9 缺省，行为不变。 */
 function cellHeightOf(node: StudioCanvasNode, cellW: number): number {
   if (node.kind === 'audio') return AUDIO_H
   if (node.kind === 'text' || node.kind === 'sticky' || node.kind === 'prompt') return TEXT_H
+  const { mediaWidth, mediaHeight } = node
+  if (mediaWidth !== undefined && mediaHeight !== undefined
+    && mediaWidth > 0 && mediaHeight > mediaWidth) {
+    const ratio = Math.min(mediaHeight / mediaWidth, PORTRAIT_MAX_RATIO)
+    return Math.round(cellW * ratio)
+  }
   return Math.round(cellW * 9 / 16)
 }
 

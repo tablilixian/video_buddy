@@ -1863,3 +1863,14 @@
   5. **probe 贯通**：`runRenderJob` options / ActiveRenderJob / PendingStudioRenderJob 全链加 `probe`，诊断渲跳过预览闸门。
   6. **errors.md 分流改写**：「已取单但没渲染」不再等于环境问题（先看 last liveness）；`msPerFrame > 1000` 禁止 manifest 二分；探针文件约定写 `build/probe/`。
 - **测试**：新增回归 2 条（心跳推迟死线 / 0 心跳不回退进度）；全量 2217·2217，smoke 门禁 0 新增红。
+
+#### CV-374 · 风格库分册 style-library.md（30 条纯知识风格行）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **由来**：对标外部文章介绍的 98 种视频风格提示词清单，取「风格知识扩容」思路做**本地 skill 扩容**（低成本路线：只做知识层，不新建 skill 目录、不挂流程）。`style-presets.md` 的 11 条预设只覆盖「有专属流水线」的组合，长尾风格（黑色电影、浮世绘版画、美食微距……）此前无出口。
+- **内容**：新分册 `skills/canvas-studio-creation/references/style-library.md`——**30 条纯知识风格行（8 类：纪录/手绘/印刷/东亚/漫画/电影/材料/信息）**，每行 = 4 列（风格 / 适用 / 5 项 Look tokens / 风格段与镜头要点）。定位为预设出口的**扩展层**：选中风格行走与 CV-151 完全同路的 Look 资产路径（5 行 tokens → 样张 → `look_card` 落卡），**不加载任何风格 skill、不进 `STYLE_DEMO_MAP` 预设网格**（无流水线可加载、无 GIF 可展示）。分册内含 §1 两条通路（②-1 反推命中即用 / ②-3 出口按类分批点选每轮 ≤4 项）、§2 CV-151 资产路径、§4 扩容流程（新增一行的 5 步 + 何时该升级成真 skill 的边界：「行是知识，skill 是流水线」）。
+- **接线**（四处）：`style-presets.md` 加载规则表加「风格库行 = 否」第 3 行 + 出口扩展层指针；`clarification.md` ②-3 出口指针 + 「不加载」三种情况改**四种**；总纲 `SKILL.md` 分册一览加指针；`look.md` §9.3 就地修正与 CV-151 的既有漂移（预设出口原写「不建 Look 卡」，与 CV-151 权威口径矛盾——正是不修正则风格库行 tokens 会丢的根因）。
+- **三层风格体系分工**（分册内写明，防摆错层）：11 成片预设（`style-presets.md`，绑 skill）/ 12 视觉风格（`src/visual-styles.ts`，单图前缀）/ 30 风格库行（本册，纯知识），**三表零重名**。
+- **涉及文件**：`skills/canvas-studio-creation/references/style-library.md`（新）、`style-presets.md`、`clarification.md`、`look.md`、`SKILL.md`、`tests/style-library.test.mjs`（新）、`tests/skill-catalog.test.mjs`
+- **测试**：新增守卫 `tests/style-library.test.mjs` 4 条（头部计数对账 / 4 列齐全 + 5 项 tokens 顺序 / 三表防撞 / 四处接线在场）；`skill-catalog` 的 `CREATION_BOOKLETS` 登记。定点 8 套 66/66 全绿；全量 smoke 名单外新增红 0（唯一红为并行会话在途的 `generate.test.mjs` 落点断言，与本条无关）。

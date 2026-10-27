@@ -9,7 +9,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 
 > **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止，向用户说明「已加载创作规范，按规范重走需求澄清」，从「需求澄清」第 ① 步重开始。
 
-> **分册一览**（均在 `references/` 下）：澄清（含入口分流）`clarification.md` · 工具链与**能力槽位绑定表** `toolchain.md` · 提示词 `prompt-writing.md` · 风格 `style-presets.md` · Look `look.md` · 剧本 `screenplay.md` · 分镜 `shot-format.md` · 一致性 `consistency.md` · 布局配方 `layout-recipes.md`。
+> **分册一览**（均在 `references/` 下）：澄清（含入口分流）`clarification.md` · 工具链与**能力槽位绑定表** `toolchain.md` · 提示词 `prompt-writing.md` · 风格 `style-presets.md` · 风格库（30 条纯知识风格行）`style-library.md` · Look `look.md` · 剧本 `screenplay.md` · 分镜 `shot-format.md` · 一致性 `consistency.md` · 布局配方 `layout-recipes.md`。
 >
 > **分册一次读全**：开工前把当前阶段要用的分册**一批读完**（如澄清期一次读澄清+工具链+Look），禁止读一批想一轮再读下一批。
 

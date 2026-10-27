@@ -5,8 +5,8 @@ import { existsSync } from 'node:fs'
 import { dirname, join, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
@@ -47,15 +47,49 @@ function toolText(result) {
     .join('')
 }
 
+/**
+ * Minimal inbox stub satisfying the 0.2.1 agent `Inbox` interface. The smoke
+ * agent only carries tool-execution identity, so nothing consumes pending work;
+ * the stub exists so registry and tool attribution see a well-formed agent.
+ */
+function stubInbox() {
+  const pending = { nextTurn: [], nextStep: [] }
+  return {
+    get nextTurn() { return pending.nextTurn },
+    get nextStep() { return pending.nextStep },
+    clear() {
+      pending.nextStep.length = 0
+      pending.nextTurn.length = 0
+    },
+    append(target, message) { pending[target].push(message) },
+    prepend(target, message) { pending[target].unshift(message) },
+    replace(messageId, newMessage) {
+      const index = pending.nextTurn.findIndex(item => item.id === messageId)
+      if (index === -1) return false
+      pending.nextTurn[index] = newMessage
+      return true
+    },
+    remove(messageId) {
+      const index = pending.nextTurn.findIndex(item => item.id === messageId)
+      if (index === -1) return false
+      pending.nextTurn.splice(index, 1)
+      return true
+    },
+    splice(target, start, deleteCount, inserted) {
+      return pending[target].splice(start, deleteCount, ...inserted)
+    },
+  }
+}
+
 function owner(ctx, rawId, cwd) {
   const id = SessionId(rawId)
   const scope = ctx.plugin(() => {})
-  const session = Session.create(id, [], { version: 0, id, createdAt: 0, cwd })
+  const session = Session.create(id, [], { version: 4, id, createdAt: 0, cwd, isSeeded: false })
   const value = {
     id,
     options: {},
     session,
-    inbox: new Inbox(session, { inserted() {}, discarded() {}, claimed() {} }),
+    inbox: stubInbox(),
     status: 'idle',
     ctx: scope.ctx,
     send() {},
@@ -114,7 +148,7 @@ async function scenario(inputs) {
     const agent = owner(context, `windows-minimal-${inputs.label}`, inputs.packageRoot)
     const execute = (command, signal = new AbortController().signal) => context.tools.execute({
       signal,
-      callId: CallId(`${inputs.label}-${++callNumber}`),
+      callId: ToolCallId(`${inputs.label}-${++callNumber}`),
       name: 'pwsh',
       arguments: { command },
       agent,

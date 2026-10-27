@@ -1355,7 +1355,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }}
     >
       <div
-        className="csCanvasLayer"
+        className={waterfallOn ? 'csCanvasLayer csWaterfall' : 'csCanvasLayer'}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}
       >
         {/* CV-224 镜位框：画在最底层（DOM 首位），所以它只当背景带、不遮节点。
@@ -1502,8 +1502,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             镜 {lane.shot}
           </span>
         ))}
-        {/* REQ-036：历程模式下托盘「镜 N」角标 —— 复用 csShotChip 胶囊样式，
-            挂在托盘框头（分镜卡头部自带镜号信息，角标只做加强）。 */}
+        {/* REQ-036：历程模式下托盘「镜 N」角标 —— 复用 csShotChip 胶囊样式。
+            位置 = 托盘框**右上**（translateX(-100%) 右缘对齐框内缘）：头卡 chrome
+            标题在左（真机标题五花八门，压角必遮字 —— CV-252 的教训在这里重现），
+            右端恒空旷；不挂框外顶部（托盘间距 24px 不够 chip 高度）。 */}
         {waterfallOn && waterfallLayout?.trays.map(tray => (
           <span
             key={`wf-tray-chip-${tray.shot}`}
@@ -1511,12 +1513,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             className="csShotChip"
             style={{
               position: 'absolute',
-              left: tray.box.x + 10 / view.scale,
+              left: tray.box.x + tray.box.width - 8,
               top: tray.box.y + 3,
+              transform: 'translateX(-100%)',
               pointerEvents: 'none',
             }}
           >
-            镜 {tray.shot}
+            镜 {tray.shot} · {tray.nodeIds.length} 项
           </span>
         ))}
         {linkLine !== null && (

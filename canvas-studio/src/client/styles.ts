@@ -2562,6 +2562,17 @@ img.csNodeMedia {
   -webkit-line-clamp: unset;
 }
 
+/* REQ-036：历程瀑布流 —— 托盘头（分镜卡）正文钳两行。托盘头盒 108 =
+   chrome 48（头 26 + 脚 22）+ 正文区 60（padding 24 + 两行 ≈ 36）。
+   max-height 而非 line-clamp：.csNodeBody 的 display 由 A-5 折叠规则动态
+   切换（-webkit-box 不保证在位），max-height 恒生效。文本卡没有 csKind*
+   类（CV-197 kindAccentOf 对非媒体返回空串），用 :has(.csNodeText) 圈定；
+   选中态展开滚动由 CV-081 规则保持（:not 放行）。卡片根元素自带
+   overflow:hidden（styles.ts .csNode），盒高即硬裁，不会压到托盘网格。 */
+.csWaterfall .csNode:has(.csNodeText):not(.csNodeSelected) .csNodeBody {
+  max-height: 38px;
+}
+
 /* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */
 .csNodeBodyEdit {
   flex: 1 1 auto;

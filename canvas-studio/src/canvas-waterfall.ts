@@ -102,8 +102,9 @@ const SECTION_GAP = 72
 const SECTION_HEAD_H = 56
 /** 托盘内边距。 */
 const TRAY_PAD = 16
-/** 托盘头（分镜卡）保留高度。 */
-const TRAY_HEAD_H = 48
+/** 托盘头（分镜卡）保留高度。真实文本卡要露出「标题 + 两行正文」：
+ *  chrome 48（头 26 + 脚 22）+ 正文 padding 24 + 两行 ≈ 36 ⇒ 108。 */
+const TRAY_HEAD_H = 108
 /** 托盘之间的纵向间距。 */
 const TRAY_GAP = 24
 /** 音频缩略盒高。 */
@@ -336,21 +337,39 @@ export function computeWaterfallLayout(
         const members = trayMembers.get(shot)!
         const card = members.find(item => item.role === 0)
         // 只把选作头的那张卡摘出来；同镜若有第二张卡（重复落地等），按普通格排，不丢。
-        const cells = members
+        const others = members
           .filter(item => item !== card)
           .sort((left, right) => (left.role ?? 9) - (right.role ?? 9)
             || compareSectionKey(sectionSortKeyOf(left.node, byId, orderRank), sectionSortKeyOf(right.node, byId, orderRank)))
-          .map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW) }))
+        // REQ-036 复核对齐原型（2026-10-27）：配音/音频**独占整行**铺满托盘内宽
+        // （紧凑横条），其余（关键帧/视频/末帧/多余卡）进统一网格。
+        const gridItems = others.filter(item => item.node.kind !== 'audio')
+        const audioItems = others.filter(item => item.node.kind === 'audio')
+        const cells = gridItems.map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW) }))
         const grid = gridLayout(cells, cellW)
-        const width = TRAY_PAD * 2 + Math.max(grid.width, cellW)
-        const height = TRAY_HEAD_H + TRAY_PAD + grid.height + TRAY_PAD
+        const innerWidth = Math.max(grid.width, cellW)
+        const width = TRAY_PAD * 2 + innerWidth
+        // 音频整行：紧跟网格下方逐条纵排（每条 AUDIO_H 高，行间距同 GAP；网格为空时顶格起排）。
+        const audioOffsets = new Map<string, { x: number; y: number }>()
+        let audioY = grid.height > 0 && audioItems.length > 0 ? grid.height + GAP : 0
+        for (const item of audioItems) {
+          audioOffsets.set(item.node.id, { x: 0, y: audioY })
+          audioY += AUDIO_H + GAP
+        }
+        const contentHeight = audioItems.length > 0 ? audioY - GAP : grid.height
+        const height = TRAY_HEAD_H + TRAY_PAD + contentHeight + TRAY_PAD
+        const offsets = new Map([...grid.offsets, ...audioOffsets])
         return {
           shot,
           ...(card !== undefined ? { cardId: card.node.id } : {}),
-          nodeIds: [...(card !== undefined ? [card.node.id] : []), ...cells.map(cell => cell.id)],
+          nodeIds: [
+            ...(card !== undefined ? [card.node.id] : []),
+            ...cells.map(cell => cell.id),
+            ...audioItems.map(item => item.node.id),
+          ],
           width,
           height,
-          offsets: grid.offsets,
+          offsets,
         }
       })
       const width = Math.max(...trayPlans.map(tray => tray.width))
@@ -383,13 +402,13 @@ export function computeWaterfallLayout(
 
   if (plans.length === 0) return { positions, boxes, sections: [], trays: [] }
 
-  // ---- 统一落位：整列以 x=0 居中，各节独立纵向游标 ----
-  const contentWidth = Math.max(...plans.map(plan => plan.width))
+  // ---- 统一落位：整列**居左对齐**（x=0 起排，用户 2026-10-27 拍板，原为居中），
+  //      各节独立纵向游标 ----
   const sections: WaterfallSection[] = []
   const trays: WaterfallTray[] = []
   let cursorY = 0
   for (const plan of plans) {
-    const x = -contentWidth / 2 + (contentWidth - plan.width) / 2
+    const x = 0
     // 节头保留区。
     cursorY += SECTION_HEAD_H
     if (plan.stage === 'shots') {
@@ -411,7 +430,14 @@ export function computeWaterfallLayout(
         for (const [id, offset] of tray.offsets) {
           positions.set(id, { x: box.x + TRAY_PAD + offset.x, y: box.y + TRAY_HEAD_H + TRAY_PAD + offset.y })
           const node = byId.get(id)!
-          boxes.set(id, { x: box.x + TRAY_PAD + offset.x, y: box.y + TRAY_HEAD_H + TRAY_PAD + offset.y, width: cellW, height: cellHeightOf(node, cellW) })
+          // 音频整行铺满托盘内宽（与网格格位不同宽）。
+          const isAudioRow = node.kind === 'audio'
+          boxes.set(id, {
+            x: box.x + TRAY_PAD + offset.x,
+            y: box.y + TRAY_HEAD_H + TRAY_PAD + offset.y,
+            width: isAudioRow ? box.width - TRAY_PAD * 2 : cellW,
+            height: cellHeightOf(node, cellW),
+          })
         }
         trayY += tray.height + TRAY_GAP
       }

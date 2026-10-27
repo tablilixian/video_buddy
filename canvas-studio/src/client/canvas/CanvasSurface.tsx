@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { centerViewOf, computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
-import { computeWaterfallLayout } from '../../canvas-waterfall.js'
+import { computeWaterfallLayout, SECTION_HEAD_H } from '../../canvas-waterfall.js'
 import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
@@ -1460,7 +1460,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               position: 'absolute',
               left: section.box.x,
               top: section.box.y + 6,
-              fontSize: 17 / view.scale,
+              /* 节头字号屏幕恒定（÷scale），但布局预留的节头区是**画布空间**的
+                 SECTION_HEAD_H=56 —— 缩小画布后 ÷scale 会让画布空间字号膨胀
+                 （scale 0.25 → 68px）压进节点区被盖住。钳到「预留高 − 上下边距」，
+                 既不越界，缩放时仍保持「尽量大」的屏幕可读性。 */
+              fontSize: Math.min(17 / view.scale, SECTION_HEAD_H - 12),
               fontWeight: 600,
               color: 'rgba(233,233,240,.92)',
               textShadow: '0 1px 4px rgba(0,0,0,.55)',

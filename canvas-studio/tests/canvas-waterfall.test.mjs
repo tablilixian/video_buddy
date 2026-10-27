@@ -191,6 +191,17 @@ test('REQ-036 竖版素材：媒体格按真实分辨率派生高度（封顶 9:
   assert.ok(box('p1').height > box('l1').height, '竖版格高于横版格')
 })
 
+test('REQ-036 音频格高：瀑布流盒高给足音频卡固有高度 168，不再被裁下半截', () => {
+  // 2026-10-27 修正：AUDIO_H 曾手写 96 < 卡固有 168（chrome 48 + 波形/控制/歌词），
+  // overflow:hidden 把卡下半截裁掉。盒高必须等于 contracts 的 AUDIO_NODE_HEIGHT。
+  const bgm = node('bgm', { kind: 'audio', toolName: 'music_generation' })
+  const voice = node('voice', { kind: 'audio', toolName: 'tts_voiceover', sourceIds: ['card1'] })
+  const card = cardNode('card1', 1)
+  const layout = computeWaterfallLayout([bgm, card, voice])
+  assert.equal(layout.boxes.get('bgm').height, 168, '音频节网格格高 = 168')
+  assert.equal(layout.boxes.get('voice').height, 168, '托盘内音频整行高 = 168')
+})
+
 test('REQ-036 纯度：入参不被修改；空输入返回空布局', () => {
   const card = cardNode('card1', 1)
   const kf = node('kf1', { toolName: 'image_generate', sourceIds: ['card1'] })

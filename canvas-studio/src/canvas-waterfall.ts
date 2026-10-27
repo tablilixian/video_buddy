@@ -17,7 +17,7 @@
  *   默认不进布局（用户拍板 2026-10-26），分镜卡除外——它是托盘归属锚点。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
-import { isShotCard } from './contracts/canvas.js'
+import { isShotCard, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
 import { deriveShotSemantics, isAuxiliaryNode } from './canvas-view.js'
 
 /** 历程节的五段纵向顺序。 */
@@ -98,8 +98,9 @@ export interface WaterfallOptions {
 const GAP = 24
 /** 节与节之间的纵向间距（大于节内间距，眼睛才把节读成块 —— CV-223 同一教训）。 */
 const SECTION_GAP = 72
-/** 节头保留高度（渲染层在此画节名 + 计数）。 */
-const SECTION_HEAD_H = 56
+/** 节头保留高度（渲染层在此画节名 + 计数）。导出给 CanvasSurface：节头字号
+ *  屏幕恒定（÷scale）缩放时会膨胀，渲染层按本值钳制画布空间字号防压到节点。 */
+export const SECTION_HEAD_H = 56
 /** 托盘内边距。 */
 const TRAY_PAD = 16
 /** 托盘头（分镜卡）保留高度。真实文本卡要露出「标题 + 两行正文」：
@@ -107,8 +108,10 @@ const TRAY_PAD = 16
 const TRAY_HEAD_H = 108
 /** 托盘之间的纵向间距。 */
 const TRAY_GAP = 24
-/** 音频缩略盒高。 */
-const AUDIO_H = 96
+/** 音频缩略盒高 = 音频卡**真实固有高度**（480×168 契约卡）。2026-10-27 修正：
+ *  此前手写 96，而卡内容（chrome 48 + 波形/控制/歌词）不随盒压缩，
+ *  overflow:hidden 把下半截裁掉 —— 盒高必须给足，卡才显示完整。 */
+const AUDIO_H = AUDIO_NODE_HEIGHT
 /** 文本卡缩略盒高。 */
 const TEXT_H = 140
 /** 托盘内网格最大列数（原型 auto-fill 的确定性等价：≤4 个一排，更多折行）。 */

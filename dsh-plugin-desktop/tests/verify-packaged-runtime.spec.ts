@@ -230,7 +230,7 @@ describe('packaged desktop runtime verification', () => {
     'lib/diagnostic-export-worker.js',
     'lib/update-download.js',
     'node_modules/@deepseek-ai/dsh/lib/bin.js',
-    'node_modules/@deepseek-ai/dsh/lib/plugin-9h8shc4d.js',
+    'node_modules/@deepseek-ai/dsh/lib/plugin-BiveYA7h.js',
     'node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js',
     'node_modules/open/index.js',
     'node_modules/pnpm/bin/pnpm.mjs',

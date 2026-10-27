@@ -108,6 +108,14 @@ async function scenario(inputs) {
   const context = new Context()
   let callNumber = 0
   try {
+    // 0.2.1 tool plugins inject a `workingDirectory` collaborator; production
+    // provides it at boot. Without it the pwsh tool's fiber never applies and
+    // every execute fails with `unknown tool "pwsh"`.
+    context.provide('workingDirectory', {
+      defaultDirectory: inputs.packageRoot,
+      get: session => session.header.cwd ?? inputs.packageRoot,
+      ensure: agent => Promise.resolve(agent.session.header.cwd ?? inputs.packageRoot),
+    })
     await context.plugin(SystemPrompt)
     await context.plugin(ToolRegistry)
     await context.plugin(AgentRegistry)

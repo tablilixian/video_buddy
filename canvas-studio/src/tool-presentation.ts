@@ -67,6 +67,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // 2026-10-25（shotcraft 本地化 P0-a）：项目级布局坐标表（工作台，不参与渲染）。
   layout_table: { tier: 'A', title: '布局坐标表', icon: '寸' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
+  analyze_beats: { tier: 'A', title: '节拍分析', icon: '拍' },
+  snap_cuts_to_beats: { tier: 'A', title: '卡点吸附', icon: '切' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },
   // P1-1（2026-10-26）：多段旁白合成 + 帧级排期。与 tts_voiceover 同为「出音频」，

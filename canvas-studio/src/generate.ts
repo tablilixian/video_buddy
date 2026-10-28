@@ -3273,6 +3273,8 @@ export interface MusicResult {
   lyrics: string
   /** CV-127b：实际尝试次数（>1 表示首次失败后重试成功）。 */
   attempts: number
+  /** D-06：其余变体摘要（nodeId/url/duration/caption；variants>1 时非空，仅显式请求）。 */
+  variants?: Array<{ nodeId: string; url: string; duration: number; caption: string }>
 }
 
 export async function generateMusic(

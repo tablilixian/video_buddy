@@ -33,7 +33,7 @@ import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
 /** 实测 33 = `host-tools.ts` 32 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 33
+const EXPECTED_TOOL_COUNT = 35
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -56,6 +56,9 @@ const EXPECTED_TOOL_NAMES = [
   'list_shots',
   'look_card',
   'music_generation',
+  // S5（2026-10-28）：节拍分析 / 卡点吸附（CV-040 收口）。
+  'analyze_beats',
+  'snap_cuts_to_beats',
   'qc_shot',
   'render_composition',
   'scaffold_manifest',

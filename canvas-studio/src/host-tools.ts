@@ -71,6 +71,7 @@ import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-plac
 import { assertH3IrPrompt, prepareH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
+import { defineAudioTools, generateMusicWithVariants } from './host-tools-audio.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment } from './audio-cut.js'
@@ -242,6 +243,7 @@ const musicResultSchema = {
     declaredDuration: { type: 'number' as const, description: 'CV-140：发起请求时指定的时长（秒）。与 duration 可能差几十毫秒（实测 30 → 30.024）' },
     lyrics: { type: 'string' as const, description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
     attempts: { type: 'number' as const, description: '实际尝试次数（>1 = 首次失败后重试成功）' },
+    variants: { type: 'array' as const, items: { type: 'object' as const, additionalProperties: true, properties: { nodeId: { type: 'string' as const }, url: { type: 'string' as const }, duration: { type: 'number' as const }, caption: { type: 'string' as const } } }, description: 'D-06：多版抽卡时的其余变体（并列落画布；音频抽屉试听后选定，其余作废）' },
   },
 }
 
@@ -968,6 +970,9 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
   }
   if (v.attempts > 1) {
     lines.push(`（首次请求失败，共尝试 ${v.attempts} 次后成功——后端偶发 500，非参数问题。）`)
+  }
+  if (Array.isArray(v.variants) && v.variants.length > 0) { // D-06：抽卡回显——全部节点 id 并列，选定后其余作废
+    lines.push(`多版抽卡（${v.variants.length + 1} 版并列落画布）：主选 ${v.nodeId}；其余变体 ${v.variants.map((variant) => `${variant.nodeId}（${variant.duration.toFixed(1)}s）`).join('、')}。用时间轴「音频」抽屉并排试听后定稿，未选中变体请作废（画布右键作废），避免后续合成误用。`)
   }
   return [{ type: 'text', text: lines.join('\n') }]
 }
@@ -2977,10 +2982,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         filmDuration: { type: 'number' as const, description: '可选：成片真实时长（秒）；与 durationMargin 联用，按余量倍率计算 BGM 时长' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
         sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集，过滤不存在的 id）' },
+        variants: { type: 'integer' as const, description: '可选：多版抽卡份数（D-06 拍板：**仅显式请求**，2–3；不进默认路径）。内部循环生成 N 版（caption 微扰：BPM 数字 ±3 / 编曲变体词），并列落画布，结果文本回显全部节点 id；**3 次调用 = 3 倍耗时与额度**。选定后用时间轴音频抽屉试听对比，其余变体作废' },
       },
       output: { schema: musicResultSchema, render: renderMusicResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; lyrics?: string; duration?: number; sourceUrls?: string[]; sourceNodeIds?: string[]; durationMargin?: number; filmDuration?: number }
+        const a = args as { prompt: string; lyrics?: string; duration?: number; sourceUrls?: string[]; sourceNodeIds?: string[]; durationMargin?: number; filmDuration?: number; variants?: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'music_generation', false)
         // CV-209：余量梯度 —— 当显式传了 `filmDuration` 但没传 `duration` 时，
@@ -2991,15 +2997,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           const margin = a.durationMargin ?? 1.3
           resolvedDuration = Math.ceil(a.filmDuration * margin)
         }
-        return generateMusic(registry, projectId, {
-          captionPrompt: a.prompt,
-          ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
-          ...(resolvedDuration !== undefined ? { duration: resolvedDuration } : {}),
-          ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
-          ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
-        }, exec.signal)
+        // D-06：多版抽卡——仅显式请求（variants 2–3），caption 微扰循环生成（实现在 host-tools-audio.ts）。
+        const params = { captionPrompt: a.prompt, ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}), ...(resolvedDuration !== undefined ? { duration: resolvedDuration } : {}), ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}), ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}) }
+        return generateMusicWithVariants({ registry, signal: exec.signal, generate: generateMusic }, projectId, params, Math.min(3, Math.max(0, Math.round(a.variants ?? 1))), a.prompt)
       },
     }),
+    // S5：节拍分析 / 卡点吸附两件工具在 host-tools-audio.ts（本文件函数跨度棘轮待拆，新工具外置）。
+    ...defineAudioTools({ registry, resolveProjectId, assertApprovalAllowed }),
     defineTool({
       name: 'tts_voiceover',
       description:

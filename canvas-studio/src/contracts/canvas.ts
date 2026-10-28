@@ -173,6 +173,13 @@ export interface StudioCanvasNode {
    * 只在 kind='audio' 的节点上有意义；老数据没有该字段（缺省 = 装配默认口径）。
    */
   audioTimeline?: import('../audio-timeline.js').AudioTimeline
+  /**
+   * S5（2026-10-28）：节拍分析结果（计划所称 beats.json 的节点字段载体）。
+   * `analyze_beats` 工具产出；confidence < 0.5 时 skill 禁用卡点（D-05）。
+   */
+  beats?: import('../beat-analyze.js').BeatAnalysis
+  /** S5：歌词时间轴（analyze_beats 的 lyricsLines 入参对齐产出；与既有 lyrics 文本字段是两回事；estimated 必须在 UI 弱化显示）。 */
+  lyricsTimeline?: import('../beat-analyze.js').LyricLine[]
   /** Canvas-space top-left position. */
   x: number
   y: number

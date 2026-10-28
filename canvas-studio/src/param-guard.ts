@@ -100,6 +100,8 @@ const HANDLE_PARAMS: readonly string[] = [
   // S2b（2026-10-28）：compose_video 的多句旁白节点 id —— 与 bgmNodeId 同类（画布
   // 节点句柄，合法值只能来自 tts_voiceover 产物节点）。
   'voiceOverNodeIds',
+  // S5：卡点吸附的音频节点（节拍数据来源，句柄类同 bgmNodeId）。
+  'audioNodeId',
   'scriptId',
   'replaces',
   'sourceNodeIds',
@@ -143,6 +145,10 @@ const PROSE_PARAMS: readonly string[] = [
  * 「豁免」不等于「不重要」—— 每一类都写明为什么本守卫管不了它，而不是笼统略过。
  */
 const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
+  // —— S5（2026-10-28）：节拍分析 / 抽卡 ——
+  variants: '数值（抽卡份数 2-3，D-06 仅显式请求），越界由 execute 钳制',
+  toleranceBeats: '数值（卡点吸附容差，拍），缺省 0.5，越界无破坏性',
+  lyricsLines: '歌词行数组（模型自撰歌词正文，与 lyrics 同属散文——逐行给出时进启发式对齐）',
   // —— 枚举：取值由 schema 校验，不存在「占位串」这个形态 ——
   aspectRatio: '枚举（16:9 / 9:16 / 1:1），取值不合规由 schema 拒收',
   resolution: '枚举（档位表派生），取值不合规由 schema 拒收',

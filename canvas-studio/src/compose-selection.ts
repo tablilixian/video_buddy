@@ -125,3 +125,141 @@ export function composedSourceIds(
     ...(voiceOverNodeIds ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.nodeId)),
   ])]
 }
+
+/** 混入音源的角色（CV-334 · D6；S3 起住在本文件 —— 客户端混音面板要复用，
+ *  而 compose.js 是 Host 重模块）。`compose.ts` 原样再导出保持老 import 路径。 */
+export type AudioMixRole = 'bgm' | 'voiceOver'
+
+/**
+ * 判定一个画布音频节点该按「配乐」还是「旁白」混入（纯函数）。
+ *
+ * 判据顺序（先硬后软，任一层命中即返回）：
+ * 1. **来源工具**：`tts_voiceover` 一定是旁白；`music_generation` / `cut_audio` 按其
+ *    源头判断（`cut_audio` 裁的是旁白就还是旁白 —— 见第 2 层语义）。
+ * 2. **标题关键词**：老节点 / 手工改过名的节点没有可靠 toolName，用标题兜底
+ *    （旁白、配音、口播、念白、narration、voiceover、voice-over）。
+ * 3. 兜底 `bgm`：宁可当配乐（多一条淡入淡出），也不要误把配乐当旁白灌满音量。
+ */
+export function resolveAudioMixRole(node: Pick<StudioCanvasNode, 'toolName' | 'title'> | undefined): AudioMixRole {
+  if (node === undefined) return 'bgm'
+  const tool = node.toolName ?? ''
+  if (tool === 'tts_voiceover') return 'voiceOver'
+  if (tool === 'music_generation') return 'bgm'
+  const title = node.title ?? ''
+  if (/旁白|配音|口播|念白|narration|voice[\s-]?over/i.test(title)) return 'voiceOver'
+  return 'bgm'
+}
+
+// ── S3（2026-10-28 · CV-040 收口）：节点级混音设置与导出前预检 ─────────────
+
+/**
+ * 从音频节点读混音覆盖（纯函数，客户端混音面板与 Host 装配共用同一实现）：
+ * 节点 `audioTimeline` 的第一段匹配角色时生效（混音面板写回的形态）。
+ */
+export function nodeAudioOverride(node: Pick<StudioCanvasNode, 'audioTimeline'>, role: 'bgm' | 'voiceOver'): AudioTimelineOverride | undefined {
+  const segments = node.audioTimeline?.segments ?? []
+  return segments.find((segment) => segment.role === role)
+}
+
+/** 节点混音覆盖允许的字段（AudioSegment 的子集 —— 只放表现参数，不放来源）。 */
+export type AudioTimelineOverride = import('./audio-timeline.js').AudioSegment
+
+/**
+ * 组装要写回的 audioTimeline（纯函数）：保留其它角色的段，替换本角色的第一段。
+ * 混音面板每次滑杆/开关变更都经此写回节点（StudioCanvasNode.audioTimeline）。
+ */
+export function buildNodeAudioTimeline(
+  node: Pick<StudioCanvasNode, 'audioTimeline' | 'url'>,
+  role: 'bgm' | 'voiceOver',
+  patch: Partial<Pick<AudioTimelineOverride, 'gain' | 'fadeInSec' | 'fadeOutSec' | 'duckAmount' | 'startSec'>>,
+): import('./audio-timeline.js').AudioTimeline {
+  const base = node.audioTimeline ?? { fps: 0, durationSec: 0, segments: [] as AudioTimelineOverride[] }
+  const url = node.url ?? ''
+  const existing = base.segments.filter((segment) => segment.role !== role)
+  const prior = nodeAudioOverride(node, role)
+  const gain = patch.gain ?? prior?.gain
+  const fadeInSec = patch.fadeInSec ?? prior?.fadeInSec
+  const fadeOutSec = patch.fadeOutSec ?? prior?.fadeOutSec
+  const duckAmount = patch.duckAmount ?? prior?.duckAmount
+  const segment: AudioTimelineOverride = {
+    url,
+    startSec: patch.startSec ?? prior?.startSec ?? 0,
+    role,
+    ...(gain !== undefined ? { gain } : {}),
+    ...(fadeInSec !== undefined ? { fadeInSec } : {}),
+    ...(fadeOutSec !== undefined ? { fadeOutSec } : {}),
+    ...(duckAmount !== undefined ? { duckAmount } : {}),
+  }
+  return { fps: base.fps, durationSec: base.durationSec, segments: [segment, ...existing] }
+}
+
+/** 导出前预检结论：confirm = 弹确认（不硬拦，给「补静音/重新生成/继续」出路）。 */
+export interface ComposeAudioPrecheck {
+  level: 'ok' | 'confirm'
+  /** confirm 级的中文说明（window.confirm 文案；ok 级为 undefined）。 */
+  message?: string
+}
+
+/**
+ * 导出前音频预检（纯函数；客户端只知道自己探测到的真值 —— 片段原生声有无由
+ * Host 装配期判定，这里只查客户端可知的三类）：
+ * ① BGM 短于预计成片 → 确认（D-02：继续则装配自动补静音并明确告知；取消 = 重新生成 BGM）；
+ * ② 画布上没有任何音频节点且未选 BGM → 确认（成片可能只有片段原生声甚至无声）；
+ * ③ 已知信息都对齐 → ok 不打扰。
+ */
+export function composeAudioPrecheck(input: {
+  bgmDurationSec?: number | undefined
+  estSeconds: number
+  hasAnyAudioNode: boolean
+}): ComposeAudioPrecheck {
+  const { estSeconds, hasAnyAudioNode } = input
+  const bgm = input.bgmDurationSec
+  if (typeof bgm === 'number' && bgm > 0 && estSeconds > 0 && bgm < estSeconds - 0.05) {
+    return {
+      level: 'confirm',
+      message: `BGM（${bgm.toFixed(1)}s）比预计成片（${estSeconds.toFixed(1)}s）短 ${(estSeconds - bgm).toFixed(1)}s。`
+        + '\n\n确定 = 继续导出（成片将自动补静音并明确标注）；取消 = 回去重新生成更长的 BGM。',
+    }
+  }
+  if (bgm === undefined && !hasAnyAudioNode && estSeconds > 0) {
+    return {
+      level: 'confirm',
+      message: '画布上没有任何音频节点，也未选 BGM —— 成片将只有片段原生声（片段未开启原生声时无声）。'
+        + '\n\n确定 = 继续导出；取消 = 先生成 BGM/旁白再导出。',
+    }
+  }
+  return { level: 'ok' }
+}
+/** 混音面板的行派生（纯函数供测试）：从画布节点集合导出面板输入。 */
+export function audioMixRows(nodes: readonly StudioCanvasNode[], bgmNodeId: string | undefined): { bgmNode?: StudioCanvasNode; voiceOverNodes: StudioCanvasNode[] } {
+  const bgmNode = bgmNodeId !== undefined ? nodes.find((node) => node.id === bgmNodeId) : undefined
+  // tts_voiceover 产物 = 旁白；标题关键词兜底（与 compose-selection.resolveAudioMixRole 同口径）。
+  const voiceOverNodes = nodes.filter((node) => node.kind === 'audio'
+    && (node.toolName === 'tts_voiceover' || /旁白|配音|口播|念白|narration|voice[\s-]?over/i.test(node.title ?? '')))
+  return { ...(bgmNode !== undefined ? { bgmNode } : {}), voiceOverNodes }
+}
+
+/** 音频节点的展示行派生（纯函数供测试）：全部音频节点 + 角色 + 歌词首行 + 失效标记。 */
+export function audioDrawerRows(nodes: readonly StudioCanvasNode[]): Array<{
+  node: StudioCanvasNode
+  role: 'bgm' | 'voiceOver'
+  retired: boolean
+  lyricFirstLine?: string
+  durationSec?: number
+}> {
+  return nodes
+    .filter((node) => node.kind === 'audio')
+    .map((node) => {
+      const lyric = typeof node.text === 'string' && node.text.trim().length > 0
+        ? node.text.trim().split('\n')[0]
+        : undefined
+      return {
+        node,
+        role: resolveAudioMixRole(node),
+        retired: node.retired === true || node.supersededBy !== undefined,
+        ...(lyric !== undefined ? { lyricFirstLine: lyric } : {}),
+        ...(typeof node.duration === 'number' && node.duration > 0 ? { durationSec: node.duration } : {}),
+      }
+    })
+}
+

@@ -46,6 +46,7 @@ import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder, isAuxiliaryNode, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
+import type { AudioTimeline } from '../audio-timeline.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen, isGenerationEdge } from '../canvas-actions.js'
 import { screenToWorld } from './canvas/canvas-math.js'
 import { errorToastText } from './error-toast.js'
@@ -1924,6 +1925,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleComposeBgmChange = (nodeId: string | undefined): void => {
     handleViewChange(nodeId === undefined ? { composeBgmNodeId: undefined } : { composeBgmNodeId: nodeId })
   }
+  // S3：混音面板写回节点 audioTimeline（音量/淡变/duck）。走 updateNode + persistAfter
+  // —— 与其它节点编辑同一条持久化与撤销通路。
+  const handleNodeAudioTimelineUpdate = (id: string, patch: { audioTimeline?: AudioTimeline | undefined }): void => {
+    if (projectId === null) return
+    persistAfter(() => { actions.updateNode(projectId, id, patch) })
+  }
   // P9.3：一键导出成片。取时间轴上 kind=video 的片段（按当前顺序）作为 clipIds，
   // 调 Host 合成路由，成功回写画布 video-composite 节点。
   // CV-141：**单片段也放行**（一镜整出，保留原生环境声）——旧版硬卡 ≥2 把这条路封死。
@@ -2302,6 +2309,7 @@ export function StudioFrame(props: StudioFrameProps) {
           composeBgmNodeId={composeSelection.bgmNode?.id}
           onToggleComposeExcluded={handleComposeExcludeToggle}
           onComposeBgmChange={handleComposeBgmChange}
+          onUpdateNode={handleNodeAudioTimelineUpdate}
         />
       </>
     )

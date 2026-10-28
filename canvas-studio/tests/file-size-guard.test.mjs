@@ -59,7 +59,9 @@ export const FILE_WHITELIST = {
   'src/host-tools.ts': 4401,
   'src/generate.ts': 3582,
   'src/routes.ts': 3495,
-  'src/client/StudioFrame.tsx': 3160,
+  // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
+  // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
+  'src/client/StudioFrame.tsx': 3168,
   'src/client/index.ts': 2983,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   'src/remotion/manifest.ts': 1928,
@@ -77,7 +79,8 @@ export const FILE_WHITELIST = {
 export const FUNC_WHITELIST = {
   'src/client/styles.ts#STUDIO_STYLES': { lines: 10714, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
   'src/routes.ts#registerStudioRoutes': { lines: 2833, note: '阶段 2 按域拆' },
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2757, note: '阶段 3 两步走（先展示外提再抽 hooks）' },
+  // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2764, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行' },
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
   'src/host-tools.ts#createStudioTools': { lines: 2436, note: '阶段 1 目录化（先搬 inspect 打样）' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },

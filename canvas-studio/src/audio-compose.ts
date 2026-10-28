@@ -159,6 +159,8 @@ export interface ResolvedVoiceOver extends VoiceOverPlacement {
   url: string
   inputPath: string
   realDurationSec?: number
+  /** 节点 audioTimeline 写回的 duck 深度（混音面板；显式 API 入参优先）。 */
+  duckAmount?: number
 }
 
 /** 已解析的混入音源（bgmNodeId 指向的节点；role 由 resolveAudioMixRole 判定）。 */
@@ -167,6 +169,12 @@ export interface ResolvedMixSource {
   inputPath: string
   role: 'bgm' | 'voiceOver'
   realDurationSec?: number
+  /** 节点 audioTimeline 写回的表现参数覆盖（混音面板 S3；缺省 = 装配默认口径）。 */
+  override?: {
+    gain?: number
+    fadeInSec?: number
+    fadeOutSec?: number
+  }
 }
 
 export interface ComposeTimelineInput {
@@ -225,17 +233,20 @@ export function timelineFromComposeClips(input: ComposeTimelineInput): ComposeTi
   let voCursorSec = 0
   if (input.bgm !== undefined) {
     if (input.bgm.role === 'voiceOver') {
-      segments.push({ sourceNodeId: 'bgm', url: input.bgm.inputPath, startSec: 0, ...(input.bgm.realDurationSec !== undefined && input.bgm.realDurationSec > 0 ? { durationSec: input.bgm.realDurationSec } : {}), gain: VOICE_VOLUME, role: 'voiceOver' })
+      segments.push({ sourceNodeId: 'bgm', url: input.bgm.inputPath, startSec: 0, ...(input.bgm.realDurationSec !== undefined && input.bgm.realDurationSec > 0 ? { durationSec: input.bgm.realDurationSec } : {}), gain: input.bgm.override?.gain ?? VOICE_VOLUME, role: 'voiceOver' })
     } else {
       const hasNative = segments.some((segment) => segment.role === 'native')
       const fades = bgmFadeSecondsOf(input.bgm.realDurationSec ?? 0, input.filmDurationSec)
+      // 节点 audioTimeline（混音面板 S3）的覆盖优先于装配默认口径（0.35/0.8 + CV-209 淡变）。
+      const gain = input.bgm.override?.gain ?? (hasNative ? BGM_MIX_VOLUME : BGM_VOLUME)
       segments.push({
         sourceNodeId: 'bgm',
         url: input.bgm.inputPath,
         startSec: 0,
         ...(input.bgm.realDurationSec !== undefined && input.bgm.realDurationSec > 0 ? { durationSec: input.bgm.realDurationSec } : {}),
-        gain: hasNative ? BGM_MIX_VOLUME : BGM_VOLUME,
-        ...fades,
+        gain,
+        ...(input.bgm.override?.fadeInSec !== undefined ? { fadeInSec: input.bgm.override.fadeInSec } : fades.fadeInSec !== undefined ? { fadeInSec: fades.fadeInSec } : {}),
+        ...(input.bgm.override?.fadeOutSec !== undefined ? { fadeOutSec: input.bgm.override.fadeOutSec } : fades.fadeOutSec !== undefined ? { fadeOutSec: fades.fadeOutSec } : {}),
         role: 'bgm',
       })
     }
@@ -249,6 +260,7 @@ export function timelineFromComposeClips(input: ComposeTimelineInput): ComposeTi
       startSec,
       ...(real > 0 ? { durationSec: real } : {}),
       ...(voiceOver.gain !== undefined ? { gain: voiceOver.gain } : {}),
+      ...(voiceOver.duckAmount !== undefined ? { duckAmount: voiceOver.duckAmount } : {}),
       role: 'voiceOver',
     })
     if (voiceOver.startSec === undefined) {

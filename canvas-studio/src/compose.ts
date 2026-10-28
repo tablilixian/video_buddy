@@ -14,6 +14,10 @@ import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioAudioComposition, StudioCanvasNode } from './contracts/canvas.js'
 import { isShotCard } from './contracts/canvas.js'
+import { resolveAudioMixRole, nodeAudioOverride, type AudioMixRole } from './compose-selection.js'
+
+/** 旁白短于成片时的提示容差（秒）：差这么点不值得刷一条 warning。 */
+const VOICE_SHORTFALL_NOTE_SEC = 0.5
 import { newAssetId } from './config.js'
 import { applySupersede, isActiveShot } from './shot-versions.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
@@ -48,9 +52,12 @@ import {
 import './errors/catalog.js'
 
 // 兼容再导出（S2b：BGM 淡变/守卫纯函数迁往 audio-compose.ts，历史 import 路径不变）。
+// 兼容再导出（S3：角色判定迁往 compose-selection.ts —— 客户端混音面板要复用，
+// 而 compose.js 是 Host 重模块（拖 node:fs 依赖进 bundle）。
 export { buildBgmFade, fadeAnchorOf, inferBgmSilenceProfile, bgmShortfallMessage, BGM_SHORTFALL_TOLERANCE_SEC, timelineFromComposeClips } from './audio-compose.js'
 export type { BgmSilenceProfile, VoiceOverPlacement } from './audio-compose.js'
 export { AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS } from './audio-timeline.js'
+export { resolveAudioMixRole, type AudioMixRole } from './compose-selection.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
 const COMPOSE_TIMEOUT_MS = 240_000
@@ -116,40 +123,6 @@ export interface ComposeOptions {
   voiceOverNodeIds?: ReadonlyArray<string | VoiceOverPlacement>
 }
 
-/**
- * 混入音源的角色（CV-334 · D6）。
- *
- * 为什么需要区分：`compose_video` 只有一个混音入口 `bgmNodeId`，而 `tts_voiceover`
- * 的产物也是音频节点 —— 用户把旁白当 bgmNodeId 传进来时（工具结果里就是这么教的），
- * 若一律按「配乐」处理，角标会显示「纯 BGM」，用户看不出这里有人在说话；更要命的是
- * 配乐那套处理对旁白是**有害**的：0.35 铺底音量把台词压没、首尾淡入淡出咬掉字头字尾、
- * 「必须不短于成片」的硬守卫会把一段正常长度的旁白直接报错。
- */
-export type AudioMixRole = 'bgm' | 'voiceOver'
-
-/** 旁白满音量（前景主声，不铺底）—— S2b 起常量在 audio-compose.ts，此处仅保留
- *  旁白短于成片时的提示容差。 */
-const VOICE_SHORTFALL_NOTE_SEC = 0.5
-
-/**
- * 判定一个画布音频节点该按「配乐」还是「旁白」混入（纯函数）。
- *
- * 判据顺序（先硬后软，任一层命中即返回）：
- * 1. **来源工具**：`tts_voiceover` 一定是旁白；`music_generation` / `cut_audio` 按其
- *    源头判断（`cut_audio` 裁的是旁白就还是旁白 —— 见第 2 层语义）。
- * 2. **标题关键词**：老节点 / 手工改过名的节点没有可靠 toolName，用标题兜底
- *    （旁白、配音、口播、念白、narration、voiceover、voice-over）。
- * 3. 兜底 `bgm`：宁可当配乐（多一条淡入淡出），也不要误把配乐当旁白灌满音量。
- */
-export function resolveAudioMixRole(node: Pick<StudioCanvasNode, 'toolName' | 'title'> | undefined): AudioMixRole {
-  if (node === undefined) return 'bgm'
-  const tool = node.toolName ?? ''
-  if (tool === 'tts_voiceover') return 'voiceOver'
-  if (tool === 'music_generation') return 'bgm'
-  const title = node.title ?? ''
-  if (/旁白|配音|口播|念白|narration|voice[\s-]?over/i.test(title)) return 'voiceOver'
-  return 'bgm'
-}
 
 /** 单个分镜片段的输入描述（用于转码阶段）。 */
 export interface ComposeClip {
@@ -618,7 +591,23 @@ export async function composeStudioVideo(
         const bgmProbe = await runFfmpeg(ffmpegPath, ['-i', bgmInput], FFMPEG_TIMEOUT_MS, composed)
         assemblyBgmDuration = parseFfmpegDuration(bgmProbe.stderr)
         const mixRole: AudioMixRole = options.mixRole ?? resolveAudioMixRole(bgmNode)
-        resolvedMix = { url: bgmNode.url, inputPath: bgmInput, role: mixRole, ...(assemblyBgmDuration > 0 ? { realDurationSec: assemblyBgmDuration } : {}) }
+        // S3：混音面板写回的节点 audioTimeline（音量/淡变）优先于装配默认口径。
+        const mixOverride = nodeAudioOverride(bgmNode, 'bgm')
+        resolvedMix = {
+          url: bgmNode.url,
+          inputPath: bgmInput,
+          role: mixRole,
+          ...(assemblyBgmDuration > 0 ? { realDurationSec: assemblyBgmDuration } : {}),
+          ...(mixOverride !== undefined && (mixOverride.gain !== undefined || mixOverride.fadeInSec !== undefined || mixOverride.fadeOutSec !== undefined)
+            ? {
+              override: {
+                ...(mixOverride.gain !== undefined ? { gain: mixOverride.gain } : {}),
+                ...(mixOverride.fadeInSec !== undefined ? { fadeInSec: mixOverride.fadeInSec } : {}),
+                ...(mixOverride.fadeOutSec !== undefined ? { fadeOutSec: mixOverride.fadeOutSec } : {}),
+              },
+            }
+            : {}),
+        }
       }
       const voiceOverSources: ResolvedVoiceOver[] = []
       for (const entry of options.voiceOverNodeIds ?? []) {
@@ -638,13 +627,16 @@ export async function composeStudioVideo(
         }
         const voProbe = await runFfmpeg(ffmpegPath, ['-i', voInput], FFMPEG_TIMEOUT_MS, composed)
         const voDuration = parseFfmpegDuration(voProbe.stderr)
+        // S3：混音面板写回的音量/duck（节点 audioTimeline）；显式 API 入参优先。
+        const voOverride = nodeAudioOverride(voNode, 'voiceOver')
         voiceOverSources.push({
           nodeId,
           url: voNode.url,
           inputPath: voInput,
           ...(voDuration > 0 ? { realDurationSec: voDuration } : {}),
           ...(typeof entry === 'object' && entry.startSec !== undefined ? { startSec: entry.startSec } : {}),
-          ...(typeof entry === 'object' && entry.gain !== undefined ? { gain: entry.gain } : {}),
+          ...(typeof entry === 'object' && entry.gain !== undefined ? { gain: entry.gain } : voOverride?.gain !== undefined ? { gain: voOverride.gain } : {}),
+          ...(voOverride?.duckAmount !== undefined ? { duckAmount: voOverride.duckAmount } : {}),
         })
       }
 

@@ -167,6 +167,12 @@ export interface StudioCanvasNode {
   title?: string
   /** Body text for sticky/text/prompt nodes. */
   text?: string
+  /**
+   * S3（2026-10-28 · CV-040 收口）：音频节点上的混音设置（音量 / 淡入淡出 / duck），
+   * 由混音面板写回、成片装配时读作该节点段的覆盖值（src/compose.ts）。
+   * 只在 kind='audio' 的节点上有意义；老数据没有该字段（缺省 = 装配默认口径）。
+   */
+  audioTimeline?: import('../audio-timeline.js').AudioTimeline
   /** Canvas-space top-left position. */
   x: number
   y: number

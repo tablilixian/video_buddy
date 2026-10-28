@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import type { AudioTimeline } from '../../audio-timeline.js'
 import { isComposedFilm, isValidBgmNode } from '../../compose-selection.js'
 import { WaveBars } from '../use-waveform.js'
+import { AudioMixPanel } from '../AudioMixPanel.js'
+import { AudioDrawer } from '../AudioDrawer.js'
+import { installAudioStyles } from '../styles-audio.js'
+import { composeAudioPrecheck } from '../../compose-selection.js'
 import { isShotClip } from '../../shot-versions.js'
 import {
   clipIdAt,
   clipTotalSeconds,
+  layoutAudioLane,
   niceRulerMax,
   planClipLayout,
   playheadLeftPct,
   rulerTicks,
+  type AudioLaneSegmentInput,
 } from '../../timeline-layout.js'
 import { KIND_LABEL, kindAccentOf } from './labels.js'
 
@@ -40,6 +47,8 @@ export interface CanvasTimelineProps {
   onToggleComposeExcluded(id: string): void
   /** CV-006：选定/取消 BGM（undefined = 不使用）。 */
   onComposeBgmChange(nodeId: string | undefined): void
+  /** S3：写回节点字段（混音面板 → 节点 audioTimeline；StudioFrame 提供，含持久化）。 */
+  onUpdateNode(id: string, patch: { audioTimeline?: AudioTimeline | undefined }): void
 }
 
 /** CV-007：真值时长标签；无探测值回落创建时间，不造假数据。 */
@@ -67,12 +76,16 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
     ordered, selectedNodeId, onSelect, onReorder, onCompose, composeBusy,
     composeClipCount, composeEstSeconds, composeWarnings,
     composeExcluded, composeBgmNodeId, onToggleComposeExcluded, onComposeBgmChange,
+    onUpdateNode,
   } = props
   // HTML5 DnD 的拖起/悬停下标（视频轨内瞬态；落点即目标插入位）。
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   // CV-007：媒体过滤开关（默认关 = 只显媒体；打开回看 text/sticky 等非媒体）。
   const [showAll, setShowAll] = useState(false)
+  // S3：混音面板 / 音频抽屉的开关（面板写节点 audioTimeline；抽屉全项目音频试听对比）。
+  const [mixOpen, setMixOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   // DD-04a：播放头时间（秒）。始终显示（初始 0），拖动标尺/轨道空白擦洗。
   const [playT, setPlayT] = useState(0)
   // N3（对齐清单 §8.3，拍板「做一半」）：播放/暂停自动推进播放头。当前片段
@@ -83,6 +96,9 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   const lanesRef = useRef<HTMLDivElement | null>(null)
   const scrubbingRef = useRef(false)
   const excludedSet = new Set(composeExcluded)
+  // S3：画布全部音频节点（ordered 含失效/被取代版本 —— 抽屉要并排比较多版）。CSS 首挂注入。
+  const audioNodes = useMemo(() => ordered.filter(node => node.kind === 'audio'), [ordered])
+  useMemo(() => { installAudioStyles() }, [])
 
   // CV-007：时间轴语义——默认只显媒体；显示全部时保持完整顺序不变。
   const displayed = showAll ? ordered : ordered.filter(node =>
@@ -109,6 +125,41 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   const ticks = useMemo(() => rulerTicks(rulerMax), [rulerMax])
   const hotId = clipIdAt(playT, spans)
 
+  // S3：只读音频轨（成片装配预览）。段来源 = 选中的 BGM（0s 起）+ 各音频节点
+  // audioTimeline 里已写回的旁白段（混音面板/S2b 装配回读）。标尺 = 预计成片时长
+  // —— BGM 比成片长/短几秒在轨道上直接可读（CV-007 残留问题的收口）。
+  const selectedBgmNode = useMemo(
+    () => bgmCandidates.find(node => node.id === composeBgmNodeId),
+    [bgmCandidates, composeBgmNodeId],
+  )
+  const audioLaneSegments = useMemo<AudioLaneSegmentInput[]>(() => {
+    const segments: AudioLaneSegmentInput[] = []
+    if (selectedBgmNode !== undefined) {
+      segments.push({
+        id: selectedBgmNode.id,
+        startSec: 0,
+        ...(typeof selectedBgmNode.duration === 'number' && selectedBgmNode.duration > 0
+          ? { durationSec: selectedBgmNode.duration }
+          : {}),
+      })
+    }
+    for (const node of audioNodes) {
+      (node.audioTimeline?.segments ?? []).forEach((segment, index) => {
+        if (segment.role !== 'voiceOver') return
+        segments.push({
+          id: `${node.id}:${index}`,
+          startSec: segment.startSec,
+          ...(segment.durationSec !== undefined && segment.durationSec > 0 ? { durationSec: segment.durationSec } : {}),
+        })
+      })
+    }
+    return segments
+  }, [selectedBgmNode, audioNodes])
+  const audioBlocks = useMemo(
+    () => layoutAudioLane(audioLaneSegments, composeEstSeconds),
+    [audioLaneSegments, composeEstSeconds],
+  )
+
   // N3：播放推进循环。0.1s / 100ms 与设计稿同节奏；到 rulerMax 停（不循环 ——
   // 这是制作工具不是播放器，循环播放会让「最后一个片段的高亮」永远下不来）。
   useEffect(() => {
@@ -133,6 +184,18 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   // CR-069：缩略图加载失败时隐藏自身（URL 失效/产物损坏不显示破碎占位）。
   const hideBrokenMedia = (event: React.SyntheticEvent<HTMLMediaElement | HTMLImageElement>): void => {
     event.currentTarget.style.display = 'none'
+  }
+
+  // S3：导出前音频预检 —— 客户端可知的问题（短 BGM / 无任何音频节点）在合成前
+  // 弹确认（不是硬拦）：确定 = 继续（短 BGM 由装配自动补静音并明确告知）；取消 = 重新生成。
+  const handleComposeClick = (): void => {
+    const precheck = composeAudioPrecheck({
+      ...(selectedBgmNode !== undefined && typeof selectedBgmNode.duration === 'number' ? { bgmDurationSec: selectedBgmNode.duration } : {}),
+      estSeconds: composeEstSeconds,
+      hasAnyAudioNode: audioNodes.length > 0,
+    })
+    if (precheck.level === 'confirm' && precheck.message !== undefined && !window.confirm(precheck.message)) return
+    void onCompose()
   }
 
   const handleDrop = (targetIndex: number): void => {
@@ -181,7 +244,7 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   }
 
   return (
-    <div className="csTimeline">
+    <div className="csTimeline csTimelineWrap">
       <div className="csTimelineToolbar">
         {/* N3：播放/暂停 —— 推进播放头 + 当前片段高亮；不改动画布选区（拍板见 §8.3-N3）。 */}
         <button
@@ -243,12 +306,28 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
         </label>
         <button
           type="button"
+          className={mixOpen ? 'csTlCheck csTlCheckOff' : ''}
+          title="混音面板：BGM/旁白音量、淡入淡出、duck（写回音频节点，装配时生效）"
+          onClick={() => { setMixOpen(prev => !prev); setDrawerOpen(false) }}
+        >
+          混音
+        </button>
+        <button
+          type="button"
+          className={drawerOpen ? 'csTlCheck csTlCheckOff' : ''}
+          title="音频抽屉：全项目音频列表、试听、多版对比"
+          onClick={() => { setDrawerOpen(prev => !prev); setMixOpen(false) }}
+        >
+          音频
+        </button>
+        <button
+          type="button"
           className="csPrimary"
           disabled={composeClipCount < 1 || composeBusy}
           title={composeClipCount < 1
             ? '至少 1 个有效片段才能导出成片（排除勾选与作废片段不计入）'
             : '有效片段将按顺序拼接成片；单片段 = 一镜整出（保留环境声），多镜 = 只保留 BGM / 无声'}
-          onClick={() => { void onCompose() }}
+          onClick={handleComposeClick}
         >
           {composeBusy ? '合成中…' : '合成导出成片'}
         </button>
@@ -381,6 +460,29 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
             </div>
           </div>
           <div className="csTlTrack">
+            <span className="csTlTrkLabel">音频轨</span>
+            <div className="csTlLane">
+              {audioBlocks.length === 0
+                ? <span className="csTlLaneEmpty">选中 BGM 或生成旁白后，这里按成片时间坐标显示装配预览（BGM 长短差一眼可读）</span>
+                : audioBlocks.map((block) => {
+                  const sourceNode = audioNodes.find(node => block.id.startsWith(node.id))
+                  return (
+                    <div
+                      key={block.id}
+                      className={`csTlLaneAudioBlock${block.overflow ? ' csTlAudioOverflow' : ''}`}
+                      style={{ left: `${block.leftPct}%`, width: `calc(${Math.max(0.5, block.widthPct)}% - 2px)` }}
+                      onClick={() => { if (sourceNode !== undefined) onSelect(sourceNode.id) }}
+                      title={`${sourceNode?.title ?? '音频'} · ${block.measured ? `0s–${block.spanSec.toFixed(1)}s` : '时长未探测（占位显示）'}${block.overflow ? ' · 越过成片末尾（多余部分会被裁掉）' : ''} · 点按在画布定位`}
+                    >
+                      <WaveBars url={sourceNode?.url} bars={16} />
+                      <span className="csTlLaneAudioLabel">{sourceNode?.title ?? '音频'}{block.measured ? ` · ${block.spanSec.toFixed(1)}s` : ''}</span>
+                      {block.overflow ? <span className="csTlAudioOverflowMark">⇥ 越界</span> : null}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+          <div className="csTlTrack">
             <span className="csTlTrkLabel">参考·产物</span>
             <div className="csTlLane">
               {refNodes.length === 0
@@ -425,6 +527,24 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
             )
             : null}
         </div>
+        {mixOpen
+          ? (
+            <AudioMixPanel
+              bgmNode={selectedBgmNode}
+              voiceOverNodes={audioNodes.filter(node => node.kind === 'audio' && (node.toolName === 'tts_voiceover' || /旁白|配音|口播|念白|narration|voice[\s-]?over/i.test(node.title ?? '')))}
+              onUpdateNode={onUpdateNode}
+            />
+          )
+          : null}
+        {drawerOpen
+          ? (
+            <AudioDrawer
+              nodes={audioNodes}
+              onClose={() => { setDrawerOpen(false) }}
+              onSelect={(id) => { onSelect(id); setDrawerOpen(false) }}
+            />
+          )
+          : null}
       </div>
     </div>
   )

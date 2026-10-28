@@ -128,3 +128,65 @@ export function clipIdAt(timeSeconds: number, spans: readonly ClipSpan[]): strin
   }
   return undefined
 }
+
+// ── S3（2026-10-28 · CV-040 收口）：只读音频轨布局 ─────────────────────────
+
+/** 音频轨一个段的布局输入（成片装配预览的段：选中的 BGM / 节点 audioTimeline 的旁白段）。 */
+export interface AudioLaneSegmentInput {
+  id: string
+  /** 绝对起点（秒）。 */
+  startSec: number
+  /** 占用时长（秒）；未探测（undefined）按占位值布局并标 measured=false。 */
+  durationSec?: number | undefined
+}
+
+/** 音频轨布局结果（百分比相对 durationSec 标尺）。 */
+export interface AudioLaneBlock {
+  id: string
+  /** 轨道内 left（%）。 */
+  leftPct: number
+  /** 轨道内宽度（%；越界段被裁到标尺右端）。 */
+  widthPct: number
+  /** 段是否越过标尺右端（BGM 比成片长的可视化信号）。 */
+  overflow: boolean
+  /** 段是否被裁短（起点在标尺外 ⇒ 完全越界，块宽 0 只剩溢出标记）。 */
+  clipped: boolean
+  /** 实际参与布局的时长（秒；未探测时为占位值）。 */
+  spanSec: number
+  /** 时长是否为真值（false = 占位，UI 不得显示假时长）。 */
+  measured: boolean
+}
+
+/** 未探测到真值时长的音频段占位（秒）——与视频轨 FALLBACK_CLIP_S 同口径。 */
+export const FALLBACK_AUDIO_S = 1
+
+/**
+ * 只读音频轨布局（纯函数）：按 startSec 绝对定位（不按顺序堆叠 —— 装配预览的
+ * 段有绝对时间坐标），越界段裁到标尺右端并标 overflow（「BGM 比成片长几秒」
+ * 一眼可读，CV-007 残留问题）。durationSec ≤ 0（成片时长未知）返回空 ——
+ * 没有标尺就无法定位，宁可不画也不造假。
+ */
+export function layoutAudioLane(
+  segments: readonly AudioLaneSegmentInput[],
+  durationSec: number,
+): AudioLaneBlock[] {
+  if (!(durationSec > 0) || segments.length === 0) return []
+  return segments.map((segment) => {
+    const measured = typeof segment.durationSec === 'number' && Number.isFinite(segment.durationSec) && segment.durationSec > 0
+    const spanSec = measured ? (segment.durationSec as number) : FALLBACK_AUDIO_S
+    const start = Math.max(0, segment.startSec)
+    const end = start + spanSec
+    const overflow = end > durationSec + 1e-6
+    const clipped = segment.startSec >= durationSec
+    const visibleSpan = Math.max(0, Math.min(end, durationSec) - start)
+    return {
+      id: segment.id,
+      leftPct: start / durationSec * 100,
+      widthPct: visibleSpan / durationSec * 100,
+      overflow,
+      clipped,
+      spanSec,
+      measured,
+    }
+  })
+}

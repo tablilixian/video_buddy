@@ -883,7 +883,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             const resolved = await resolveRefFilenames(registry, projectId, [ref], library)
             const handle = resolved[0]
             if (handle === undefined) {
-              const err = asCanvasError(throwError('CS-USER-001', { ref, detail: 'resolve-refs 返回空' }))
+              const err = asCanvasError(throwError('CS-USER-001', { ref, detail: 'resolve-refs 返回空', hint: '' }))
               items.push({ ref, error: { code: err.code, message: err.userMessage } })
               continue
             }

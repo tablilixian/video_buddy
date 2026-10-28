@@ -40,7 +40,9 @@ import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
 // REQ-003（§4.3）：参考句柄解析抽到独立模块 —— 路由侧（resolve-refs）与工具侧共用**同一份**实现。
-import { resolveRefFilenames } from './reference-resolve.js'
+// CV-376：`resolveShotRefs`（分镜卡引用）同源搬过去 —— 它与 `@ref` 一样是「句柄 → 节点」的
+// 解析，留在这里只会让两套匹配判据各自漂移；顺带解掉本文件的行数棘轮（4401/4401 加不动）。
+import { resolveRefFilenames, resolveShotRefs } from './reference-resolve.js'
 // 既有测试从 host-tools 取这个纯函数（tests/filename-consumability.test.mjs）—— 保持转出。
 export { refCandidatePool } from './reference-resolve.js'
 // REQ-001：全局资产库（`@ref[lib:<id>]` 的解析 / 物化 / usage 回写都在这条链上）。
@@ -772,7 +774,8 @@ async function resolveCutAudioSource(
   library: AssetLibrary,
   registry: ProjectRegistry,
 ): Promise<{ file: string; source: StudioCanvasNode | undefined }> {
-  const token = (parseRefTokens(value)[0] ?? value).trim()
+  const refTokens = parseRefTokens(value)
+  const token = (refTokens[0] ?? value).trim()
   if (token === '') {
     throwError('CS-USER-ERR', { message: 'audio 不能为空：请传画布音频/视频节点的 id、@ref[显示名]，或项目本地音频文件名', detail: 'empty audio ref' })
   }
@@ -793,6 +796,10 @@ async function resolveCutAudioSource(
     const { file } = await materializeLibraryMedia(library, registry, projectId, asset.id, media)
     return { file, source: undefined }
   }
+  // CV-376：**裸文件名优先当文件**。`findNodeByRef` 现在也认资产文件名（模型常把工具返回
+  // 的 URL 末段当句柄），不先拦就会把 `song.mp3` 解析成那个节点 —— 本链的分工是
+  // 「`@ref[...]` 才是引用节点，裸文件名就是 assets/ 下的文件」，且裸名不该产生血缘。
+  if (refTokens.length === 0 && isAssetFileName(token)) return { file: token, source: undefined }
   const node = findNodeByRef(nodes, token)
   if (node === undefined) {
     // 没命中节点时回落成「文件名」。但中文/带空格的串根本不可能是资产名 —— 硬走
@@ -1839,41 +1846,6 @@ export function mergeShotCards(
     created,
     updated,
   }
-}
-
-/**
- * CV-027：解析 shotRefs 为分镜卡节点 id。接受三种写法：节点 id 精确匹配、
- * 卡片标题精确匹配（如「分镜 1 · 特写」）、镜号简写（如「分镜 1」——按标题
- * 前缀匹配该镜号，不会误命中「分镜 10」）。找不到时抛可操作报错，模型可
- * 依据提示修正后重试。
- */
-async function resolveShotRefs(
-  registry: ProjectRegistry,
-  projectId: string,
-  refs: readonly unknown[],
-): Promise<string[]> {
-  const cards = (await registry.readCanvas(projectId)).nodes
-    .filter((node) => isShotCard(node))
-  const out: string[] = []
-  for (const ref of refs) {
-    const raw = String(ref).trim()
-    if (raw.length === 0) continue
-    const byNumber = /^分镜\s*(\d+)$/.exec(raw)
-    const hit = cards.find((node) => node.id === raw)
-      ?? cards.find((node) => node.title === raw)
-      ?? (byNumber !== null
-        ? cards.find((node) => new RegExp(`^分镜 ${byNumber[1]}(?:\\s|·|$)`).test(node.title ?? ''))
-        : undefined)
-    if (hit === undefined) {
-      // 2026-10-22 真机教训：旧文案指向已下线的「提交分镜」，模型照文案找不到东西，
-      // 转头去换参数绕道（本次事故的推波助澜者）。文案必须把「等落地」说成唯一出路。
-      throwError('CS-USER-ERR', {
-        message: `分镜卡「${raw}」未找到：先核对写法（卡片标题如「分镜 1 · 特写」、「分镜 N」镜号，或节点 id）。若项目尚未落地（用户还没在覆盖层点「确认落地」），分镜卡还不存在 —— 请停止逐镜出图，等待用户落地后再试；不要换别的参数绕道重试。`,
-      })
-    }
-    if (!out.includes(hit.id)) out.push(hit.id)
-  }
-  return out
 }
 
 /**

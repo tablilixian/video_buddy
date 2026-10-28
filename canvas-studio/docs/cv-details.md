@@ -1895,3 +1895,21 @@
 - **验证**：`tsc -p tsconfig.json` + `tsc -p tsconfig.client.json` 0 错、`tsdown` 两入口 Build complete、`verify:loader` 绿、文件大小棘轮通过且**未上调任何阈值**（`generate.ts` 3580≤3582 / `host-tools.ts` 4401≤4401，靠压缩注释与合并签名回落）。新增 9 条断言；反向变异 M1（拆掉 `.`/`..` 判定）→ 4 红、M2（退回裸 `join`）→ 1 红。
 - **已知遗留**：全量 `test:smoke` 在本沙箱复跑出现 **311 条 `hookFailed EPERM` 假红** —— 沙箱 Security Center 开始拦截测试 `finally` 里的临时目录删除（连工作区内 `.tmp-smoke/**` 都拦，单跑同样红，`CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD` 在这一层无效）。**源码已是终态且曾跑出 0 失败**，需用户在自有终端复跑确认。
 
+#### CV-376 · `@ref`/`shotRefs` 解析容错（资产名 · 截断标题 · sbRef）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1（一次分镜失败连带 5 个节点标红；转录实测 18 次）
+- **由来**：用户观察「画布上经常有一批失败节点，图片视频都有」。原先归因到 `CR-03`（轮询把 401/403/429 判死），但**转录实测把这个归因否证了**：18 个大会话 + 6 个 canvas-studio 会话里 `429` / `CS-NET-010` / `CS-AUTH-001` 出现 **0 次**（真缺陷、零触发）。真正高频的是引用解析：`CS-USER-001` 18 次，且集中在几个分镜批次 ⇒ 一次失败 5 个镜头一起红。
+- **判定方法**：用结构化 `"isError":true` 判（不用关键词 grep —— 错误码在 system prompt 的错误码表里也有，关键词会被污染）。文案 `1b8a83f4-…` 我逐一回查过身份：那是 `/canvas-studio/assets/<pid>/1b8a83f4-….mp4` 的**资产文件名**，不是节点 id。
+- **病灶**（三类，全部来自真实转录）：
+  1. `@ref[<资产文件名>]` —— 模型从工具返回的 URL 里截末段当句柄；节点 id 是 `mint()` 另铸的 uuid，两者无关。**而客户端 `findAssetByChipText`（`reference-handle.ts`）早就有 url basename / 去扩展名两级兜底** ⇒ 症状是「hover 浮层有缩略图、一点发送就报『找不到』」。
+  2. `@ref[<截断标题…>]` —— 标题是 `promptSummary` 的**前 12 字 + `…`**（`generate.ts:1490`），模型把 `…` 一起抄回来，全等必然失配。
+  3. `shotRefs: ['S1-Sh1']` —— `S1-Sh1` 就是 shot.id：`write_storyboard` 的返回里有它，`storyboard-seed` 也把它写进 `sbRef`（`04:SC1/shots/S1-Sh1`）与标题（`分镜 1 · S1-Sh1 · 缓慢推进`），但 `resolveShotRefs` 只认「节点 id / 标题全等 / `分镜 N`」三档，**压根不看 sbRef**；且该函数**零测试覆盖**，9 个调用点全靠运气。
+- **修法**：
+  - `reference-token.ts`：`findNodeByRef` 判据从「id / 标题全等」扩成**六级阶梯**（数值越小证据越强，任何一档命中即停）：① id 全等 → ② 标题全等 → ③ 去尾部省略号后全等 → ④ 资产文件名（url 末段全等，或去扩展名 stem 全等且 ≥4 字）→ ⑤ 标题按 `·` 分段全等 → ⑥ 双向前缀（**较短一方 ≥4 字**，否则 `@ref[分镜]` 能命中几十张卡）。
+  - `reference-resolve.ts`：`resolveShotRefs` 从 `host-tools.ts` **搬入**（它本就是「句柄 → 节点」的解析，与 `@ref` 同源；顺带解掉 `host-tools.ts` 4401/4401 的行数棘轮，现 4373），并补三档：**sbRef 整串或末段**（`S1-Sh1`）/ **标题分段**（`分镜 1`、`缓慢推进`）/ **`分镜N` 无空格**。
+  - 两处未命中报错都附**最接近的 3 个候选**：`CS-USER-001` 走 catalog 新增的 `{hint}` 占位（`routes.ts` 那处传空串），分镜卡文案直接拼。候选用**重叠系数**（`|A∩B| / min(|A|,|B|)`）而不是命中阶梯 —— 能过阶梯的节点早就命中了，走到报错必然「阶梯全灭」；且候选**只进文案，绝不参与匹配判定**，所以松一点没有正确性风险。用 Dice 时短 token 被长标题稀释（`分镜 9` vs 12 字标题只有 0.375），正好漏掉「镜号打错一位」这个最该提示的错法。
+- **被全量 smoke 抓出的回归（已修，值得记档）**：`cut_audio` 的 `audio: 'song.mp3'`（**裸文件名**）此前因「找不到节点」而回落成文件通道、`sourceIds: []`；判据扩宽后它会命中 url 末段同为 `song.mp3` 的节点 ⇒ 凭空多出带血缘的源节点、标题从「音频 · 裁剪 0–3s」变成「用户上传的长曲 · 裁剪 0–3s」。修法不是改测试，而是把既定分工写明确：`resolveCutAudioSource` 里**裸文件名（无 `@ref` 包装）优先当文件**，`@ref[...]` 才是引用节点。
+- **涉及文件**（4 改 + 2 新）：`src/reference-token.ts`、`src/reference-resolve.ts`、`src/host-tools.ts`（删本地实现 + 导入 + 裸文件名优先）、`src/errors/catalog.ts`（`CS-USER-001` 加 `{hint}`）、`src/routes.ts`（补 `hint: ''`）；新 `tests/shot-ref.test.mjs`、`tests/reference.test.mjs` 扩 4 条。
+- **验证**：`tsc -p tsconfig.json` + `tsc -p tsconfig.client.json --emitDeclarationOnly` 0 错、`tsdown` 两入口 Build complete、`verify:loader` 绿、文件大小棘轮 3/3（`host-tools.ts` **4373 ≤ 4401**，靠搬出函数回落，未上调阈值；`errors/catalog.ts#SPECS` 因为多写一行注释一度 991 > 990，删注释回落 —— 棘轮只准减不准增）。定向 38/38（reference 32 + shot-ref 6）、关联 10 套 108/108。**全量 `test:smoke` 2348·2348 全绿、门禁 0 新增红**（本轮沙箱未复现 CV-375 记录过的 EPERM 假红）。反向变异：M1 拆资产名兜底 → 1 红、M2 拆 sbRef 分支 → 1 红、M3 关候选提示 → 1 红、M4 关分镜候选 → 1 红。
+

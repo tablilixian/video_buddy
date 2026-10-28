@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findNodeByRef, formatRefToken, parseRefTokens, sanitizeTitle, uniqueTitle } from '../lib/reference-token.js'
+import { findNodeByRef, formatRefToken, parseRefTokens, sanitizeTitle, suggestRefCandidates, uniqueTitle } from '../lib/reference-token.js'
 import {
   buildAssetHandles, buildLibraryAssetHandles, filterAssetHandles, filterLibraryAssets,
   findAssetByChipText, findAssetByHandle, truncateLabel,
@@ -85,6 +85,61 @@ test('findNodeByRef：标题撞名时取首个，且 id 永不与标题混淆', 
     { id: 'y2', title: 'x1' },
   ]
   assert.equal(findNodeByRef(tricky, 'y2')?.id, 'y2', 'id 命中优先于同名标题')
+})
+
+// ---------------------------------------------------------------------------
+// 1a-2. CV-376：模型三种真实写法（资产文件名 / 截断标题 / 标题分段 / 前缀）
+//
+// 用例全部来自 2026-10-26~27 的会话转录（VideoOut-new222 的 18 个大会话），
+// 不是自己编的形状：18 次 CS-USER-001 都是这几类。
+// ---------------------------------------------------------------------------
+test('CV-376：@ref[资产文件名] 命中——模型从工具返回的 URL 里截文件名当句柄', () => {
+  const assetId = '1b8a83f4-05f2-4243-80c8-02bd06756937'
+  const nodes = [
+    { id: 'mint-1', title: '镜头 3 · 视频', url: `/canvas-studio/assets/p1/${assetId}.mp4` },
+    { id: 'mint-2', title: '别的图', url: '/canvas-studio/assets/p1/other-file.png' },
+  ]
+  assert.equal(findNodeByRef(nodes, `${assetId}.mp4`)?.id, 'mint-1', '带扩展名原样')
+  assert.equal(findNodeByRef(nodes, assetId)?.id, 'mint-1', '去扩展名（模型常见写法）')
+  assert.equal(findNodeByRef(nodes, 'other-file')?.id, 'mint-2', '任意资产 stem 同理')
+  // 反向：过短 stem 不参与资产名匹配，否则 `a` 能命中一大批。
+  assert.equal(findNodeByRef([{ id: 'x', title: 'y', url: '/a/b.png' }], 'a'), undefined, '单字符不命中')
+})
+
+test('CV-376：@ref 认截断标题（连 `…` 抄回）、标题分段、单向前缀', () => {
+  const nodes = [
+    { id: 'img', title: '写实摄影，正面半身人像', url: 'https://x/a.png' },
+    { id: 'shot', title: '分镜 1 · 视频', url: 'https://x/b.mp4' },
+  ]
+  assert.equal(findNodeByRef(nodes, '写实摄影，正面半身人像…')?.id, 'img', '连省略号抄回')
+  assert.equal(findNodeByRef(nodes, '写实摄影，正面半身人像，柔和侧光')?.id, 'img', 'token 比标题长：标题是前缀')
+  assert.equal(findNodeByRef(nodes, '分镜 1')?.id, 'shot', '按 · 分段全等')
+  assert.equal(findNodeByRef(nodes, '分镜')?.id, undefined, '过短（<4 字）不做前缀匹配，避免乱指')
+})
+
+test('CV-376：suggestRefCandidates 用相似度给最接近的 3 个标题（只进文案，不参与匹配）', () => {
+  const nodes = [
+    { id: 'a', title: '女主正面特写', url: 'https://x/a.png' },
+    { id: 'b', title: '雨夜巷弄空镜', url: 'https://x/b.png' },
+    { id: 'c', title: '女主侧脸近景', url: 'https://x/c.png' },
+  ]
+  assert.deepEqual(suggestRefCandidates(nodes, '女主正脸'), ['女主正面特写', '女主侧脸近景'])
+  assert.deepEqual(suggestRefCandidates(nodes, '完全不相干的词'), [], '相似度不足不给候选')
+  assert.deepEqual(suggestRefCandidates(nodes, '   '), [], '空 token 不给候选')
+  assert.equal(suggestRefCandidates(nodes, '女主正脸', 1).length, 1, 'limit 生效')
+})
+
+test('CV-376：CS-USER-001 文案带候选（模型下一轮能照抄改对，不必整批绕道）', async () => {
+  const registry = stubToolRegistry([
+    { id: 'i1', kind: 'image', title: '女主正面特写', url: 'https://x/a.png', filename: 'ref-1.png', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] },
+  ])
+  await assert.rejects(
+    () => resolveRefFilenames(registry, 'p1', ['女主侧脸特写'], {}, 'image'),
+    (error) => error.code === 'CS-USER-001'
+      && /未找到/u.test(error.message)
+      && /最接近的候选/u.test(error.message)
+      && /女主正面特写/u.test(error.message),
+  )
 })
 
 // ---------------------------------------------------------------------------

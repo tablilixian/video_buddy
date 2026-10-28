@@ -238,7 +238,7 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
-    userMessage: '参考图 @ref[{ref}] 在当前项目画布中未找到，请先生成或上传该节点。',
+    userMessage: '参考图 @ref[{ref}] 在当前项目画布中未找到，请先生成或上传该节点。{hint}',
     devMessage: 'findNodeByRef 未命中：{detail}',
     recoveryHint: '确认 @ref 令牌拼写；或先运行生成该参考图的工具。',
   },

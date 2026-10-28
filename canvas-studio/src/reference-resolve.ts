@@ -15,10 +15,10 @@
  * 就是这次搬家的回归网。
  */
 import type { ProjectRegistry } from './projects.js'
-import type { StudioCanvasNode, StudioCanvasNodeKind } from './contracts/canvas.js'
+import { isShotCard, type StudioCanvasNode, type StudioCanvasNodeKind } from './contracts/canvas.js'
 import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
 import type { LibMedia, LibraryAsset } from './contracts/asset-library.js'
-import { findNodeByRef } from './reference-token.js'
+import { findNodeByRef, suggestRefCandidates } from './reference-token.js'
 import { assetKeyFromUrl, isDramaProductName, promoteAssetFile } from './generate.js'
 import { throwError } from './error-system.js'
 
@@ -176,7 +176,11 @@ export async function resolveRefFilenames(
         const stray = findNodeByRef(nodes, token)
         if (stray !== undefined) throwRefKindMismatch(token, expectKind, stray.kind)
       }
-      throwError('CS-USER-001', { ref: token, detail: 'findNodeByRef 未命中' })
+      throwError('CS-USER-001', {
+        ref: token,
+        detail: 'findNodeByRef 未命中',
+        hint: candidateHint(suggestRefCandidates(pool, token)),
+      })
     }
     if (node.filename === undefined || node.filename === null || node.filename.length === 0) {
       // 惰性兜底：节点已落盘（有项目资产 url）但 Drama 提升未完成 → 现场提升并回写。
@@ -206,6 +210,115 @@ export async function resolveRefFilenames(
       }
     }
     out.push(node.filename)
+  }
+  return out
+}
+
+/**
+ * 候选提示的拼装（`CS-USER-001` 的 `{hint}` 占位）——空候选返回空串，模板里
+ * 就什么也不多出来。
+ *
+ * 为什么要给候选：转录实测里 18 次 `CS-USER-001` 全集中在几个分镜批次，
+ * 文案只说「未找到」时模型只会换参数绕道；给出最接近的 3 条，它下一轮能照抄改对。
+ */
+function candidateHint(titles: readonly string[]): string {
+  if (titles.length === 0) return ''
+  return `\n最接近的候选：${titles.map((title) => `「${title}」`).join('、')} —— 照抄其中一条重试，或改用节点 id。`
+}
+
+/** 分镜卡标题的分段符（与 `reference-token.ts` 的 `TITLE_SEPARATOR` 同形）。 */
+const SHOT_TITLE_SEPARATOR = '·'
+
+/** 分镜卡匹配的最短前缀长度（同 `reference-token` 的口径：少于 4 字不参与前缀）。 */
+const SHOT_MIN_PREFIX_LENGTH = 4
+
+/** 标题去尾部省略号（模型常把被截断的标题连 `…` 一起抄回来）。 */
+function bareTitleOf(title: string): string {
+  return title.trim().replace(/(?:…|\.\.\.)+$/u, '').trim()
+}
+
+/**
+ * 分镜卡匹配强度：`0` = 不命中，数值越小证据越强。
+ *
+ * 1. 节点 id 全等；
+ * 2. 卡片标题全等；
+ * 3. `sbRef` 全等或**末段**全等 —— `04:SC1/shots/S1-Sh1` 的 `S1-Sh1` 就是 shot.id，
+ *    是模型从 `write_storyboard` 返回里直接拿到的**最权威结构化标识**（storyboard-seed
+ *    把它写在卡上，但此前查找函数根本不看它）；
+ * 4. 标题分段全等 —— `分镜 1` / `S1-Sh1` / `缓慢推进` 各自都能命中同一张卡；
+ * 5. `分镜N`（无空格）按镜号正则命中；
+ * 6. 标题前缀（较短一方 ≥4）。
+ *
+ * 旧实现只有 1/2/5 三档，于是 `shotRefs: ['S1-Sh1']` 必然失败（转录实测）。
+ */
+function shotMatchTier(node: StudioCanvasNode, token: string): number {
+  if (node.id === token) return 1
+  const title = (node.title ?? '').trim()
+  if (title !== '' && title === token) return 2
+  const sbRef = (node.sbRef ?? '').trim()
+  if (sbRef !== '') {
+    if (sbRef === token) return 3
+    const tail = sbRef.split('/').filter((part) => part !== '').pop()
+    if (tail !== undefined && tail === token) return 3
+  }
+  const bareToken = bareTitleOf(token)
+  if (bareToken !== '' && title.split(SHOT_TITLE_SEPARATOR).map((part) => part.trim()).includes(bareToken)) return 4
+  const byNumber = /^分镜\s*(\d+)$/u.exec(bareToken)
+  if (byNumber !== null && new RegExp(`^分镜 ${byNumber[1]}(?:\\s|·|$)`, 'u').test(title)) return 5
+  const bareTitle = bareTitleOf(title)
+  if (bareToken !== '' && bareTitle !== '' && bareToken !== bareTitle) {
+    const shorter = bareToken.length <= bareTitle.length ? bareToken : bareTitle
+    if (shorter.length >= SHOT_MIN_PREFIX_LENGTH
+      && (bareToken.startsWith(bareTitle) || bareTitle.startsWith(bareToken))) return 6
+  }
+  return 0
+}
+
+/** 按 `shotMatchTier` 取最强一张；同档取数组首个（= 画布创建顺序）。 */
+function pickShotCard(cards: readonly StudioCanvasNode[], token: string): StudioCanvasNode | undefined {
+  let best: { node: StudioCanvasNode; tier: number } | undefined
+  for (const card of cards) {
+    const tier = shotMatchTier(card, token)
+    if (tier === 0) continue
+    if (best === undefined || tier < best.tier) best = { node: card, tier }
+    if (tier <= 3) break // id / 标题全等 / sbRef 命中最强，直接收工
+  }
+  return best?.node
+}
+
+/**
+ * `shotRefs` → 分镜卡节点 id（CV-027 起；CV-376 补齐 sbRef/分段/前缀三档）。
+ *
+ * 为什么从 `host-tools.ts` 搬到这里：① 它本就是引用解析的一部分，与 `@ref` 同源；
+ * ② `host-tools.ts` 已顶到文件行数棘轮（4401/4401），一行都加不动。
+ *
+ * 找不到时抛**可操作**报错：写法清单 + 最接近的候选 + 「未落地就停手」的出路。
+ * 光说「未找到」会让模型换参数绕道（2026-10-22 真机教训）。
+ */
+export async function resolveShotRefs(
+  registry: ProjectRegistry,
+  projectId: string,
+  refs: readonly unknown[],
+): Promise<string[]> {
+  const cards = (await registry.readCanvas(projectId)).nodes.filter((node) => isShotCard(node))
+  const out: string[] = []
+  for (const ref of refs) {
+    const raw = String(ref).trim()
+    if (raw === '') continue
+    const hit = pickShotCard(cards, raw)
+    if (hit === undefined) {
+      const candidates = suggestRefCandidates(cards, raw)
+      const hint = cards.length === 0
+        ? '画布上目前没有可用的分镜卡。'
+        : candidates.length === 0
+          ? ''
+          : `最接近的候选：${candidates.map((title) => `「${title}」`).join('、')} —— 照抄其中一条重试。`
+      throwError('CS-USER-ERR', {
+        message: `分镜卡「${raw}」未找到：先核对写法（卡片标题如「分镜 1 · 特写」、镜号「分镜 1」、sbRef 里的镜号「S1-Sh1」，或节点 id）。${hint}若项目尚未落地（用户还没在覆盖层点「确认落地」），分镜卡还不存在 —— 请停止逐镜出图，等待用户落地后再试；不要换别的参数绕道重试。`,
+        detail: `shot card ref not found: ${raw}; cards=${String(cards.length)}`,
+      })
+    }
+    if (!out.includes(hit.id)) out.push(hit.id)
   }
   return out
 }

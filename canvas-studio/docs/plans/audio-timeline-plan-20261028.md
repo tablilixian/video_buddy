@@ -447,7 +447,9 @@ S4 skill 1d（依赖 S1 契约定型，可与 S2b/S3 并行）
 
 | # | 阶段 | 触发问题 | 自决内容 | 理由 | 推翻成本 |
 |---|---|---|---|---|---|
-| D-07 | — | （执行时填） | — | — | — |
+| D-07 | S0 | 实验 C 计划用 44.1k/48k，样本集定为 16k/48k 后损坏比预测重（容器虚报 12.02s + 解码器中止），wav 导出非零退出 | 探针把「部分解码」作为合法实测值（`decodePartial` 标注），不崩、照常出判据 | 损坏本身就是取证对象；修复后该分支自然不再触发 | 低（探针内一个分支） |
+| D-08 | S1 | ①计划 §S1 的链序 `adelay → volume/afade` 会让淡变落在前插静音上；②`onShort:'loop'` v1 装配不支持 | ①链序改为 `volume → afade → adelay`（淡变锚内容起点）；②loop 按 pad 降级 + `loop-unsupported` warning | ①正确性优先于计划的示意箭头；②不静默丢语义（§10.2 第 3 条） | 低（纯函数内重排/分支） |
+| D-09 | S2a | ①ffmpeg 选项按「下一个文件」归属，计划草图的 anullsrc 参数位（原 `-c:a` 处）实测报 `Option vf cannot be applied to input`；②补静音后 concat 恒有音频流，角标会冒充「原生声」；③补静音回显通道 | ①anullsrc 输入整体紧跟 `-i` 输入区（`buildAudioCodecArgs` 产出放在 `-vf` 之前）；②新增 `hasNativeAudio = hasConcatAudio && 至少一段真有声`，角标/amix 分支/静片警告全用后者（行为与补静音前一致）；③回显走 `warnings`（renderComposeResult 已渲染，零 schema 变更） | ①实测约束；②③不破坏既有行为 + 可观测（§10.2 第 3 条） | 低（各一处调用点） |
 
 ### 10.4 完成汇报格式
 

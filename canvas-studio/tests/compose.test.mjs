@@ -76,10 +76,23 @@ test('buildConcatList：每行 file 引用', () => {
   assert.equal(buildConcatList(['/tmp/a.mp4', '/tmp/b.mp4']), "file '/tmp/a.mp4'\nfile '/tmp/b.mp4'\n")
 })
 
-test('buildTranscodeArgs：无音轨加 -an，有音轨转 aac', () => {
-  assert.ok(buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, false).includes('-an'))
+test('buildTranscodeArgs：无音轨补等长静音轨（anullsrc + aac 48k 立体声），有音轨统一 aac 48k 立体声', () => {
+  // S2a（CV-040 收口）：无音轨段从 `-an`（丢流 ⇒ concat 音轨断裂、末段静音）改为补
+  // 等长静音轨；两条分支统一 `-ar 48000 -ac 2`（实验 C：不统一 ⇒ concat 静默变速变调）。
+  const noAudio = buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, false, undefined, 2)
+  assert.ok(!noAudio.includes('-an'), '不再丢流（-an 是音轨断裂根因）')
+  assert.ok(noAudio.includes('anullsrc=r=48000:cl=stereo'), '应补 anullsrc 静音轨')
+  assert.ok(noAudio.includes('-c:a') && noAudio.includes('aac'), '补的静音轨也走 aac')
+  assert.ok(noAudio.includes('-ar') && noAudio.includes('48000'), '统一采样率 48k')
+  assert.ok(noAudio.includes('-ac') && noAudio.includes('2'), '统一立体声')
+  assert.ok(noAudio.includes('-t') && noAudio.includes('2.000'), '按段真实时长补静音（非请求值）')
+  assert.ok(noAudio.includes('-shortest'), '-shortest 兜底（时长未探到时收尾）')
+  // anullsrc 输入必须声明在 -vf 输出选项之前（ffmpeg 选项按「下一个文件」归属）。
+  assert.ok(noAudio.indexOf('anullsrc') < noAudio.indexOf('-vf'), '第二输入应在输出选项之前声明')
   const withAudio = buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, true)
   assert.ok(withAudio.includes('-c:a') && withAudio.includes('aac'))
+  assert.ok(withAudio.includes('-ar') && withAudio.includes('48000') && withAudio.includes('-ac') && withAudio.includes('2'), '有音轨分支同样统一 48k 立体声')
+  assert.ok(!withAudio.includes('anullsrc'), '有音轨不需要补静音输入')
   // CR-022：等比缩放 + pad 补足（非等比拉伸修复）。vf 是单个数组元素里的完整
   // 滤镜串，子串断言用 some(includes) 而非 includes（后者是元素精确匹配）。
   const vf = withAudio.find((a) => a.startsWith('scale='))

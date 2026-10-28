@@ -154,6 +154,8 @@ export interface ComposeClip {
   hasAudio: boolean
   /** CV-142：下当时的**请求**时长（秒），用于与成片真值对照出时长漂移。 */
   declaredDuration?: number
+  /** S2a（2026-10-28）：探测到的片段真实时长（秒）。探测失败记 0（不伪造）。 */
+  realDurationSec?: number
 }
 
 /**
@@ -205,8 +207,49 @@ export function buildConcatList(paths: readonly string[]): string {
   return paths.map((path) => `file '${path}'`).join('\n') + '\n'
 }
 
-/** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。
- * `colorGrade` 非空时在 vf 末尾追加统一调色滤镜（治各镜色调漂移）。 */
+/**
+ * S2a（2026-10-28 · CV-040 收口）：音频交付口径 —— 全链路统一 48kHz 立体声。
+ *
+ * 实验 C（audio-baseline-20261028.md）：concat demuxer 用第一段的参数解读后续所有段，
+ * 采样率/声道不一致时**静默变速变调甚至流级损坏**（16k×48k 混拼实测容器时长虚报
+ * 12.02s、解码器中途崩溃），且任何一方都不报错 ⇒ 必须在转码期统一 `-ar/-ac`。
+ */
+export const AUDIO_DELIVERY_SAMPLE_RATE = 48000
+export const AUDIO_DELIVERY_CHANNELS = 2
+
+/** 音频编码参数（纯函数，S2a 抽出避免 `buildTranscodeArgs` 签名膨胀）。
+ *
+ * - 有音轨：重编码 aac + 统一 48k 立体声。
+ * - 无音轨：**不再 `-an` 丢流**（丢流让 concat 流结构不一致 ⇒ 音轨断裂、末段静音，
+ *   即 CV-040 实验 A）——改为补一条 `anullsrc` 等长静音轨再编码 aac，保证每段输出
+ *   都有同构音轨。`clipDurationSec` 是该段**探测到的真实时长**（不是请求值）：补的
+ *   静音按真实时长裁（`-t`），探测失败（≤0）退 `-shortest` 兜底、不伪造时长。
+ */
+export interface AudioCodecArgsInput {
+  hasAudio: boolean
+  /** 片段真实时长（秒；0/缺省 = 未探到）。 */
+  clipDurationSec?: number
+}
+
+export function buildAudioCodecArgs({ hasAudio, clipDurationSec = 0 }: AudioCodecArgsInput): string[] {
+  const unified = ['-ar', String(AUDIO_DELIVERY_SAMPLE_RATE), '-ac', String(AUDIO_DELIVERY_CHANNELS)]
+  if (hasAudio) return ['-c:a', 'aac', ...unified]
+  // 无音轨：补一条 anullsrc 静音输入 + aac 编码。⚠️ 输入声明必须整体落在输出选项
+  // 之前（ffmpeg 选项按「下一个文件」归属，实测 `-vf` 之后再声明 `-i` 会报
+  // `Option vf cannot be applied to input`）—— 调用方须把本函数的产出整体放在
+  // 所有 `-i` 之后、`-vf` 等输出选项之前。
+  return [
+    '-f', 'lavfi', '-i', `anullsrc=r=${AUDIO_DELIVERY_SAMPLE_RATE}:cl=stereo`,
+    '-c:a', 'aac', ...unified,
+    ...(clipDurationSec > 0 ? ['-t', clipDurationSec.toFixed(3)] : []),
+    '-shortest',
+  ]
+}
+
+/** 统一转码参数（纯函数）。音频参数一律经 `buildAudioCodecArgs`（统一 48k 立体声；
+ * 无音轨补等长静音轨），且紧跟 `-i` 输入区（见 buildAudioCodecArgs 的归属注释）。
+ * `colorGrade` 非空时在 vf 末尾追加统一调色滤镜（治各镜色调漂移）。
+ * `clipRealDurationSec` 只在无音轨分支被消费（补静音的裁切时长）。 */
 export function buildTranscodeArgs(
   input: string,
   output: string,
@@ -215,6 +258,7 @@ export function buildTranscodeArgs(
   fps: number,
   hasAudio: boolean,
   colorGrade?: string,
+  clipRealDurationSec?: number,
 ): string[] {
   // CR-022：等比缩放 + 黑边补足，避免画幅不一致的片段被非等比拉伸变形。
   // `force_original_aspect_ratio=decrease` 保持纵横比缩放到 WxH 内，
@@ -224,10 +268,10 @@ export function buildTranscodeArgs(
   const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}${gradeVf}`
   return [
     '-i', input,
+    ...buildAudioCodecArgs({ hasAudio, ...(clipRealDurationSec !== undefined ? { clipDurationSec: clipRealDurationSec } : {}) }),
     '-vf', vf,
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
-    ...(hasAudio ? ['-c:a', 'aac'] : ['-an']),
     '-y', output,
   ]
 }
@@ -525,9 +569,24 @@ export async function composeStudioVideo(
     const probeTasks = resolvedClips.map(async (clip) => {
       const probe = await runFfmpeg(ffmpegPath, ['-i', clip.inputPath], FFMPEG_TIMEOUT_MS, composed)
       clip.hasAudio = parseFfmpegStreams(probe.stderr).hasAudio
+      // S2a：`Duration:` 就在同一次探测的 stderr 里——顺带解析拿段真实时长（零额外进程），
+      // 供无音轨段补等长静音轨。探测失败记 0（不伪造，转码时退 `-shortest` 兜底）。
+      clip.realDurationSec = parseFfmpegDuration(probe.stderr)
       return clip
     })
     await Promise.all(probeTasks)
+
+    // S2a：无原生音轨的段逐段回显（模型能自查、用户能看见）——「哪段缺声、补了多久」。
+    // 补静音轨本身在 buildTranscodeArgs 内完成；这里只负责把事实说出口。
+    const paddedNotices: string[] = []
+    resolvedClips.forEach((clip, index) => {
+      if (clip.hasAudio) return
+      paddedNotices.push(
+        clip.realDurationSec !== undefined && clip.realDurationSec > 0
+          ? `第 ${index + 1} 段无原生音轨，已补 ${clip.realDurationSec.toFixed(1)}s 静音`
+          : `第 ${index + 1} 段无原生音轨（时长未探到），已按视频实际长度补静音`,
+      )
+    })
 
     // 2) 逐段统一转码。
     const transcodedPaths: string[] = []
@@ -536,8 +595,17 @@ export async function composeStudioVideo(
       const out = join(tempDir, `clip-${i}.mp4`)
       // CV-141 + CV-209：keepNativeAudio 现在恒为 true；多镜也保留原生音轨。
       // 转码阶段不会再 `-an` 丢原生音轨；老的无音轨片段（无 `generateAudio=true`
-      // 出图）会自动落在 `clip.hasAudio=false`，转码时退 aac、走静默 aac。
-      const args = buildTranscodeArgs(clip.inputPath, out, width, height, fps, clip.hasAudio && keepNativeAudio, colorGrade)
+      // 出图）会自动落在 `clip.hasAudio=false`，S2a 起补等长静音轨（不再丢流）。
+      const args = buildTranscodeArgs(
+        clip.inputPath,
+        out,
+        width,
+        height,
+        fps,
+        clip.hasAudio && keepNativeAudio,
+        colorGrade,
+        clip.realDurationSec,
+      )
       const result = await runFfmpeg(ffmpegPath, args, COMPOSE_TIMEOUT_MS, composed)
       if (result.code !== 0) {
         const detail = result.stderr.trim().split('\n').at(-1) ?? ''
@@ -563,7 +631,10 @@ export async function composeStudioVideo(
     const concatProbe = await runFfmpeg(ffmpegPath, ['-i', concatOutput], FFMPEG_TIMEOUT_MS, composed)
     const filmDuration = parseFfmpegDuration(concatProbe.stderr)
     const hasConcatAudio = parseFfmpegStreams(concatProbe.stderr).hasAudio
-    const warnings: string[] = []
+    // S2a：补的静音轨让 concat 产物恒有音频流，但「有流」≠「有原生声」——角标与
+    // amix 分支的语义必须维持「至少一段真有声」（与补静音前行为一致，不静默漂移）。
+    const hasNativeAudio = hasConcatAudio && resolvedClips.some((clip) => clip.hasAudio)
+    const warnings: string[] = [...paddedNotices]
     if (filmDuration <= 0) {
       warnings.push('未能探测成片真实时长，本次按 -shortest 收尾（音画对齐可能不精确）。')
     }
@@ -626,7 +697,7 @@ export async function composeStudioVideo(
       const bgmProfile = inferBgmSilenceProfile(bgmDuration, filmDuration)
       const amixResult = await runFfmpeg(
         ffmpegPath,
-        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration, filmDuration, bgmProfile, mixRole),
+        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasNativeAudio, bgmDuration, filmDuration, bgmProfile, mixRole),
         COMPOSE_TIMEOUT_MS,
         composed,
       )
@@ -639,7 +710,7 @@ export async function composeStudioVideo(
       // CV-209：多镜拼接时原生音轨现在保留，对白/场景音效走主声轨，无声这条
       // 警告只在 `hasConcatAudio=false` 时（用户主动静音 / 老产物没开 generateAudio）
       // 才需要抛。
-      if (!hasConcatAudio) {
+      if (!hasNativeAudio) {
         warnings.push('本次合成无任何音轨（片段未开启原生音轨 + 未提供 BGM），成片将为静片。')
       }
       // CR-023：copyFile 流式复制，不再把大视频整读进内存再写。
@@ -648,9 +719,10 @@ export async function composeStudioVideo(
 
     // CV-143：成片音轨构成（策略的实际结果，而非意图）。
     // D6：改走 `audioCompositionFrom`（与 render_composition 同一实现）—— 旁白不再
-    // 被并入「纯 BGM」，角标与工具结果因此同源。
+    // 被并入「纯 BGM」，角标与工具结果因此同源。S2a：hasNative 语义 = 「至少一段
+    // 真有声」，补的静音轨不算（hasNativeAudio）。
     const audioComposition: StudioAudioComposition = audioCompositionFrom({
-      hasNative: hasConcatAudio,
+      hasNative: hasNativeAudio,
       hasBgm: bgmNodeId !== undefined && mixRole === 'bgm',
       hasVoiceOver: bgmNodeId !== undefined && mixRole === 'voiceOver',
     })

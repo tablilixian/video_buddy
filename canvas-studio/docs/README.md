@@ -140,6 +140,21 @@
 | [archive/](./archive/README.md) | 🗄️ **使命完成的方案与专题**（19 份顶层 + 13 份 plans，逐份归档原因见表） |
 | [api-probe/archive/](./api-probe/INDEX.md) | 09-10~09-11「CV-145 误判→撤回」复验链 |
 
+## 九、演示与原型（demos/）
+
+> 可双击打开的设计稿 / 演示 / 走查页。**没有运行时用途**（不进产物、不被代码引用），只作为视觉与流程依据。
+
+| 位置 | 内容 | 来源 |
+| --- | --- | --- |
+| [demos/layout/canvas-layout-v2.html](./demos/layout/canvas-layout-v2.html) | 版式设计稿 v2 —— 镜号泳道方案的定稿原型（`canvas-view.ts` 的镜号解析即按它移植） | 2026-10-27 由仓根迁入 |
+| [demos/layout/canvas-layout-v2-assets/](./demos/layout/canvas-layout-v2-assets/) | 上面的配套截图 16 张。⚠️ **目录名被 HTML 第 57 行硬编码**（`ASSET_BASE = './canvas-layout-v2-assets/'`），改名即全丢图 | 同上 |
+| [demos/layout/canvas-layout-demo.html](./demos/layout/canvas-layout-demo.html) | 版式设计稿 v1（被 v2 取代，留作对照） | 同上 |
+| [demos/layout/canvas-layout-rules.txt](./demos/layout/canvas-layout-rules.txt) | 版式规则说明（被 `canvas-layout-demo.html` 内注释引用，**必须与它同目录**） | 同上 |
+| [demos/canvas_studio_flow.html](./demos/canvas_studio_flow.html) | R-P0-01 / REQ-022 创作流水线全景十段式（REQ-022 会话交接的主展示材料） | 同上 |
+| [demos/canvas-specrow-design-mock.html](./demos/canvas-specrow-design-mock.html) | 规格行（specrow）设计稿 | 同上 |
+| [demos/req022-acceptance-tour.html](./demos/req022-acceptance-tour.html) | REQ-022 验收走查页 | 同上 |
+| `demos/` 其余 | 既有演示与走查记录：REQ-001 资产库 demo、全链路 demo、`canvas-waterfall-demo-2026-10-26/`、`layout-demo-20261026/`、`acceptance-review-2026-10-19.md`、`phase3-in-this-film.md` 等 | 原有 |
+
 ---
 
 ## 文档纪律（一句话版）

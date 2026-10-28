@@ -977,7 +977,7 @@ function renderSpeechResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as SpeechResult
   const durationNote = v.duration > 0 ? `配音真实时长 ${v.duration}s（ffprobe 实测）。` : '时长探测失败（未伪造，节点不显示角标）。'
   const warnNote = v.warnings !== undefined && v.warnings.length > 0 ? `\n⚠️ ${v.warnings.join('；')}` : ''
-  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}${warnNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；也可以走 render_composition 的 audio.voiceOverUrl（多句用 audio.voiceOver 数组，各自带 startFrame）。` }]
+  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}${warnNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；**多句旁白**：多镜成片直接给 compose_video 传 voiceOverNodeIds: [本节点id, ...] 数组（按顺序零间隙排布，结果文本逐句回显起止）；需要各自指定起点时走 render_composition 的 audio.voiceOver: [{src,startFrame}]。` }]
 }
 
 /** 结果文本里的一句话截断（表格单元格用：竖线会撕裂 markdown 表）。 */
@@ -3277,7 +3277,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       description:
         '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM 或旁白）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定混入的音频/视频节点（**既可以是 BGM，也可以是 tts_voiceover 的旁白**——按节点来源自动区分，旁白走满音量、无淡入淡出、允许短于成片）；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。'
         + '\n\n⚠️ 本工具**只做已有片段的顺序拼接**：一旦需要「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 逐帧精确的时间轴与转场」，改用 `render_composition`（代码驱动合成，按 CompositionManifest 声明时间轴）——它同样能纳入视频片段，只是多支持卡片与转场。反过来，素材全是视频片段且只要顺序拼接时，仍用本工具。'
-        + '\n\n⚠️ 音轨策略（S2b 2026-10-28 收口）：**各镜原生环境声全程保留**——多镜成片走「视频母版 + 音轨从零装配」：原生声按各镜真实时长落位、BGM 铺底（0.35）、多句旁白用 voiceOverNodeIds 顺序排布（满音量），结果文本逐段回显起止与是否补静音。**BGM 短于成片默认自动补静音并明确告知**（不再是报错；旧行为可用环境变量 CANVAS_STUDIO_AUDIO_AUTOPAD=0 回退）；旁白不受此限（话说完就静是正常形态，短于成片只提示不报错）。',
+        + '\n\n⚠️ 音轨策略（S2b 2026-10-28 收口）：**各镜原生环境声全程保留**——多镜成片走「视频母版 + 音轨从零装配」：原生声按各镜真实时长落位、BGM 铺底（0.35）、多句旁白用 voiceOverNodeIds 顺序排布（满音量），结果文本逐段回显起止与是否补静音。**BGM 短于成片默认自动补静音并明确告知**（不再是报错；旧行为可用环境变量 CANVAS_STUDIO_AUDIO_AUTOPAD=0 回退）；旁白不受此限（话说完就静是正常形态，短于成片只提示不报错）。**声音规划（人声/旁白/BGM 时长、多句旁白写法）见技能 canvas-studio-creation 第 2d 步与 references/audio-first.md。**',
       parameters: {
         clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM/旁白则叠混' },
         bgmNodeId: { type: 'string' as const, description: '可选：混入的音频/视频节点 id。**BGM（music_generation 产物）**必须不短于成片真实时长，否则合成报错；**旁白（tts_voiceover 产物，含 cut_audio 裁过的旁白）**自动按旁白处理：满音量、无淡入淡出、允许短于成片，音轨构成报「旁白」' },
@@ -3354,7 +3354,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '长片必须走 manifestPath —— 内联超 ~30KB 会被入参截断，「尾部完整性校验」当场拒收（meta.durationInFrames 必须等于全部轨道的最大结束帧，缩水即拒收），白烧一轮。'
         + '渲染前宿主会校验结构 + 核对素材（缺失或外链直接硬失败），再过审批门（同 compose_video）。'
         + '执行者是宿主内置的**隐藏渲染窗口**（Electron + Remotion Web 渲染器）：切窗口、最小化都不影响；**关掉整个 App 会中断渲染**。'
-        + '硬边界（**组装细节一律看 skill 的 `code-driven-explainer/references/manifest-contract.md`，本描述不重复，避免两处漂移**）：'
+        + '硬边界（**组装细节一律看 skill 的 `code-driven-explainer/references/manifest-contract.md`，本描述不重复，避免两处漂移**；声音规划（人声/旁白/BGM 时长）见 canvas-studio-creation 第 2d 步与 references/audio-first.md）：'
         + '① meta.durationInFrames 必须等于全部轨道的最大结束帧；'
         + '② `src` 只接同源 `/canvas-studio/assets/...` 或本项目资产目录内的绝对路径，外链一律拒收；'
         + '③ video 轨时长以 ffprobe 真值为准并据此校正帧号，校正后不自洽会连明细拒收；'

@@ -352,6 +352,17 @@ function readCatalogFromDisk(): readonly SkillCatalogEntry[] | null {
  * 逐字段深相等 —— 改 platform.yaml 忘了同步这里，直接红。
  */
 export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
+  // ---- MV / 音乐（S4 · 2026-10-28）----
+  {
+    name: 'mv-production',
+    title: 'MV 制作',
+    summary: '一首歌 + 一组素材 → 音乐短视频：歌词分句、时间轴、逐句画面、卡点切换、字幕跟唱。',
+    category: 'other',
+    icon: 'film',
+    hue: 280,
+    featured: false,
+    hidden: true,
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',

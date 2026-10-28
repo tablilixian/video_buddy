@@ -9,7 +9,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 
 > **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止，向用户说明「已加载创作规范，按规范重走需求澄清」，从「需求澄清」第 ① 步重开始。
 
-> **分册一览**（均在 `references/` 下）：澄清（含入口分流）`clarification.md` · 工具链与**能力槽位绑定表** `toolchain.md` · 提示词 `prompt-writing.md` · 风格 `style-presets.md` · 风格库（30 条纯知识风格行）`style-library.md` · Look `look.md` · 剧本 `screenplay.md` · 分镜 `shot-format.md` · 一致性 `consistency.md` · 布局配方 `layout-recipes.md`。
+> **分册一览**（均在 `references/` 下）：澄清（含入口分流）`clarification.md` · 工具链与**能力槽位绑定表** `toolchain.md` · 提示词 `prompt-writing.md` · 风格 `style-presets.md` · 风格库（30 条纯知识风格行）`style-library.md` · Look `look.md` · 剧本 `screenplay.md` · 分镜 `shot-format.md` · 一致性 `consistency.md` · 布局配方 `layout-recipes.md` · 声音规划 `audio-first.md`。
 >
 > **分册一次读全**：开工前把当前阶段要用的分册**一批读完**（如澄清期一次读澄清+工具链+Look），禁止读一批想一轮再读下一批。
 
@@ -52,15 +52,16 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `clarification.md`）；第 ② 步按 `look.md` 采集 5 项 tokens 并出 1 张基调样张，**确认通过后调 `look_card` 落卡**（§9.1）。放手跑自行假设。
 2b. **拍摄定稿创作**（两种形态必经）：读 `screenplay.md` + `shot-format.md`，用 `write_storyboard` 落**拍摄定稿**（`storyboard.json`）——剧本进 §00 / §03 / §05，分镜进 §04。**禁止另建大纲节点**；阶段一不要写文案节点。
 2c. **分次写、逐步填满**：`write_storyboard` 是**分节合并**语义——传了的替换、**没传的保留不动**。不要憋大招一次写完；**每笔之间不要问用户**，**收尾笔传 `awaitingLanding=true`**。⚠️ 版本次数不因分次写而增长。四笔怎么分见 `screenplay.md` 第 7 条。
+2d. **声音规划**（分镜定稿后、出视频前一次定死；细则见 `references/audio-first.md`）：三件事——**人声/纯器乐**、**有没有旁白**（逐步确认模式下把第 8 步的「是否需要配音」问在这里）、**BGM 目标时长 = 预计成片总时长**（余量梯度见 `toolchain.md` §"BGM 时长铁律"）。多句旁白写 `voiceOverNodeIds`（起点 = 镜头起始秒 + 入点留白，**禁止自己算 ffmpeg**）；BGM 先行/视频先行两条路线的失败判据见 `audio-first.md`。
 3. **落地（用户操作）**：覆盖层点「确认落地」→ Host 跑三层校验并 seed 落画布，有缺项会弹清单。**落地前不要抢跑**（样张 / 定妆照除外，见 `clarification.md`）。
 4. **参考素材预处理 + 一致性资产卡**（含角色的片子必经）：读 `consistency.md`「参考素材预处理」—— character_sheet 建卡（`lockedPrompt` 先经用户确认）、附件 @ref 直用。
 5. **定妆锚点**：按 `consistency.md` 执行——有资产卡用其锚点，无卡出定妆照；含明确场景的片子**同时出场景概念图**（第 9 步 Ref2VA 输入）。
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA；仅构图 / 走位需钉死的镜才出姿态关键帧，规则见 `consistency.md`「逐镜出图」。**凡出关键帧必须传 `shotRefs=<该镜分镜卡>`**（分镜卡落地后才有；落地前不得出逐镜图）。
 6a. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 `submit_keyframes_for_approval(summary=…)` 提交并等确认；未出跳过本步；放手跑跳过。
 7. **上传**：对每个镜头图**逐个**调 `upload_image` 拿 filename（同步单任务）。
-8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。**有字幕/台词就必须定配音**：逐步确认下 `ask_user_choice` 问「是否需要配音（推荐：需要）」；放手跑按形态默认（对白片必配、纯图文卡不配）；结论写进 `narration` / `sound`。
+8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。**有字幕/台词就必须定配音**（动作在第 2d 步声音规划里执行）：逐步确认下 `ask_user_choice` 问「是否需要配音（推荐：需要）」；放手跑按形态默认（对白片必配、纯图文卡不配）；结论写进 `narration` / `sound`。
 9. **逐镜视频（参考组合优先，批量提交）**：读 `shot-format.md`——**条数纪律（C-16）：一个分镜 = 一条视频**（shot 是分镜内节拍、写进同一条 prompt）；**用户计划优先（C-9）**。默认 `video_composite` 多参考 Ref2VA（**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA；prompt 先按 `video-prompt` 槽位规范重写；**逐镜显式传 `generateAudio=true`**；返工传 `replaces`。**非 chain 镜在同一回合内一次性发出**，chain 镜按链序串行。⚠️ **图文路线（入口分流第 6 条）整步跳过**——直接进第 10 步 `render_composition` 出片。
-10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— **纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`；分屏 / 画中画布局先抄 `layout-recipes.md`）。**音轨策略**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后铺底。**BGM 时长铁律见 `toolchain.md`**；只裁一段用 `cut_audio`。**严禁再从图片重新生成视频。**
+10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— **纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`；分屏 / 画中画布局先抄 `layout-recipes.md`）。**音轨策略**：装配口径（原生声落位 / BGM 铺底 / 多句旁白 `voiceOverNodeIds`）见第 2d 步与 `audio-first.md`；短 BGM 默认自动补静音并明确告知。**BGM 时长铁律见 `toolchain.md`**；只裁一段用 `cut_audio`。**严禁再从图片重新生成视频。**
 11. **质检报告（仅此一处）**：成片交付后逐镜调 `qc_shot`，汇总一份《质检报告》随交付输出。⚠️ **仅供参考、不触发返工。**
 
 ## 遇错处理

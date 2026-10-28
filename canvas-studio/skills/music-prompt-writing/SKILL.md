@@ -133,3 +133,5 @@ duration 三个** —— bpm / keyscale / language / timesignature 是请求模�
   情感 8 / 调性 27 / 综合风格 12，外加万能模板与组合速记
 - `references/caption-lyrics-rules.md` —— Caption 九个写作维度、Lyrics 结构/人声/能量
   标记表、纯器乐写法、AI 味五个红旗、元数据边界、输入控制总表（含后端未暴露项）
+- `references/beat-editing.md` —— 按拍剪辑：节拍分析（beats.json）产出后，切点吸附到
+  最近拍/半拍的算法、±0.5 拍容差、低置信禁用卡点、吸附后时长重算

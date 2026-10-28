@@ -19,7 +19,7 @@ Canvas Studio 用的 **Drama Backend 网页测试台**：把项目实际依赖�
 ## 快速开始
 
 ```bash
-cd api-playground
+cd tools/api-playground
 
 ./run.sh start                      # ① 手动测试：起服务并自动开浏览器
 ./run.sh unit                       # ② 纯逻辑单测（秒级，不联网）
@@ -466,7 +466,7 @@ node scripts/smoke.mjs \
 目录结构：
 
 ```
-api-playground/
+tools/api-playground/
 ├── README.md
 ├── run.sh                  # 启动 / 测试脚本（start / test / unit / offline / stop / build）
 ├── index.html
@@ -497,7 +497,7 @@ api-playground/
 | 现象 | 原因 / 处置 |
 |---|---|
 | `curl localhost:5188` 返回代理错误而非页面 | 本机 shell 注入了 `HTTP_PROXY`，本地访问要加 `--noproxy '*'` |
-| 代理返回的是页面 HTML 而不是接口 JSON | Vite 的 cwd 不对（必须在 `api-playground/` 下启动），配置没被加载 |
+| 代理返回的是页面 HTML 而不是接口 JSON | Vite 的 cwd 不对（必须在 `tools/api-playground/` 下启动），配置没被加载 |
 | 端口被占 | `PORT=5199 ./run.sh start`；夹具用 `MOCK_PORT=5190 ./run.sh offline` |
 | 视频端点等很久 | 正常，单次约 4~5 分钟；急用就「仅快速」或 `--fast` |
 | 报告里 `upload` 失败 | 检查生成图 `full_url` 是否可直接下载；自动上传依赖 `/api/fetch-media` 能取回字节（已自动重试 2 次） |

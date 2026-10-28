@@ -84,7 +84,7 @@
 | [visual-direction-execution-plan.md](./visual-direction-execution-plan.md) | DD 工程清单（STATUS 活跃引用） | 在役 |
 | [visual-direction-ui-closeout.md](./visual-direction-ui-closeout.md) | 对照 preview 的 UI 差距清单（含 F 补验分区） | 在役 |
 | [competitor-analysis.md](./competitor-analysis.md) | 竞品分析工作区（DA 草案 → 合并 CV/STATUS） | 在役 |
-| **[plans/2026-10-27-文档与散落资产归位方案.md](./plans/2026-10-27-文档与散落资产归位方案.md)** | ★ 仓库级**位置治理**：根目录 12 项 + 根 `docs/` 5 项 + 本目录 6 项 + `api-playground/` 的搬迁清单，含逐文件引用核查（file:line）与「调查后判定不动」的理由。只挪位置、不改内容、不改体积 | 🚧 执行中：Batch 1、2 已落地（2026-10-28） |
+| **[plans/2026-10-27-文档与散落资产归位方案.md](./plans/2026-10-27-文档与散落资产归位方案.md)** | ★ 仓库级**位置治理**：根目录 12 项 + 根 `docs/` 5 项 + 本目录 6 项 + `api-playground/` 的搬迁清单，含逐文件引用核查（file:line）与「调查后判定不动」的理由。只挪位置、不改内容、不改体积 | ✅ 已落地：5 批全完成（2026-10-28，64 个 rename / 62 处引用） |
 | **[plans/2026-10-27-超大文件清单与拆分方案.md](./plans/2026-10-27-超大文件清单与拆分方案.md)** | ★ 代码侧**可维护性清单**：6 个 P0 超大文件（`styles.ts` / `host-tools.ts` / `generate.ts` / `routes.ts` / `StudioFrame.tsx` / `client/index.ts`）+ 15 个 P1，含结构实测、拆分方案、**读源码测试的阻力矩阵**与落地节奏 | 📋 参考清单（未动代码） |
 | **[plans/2026-10-28-超大文件拆分执行计划.md](./plans/2026-10-28-超大文件拆分执行计划.md)** | ★ 上一行的**施工单（用例先行）**：7 阶段 / ~11 PR / ~30 条新测试；每域先落画像测试（快照、路由枚举、byte-equal、锚点盘点）再搬动，含 desktop / market 补漏（修正了清单未覆盖的两处类跨度误报）与登记式修改三处例外（T2.4 / T4.4 / T6.2） | 🚧 执行中：PR-0 大小闸已落地（2026-10-28） |
 | **[plans/remotion/](./plans/remotion/)** | ★ **REQ-034 Remotion 专题（4 份）**：`remotion-integration-devdoc-2026-10-14.md`（**唯一实现事实源**，v1.7 / 1,517 行）· `remotion-integration-roadmap-2026-10-13.md`（早期路线图，已被取代）· `remotion-research-2026-10-13.md`（范式与生态调研）· `openmontage-adoption-analysis-2026-10-13.md`（对标分析）。后三份均带顶部勘误声明，**勿照抄其中 API** | 事实源在役；其余三份为背景（2026-10-28 由仓根迁入） |

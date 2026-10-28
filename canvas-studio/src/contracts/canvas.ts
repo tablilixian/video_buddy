@@ -138,11 +138,22 @@ export const AUDIO_COMPOSITION_HINTS: Readonly<Record<StudioAudioComposition, st
   'native+bgm': '单镜整出，原生环境声与 BGM 叠混',
   'native+voiceOver': '保留视频轨的原生环境声，另叠加旁白',
   'native+bgm+voiceOver': '保留视频轨的原生环境声，BGM 与旁白叠混',
-  bgm: '多镜拼接，各镜环境声已丢弃，成片只有 BGM',
+  // S1（2026-10-28）：CV-209 之后原生音轨已是多镜主声轨，「已丢弃」与行为冲突（CV-040 收口计划 §1.2 #7）。
+  bgm: '多镜拼接，BGM 为唯一声轨（各镜原生声按镜混排在 BGM 之下）',
   voiceOver: '无视频轨（纯代码片），成片只有旁白',
   'bgm+voiceOver': '无原生环境声，BGM 与旁白叠混',
-  none: '多镜拼接且未提供 BGM，各镜环境声已丢弃 —— 成片无声',
+  none: '无任何声源（无原生音轨、无 BGM、无旁白），成片无声',
 }
+
+/**
+ * S1（2026-10-28）：八枚举的来源说明（随角标 tooltip / 工具结果回显，让「枚举是
+ * 派生的不是手填的」可被用户与模型读到）。派生实现唯一：src/audio-timeline.ts 的
+ * compositionFromTimeline（段角色集合 → 枚举）；老数据（无 audioTimeline）用
+ * timelineFromComposition 只读反推，不写回、不迁移。
+ */
+export const AUDIO_COMPOSITION_DERIVATION =
+  '音轨构成由音频时间轴（AudioTimeline）的段角色自动派生：有原生环境声段 → 含「native」，有配乐段 → 含「bgm」，有旁白段 → 含「voiceOver」，全无 → 「none」。' +
+  '老项目无时间轴数据时按已落盘构成只读反推，不影响展示。'
 
 /** One canvas node (a generation result or a manual annotation). */
 export interface StudioCanvasNode {

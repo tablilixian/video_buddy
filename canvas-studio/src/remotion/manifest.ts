@@ -22,6 +22,7 @@
  */
 
 import type { StudioAudioComposition } from '../contracts/canvas.js'
+import { compositionFromPresence } from '../audio-timeline.js'
 import { formatMotionLint, lintMotion } from './motion-lint.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
@@ -1883,29 +1884,21 @@ export function hasVoiceOverAudio(audio: ManifestAudio | undefined): boolean {
 }
 
 /**
- * 三布尔 → 8 值音轨构成的**唯一实现**（CV-334 · D6）。
+ * 三布尔 → 8 值音轨构成的**兼容包装**（CV-334 · D6 引入；S1 起分类实现迁往
+ * `src/audio-timeline.ts` 的 `compositionFromPresence` —— 时间轴成为唯一事实源后，
+ * 三布尔是它的退化入参，保留本签名让既有调用点/老单测不动）。
  *
  * 为什么单独抽出来：`compose_video`（ffmpeg 拼接路径）与 `render_composition`
  * （manifest 路径）都要报「音轨构成」，而角标文案与工具结果必须说同一句话 ——
  * 两份 if 链一旦分叉，模型读到的和用户看到的就会不一致（这正是 D6 的原始症状）。
- * 两条路径都调它，判定只有一处。
+ * 两条路径都经它（或它指向的唯一实现），判定只有一处。
  */
 export function audioCompositionFrom(input: {
   hasNative: boolean
   hasBgm: boolean
   hasVoiceOver: boolean
 }): StudioAudioComposition {
-  const { hasNative, hasBgm, hasVoiceOver } = input
-  if (hasNative) {
-    if (hasBgm && hasVoiceOver) return 'native+bgm+voiceOver'
-    if (hasBgm) return 'native+bgm'
-    if (hasVoiceOver) return 'native+voiceOver'
-    return 'native'
-  }
-  if (hasBgm && hasVoiceOver) return 'bgm+voiceOver'
-  if (hasBgm) return 'bgm'
-  if (hasVoiceOver) return 'voiceOver'
-  return 'none'
+  return compositionFromPresence(input)
 }
 
 /**

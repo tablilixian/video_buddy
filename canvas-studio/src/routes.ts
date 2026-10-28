@@ -21,6 +21,7 @@ import type { LibAnchorRef, LibCategory, LibMedia } from './contracts/asset-libr
 import { isLibCategory } from './contracts/asset-library.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, handlesOfAssetFile, unlinkValuesInPromptJson, type GenerateParams } from './generate.js'
 import { gcProjectAssets, gcLibraryAssets, deleteUnreferencedAssets, collectReferencedBasenames, basenameOfUrl } from './asset-gc.js'
+import { isAssetFileName } from './asset-path.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { resolveRefFilenames } from './reference-resolve.js'
@@ -641,7 +642,7 @@ function asLibMediaArray(value: unknown): LibMedia[] | undefined {
   for (const entry of value) {
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return undefined
     const record = entry as Record<string, unknown>
-    if (typeof record.file !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(record.file) || record.file.startsWith('.')) {
+    if (typeof record.file !== 'string' || !isAssetFileName(record.file)) {
       return undefined
     }
     if (record.kind !== 'image' && record.kind !== 'video' && record.kind !== 'audio') return undefined
@@ -1202,10 +1203,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       const parts = relative.split('/').filter(Boolean)
-      // 资产 id / 媒体文件名的字符集（与库内部同一判据；在 throw 之前先回 4xx，
-      // 不把用户输入当开发错误打到日志里）。
-      const safeSegment = (segment: string): boolean =>
-        /^[A-Za-z0-9._-]+$/u.test(segment) && !segment.startsWith('.')
+      // 资产 id / 媒体文件名的字符集（与库内部同一判据，唯一源在 `asset-path.ts`；
+      // 在 throw 之前先回 4xx，不把用户输入当开发错误打到日志里）。
+      const safeSegment = (segment: string): boolean => isAssetFileName(segment)
       /** 读体 + Abort 联动 + 统一错误出口（照分组面的写法，抽出来复用 5 个写分支）。 */
       const withBody = async (handle: (body: Record<string, unknown>) => Promise<void>): Promise<void> => {
         const controller = new AbortController()
@@ -1626,8 +1626,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           sendJson(res, 400, { error: '缺少 projectId 或 file' })
           return
         }
-        // 防路径穿越：与资产文件名同一判据。
-        if (!/^[A-Za-z0-9._-]+$/u.test(body.file) || body.file.startsWith('.')) {
+        // 防路径穿越：与资产文件名同一判据（唯一源 `asset-path.ts`）。
+        if (!isAssetFileName(body.file)) {
           sendJson(res, 400, { error: '非法的资产文件名' })
           return
         }
@@ -1725,11 +1725,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         const busy = staleNodes.filter((node) => node.isLoading === true)
         const stale = staleNodes.filter((node) => node.isLoading !== true)
         // 文件名 → 直接引用它的失效节点（一个文件可能被粘贴复制出多个节点）。
-        // 防路径穿越：与单条删除路由同一判据（`promoteAssetFile` 白名单同源）。
+        // 防路径穿越：与单条删除路由同一判据（唯一源 `asset-path.ts`）。
         const byFile = new Map<string, string[]>()
         for (const node of stale) {
           const file = basenameOfUrl(node.url ?? '')
-          if (file === null || !/^[A-Za-z0-9._-]+$/u.test(file) || file.startsWith('.')) continue
+          if (file === null) continue
           const list = byFile.get(file)
           if (list === undefined) byFile.set(file, [node.id])
           else list.push(node.id)

@@ -15,12 +15,12 @@
  * 工单**不落文件**：Host 半与路由同进程，模块级 `Map` 即单例（devdoc §6.3 注允许，
  * 且比文件式更易测）。新增 CV-xxx。
  */
-import { join } from 'node:path'
 import { newAssetId } from '../config.js'
 import { makeCanvasError } from '../error-system.js'
 import { probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
 import { recordTransientAsset } from '../asset-gc.js'
+import { resolveAssetPathIn } from '../asset-path.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
@@ -847,7 +847,7 @@ export async function commitRenderJob(
     throw makeCanvasError('CS-USER-ERR', { message: '渲染产物为空，请重试。', detail: 'empty render bytes' })
   }
   const saved = await saveLocalAssetBytes(registry, job.projectId, `remotion-${newAssetId()}.mp4`, input.bytes)
-  const info = await probeMediaInfo(join(registry.assetsDir(job.projectId), saved.assetFile))
+  const info = await probeMediaInfo(resolveAssetPathIn(registry.assetsDir(job.projectId), saved.assetFile))
   const warnings = [...(input.warnings ?? [])]
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
 

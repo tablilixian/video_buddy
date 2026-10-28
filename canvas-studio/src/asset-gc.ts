@@ -27,14 +27,12 @@ import type { AssetLibrary } from './asset-library.js'
 import type { StudioCanvasDocument, StudioCanvasNode } from './contracts/canvas.js'
 import { pruneReferenceManifest } from './generate.js'
 import { collectProtectedBasenames, markHistoryDeleted, pruneHistory } from './asset-history.js'
-
-/** 合法资产文件名（与 promoteAssetFile 的防路径穿越判据同源）。 */
-const ASSET_FILE_RE = /^[A-Za-z0-9._-]+$/u
+import { isAssetFileName } from './asset-path.js'
 
 /** url → 磁盘文件名（basename）。非本地资产 url（理论不存在）返回 null。 */
 export function basenameOfUrl(url: string): string | null {
   const name = url.split('/').pop() ?? ''
-  return name.length > 0 && ASSET_FILE_RE.test(name) ? name : null
+  return name.length > 0 && isAssetFileName(name) ? name : null
 }
 
 /**
@@ -248,10 +246,10 @@ export async function gcProjectAssets(
   // trash 名单快照（第 ⑤ 步剪枝用）：物理清时同步剔除，保证剪枝判据是
   // 「清理后真实还存在的文件」而不是清理前的旧快照。
   const trashNames = new Set(
-    trashEntries.filter((entry) => entry.isFile() && ASSET_FILE_RE.test(entry.name)).map((entry) => entry.name),
+    trashEntries.filter((entry) => entry.isFile() && isAssetFileName(entry.name)).map((entry) => entry.name),
   )
   for (const entry of trashEntries) {
-    if (!entry.isFile() || !ASSET_FILE_RE.test(entry.name)) continue
+    if (!entry.isFile() || !isAssetFileName(entry.name)) continue
     if (referenced.has(entry.name) && !rootFiles.has(entry.name)) {
       try {
         await rename(join(trashDir, entry.name), join(assetsDir, entry.name))
@@ -330,7 +328,7 @@ export async function gcLibraryAssets(library: AssetLibrary): Promise<LibraryGcR
       continue
     }
     for (const file of dirEntries) {
-      if (!file.isFile() || !ASSET_FILE_RE.test(file.name) || file.name.startsWith('.')) continue
+      if (!file.isFile() || !isAssetFileName(file.name)) continue
       if (files.has(file.name)) continue
       try {
         await rm(join(library.root, 'library', entry.name, file.name))

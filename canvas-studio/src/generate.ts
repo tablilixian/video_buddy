@@ -66,6 +66,7 @@ import { readLocalAssetBytes } from './providers/reference.js'
 import { registerBuiltinVideoProviders } from './providers/index.js'
 // 阶段二：统一错误处理系统 —— throwError 依赖已登记的错误码（副作用自注册 catalog）。
 import { makeCanvasError, sanitizeForUser, throwError } from './error-system.js'
+import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
 import type { CanvasStudioError } from './error-system.js'
 import './errors/catalog.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
@@ -733,11 +734,17 @@ async function readSourceBytes(
   port: number | undefined,
   signal?: AbortSignal,
   registry?: ProjectRegistry,
+  /** 当前项目 id（CR-01）：资产的 projectId 段同样来自 agent 参数，跨项目引用一律拒。 */
+  projectId?: string,
 ): Promise<{ bytes: Buffer; ext: string }> {
   // 1) canvas-studio 资产 URL → 直接读磁盘。
   const asset = parseCanvasAsset(source)
   if (asset !== null && registry !== undefined) {
-    const localPath = join(registry.assetsDir(asset.projectId), asset.file)
+    if (projectId !== undefined && asset.projectId !== projectId) {
+      throwError('CS-USER-ERR', { message: `资产 URL 属于其它项目（${asset.projectId}），当前项目是 ${projectId}；跨项目请先把素材导入本项目（上传或素材库）`, detail: `cross-project asset ref: ${asset.projectId} != ${projectId}` })
+    }
+    // CR-01：文件名走唯一判据 + 目录前缀复核（asset-path.ts），杜绝 `..` 穿越。
+    const localPath = resolveAssetPathIn(registry.assetsDir(asset.projectId), asset.file)
     if (existsSync(localPath)) {
       const ext = extname(asset.file).replace(/^\./, '') || 'png'
       return { bytes: await readFile(localPath), ext }
@@ -773,9 +780,9 @@ async function readSourceBytes(
 }
 
 /** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到 Drama Backend，返回服务器 filename。 */
-async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: number, registry?: ProjectRegistry): Promise<string> {
+async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: number, registry?: ProjectRegistry, projectId?: string): Promise<string> {
   await ensureDramaReachable(signal)
-  const { bytes, ext } = await readSourceBytes(sourceUrl, port, signal, registry)
+  const { bytes, ext } = await readSourceBytes(sourceUrl, port, signal, registry, projectId)
   return uploadBytesToDrama(bytes, ext, signal)
 }
 
@@ -855,15 +862,10 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
   return filename
 }
 
-/**
- * 从同源资产 url 解析出 `<projectId>/<assetFile>` 键（null = 非画布资产 url）。
- * 文件段收紧到与 promoteAssetFile 相同的白名单字符集（拒绝路径穿越/编码字符），
- * 纯函数，供惰性 promote（@ref 兜底）与单测使用。
- */
+/** 同源资产 url → `<projectId>/<assetFile>` 键（null = 非画布资产 url）；文件段走 `asset-path.ts` 唯一判据。 */
 export function assetKeyFromUrl(url: string): string | null {
-  const match = /^\/canvas-studio\/assets\/([^/]+)\/([A-Za-z0-9._-]+)$/u.exec(url)
-  if (match === null || match[1]?.includes('..') === true) return null
-  return `${match[1]}/${match[2]}`
+  const [, projectId = '', file = ''] = /^\/canvas-studio\/assets\/([^/]+)\/([^/]+)$/u.exec(url) ?? []
+  return projectId !== '' && !projectId.includes('..') && isAssetFileName(file) ? `${projectId}/${file}` : null
 }
 
 /**
@@ -992,17 +994,14 @@ export async function promoteAssetFile(
   assetFile: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  // 防路径穿越：assetFile 必须是纯文件名（上传时由 Host 生成 `assetId.ext`）。
-  if (!/^[A-Za-z0-9._-]+$/u.test(assetFile) || assetFile.includes('..')) {
-    throwError('CS-USER-ERR', { message: `非法资产文件名: ${assetFile}` })
-  }
+  // CR-01/CR-02：防路径穿越的统一准入点（`assetFile` 必须是由 Host 生成的纯文件名）。
+  const rootPath = resolveAssetPathIn(registry.assetsDir(projectId), assetFile)
   const key = `${projectId}/${assetFile}`
   const inflight = promoteInflight.get(key)
   if (inflight !== undefined) return inflight
   const pending = (async () => {
     const project = (await registry.list()).find((entry) => entry.id === projectId)
     if (!project) throwError('CS-PROJ-001', { id: projectId })
-    const rootPath = join(registry.assetsDir(projectId), assetFile)
     let bytes: Buffer
     try {
       bytes = await readFile(rootPath)

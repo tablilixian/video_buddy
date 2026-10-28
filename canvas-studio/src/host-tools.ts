@@ -71,7 +71,8 @@ import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
-import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
+import { cutAudioSegment } from './audio-cut.js'
+import { isAssetFileName } from './asset-path.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
 import { ASSET_URL_PREFIX, collectAnimationWindows, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
@@ -777,7 +778,7 @@ async function resolveCutAudioSource(
   }
   // REQ-001（§8-D 旁路①）：`lib:<id>` → 物化进当前项目 assets 后按本地文件裁切。
   // 不走 Drama 句柄（本链的既定取向），也必须在 findNodeByRef / 文件名回落之前拦 ——
-  // `PLAIN_ASSET_NAME_RE` 不含 `:`，不拦会被误报成「画布上没有可引用的节点」。
+  // `isAssetFileName` 不含 `:`，不拦会被误报成「画布上没有可引用的节点」。
   const libId = libraryIdOfHandle(token)
   if (libId !== undefined) {
     const asset = await library.require(libId)
@@ -797,7 +798,7 @@ async function resolveCutAudioSource(
     // 没命中节点时回落成「文件名」。但中文/带空格的串根本不可能是资产名 —— 硬走
     // 下游会得到「音频文件名不合法」，把「你引用的东西不存在」说成文件名问题，
     // 模型会照着去改文件名而不是去核对节点标题。这里先分诊。
-    if (!PLAIN_ASSET_NAME_RE.test(token)) {
+    if (!isAssetFileName(token)) {
       throwError('CS-USER-ERR', {
         message: `画布上没有可引用的节点「${token}」，它也不是项目资产文件名；请传节点 id、@ref[节点标题]，或 assets/ 下的纯文件名`,
         detail: `no node for ref and not a plain asset name: ${token}`,
@@ -850,7 +851,7 @@ async function runTextAutoFix(
 ): Promise<GenerateResult> {
   try {
     // 1) 把原图产物 URL 上传到 Drama Backend 拿可用句柄（产物名不可直接入参，CV-155）
-    const uploadedFilename = await uploadImage(original.url!, signal, port(), registry)
+    const uploadedFilename = await uploadImage(original.url!, signal, port(), registry, projectId)
     await backfillUploadFilename(registry, projectId, original.url!, uploadedFilename)
     // 2) 构造修复 prompt（CV-218：从**原 prompt** 抽「文字规格段 + 逐字约束段」）。
     //    原 prompt 是修复 prompt 的最佳来源 —— 丢位置线索正是「武仔 → 武传」仍错
@@ -2406,9 +2407,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
       async execute(args, exec) {
         const a = args as { imageUrl: string }
-        const filename = await uploadImage(a.imageUrl, exec.signal, portOf(), registry)
-        // CV-031b：画布资产重上传后回写 filename，保住 filename→节点 的血缘反查。
+        // CR-01：先解析项目再上传（跨项目资产一律拒读）；CV-031b：回写 filename 保住 filename→节点血缘。
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const filename = await uploadImage(a.imageUrl, exec.signal, portOf(), registry, projectId)
         await backfillUploadFilename(registry, projectId, a.imageUrl, filename)
         return { filename }
       },

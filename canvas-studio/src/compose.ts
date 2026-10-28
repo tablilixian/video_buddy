@@ -26,6 +26,7 @@ const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { audioCompositionFrom } from './remotion/manifest.js'
 import { throwError } from './error-system.js'
+import { resolveAssetPathIn } from './asset-path.js'
 import { recordAssetHistory } from './asset-history.js'
 import './errors/catalog.js'
 
@@ -158,13 +159,18 @@ export interface ComposeClip {
 /**
  * 将画布节点同源 URL 反查为本地资产文件绝对路径。
  * URL 形如 `/canvas-studio/assets/<projectId>/<file>`，资产目录由 registry
- * 提供；返回 `join(assetsDir, file)`。
+ * 提供。
+ *
+ * CR-01/CR-02：末段文件名一律过 `asset-path.ts` 的唯一判据再拼路径 —— 此前是
+ * 裸 `join(assetsDir, file)`，`../../..` 会被折叠成项目外的任意文件，而 url 来自
+ * 画布节点（可被 agent 写入）。成片合成 / 抽帧 / 波形 / 素材核对四条链路共用本
+ * 函数，收口在这里等于一次收紧四路。
  */
 export function urlToAssetPath(assetsDir: string, url: string): string {
   const parts = url.split('/').filter(Boolean)
   const idx = parts.indexOf('assets')
   const file = idx >= 0 ? parts[idx + 2] : parts.at(-1)
-  return join(assetsDir, file ?? url.split('/').at(-1) ?? '')
+  return resolveAssetPathIn(assetsDir, file ?? '')
 }
 
 /**

@@ -29,18 +29,12 @@ import { FFMPEG_TIMEOUT_MS, probeMediaDuration, resolveFfmpegPath, runFfmpeg } f
 import type { ProjectRegistry } from './projects.js'
 import { newAssetId } from './config.js'
 import { throwError } from './error-system.js'
+import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
 import { recordAssetHistory } from './asset-history.js'
 import './errors/catalog.js'
 
 /** 裁剪产物的扩展名（与 `libmp3lame` 输出一致，见文件头理由 1）。 */
 export const AUDIO_CUT_OUTPUT_EXT = 'mp3'
-
-/**
- * 项目资产「纯文件名」的字符集 —— **单一事实来源**：`resolveSourcePath` 用它拒收
- * 路径穿越，`host-tools.resolveCutAudioSource` 也用它判断「这串到底是文件名还是
- * 一个没命中的引用」（否则中文节点标题找不到时会报「文件名不合法」，误导模型）。
- */
-export const PLAIN_ASSET_NAME_RE = /^[A-Za-z0-9._-]+$/u
 
 /** 秒值保留 3 位（凑 `-t` 参数与标题展示；音频切点精度到毫秒足够）。 */
 function round3(value: number): number {
@@ -99,7 +93,8 @@ function requireSeconds(name: 'start' | 'end', value: unknown): number {
  */
 async function resolveSourcePath(registry: ProjectRegistry, projectId: string, file: string): Promise<string> {
   const name = file.trim()
-  if (!PLAIN_ASSET_NAME_RE.test(name) || name.includes('..')) {
+  // CR-01/CR-02：文件名判据只有 `asset-path.ts` 一份（此前的 `PLAIN_ASSET_NAME_RE` 已收敛过去）。
+  if (!isAssetFileName(name)) {
     throwError('CS-USER-ERR', { message: `音频文件名不合法：${file}（只接受项目资产的纯文件名，不含路径）`, detail: `invalid asset name: ${file}` })
   }
   const kind = classifyFile(name)
@@ -109,7 +104,7 @@ async function resolveSourcePath(registry: ProjectRegistry, projectId: string, f
   }
   const project = (await registry.list()).find((entry) => entry.id === projectId)
   if (project === undefined) throwError('CS-PROJ-001', { id: projectId })
-  const path = join(registry.assetsDir(projectId), name)
+  const path = resolveAssetPathIn(registry.assetsDir(projectId), name)
   const info = await stat(path).catch(() => null)
   if (info === null) {
     throwError('CS-USER-ERR', { message: `找不到音频文件 ${name}（它可能已被删除，请重新上传或重新生成）`, detail: `missing asset: ${path}` })

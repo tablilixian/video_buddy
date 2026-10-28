@@ -1874,3 +1874,24 @@
 - **三层风格体系分工**（分册内写明，防摆错层）：11 成片预设（`style-presets.md`，绑 skill）/ 12 视觉风格（`src/visual-styles.ts`，单图前缀）/ 30 风格库行（本册，纯知识），**三表零重名**。
 - **涉及文件**：`skills/canvas-studio-creation/references/style-library.md`（新）、`style-presets.md`、`clarification.md`、`look.md`、`SKILL.md`、`tests/style-library.test.mjs`（新）、`tests/skill-catalog.test.mjs`
 - **测试**：新增守卫 `tests/style-library.test.mjs` 4 条（头部计数对账 / 4 列齐全 + 5 项 tokens 顺序 / 三表防撞 / 四处接线在场）；`skill-catalog` 的 `CREATION_BOOKLETS` 登记。定点 8 套 66/66 全绿；全量 smoke 名单外新增红 0（唯一红为并行会话在途的 `generate.test.mjs` 落点断言，与本条无关）。
+
+#### CV-375 · 资产名唯一准入点（CR-01/CR-02 收敛 8 份白名单）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0（本机任意文件外传）
+- **由来**：`docs/代码审查-2026-10-28/瑕疵与隐患清单.md` 的 CR-01（上传链路路径穿越）与 CR-02（fal 参考素材通道读任意文件）。审查时的实际状态是「已经加了一个新入口，但**没有**收敛」：`ProjectRegistry.resolveAssetPath()` 只接上了 4 个调用点，仓里仍躺着 **8 份同款白名单**，而**最危险的裸拼接点一行未动**。
+- **病灶**：资产 URL 的文件名段、`video_composite` 的 `filenames`、`readLocalAssetBytes` 的 `file` 全是 **agent 可写参数**，而 `path.join` 会把 `..` 折叠掉。不校验时 `/canvas-studio/assets/<id>/../../../..` 能读本机任意文件，再被 `upload_image` 上传到 Drama、或被 fal 通道 base64 内联进公网请求。**剩余面最大的是 `compose.urlToAssetPath`**（成片 / 抽帧 / 素材核对三条链路复用，完全不校验）与 `asset-library` 三处物化路径。
+- **修法**：新 `src/asset-path.ts` 作唯一源，三层：
+  - `isAssetFileName(file)` —— ASCII 白名单 `^[A-Za-z0-9._-]+$` + 不以 `.` 开头（`.` 会折成资产目录本身）+ 拒 `..`（`%2e%2e`、`a/b`、`a\b`、`a:b`、中文原名、空串全挡）
+  - `assertAssetFileName(file)` —— 不合法抛 `CS-USER-ERR`
+  - `resolveAssetPathIn(assetsDir, file)` —— 校验 + `join` + `startsWith(base + sep)` **前缀复核**（将来有人放宽正则，也不会立刻变成穿越）；读写盘只走这一个解析点
+- **被删掉的 8 份私有判据**：`promoteAssetFile` 内联、`audio-cut.PLAIN_ASSET_NAME_RE`（导出常量，host-tools 也在引）、`asset-library.LIB_FILE_RE`、`asset-gc.ASSET_FILE_RE`、`waveform-host` 内联、`generate.assetKeyFromUrl` 内联、`routes.ts` 四处内联、首版挂在 `ProjectRegistry` 上的方法（连同其内联正则在内**整体移除**，`projects.ts` 最终零改动）。
+- **被改成统一入口的 6 处裸拼接**：`compose.urlToAssetPath`、`audio-cut.resolveSourcePath`、`waveform.resolveAudioAssetPath`、`asset-library` 三处（source / stat / materialize target）、`generate.promoteAssetFile` + `readSourceBytes`、`remotion/render-job` 的 `probeMediaInfo`。
+- **跨项目引用一并收紧**：`readSourceBytes` 新增 `projectId` 参数，资产 URL 的 `<projectId>` 段与当前项目不符直接报 `CS-USER-ERR`（语义上本来就不支持读其它项目的 `assets`，素材复用走 `lib:<id>` 物化）。`uploadImage` 透传，`host-tools` 两个调用点先解析项目再上传。
+- **两条踩坑（后续同类改动必看）**：
+  1. **准入点不能挂 `ProjectRegistry` 方法**。首版做成 `registry.resolveAssetPath()`，全量 smoke 立刻新增 20 条红：`registry.resolveAssetPath is not a function` —— 测试用的是**只实现 `assetsDir` 的桩 registry**。改成纯函数 + `registry.assetsDir(projectId)` 后立刻全绿。
+  2. **反向变异第一版是无效通过**。把 `readLocalAssetBytes` 退回裸 `join` 后测试仍全绿 —— 因为测试里 `'../../secret.txt'` 相对 assetsDir 只回到 `projects/`，文件不存在也抛 `CS-USER-ERR`，而断言只看 error code。改成**上溯三级 + 断言消息含「非法资产文件名」**后，该变异才正确转红。
+- **涉及文件**（10 改 + 2 新）：`src/asset-path.ts`（新）、`tests/asset-path.test.mjs`（新）、`generate.ts`、`host-tools.ts`、`compose.ts`、`asset-gc.ts`、`asset-library.ts`、`audio-cut.ts`、`waveform-host.ts`、`routes.ts`、`providers/reference.ts`、`remotion/render-job.ts`（`projects.ts` 最终未改，见踩坑 ①）
+- **验证**：`tsc -p tsconfig.json` + `tsc -p tsconfig.client.json` 0 错、`tsdown` 两入口 Build complete、`verify:loader` 绿、文件大小棘轮通过且**未上调任何阈值**（`generate.ts` 3580≤3582 / `host-tools.ts` 4401≤4401，靠压缩注释与合并签名回落）。新增 9 条断言；反向变异 M1（拆掉 `.`/`..` 判定）→ 4 红、M2（退回裸 `join`）→ 1 红。
+- **已知遗留**：全量 `test:smoke` 在本沙箱复跑出现 **311 条 `hookFailed EPERM` 假红** —— 沙箱 Security Center 开始拦截测试 `finally` 里的临时目录删除（连工作区内 `.tmp-smoke/**` 都拦，单跑同样红，`CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD` 在这一层无效）。**源码已是终态且曾跑出 0 失败**，需用户在自有终端复跑确认。
+

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import type { ProjectRegistry } from '../projects.js'
 import { FFMPEG_TIMEOUT_MS, resolveFfmpegPath, runFfmpeg } from '../ffmpeg-run.js'
 import { throwError } from '../error-system.js'
+import { resolveAssetPathIn } from '../asset-path.js'
 import '../errors/catalog.js'
 
 /** 读取项目资产目录下的一个文件，返回字节与扩展名（去点、小写，缺省 png）。 */
@@ -19,7 +20,9 @@ export async function readLocalAssetBytes(
   projectId: string,
   file: string,
 ): Promise<{ bytes: Uint8Array; ext: string }> {
-  const localPath = join(registry.assetsDir(projectId), file)
+  // CR-02：文件名走唯一判据——fal 通道会把这里读到的字节 base64 内联进公网请求，
+  // `join(assetsDir, '../../secret')` 就是本机任意文件外传。
+  const localPath = resolveAssetPathIn(registry.assetsDir(projectId), file)
   if (!existsSync(localPath)) throwError('CS-USER-ERR', { message: `本地资产不存在: ${file}` })
   const buffer = await readFile(localPath)
   const ext = extname(file).replace(/^\./, '') || 'png'

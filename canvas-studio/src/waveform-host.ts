@@ -26,10 +26,10 @@
  * 不该打断渲染或播放。
  */
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
 import { resolveFfmpegPath, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { WAVE_BARS_MAX } from './waveform.js'
 import type { ProjectRegistry } from './projects.js'
+import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
 import { throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -67,13 +67,13 @@ export async function resolveAudioAssetPath(
   projectId: string,
   file: string,
 ): Promise<string | null> {
-  if (!/^[A-Za-z0-9._-]+$/u.test(file) || file.includes('..')) return null
+  if (!isAssetFileName(file)) return null
   const dot = file.lastIndexOf('.')
   if (dot < 0) return null
   if (!AUDIO_EXTENSIONS.has(file.slice(dot).toLowerCase())) return null
   const project = (await registry.list()).find((entry) => entry.id === projectId)
   if (!project) return null
-  return join(registry.assetsDir(projectId), file)
+  return resolveAssetPathIn(registry.assetsDir(projectId), file)
 }
 
 /**

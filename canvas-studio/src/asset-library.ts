@@ -28,13 +28,11 @@ import type { AssetLibraryDocument, LibAnchorRef, LibCategory, LibMedia, Library
 import { LIBRARY_SCHEMA_VERSION, isLibCategory, isLibraryAsset } from './contracts/asset-library.js'
 import { classifyFile } from './media-extension.js'
 import { throwError } from './error-system.js'
+import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
 import './errors/catalog.js'
 
 /** 墓碑（已删除资产 id）上限：与 projects.json 同数，删除低频、窗口足够。 */
 const TOMBSTONE_LIMIT = 200
-
-/** 库内媒体文件名字符集（与项目资产同一判据；不以 `.` 开头防隐藏文件）。 */
-const LIB_FILE_RE = /^[A-Za-z0-9._-]+$/u
 
 /** 主名称上限（与项目名同限：注册表 / 路径 / prompt 清单都吃它）。 */
 const MAX_NAME_LENGTH = 80
@@ -42,17 +40,19 @@ const MAX_NAME_LENGTH = 80
 /** URL → 磁盘文件名（与 asset-gc 同判据；非本地资产 url 返回 null）。 */
 function basenameOfUrl(url: string): string | null {
   const name = url.split('/').pop() ?? ''
-  return name.length > 0 && LIB_FILE_RE.test(name) && !name.startsWith('.') ? name : null
+  return name.length > 0 && isAssetFileName(name) ? name : null
 }
 
 /**
  * url 是否指向**本项目**的落盘资产，是则返回其文件名（与 `generate.ts` 的
- * `assetKeyFromUrl` 同一形态正则，内联避免 asset-library → generate 的重依赖引入）。
+ * `assetKeyFromUrl` 同一形态正则 + 同一份文件名判据，内联避免 asset-library →
+ * generate 的重依赖引入）。
  */
 function projectAssetBasename(url: string, projectId: string): string | null {
-  const match = /^\/canvas-studio\/assets\/([^/]+)\/([A-Za-z0-9._-]+)$/u.exec(url)
+  const match = /^\/canvas-studio\/assets\/([^/]+)\/([^/]+)$/u.exec(url)
   if (match === null || match[1] !== projectId) return null
-  return match[2] ?? null
+  const file = match[2] ?? ''
+  return isAssetFileName(file) ? file : null
 }
 
 /** 从 `lib:<id>` 句柄取出库资产 id；非 `lib:` 前缀返回 undefined（交回调用方走画布节点解析）。 */
@@ -170,11 +170,12 @@ export class AssetLibrary {
   }
 
   /**
-   * 解析库媒体文件的绝对路径（媒体路由用）。文件名必须过 `LIB_FILE_RE` 且不以
-   * `.` 开头，最终路径再断言落在该资产目录内（双保险防穿越）。
+   * 解析库媒体文件的绝对路径（媒体路由用）。文件名走 `asset-path.ts` 的唯一判据，
+   * 最终路径再断言落在该资产目录内（双保险防穿越）。
+   * 错误码保持 `CS-DEV-ERR`：库内文件名由 Host 生成，非法即缺陷，不该报给用户。
    */
   mediaFile(assetId: string, file: string): string {
-    if (!LIB_FILE_RE.test(file) || file.startsWith('.')) {
+    if (!isAssetFileName(file)) {
       throwError('CS-DEV-ERR', { detail: `非法库媒体文件名: ${file}` })
     }
     const base = this.assetDir(assetId)
@@ -389,7 +390,7 @@ export class AssetLibrary {
       throwError('CS-USER-ERR', { message: `不支持的文件类型：${name}（资产库仅收图片 / 视频 / 音频）` })
     }
     const ext = extname(name).toLowerCase()
-    if (!LIB_FILE_RE.test(`m_0${ext}`) || ext.length === 0) {
+    if (!isAssetFileName(`m_0${ext}`) || ext.length === 0) {
       throwError('CS-USER-ERR', { message: `不支持的文件扩展名：${name}` })
     }
     const assets = [...await this.ensureLoaded()]
@@ -566,7 +567,7 @@ export async function collectNodeMediaSources(
   if (node.url === undefined || node.url.length === 0) return { node, sources: [] }
   const base = basenameOfUrl(node.url)
   if (base === null) throwError('CS-LIB-003', { detail: `node url is not a local asset: ${node.url}` })
-  const sourcePath = join(registry.assetsDir(projectId), base)
+  const sourcePath = resolveAssetPathIn(registry.assetsDir(projectId), base)
   try {
     const info = await stat(sourcePath)
     if (!info.isFile()) throwError('CS-LIB-003', { detail: `media source not a file: ${base}` })
@@ -600,7 +601,7 @@ export interface MaterializedLibraryMedia {
  *     多次解析 / 多工具引用不产生第二份拷贝）；
  *  3. 都不中 → 拷贝为确定性名。
  *
- * 目标名只由 assetId 与库文件名拼成，恒过 `LIB_FILE_RE`（promote 的同款判据）。
+ * 目标名只由 assetId 与库文件名拼成，恒过 `asset-path.ts` 的文件名判据（promote 同款）。
  */
 export async function materializeLibraryMedia(
   library: AssetLibrary,
@@ -628,7 +629,7 @@ export async function materializeLibraryMedia(
     const base = projectAssetBasename(node.url, projectId)
     if (base === null) continue
     try {
-      const info = await stat(join(registry.assetsDir(projectId), base))
+      const info = await stat(resolveAssetPathIn(registry.assetsDir(projectId), base))
       if (info.isFile()) return { file: base, contentHash }
     } catch {
       // 文件已被 GC / 进回收站：这一路复用不成立，落到档 2/3 重新物化。
@@ -638,10 +639,10 @@ export async function materializeLibraryMedia(
 
   // 档 2/3：确定性名；已在盘（此前物化过）直接复用，否则拷贝。
   const targetName = `lib-${assetId}-${media.file}`
-  if (!LIB_FILE_RE.test(targetName) || targetName.startsWith('.')) {
+  if (!isAssetFileName(targetName)) {
     throwError('CS-DEV-ERR', { detail: `materialized name invalid: ${targetName}` })
   }
-  const targetPath = join(registry.assetsDir(projectId), targetName)
+  const targetPath = resolveAssetPathIn(registry.assetsDir(projectId), targetName)
   try {
     const info = await stat(targetPath)
     if (info.isFile()) return { file: targetName, contentHash }

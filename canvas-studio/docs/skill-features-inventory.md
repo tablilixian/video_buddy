@@ -144,7 +144,7 @@
 | `67f9542e8a` | CV-109 澄清推荐偏置修复 + CV-110 确认式澄清立项 |
 | `2b1088f4c8` | CV-111 character_sheet 报错自愈（输入失效自动重传） |
 
-> 未提交（按 09-04 handoff 既定处置，非本次范围）：`minimax-h3`（子模块）、根 `main.js`（构建产物）、根 `docs/archive/image-resource-analysis.md`、`docs/videobuddy-rebrand-audit.prompt.md`。
+> 未提交（按 09-04 handoff 既定处置，非本次范围）：`minimax-h3`（子模块）、根 `main.js`（构建产物）、根 `docs/archive/image-resource-analysis.md`、`docs/archive/videobuddy-rebrand-audit.prompt.md`。
 
 ---
 

@@ -1,7 +1,7 @@
 # session.v4 复盘 v3：问题全量清单 + 覆盖度核对
 
 > 源：`/Users/lilixian/Downloads/session.v4.jsonl 2`（16.7MB / 1658 行，全量重算）
-> 被核对的两份复盘：`docs/session-v4-复盘-智能手表成片.md`（v1，基于截断文件）、`docs/session-v4-复盘-v2-含llm自检.md`（v2）
+> 被核对的两份复盘：`docs/archive/session-v4/session-v4-复盘-智能手表成片.md`（v1，基于截断文件）、`docs/archive/session-v4/session-v4-复盘-v2-含llm自检.md`（v2）
 > 本文定位：**不重写故事，只做三件事** —— ①纠正 v1/v2 的错数与错结论 ②列出完全没被覆盖的问题 ③给可验收的修复项。
 > 结论：v2 覆盖了"渲染超时"这一个战场，且抓到了大部分实验数据；但**根因写错了**（把已被自己数据否证的假设扶正成 P0），并**漏掉 5 类成本**，其中 2 类比渲染更该先修。
 >

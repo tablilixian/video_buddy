@@ -97,6 +97,9 @@ const HANDLE_PARAMS: readonly string[] = [
   // 画布节点引用（做成片合成 / 版本取代时用）
   'clipIds',
   'bgmNodeId',
+  // S2b（2026-10-28）：compose_video 的多句旁白节点 id —— 与 bgmNodeId 同类（画布
+  // 节点句柄，合法值只能来自 tts_voiceover 产物节点）。
+  'voiceOverNodeIds',
   'scriptId',
   'replaces',
   'sourceNodeIds',

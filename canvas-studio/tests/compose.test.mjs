@@ -457,7 +457,11 @@ test('CV-209：多镜拼接不再丢原生音轨，每段转码都带 -c:a aac�
   }
 })
 
-test('CV-138：BGM 短于成片直接报错，且不留半成品成片', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+test('CV-138：BGM 短于成片在 AUTOPAD=0（旧守卫模式）下直接报错，且不留半成品成片', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+  // D-02（2026-10-28 拍板）：默认自动补静音 + 明确告知；本测试钉住**回退模式**的
+  // 旧行为（CANVAS_STUDIO_AUDIO_AUTOPAD=0 → 短 BGM 报错不落半成品）。默认模式的
+  // 补静音行为由 tests/compose-audio-pad.test.mjs 的「S2b 判据③」覆盖。
+  process.env.CANVAS_STUDIO_AUDIO_AUTOPAD = '0'
   const dir = await mkdtemp(join(tmpdir(), 'cs-compose-short-'))
   try {
     const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
@@ -486,6 +490,7 @@ test('CV-138：BGM 短于成片直接报错，且不留半成品成片', { skip:
       `不应落半成品成片，实得 ${JSON.stringify(files)}`,
     )
   } finally {
+    delete process.env.CANVAS_STUDIO_AUDIO_AUTOPAD
     await rm(dir, { recursive: true, force: true })
   }
 })

@@ -28,38 +28,40 @@ import { audioCompositionFrom } from './remotion/manifest.js'
 import { throwError } from './error-system.js'
 import { resolveAssetPathIn } from './asset-path.js'
 import { recordAssetHistory } from './asset-history.js'
+import { resolveAudioTimeline, compositionFromTimeline, buildAudioGraph, AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS } from './audio-timeline.js'
+import {
+  timelineFromComposeClips,
+  buildAudioTrackArgs,
+  buildMuxArgs,
+  bgmAutopadDecision,
+  buildBgmFade,
+  fadeAnchorOf,
+  inferBgmSilenceProfile,
+  BGM_VOLUME,
+  BGM_MIX_VOLUME,
+  VOICE_VOLUME,
+  type BgmSilenceProfile,
+  type VoiceOverPlacement,
+  type ResolvedMixSource,
+  type ResolvedVoiceOver,
+} from './audio-compose.js'
 import './errors/catalog.js'
+
+// 兼容再导出（S2b：BGM 淡变/守卫纯函数迁往 audio-compose.ts，历史 import 路径不变）。
+export { buildBgmFade, fadeAnchorOf, inferBgmSilenceProfile, bgmShortfallMessage, BGM_SHORTFALL_TOLERANCE_SEC, timelineFromComposeClips } from './audio-compose.js'
+export type { BgmSilenceProfile, VoiceOverPlacement } from './audio-compose.js'
+export { AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS } from './audio-timeline.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
 const COMPOSE_TIMEOUT_MS = 240_000
 /** 统一转码目标帧率。 */
 const TARGET_FPS = 25
-/** BGM 单轨音量（0–1）：成片只有 BGM 时（多镜拼接，无 amix、无归一化）。 */
-const BGM_VOLUME = 0.8
-/**
- * CV-141：单镜「环境声 + BGM」叠混时的 BGM 音量。
- *
- * 混音分支已改 `amix=normalize=0`（线性求和，不再把每一路各乘 0.5 / −6dB，实测
- * 单路 −33.12dB → 默认归一化输出 −36.99dB、`normalize=0` 为 −30.97dB）。线性
- * 求和下环境声留在前景、BGM 只作铺底，否则两路相加会削顶。
- */
-const BGM_MIX_VOLUME = 0.35
-/**
- * CV-138：BGM 时长守卫的容差（秒）。差额不超过它视为「等长」（探测本身有毫秒级
- * 抖动，不值得为此报错）。
- */
-export const BGM_SHORTFALL_TOLERANCE_SEC = 0.05
 /**
  * v1 中性默认调色（统一 eq 滤镜，治各镜色调漂移）：轻微提对比 + 饱和归一，
  * 所有片段应用同一滤镜链，把逐镜生成的色调差异拉到同一基线。传 false 关闭，
  * 传字符串覆盖本预设（见 ComposeOptions.colorGrade）。
  */
 const DEFAULT_COLOR_GRADE = 'eq=contrast=1.03:saturation=1.02'
-/** BGM 淡入淡出时长（秒，CV-209 自适应淡入淡出锚点上限）。
- *  默认仍是 1s，但探测 BGM/成片头尾留白后会按需缩短乃至跳过。 */
-const BGM_FADE_SEC = 1
-/** 自适应淡入淡出：当 BGM 头/尾留白大于该阈值（秒）时不强制淡入/淡出，信任音频自带的起止。 */
-const BGM_SILENT_EDGE_SEC = 2
 
 /** 成片合成结果（返回给客户端落画布节点）。 */
 export interface ComposeResult {
@@ -105,6 +107,13 @@ export interface ComposeOptions {
    * （例如用户故意把一段人声当配乐垫底）。
    */
   mixRole?: AudioMixRole
+  /**
+   * S2b（2026-10-28）：多句旁白节点（与 `bgmNodeId` 并存，**仅装配路径生效**）。
+   * 字符串 = 顺序堆叠（前一句结束处，零间隙）；对象 = 显式 `startSec`（与 render
+   * 路径 `audio.voiceOver[]` 的 startFrame 语义对齐）。每句满音量、无淡入淡出、
+   * 允许短于成片（D6 口径）。
+   */
+  voiceOverNodeIds?: ReadonlyArray<string | VoiceOverPlacement>
 }
 
 /**
@@ -118,9 +127,8 @@ export interface ComposeOptions {
  */
 export type AudioMixRole = 'bgm' | 'voiceOver'
 
-/** 旁白满音量（前景主声，不铺底）。 */
-const VOICE_VOLUME = 1
-/** 旁白短于成片时的提示容差（秒）：差这么点不值得刷一条 warning。 */
+/** 旁白满音量（前景主声，不铺底）—— S2b 起常量在 audio-compose.ts，此处仅保留
+ *  旁白短于成片时的提示容差。 */
 const VOICE_SHORTFALL_NOTE_SEC = 0.5
 
 /**
@@ -208,14 +216,10 @@ export function buildConcatList(paths: readonly string[]): string {
 }
 
 /**
- * S2a（2026-10-28 · CV-040 收口）：音频交付口径 —— 全链路统一 48kHz 立体声。
- *
- * 实验 C（audio-baseline-20261028.md）：concat demuxer 用第一段的参数解读后续所有段，
- * 采样率/声道不一致时**静默变速变调甚至流级损坏**（16k×48k 混拼实测容器时长虚报
- * 12.02s、解码器中途崩溃），且任何一方都不报错 ⇒ 必须在转码期统一 `-ar/-ac`。
+ * S2a（2026-10-28 · CV-040 收口）：音频交付口径常量（`AUDIO_DELIVERY_SAMPLE_RATE`
+ * / `AUDIO_DELIVERY_CHANNELS`）已随 S2b 迁往 audio-timeline.ts（装配图与转码参数
+ * 共用一份口径），本模块经文件头部再导出保持 import 路径不变。
  */
-export const AUDIO_DELIVERY_SAMPLE_RATE = 48000
-export const AUDIO_DELIVERY_CHANNELS = 2
 
 /** 音频编码参数（纯函数，S2a 抽出避免 `buildTranscodeArgs` 签名膨胀）。
  *
@@ -279,81 +283,6 @@ export function buildTranscodeArgs(
 /** concat 拼接参数（纯函数）。 */
 export function buildConcatArgs(concatListPath: string, output: string): string[] {
   return ['-f', 'concat', '-safe', '0', '-i', concatListPath, '-c', 'copy', '-y', output]
-}
-
-/**
- * CV-209：探测 BGM 头尾留白长度（ffmpeg `astats` —— 头部 / 尾部能量低于阈值的累计秒数）。
- * 用于「自适应淡入淡出」：BGM 头留白 ≥ `BGM_SILENT_EDGE_SEC` → 跳过淡入；尾留白 ≥ 该值
- * → 跳过淡出，信任音频自带的起止（避免成片在已静音的尾音上再加一层淡出）。
- *
- * 当前实现简化：直接根据探测到的"整段时长"与"成片真值"之间的差，配合头尾留白启发判断；
- * 详尽能量探测留给 ffmpeg `silencedetect`，这里以可解析到的常见度量为准。
- *
- * 返回 `{ headSilence, tailSilence }`（秒）。无法探测时返回 0。
- */
-export interface BgmSilenceProfile { headSilence: number; tailSilence: number }
-
-export function inferBgmSilenceProfile(bgmDuration: number, filmDuration: number): BgmSilenceProfile {
-  // 无探测能力的退化路径：以"长于成片部分"估算尾留白 —— 你的需求里"宁可比视频长"，
-  // 这部分通常是模型为了自然衰减而留的尾巴；按最小留白模型保守估。
-  if (!Number.isFinite(bgmDuration) || bgmDuration <= 0) return { headSilence: 0, tailSilence: 0 }
-  const overflow = bgmDuration - filmDuration
-  if (overflow < 0) return { headSilence: 0, tailSilence: 0 }
-  // 经验值：长出的 80% 视作尾留白，最大 4s（再长就明确是失误，去掉）。
-  const tailSilence = Math.min(overflow * 0.8, 4)
-  return { headSilence: 0, tailSilence }
-}
-
-/**
- * 构造 BGM 淡入淡出滤镜串（纯函数）。时长不足一个淡入周期时只做淡入。
- * 返回空串表示不做任何淡化（如时长未知）。
- *
- * CV-209 升级：
- * - 淡出锚点仍取 `fadeAnchorOf(bgm, filmDuration)`，但加自适应：BGM 尾留白 ≥ 2s 时
- *   **不加淡出滤镜**（信任音频自带衰减，强加 afade 会造成双重淡出，听感"闷尾"）。
- * - 淡入同理：BGM 头留白 ≥ 2s 时不加淡入。
- *
- * ⚠️ CV-138：传入的**不是 BGM 自身时长，而是淡化锚点**（= `fadeAnchorOf(bgm, 成片)`）。
- * 此前直接按 BGM 时长算淡出起点，BGM 长于成片时淡出区间整个落在片外——成片结尾
- * 变成硬切，而「BGM 比成片长」恰恰是最可能的默认路径。
- */
-export function buildBgmFade(duration: number, profile?: BgmSilenceProfile): string {
-  if (!Number.isFinite(duration) || duration <= 0) return ''
-  const skipIn = (profile?.headSilence ?? 0) >= BGM_SILENT_EDGE_SEC
-  const fadeIn = skipIn ? '' : `afade=t=in:st=0:d=${BGM_FADE_SEC}`
-  const skipOut = (profile?.tailSilence ?? 0) >= BGM_SILENT_EDGE_SEC
-  const fadeOut = !skipOut && duration > BGM_FADE_SEC
-    ? `afade=t=out:st=${(duration - BGM_FADE_SEC).toFixed(3)}:d=${BGM_FADE_SEC}`
-    : ''
-  const all = [fadeIn, fadeOut].filter(Boolean).join(',')
-  return all.length > 0 ? `,${all}` : ''
-}
-
-/**
- * CV-138：淡出锚点——取 BGM 与成片真值中的较小者（这就是「听着该收尾」的时刻）。
- * 两者都未知（≤0 / 非有限）时返回 0，`buildBgmFade` 会据此不加任何淡化。
- */
-export function fadeAnchorOf(bgmDuration: number, filmDuration: number): number {
-  const known = [bgmDuration, filmDuration].filter((value) => Number.isFinite(value) && value > 0)
-  return known.length === 0 ? 0 : Math.min(...known)
-}
-
-/**
- * CV-138：BGM 时长守卫（纯函数）。BGM 短于成片时返回中文报错文案，够长或无法
- * 判定（任一时长未知）时返回 `null`。
- *
- * 为什么报错而不是自动循环/拉伸：拉伸会变调，循环会在非节拍点接缝——两者都是
- * 「听得出错」的降级。报错让人重新生成一段够长的，比悄悄出错好。
- */
-export function bgmShortfallMessage(bgmDuration: number, filmDuration: number): string | null {
-  // 无法判定时不报错（调用方会降级并留 warning），避免把「探测失败」当成「BGM 太短」。
-  if (!(filmDuration > 0) || !(bgmDuration > 0)) return null
-  const shortfall = filmDuration - bgmDuration
-  // 浮点容差：两个时长都来自 ffprobe 的小数解析（如 15.5 − 15.45 在二进制下差 7e-16），
-  // 恰好在阈值上时不该因为浮点误差报错。
-  if (shortfall <= BGM_SHORTFALL_TOLERANCE_SEC + 1e-6) return null
-  return `BGM 比成片短 ${shortfall.toFixed(3)} 秒（成片 ${filmDuration.toFixed(3)}s，BGM ${bgmDuration.toFixed(3)}s）。`
-    + `请把 BGM 时长提高到 ≥${filmDuration.toFixed(3)}s（建议 ${Math.ceil(filmDuration + 0.5)}s）后重新合成。`
 }
 
 /**
@@ -487,16 +416,19 @@ function isVideoFile(path: string): boolean {
  * 执行成片合成全流程（Host 侧）：
  * 1) 读取画布节点，收集 clip 并反查本地文件，缺失报「片段文件不存在」；
  * 2) 探测首个 clip 的分辨率（后续片段统一到此尺寸），无分辨率则报错；
- * 3) 逐段统一转码（25fps / yuv420p；**CV-141：仅单镜整出保留音轨**，多镜一律
- *    `-an` 丢弃原生环境声，有音轨时转 aac）；
+ * 3) 逐段统一转码（25fps / yuv420p；每段统一 48k 立体声 aac，无音轨段补等长静音轨
+ *    —— S2a；转码产物保留音轨，供 legacy 回退与装配期取用）；
  * 4) concat demuxer 拼接，并探测产物真值（时长 + 是否有音轨）；
- * 5) 可选 BGM：**CV-138 先做时长守卫**（BGM 短于成片即报错、不落半成品），
- *    再按有无 concat 音轨走「叠混（normalize=0）」或「BGM 单轨」，输出时长锚定
- *    成片真值（`-t`）；
+ * 5) 音轨（S2b 分叉）：
+ *    - **多镜默认：从零装配**（D-01）——母版视频流 + AudioTimeline（原生段按真实
+ *      时长前缀和落位 / BGM / 多句旁白 `voiceOverNodeIds`）→ `buildAudioGraph` 一条
+ *      完整音轨 → `-c:v copy` 合流；短 BGM 自动补静音（D-02）；
+ *    - **单镜整出 / `CANVAS_STUDIO_AUDIO_LEGACY_CONCAT=1`：concat+amix 旧路径**
+ *      （单镜音轨行为逐字符不变）；
  * 6) 落 `export-<uuid>.mp4` 于 assets 根目录，返回同源 URL + 成片时长 +
- *    音轨构成（CV-143）。
+ *    音轨构成（装配路径由时间轴派生，S1 的读出口）。
  *
- * 整体受 120s 超时与调用方 `signal` 双重约束，超时/中断即抛中文错误。
+ * 整体受 240s 超时与调用方 `signal` 双重约束，超时/中断即抛中文错误。
  */
 export async function composeStudioVideo(
   registry: ProjectRegistry,
@@ -578,6 +510,8 @@ export async function composeStudioVideo(
 
     // S2a：无原生音轨的段逐段回显（模型能自查、用户能看见）——「哪段缺声、补了多久」。
     // 补静音轨本身在 buildTranscodeArgs 内完成；这里只负责把事实说出口。
+    // ⚠️ 仅 legacy 路径消费（S2b 装配路径的回显来自 timelineFromComposeClips 的
+    // notices ——「该区间保持静音」，装配并不真的逐段补静音轨，文案不能撒谎）。
     const paddedNotices: string[] = []
     resolvedClips.forEach((clip, index) => {
       if (clip.hasAudio) return
@@ -587,6 +521,8 @@ export async function composeStudioVideo(
           : `第 ${index + 1} 段无原生音轨（时长未探到），已按视频实际长度补静音`,
       )
     })
+    // S2b 分叉判定提前（回显集合依赖它）。
+    const useAssembly = resolvedClips.length >= 2 && process.env.CANVAS_STUDIO_AUDIO_LEGACY_CONCAT !== '1'
 
     // 2) 逐段统一转码。
     const transcodedPaths: string[] = []
@@ -634,7 +570,7 @@ export async function composeStudioVideo(
     // S2a：补的静音轨让 concat 产物恒有音频流，但「有流」≠「有原生声」——角标与
     // amix 分支的语义必须维持「至少一段真有声」（与补静音前行为一致，不静默漂移）。
     const hasNativeAudio = hasConcatAudio && resolvedClips.some((clip) => clip.hasAudio)
-    const warnings: string[] = [...paddedNotices]
+    const warnings: string[] = useAssembly ? [] : [...paddedNotices]
     if (filmDuration <= 0) {
       warnings.push('未能探测成片真实时长，本次按 -shortest 收尾（音画对齐可能不精确）。')
     }
@@ -652,12 +588,119 @@ export async function composeStudioVideo(
       ...(project.plan?.targetDuration !== undefined ? { targetDuration: project.plan.targetDuration } : {}),
     }))
 
-    // 5) 可选 BGM 混音；无 BGM 时 concat 产物即成片。
+    // 5) 音轨。S2b（D-01 拍板）：**多镜默认走「从零装配」**——母版视频流 + AudioTimeline
+    //    装配出一条完整音轨 + `-c:v copy` 合流（绝对时间坐标是 duck/多轨/精确落点的
+    //    前提）。单镜整出与显式回退（`CANVAS_STUDIO_AUDIO_LEGACY_CONCAT=1`）保留
+    //    concat+amix 旧路径 —— 单镜音轨行为逐字符不变是 S2b 的验收判据之一。
+    //    （useAssembly 判定已在探测后提前算好。）
     const outputName = options.outputName ?? `export-${newAssetId()}.mp4`
     const finalOutput = join(assetsDir, outputName)
-    // D6：混入音源的角色 —— 旁白 ≠ 配乐（文案 / 音量 / 淡变 / 时长守卫全都不同）。
-    let mixRole: AudioMixRole = 'bgm'
-    if (bgmNodeId !== undefined) {
+    let audioComposition: StudioAudioComposition
+    if (useAssembly) {
+      // ── S2b 装配路径 ──────────────────────────────────────────────────────
+      // 混入音源解析（bgmNodeId + voiceOverNodeIds；与 legacy 同一套校验口径）。
+      let resolvedMix: ResolvedMixSource | undefined
+      let assemblyBgmDuration = 0
+      if (bgmNodeId !== undefined) {
+        const bgmNode = document.nodes.find((node) => node.id === bgmNodeId)
+        if (bgmNode === undefined || bgmNode.url === undefined) {
+          throwError('CS-USER-ERR', { message: 'BGM 片段不存在，请重新选择' })
+        }
+        if (!isVideoFile(bgmNode.url)) {
+          throwError('CS-USER-ERR', { message: 'BGM 仅支持视频/音频文件' })
+        }
+        const bgmInput = urlToAssetPath(assetsDir, bgmNode.url)
+        try {
+          await access(bgmInput)
+        } catch {
+          throwError('CS-USER-ERR', { message: 'BGM 文件不存在，请重新上传后再导出' })
+        }
+        const bgmProbe = await runFfmpeg(ffmpegPath, ['-i', bgmInput], FFMPEG_TIMEOUT_MS, composed)
+        assemblyBgmDuration = parseFfmpegDuration(bgmProbe.stderr)
+        const mixRole: AudioMixRole = options.mixRole ?? resolveAudioMixRole(bgmNode)
+        resolvedMix = { url: bgmNode.url, inputPath: bgmInput, role: mixRole, ...(assemblyBgmDuration > 0 ? { realDurationSec: assemblyBgmDuration } : {}) }
+      }
+      const voiceOverSources: ResolvedVoiceOver[] = []
+      for (const entry of options.voiceOverNodeIds ?? []) {
+        const nodeId = typeof entry === 'string' ? entry : entry.nodeId
+        const voNode = document.nodes.find((node) => node.id === nodeId)
+        if (voNode === undefined || voNode.url === undefined) {
+          throwError('CS-USER-ERR', { message: `旁白节点不存在：${nodeId}` })
+        }
+        if (!isVideoFile(voNode.url)) {
+          throwError('CS-USER-ERR', { message: `旁白仅支持视频/音频文件：${nodeId}` })
+        }
+        const voInput = urlToAssetPath(assetsDir, voNode.url)
+        try {
+          await access(voInput)
+        } catch {
+          throwError('CS-USER-ERR', { message: `旁白文件不存在：${nodeId}` })
+        }
+        const voProbe = await runFfmpeg(ffmpegPath, ['-i', voInput], FFMPEG_TIMEOUT_MS, composed)
+        const voDuration = parseFfmpegDuration(voProbe.stderr)
+        voiceOverSources.push({
+          nodeId,
+          url: voNode.url,
+          inputPath: voInput,
+          ...(voDuration > 0 ? { realDurationSec: voDuration } : {}),
+          ...(typeof entry === 'object' && entry.startSec !== undefined ? { startSec: entry.startSec } : {}),
+          ...(typeof entry === 'object' && entry.gain !== undefined ? { gain: entry.gain } : {}),
+        })
+      }
+
+      // 片段 + 混入音源 → AudioTimeline（装配事实源的 compose 侧唯一入口）。
+      const composed2 = timelineFromComposeClips({
+        clips: resolvedClips.map((clip) => ({ id: clip.id, inputPath: clip.inputPath, hasAudio: clip.hasAudio, ...(clip.realDurationSec !== undefined ? { realDurationSec: clip.realDurationSec } : {}) })),
+        ...(resolvedMix !== undefined ? { bgm: resolvedMix } : {}),
+        ...(voiceOverSources.length > 0 ? { voiceOvers: voiceOverSources } : {}),
+        filmDurationSec: filmDuration,
+        fps,
+      })
+      warnings.push(...composed2.notices)
+      warnings.push(`音轨装配（${composed2.timeline.segments.length} 段）：\n${composed2.summary}`)
+      if (composed2.timeline.segments.length === 0) {
+        warnings.push('本次合成无任何音轨（片段未开启原生音轨 + 未提供 BGM），成片将为静片。')
+      }
+
+      // D-02：短 BGM 默认自动补静音（装配图尾部 apad=whole_dur 兜住补齐），env=0 回退报错。
+      if (resolvedMix?.role === 'bgm' && assemblyBgmDuration > 0) {
+        const decision = bgmAutopadDecision(assemblyBgmDuration, filmDuration, process.env.CANVAS_STUDIO_AUDIO_AUTOPAD !== '0')
+        if (decision.action === 'error') throwError('CS-USER-ERR', { message: decision.message })
+        if (decision.message !== undefined) warnings.push(decision.message)
+      }
+
+      const resolvedTimeline = resolveAudioTimeline(composed2.timeline)
+      if (!resolvedTimeline.ok) {
+        const detail = resolvedTimeline.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.message).join('；')
+        throwError('CS-USER-ERR', { message: `音轨时间轴校验失败：${detail}` })
+      }
+      const graph = buildAudioGraph(resolvedTimeline.timeline)
+      const audioTrackPath = join(tempDir, 'audio-track.m4a')
+      const trackResult = await runFfmpeg(
+        ffmpegPath,
+        buildAudioTrackArgs(resolvedTimeline.timeline.segments.map((segment) => segment.url), graph.filterComplex, audioTrackPath, filmDuration),
+        COMPOSE_TIMEOUT_MS,
+        composed,
+      )
+      if (trackResult.code !== 0) {
+        const detail = trackResult.stderr.trim().split('\n').at(-1) ?? ''
+        throwError('CS-USER-ERR', { message: '音轨装配失败，请重试', detail })
+      }
+      const muxResult = await runFfmpeg(
+        ffmpegPath,
+        buildMuxArgs(concatOutput, audioTrackPath, finalOutput, filmDuration),
+        COMPOSE_TIMEOUT_MS,
+        composed,
+      )
+      if (muxResult.code !== 0) {
+        const detail = muxResult.stderr.trim().split('\n').at(-1) ?? ''
+        throwError('CS-USER-ERR', { message: '成片合流失败，请重试', detail })
+      }
+      // 八枚举由时间轴派生（S1 的读出口，取代手工三布尔）。
+      audioComposition = compositionFromTimeline(resolvedTimeline.timeline)
+    } else if (bgmNodeId !== undefined) {
+      // ── legacy concat+amix 路径（单镜整出 / env 回退）────────────────────
+      // D6：混入音源的角色 —— 旁白 ≠ 配乐（文案 / 音量 / 淡变 / 时长守卫全都不同）。
       const bgmNode = document.nodes.find((node) => node.id === bgmNodeId)
       if (bgmNode === undefined || bgmNode.url === undefined) {
         throwError('CS-USER-ERR', { message: 'BGM 片段不存在，请重新选择' })
@@ -665,7 +708,7 @@ export async function composeStudioVideo(
       if (!isVideoFile(bgmNode.url)) {
         throwError('CS-USER-ERR', { message: 'BGM 仅支持视频/音频文件' })
       }
-      mixRole = options.mixRole ?? resolveAudioMixRole(bgmNode)
+      const mixRole: AudioMixRole = options.mixRole ?? resolveAudioMixRole(bgmNode)
       const bgmInput = urlToAssetPath(assetsDir, bgmNode.url)
       try {
         await access(bgmInput)
@@ -675,10 +718,9 @@ export async function composeStudioVideo(
       // C5：探测 BGM 时长，驱动淡出起点（时长不足淡入周期时只淡入）。
       const bgmProbe = await runFfmpeg(ffmpegPath, ['-i', bgmInput], FFMPEG_TIMEOUT_MS, composed)
       const bgmDuration = parseFfmpegDuration(bgmProbe.stderr)
-      // CV-138：守卫 —— BGM 不够长直接报错，**不落半成品**（否则会得到一个
-      // 「看着像成片、其实被截了」的假产物，比报错更糟）。
-      // CV-209：例外——BGM 短于成片时仍报错，但给出建议值已经偏长（≥成片 + 1~2s），
-      // 因为新策略默认"宁可比视频长也不要短"。
+      // CV-138 → D-02：默认自动补静音（amix duration=first 的尾段本就以成片为准补齐，
+      // 单轨分支 -t 锚定片长、BGM 结束后即静音），`CANVAS_STUDIO_AUDIO_AUTOPAD=0`
+      // 回退旧报错行为。
       //
       // D6：**旁白不适用这条守卫** —— 旁白短于成片是正常形态（话说完就静了），
       // 报错等于把合法的旁白用法封死。改为一条提示，让用户知道末段没人说话。
@@ -688,8 +730,9 @@ export async function composeStudioVideo(
           warnings.push(`旁白比成片短 ${gap.toFixed(2)} 秒（成片 ${filmDuration.toFixed(2)}s、旁白 ${bgmDuration.toFixed(2)}s），末段将无旁白；如需覆盖全片请延长旁白或用 cut_audio 补齐。`)
         }
       } else {
-        const shortfall = bgmShortfallMessage(bgmDuration, filmDuration)
-        if (shortfall !== null) throwError('CS-USER-ERR', { message: shortfall })
+        const decision = bgmAutopadDecision(bgmDuration, filmDuration, process.env.CANVAS_STUDIO_AUDIO_AUTOPAD !== '0')
+        if (decision.action === 'error') throwError('CS-USER-ERR', { message: decision.message })
+        if (decision.message !== undefined) warnings.push(decision.message)
       }
       if (bgmDuration <= 0) {
         warnings.push('未能探测混入音源时长，本次未做时长守卫、也未加淡入淡出（请人工确认音画等长）。')
@@ -705,6 +748,13 @@ export async function composeStudioVideo(
         const detail = amixResult.stderr.trim().split('\n').at(-1) ?? ''
         throwError('CS-USER-ERR', { message: 'BGM 混音失败，请重试', detail })
       }
+      // CV-143：成片音轨构成（策略的实际结果，而非意图）。legacy 路径沿用三布尔口径
+      // （与 render_composition 同一实现）。
+      audioComposition = audioCompositionFrom({
+        hasNative: hasNativeAudio,
+        hasBgm: mixRole === 'bgm',
+        hasVoiceOver: mixRole === 'voiceOver',
+      })
     } else {
       // 无 BGM：直接把 concat 产物落盘为最终成片。
       // CV-209：多镜拼接时原生音轨现在保留，对白/场景音效走主声轨，无声这条
@@ -715,17 +765,12 @@ export async function composeStudioVideo(
       }
       // CR-023：copyFile 流式复制，不再把大视频整读进内存再写。
       await copyFile(concatOutput, finalOutput)
+      audioComposition = audioCompositionFrom({
+        hasNative: hasNativeAudio,
+        hasBgm: false,
+        hasVoiceOver: false,
+      })
     }
-
-    // CV-143：成片音轨构成（策略的实际结果，而非意图）。
-    // D6：改走 `audioCompositionFrom`（与 render_composition 同一实现）—— 旁白不再
-    // 被并入「纯 BGM」，角标与工具结果因此同源。S2a：hasNative 语义 = 「至少一段
-    // 真有声」，补的静音轨不算（hasNativeAudio）。
-    const audioComposition: StudioAudioComposition = audioCompositionFrom({
-      hasNative: hasNativeAudio,
-      hasBgm: bgmNodeId !== undefined && mixRole === 'bgm',
-      hasVoiceOver: bgmNodeId !== undefined && mixRole === 'voiceOver',
-    })
 
     // 6) 探测成片时长（ffmpeg -i 非零退出属预期，时长在 stderr）。
     const finalProbe = await runFfmpeg(ffmpegPath, ['-i', finalOutput], FFMPEG_TIMEOUT_MS, composed)

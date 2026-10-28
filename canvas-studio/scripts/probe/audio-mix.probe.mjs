@@ -45,7 +45,7 @@ async function fileExists(path) {
  * 用真实文件跑一次 composeStudioVideo（带可选 BGM / 多旁白）。
  * 返回 { result, finalPath }；调用方清理 rootDir。
  */
-async function composeScenario({ rootDir, ffmpegPath, fixturePaths, clipNames, bgmName, voiceOverNames = [], extraOptions = {} }) {
+async function composeScenario({ rootDir, ffmpegPath, fixturePaths, clipNames, bgmName, voiceOverNames = [], explicitStarts = [], extraOptions = {} }) {
   const registry = new ProjectRegistry(rootDir)
   const project = await registry.create('G1a 混音自验')
   const assetsDir = registry.assetsDir(project.id)
@@ -67,7 +67,10 @@ async function composeScenario({ rootDir, ffmpegPath, fixturePaths, clipNames, b
   await registry.writeCanvas(project.id, nodes)
   const byId = new Map(allNames.map((name, index) => [`node-${index}`, name]))
   const bgmNodeId = bgmName ? nodes.find((n) => byId.get(n.id) === bgmName)?.id : undefined
-  const voiceOverNodeIds = voiceOverNames.map((name) => nodes.find((n) => byId.get(n.id) === name)?.id)
+  const voiceOverNodeIds = voiceOverNames.map((name, index) => {
+    const nodeId = nodes.find((n) => byId.get(n.id) === name)?.id
+    return explicitStarts[index] !== undefined ? { nodeId, startSec: explicitStarts[index] } : nodeId
+  })
   const result = await composeStudioVideo(
     registry,
     project.id,
@@ -126,7 +129,8 @@ async function main() {
     })
     criteria.push({
       id: 'P1-逐段回显',
-      pass: (result.warnings ?? []).some((w) => w.includes('第 2 段无原生音轨')),
+      // S2b 装配路径措辞：「片段 <id> 无原生音轨，该区间保持静音」（S2a 期为「已补静音」）。
+      pass: (result.warnings ?? []).some((w) => w.includes('无原生音轨')),
       measured: { warnings: result.warnings ?? [] },
     })
   } finally {
@@ -145,12 +149,12 @@ async function main() {
         bgmName: 'beat-90.wav',
         voiceOverNames: ['t-audio04s.mp4', 't-audio06s.mp4'],
       }
-      const a = await composeScenario({ rootDir: withVo, ffmpegPath, fixturePaths, ...scenario })
+      const a = await composeScenario({ rootDir: withVo, ffmpegPath, fixturePaths, ...scenario, explicitStarts: [1.0, 4.0] })
       const b = await composeScenario({ rootDir: withoutVo, ffmpegPath, fixturePaths, clipNames: scenario.clipNames, bgmName: scenario.bgmName })
       const ma = await measureFilm(a.finalPath, ffmpegPath)
       const mb = await measureFilm(b.finalPath, ffmpegPath)
-      // 旁白窗口：第 1 句 1.0–1.4s、第 2 句 4.0–4.6s（0.5s bin 下标 2 / 8,9）。
-      const windowBins = (m, from, to) => m.rms.bins.slice(Math.floor(from / 0.5), Math.ceil(to / 0.5))
+      // 旁白窗口（显式起点）：第 1 句 1.0–1.4s、第 2 句 4.0–4.6s。
+      const windowBins = (m, from, to) => m.rms.bins.slice(Math.ceil(from / 0.5), Math.floor(to / 0.5))
       const mean = (xs) => xs.reduce((s, v) => s + v, 0) / Math.max(1, xs.length)
       const w1a = mean(windowBins(ma, 1.0, 1.5)); const w1b = mean(windowBins(mb, 1.0, 1.5))
       const w2a = mean(windowBins(ma, 4.0, 4.5)); const w2b = mean(windowBins(mb, 4.0, 4.5))

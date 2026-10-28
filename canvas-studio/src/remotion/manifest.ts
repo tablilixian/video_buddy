@@ -22,7 +22,8 @@
  */
 
 import type { StudioAudioComposition } from '../contracts/canvas.js'
-import { compositionFromPresence } from '../audio-timeline.js'
+import { compositionFromPresence, compositionFromTimeline } from '../audio-timeline.js'
+import { timelineFromManifestAudio } from '../audio-compose.js'
 import { formatMotionLint, lintMotion } from './motion-lint.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
@@ -1845,7 +1846,9 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
 /**
  * 宿主侧派生音轨构成（纯函数，落节点前调用；skill/LLM 不产出此值）。
  *
- * 规则（与 `compose.ts` 的角标语义对齐；`native` = 至少一条 video 轨的**原生环境声**）：
+ * S2b 起**改走统一模型**：manifest → `timelineFromManifestAudio`（audio-compose.ts，
+ * 与 compose 装配路径的适配器同层）→ `compositionFromTimeline`（同一个派生实现）。
+ * 派生结果与旧三布尔口径逐值一致：
  *
  * | 原生声 | BGM | 旁白 | 结论 |
  * |---|---|---|---|
@@ -1857,18 +1860,9 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
  * |   |   | ✓ | `voiceOver` |
  * |   | ✓ | ✓ | `bgm+voiceOver` |
  * |   |   |   | `none` |
- *
- * CV-334（D6）改动：此前 `voiceOver` 被**并入 `bgm` 位** —— 纯代码片明明有旁白，
- * 角标却显示「纯 BGM」，用户看不出"这里有旁白"。现按「原生声 / BGM / 旁白」三个
- * 布尔正交展开，`StudioAudioComposition` 扩到 8 值（旧 4 值语义**完全不变** ⇒
- * 老画布数据照常显示）。
  */
 export function deriveAudioComposition(manifest: CompositionManifest): StudioAudioComposition {
-  return audioCompositionFrom({
-    hasNative: manifest.tracks.some((track) => track.type === 'video'),
-    hasBgm: isNonEmptyString(manifest.audio?.bgmUrl),
-    hasVoiceOver: hasVoiceOverAudio(manifest.audio),
-  })
+  return compositionFromTimeline(timelineFromManifestAudio(manifest))
 }
 
 /**

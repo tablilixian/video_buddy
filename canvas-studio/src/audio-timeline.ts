@@ -239,6 +239,17 @@ export function roleLabel(role: AudioSegmentRole): string {
 }
 
 /**
+ * 音频交付口径（S2a · 2026-10-28）：全链路统一 48kHz 立体声。
+ *
+ * 实验 C（audio-baseline-20261028.md）：concat demuxer 用第一段的参数解读后续所有段，
+ * 采样率/声道不一致时**静默变速变调甚至流级损坏**，且任何一方都不报错 ⇒ 必须在
+ * 转码期（buildTranscodeArgs）与装配期（buildAudioGraph 的 aformat）统一到同一口径。
+ * 放纯函数层是因为两个消费方（转码参数、装配图）都要它，且二者都不该依赖 IO 层。
+ */
+export const AUDIO_DELIVERY_SAMPLE_RATE = 48000
+export const AUDIO_DELIVERY_CHANNELS = 2
+
+/**
  * 三布尔 → 8 值音轨构成的唯一分类实现（从 manifest.ts 迁入，manifest.audioCompositionFrom
  * 保留为兼容包装转调本函数）。`compositionFromTimeline` 也落到这里 —— 枚举从时间轴
  * 的段角色集合推出，不再手工传三个布尔。

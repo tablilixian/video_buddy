@@ -115,10 +115,13 @@ export function composedSourceIds(
   clipIds: readonly string[],
   bgmNodeId?: string,
   scriptId?: string,
+  voiceOverNodeIds?: readonly (string | { nodeId: string })[],
 ): string[] {
   return [...new Set([
     ...clipIds,
     ...(bgmNodeId !== undefined && bgmNodeId !== null ? [bgmNodeId] : []),
     ...(scriptId !== undefined && scriptId !== null ? [scriptId] : []),
+    // S2b（2026-10-28）：多句旁白也是成片的血缘源（与 bgmNodeId 并存）。
+    ...(voiceOverNodeIds ?? []).map((entry) => (typeof entry === 'string' ? entry : entry.nodeId)),
   ])]
 }

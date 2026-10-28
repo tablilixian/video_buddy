@@ -182,19 +182,27 @@ function findRealFfmpeg() {
   }
 }
 
-async function composeFixtureClips(ffmpegPath, clipNames, dir) {
+async function composeFixtureClips(ffmpegPath, clipNames, dir, bgmName) {
   const fixturePaths = await ensureAudioFixtures({ ffmpegPath })
   const registry = new ProjectRegistry(dir)
   const project = await registry.create('补静音验收')
   const assetsDir = registry.assetsDir(project.id)
   await mkdir(assetsDir, { recursive: true })
-  for (const name of clipNames) await copyFile(fixturePaths[name], join(assetsDir, name))
-  const nodes = clipNames.map((name, index) => ({
+  const allNames = [...clipNames, ...(bgmName ? [bgmName] : [])]
+  for (const name of allNames) await copyFile(fixturePaths[name], join(assetsDir, name))
+  const nodes = allNames.map((name, index) => ({
     id: `clip-${index}`, kind: 'video', url: `/canvas-studio/assets/${project.id}/${name}`,
     x: index * 300, y: 0, width: 320, height: 240, createdAt: 1000 + index, origin: 'agent', sourceIds: [],
   }))
   await registry.writeCanvas(project.id, nodes)
-  const result = await composeStudioVideo(registry, project.id, nodes.map((n) => n.id), undefined, { ffmpegPath })
+  const bgmNodeId = bgmName ? nodes.find((n) => n.url.endsWith(bgmName))?.id : undefined
+  const result = await composeStudioVideo(
+    registry,
+    project.id,
+    nodes.filter((n) => clipNames.includes(n.url.split('/').at(-1))).map((n) => n.id),
+    bgmNodeId,
+    { ffmpegPath },
+  )
   return { result, finalPath: join(assetsDir, result.url.split('/').at(-1)) }
 }
 
@@ -209,8 +217,8 @@ test('S0 判据①②：3 段含 1 段无声 → 音轨时长==视频时长(±0.
       dir,
     )
     assert.ok(
-      (result.warnings ?? []).some((w) => w.includes('第 2 段无原生音轨，已补 2.0s 静音')),
-      `应逐段回显补静音，实得 ${JSON.stringify(result.warnings)}`,
+      (result.warnings ?? []).some((w) => w.includes('clip-1 无原生音轨')),
+      `S2b 装配路径应回显无声段（该区间保持静音），实得 ${JSON.stringify(result.warnings)}`,
     )
     const rms = await audioRmsBySecond(finalPath, { ffmpegPath, binSec: 0.5 })
     const probe = await runFfmpegCapture(ffmpegPath, ['-i', finalPath])
@@ -258,7 +266,10 @@ test('S0 判据③：16k 单声道 × 48k 立体声混拼 → 统一 48k 立体�
     const videoSec = parseFfmpegDuration(videoProbe.stderr)
     const gap = Math.abs(rms.durationSec - videoSec)
     assert.ok(gap <= AUDIO_TOLERANCE_SEC, `混采样率拼接后音轨 ${rms.durationSec.toFixed(3)}s 应与视频 ${videoSec.toFixed(3)}s 对齐，差 ${gap.toFixed(3)}s`)
-    assert.ok(rms.bins.every((v) => v > SOUND_RMS_THRESHOLD), '两段都应出声（无解码中止）')
+    // 只查**完整** 0.5s bin：尾部残 bin（<0.5s）可能只含 AAC 编码器填充静音（实测
+    // atrim 后编码填充 ≈0.03s），不属于「段无声」。
+    const fullBins = Math.floor(rms.durationSec / 0.5)
+    assert.ok(rms.bins.slice(0, fullBins).every((v) => v > SOUND_RMS_THRESHOLD), `两段都应出声（无解码中止），完整 bins = ${JSON.stringify(rms.bins.slice(0, fullBins).map((v) => Number(v.toFixed(4))))}`)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -281,7 +292,41 @@ test('判据④：全无声 3 段 → 成片仍有音轨（静音轨），构成
       (result.warnings ?? []).some((w) => w.includes('成片将为静片')),
       `无任何声源应保留「静片」警告，实得 ${JSON.stringify(result.warnings)}`,
     )
-    assert.ok((result.warnings ?? []).filter((w) => w.includes('无原生音轨，已补')).length === 3, '三段都应回显补静音')
+    assert.ok((result.warnings ?? []).filter((w) => w.includes('无原生音轨')).length >= 3, '三段都应回显无声段')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('S2b 判据③：BGM 短于成片 → 默认自动补静音并明确告知，尾段静音（silencedetect 命中）', async () => {
+  const ffmpegPath = findRealFfmpeg()
+  if (ffmpegPath === null) return
+  const dir = await mkdtemp(join(tmpdir(), 'cs-pad-autopad-'))
+  try {
+    // 全无声 3 段（6.02s 成片）+ 2s BGM → 短 ~4s；成片音轨只有 BGM 的前 2s 有声。
+    const { result, finalPath } = await composeFixtureClips(
+      ffmpegPath,
+      ['t-silent2s.mp4', 't-silent2s.mp4', 't-silent2s.mp4'],
+      dir,
+      't-audio2s.mp4',
+    )
+    assert.ok(
+      (result.warnings ?? []).some((w) => w.includes('已自动补静音')),
+      `D-02 默认应自动补静音并告知，实得 ${JSON.stringify(result.warnings)}`,
+    )
+    assert.equal(result.audioComposition, 'bgm', '构成报「纯 BGM」')
+    const rms = await audioRmsBySecond(finalPath, { ffmpegPath, binSec: 0.5 })
+    // 尾段静音：[2s,6s) 的完整 bin 全静音（BGM 只有 2s）。
+    const middle = rms.bins.slice(4, 12)
+    assert.ok(middle.every((v) => v < 0.02), `BGM 结束后应静音，实得 ${JSON.stringify(rms.bins.map((v) => Number(v.toFixed(4))))}`)
+    assert.ok(rms.bins.slice(0, 4).some((v) => v > 0.03), '头部应 BGM 有声（样本正弦较安静，0.8 增益后 ≈0.05）')
+    // silencedetect 机器判定：应检出 ≈2s 起的长静音区间（禁 -f null - 判时长，时间戳是判据）。
+    const { detectSilenceRanges } = await import('../scripts/probe/lib/audio-probe.mjs')
+    const silences = await detectSilenceRanges(finalPath, { ffmpegPath, minDur: 1 })
+    assert.ok(
+      silences.some((range) => range.start > 1.5 && range.start < 2.6),
+      `silencedetect 应命中 ≈2s 起的静音区间，实得 ${JSON.stringify(silences)}`,
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

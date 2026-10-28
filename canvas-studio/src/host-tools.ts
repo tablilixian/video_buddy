@@ -526,6 +526,14 @@ const libraryAddSchema = {
 }
 export type LibraryAddSchemaCoverage = MustBeNever<MissingInSchema<typeof libraryAddSchema, LibraryAddToolResult>>
 
+/** S2b（2026-10-28）：compose_video 的多句旁白参数描述（模块级常量 —— createStudioTools
+ *  有函数跨度棘轮，新增参数描述放外面）。 */
+const COMPOSE_VOICE_OVER_PARAM = {
+  type: 'array' as const,
+  items: { type: 'string' as const },
+  description: '可选：多句旁白节点 id 数组（tts_voiceover 产物，与 bgmNodeId 并存）。按数组顺序**零间隙顺序排布**（第一句从 0s 起、后续句紧跟前一句结束处）；每句满音量、不加淡入淡出、允许短于成片。需要各自指定起点时走 render_composition 的 audio.voiceOver[{src,startFrame}]。多镜成片（≥2 段）时旁白走独立装配轨，结果文本逐句回显起止',
+}
+
 /**
  * REQ-035 F-18：救回"通篇用中文弯引号当 JSON 分隔符"的输入。
  *
@@ -3269,16 +3277,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       description:
         '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM 或旁白）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定混入的音频/视频节点（**既可以是 BGM，也可以是 tts_voiceover 的旁白**——按节点来源自动区分，旁白走满音量、无淡入淡出、允许短于成片）；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。'
         + '\n\n⚠️ 本工具**只做已有片段的顺序拼接**：一旦需要「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 逐帧精确的时间轴与转场」，改用 `render_composition`（代码驱动合成，按 CompositionManifest 声明时间轴）——它同样能纳入视频片段，只是多支持卡片与转场。反过来，素材全是视频片段且只要顺序拼接时，仍用本工具。'
-        + '\n\n⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），给旁白时叠混为「环境声 + 旁白」（旁白满音量），无混入即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）；旁白不受此限（话说完就静是正常形态，短于成片只提示不报错）。',
+        + '\n\n⚠️ 音轨策略（S2b 2026-10-28 收口）：**各镜原生环境声全程保留**——多镜成片走「视频母版 + 音轨从零装配」：原生声按各镜真实时长落位、BGM 铺底（0.35）、多句旁白用 voiceOverNodeIds 顺序排布（满音量），结果文本逐段回显起止与是否补静音。**BGM 短于成片默认自动补静音并明确告知**（不再是报错；旧行为可用环境变量 CANVAS_STUDIO_AUDIO_AUTOPAD=0 回退）；旁白不受此限（话说完就静是正常形态，短于成片只提示不报错）。',
       parameters: {
         clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM/旁白则叠混' },
         bgmNodeId: { type: 'string' as const, description: '可选：混入的音频/视频节点 id。**BGM（music_generation 产物）**必须不短于成片真实时长，否则合成报错；**旁白（tts_voiceover 产物，含 cut_audio 裁过的旁白）**自动按旁白处理：满音量、无淡入淡出、允许短于成片，音轨构成报「旁白」' },
         scriptId: { type: 'string' as const, description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
+        voiceOverNodeIds: COMPOSE_VOICE_OVER_PARAM,
         colorGrade: { type: 'boolean' as const, description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string; colorGrade?: boolean }
+        const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string; colorGrade?: boolean; voiceOverNodeIds?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'compose_video', false)
         const doc = await registry.readCanvas(projectId)
@@ -3291,15 +3300,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (clipIds.length < 1) {
           throwError('CS-USER-ERR', { message: '没有可合成的视频片段；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。' })
         }
-        const script = a.scriptId !== undefined
-          ? doc.nodes.find(node => node.id === a.scriptId)?.text
-          : undefined
+        const script = a.scriptId === undefined ? undefined : doc.nodes.find((node) => node.id === a.scriptId)?.text
         const result = await composeStudioVideo(
           registry,
           projectId,
           clipIds,
           a.bgmNodeId,
-          { ...(a.colorGrade === false ? { colorGrade: false } : {}) },
+          { ...(a.colorGrade === false ? { colorGrade: false } : {}), ...(Array.isArray(a.voiceOverNodeIds) && a.voiceOverNodeIds.length > 0 ? { voiceOverNodeIds: a.voiceOverNodeIds } : {}) },
           exec.signal,
         )
         const composedNode = await appendComposedVideoNode(registry, projectId, {
@@ -3308,7 +3315,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           audioComposition: result.audioComposition,
           ...(result.width !== undefined ? { width: result.width } : {}),
           ...(result.height !== undefined ? { height: result.height } : {}),
-          sourceIds: composedSourceIds(clipIds, a.bgmNodeId, a.scriptId),
+          sourceIds: composedSourceIds(clipIds, a.bgmNodeId, a.scriptId, a.voiceOverNodeIds),
           ...(script !== undefined ? { script } : {}),
         })
         const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length

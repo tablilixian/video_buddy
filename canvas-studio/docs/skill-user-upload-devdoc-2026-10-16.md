@@ -2,7 +2,7 @@
 
 > 日期：2026-10-16 · 状态：**可开工**（技术前提已全部实测，剩余 8 条小决策已给默认值）
 > 上游设计：`skill-user-upload-design-2026-10-16.md`（**P1~P6 / Q1~Q7 已拍板**，见其 §7）
-> 视觉与交互基线：`skill-user-upload-mockup-2026-10-16.html`
+> 视觉与交互基线：`demos/skill-user-upload-mockup-2026-10-16.html`
 > 契约前身：`skill-user-upload-contract.md` / `src/skill-upload-contract.ts`（CV-325）
 > 前置已落地：CV-317~326（skill 系统四阶段九批）
 >
@@ -449,7 +449,7 @@ SkillMarket 挂载
 
 ### 7.5 视觉落地
 
-以效果图 `skill-user-upload-mockup-2026-10-16.html` 为准，其中已验证的结构性约束：
+以效果图 `demos/skill-user-upload-mockup-2026-10-16.html` 为准，其中已验证的结构性约束：
 
 - 来源角标放**左下**（H3 在左上、试跑在右上，左下零碰撞 —— 效果图里做了矩形相交断言 + 反向对照）。
 - 侧栏「装载过的」改名「已装载」，新增「我的技能」（= 导入的条目）；两者语义不同，别复用同一个 key。

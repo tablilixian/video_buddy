@@ -20,7 +20,7 @@
 > | 节点几何（5 列 / 步长 ≈218 / 200×150） | ⚠️ **可改，但属数据层** | 硬编码在 `client/index.ts:757`、`compose.ts:600`（现为 4 列 / 300 / 260×180），不是 CSS 能改的 |
 > | **「六阶段制作轨道」可点击跳转** | ❌ **不可还原** | 工程 `workflow.state` 只有 5 个值（`script_review` / `awaiting_approval` / `keyframe_review` / `executing` / 需求沟通中），**没有阶段模型**。落地版只能降级为「由现有 state 推导的**只读**进度轨道」，或另立条目加状态机（超出视觉批次范围） |
 >
-> **配套交互设计稿**：[visual-direction-preview.html](./visual-direction-preview.html)（单文件、零外部依赖，双击即可看）
+> **配套交互设计稿**：[visual-direction-preview.html](./demos/visual-direction-preview.html)（单文件、零外部依赖，双击即可看）
 > —— 左中右三栏 + 六个制作阶段可逐步推进，含画布拖拽/缩放/框选、真时间轴播放擦洗、场记板审批，
 > 并内置 **「对照：改动前 ↔ 方案」开关**（§1.2 的同色问题可当场对比）与 **DD 批注层**（点角标看该处对应哪个批次）。
 >

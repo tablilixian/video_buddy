@@ -2652,7 +2652,7 @@ img.csNodeMedia {
 }
 
 /* ==== DD-04a：真时间轴（标尺 + 三轨 + 可拖播放头） ====
-   设计稿 docs/visual-direction-preview.html 的 .tl* 规格落到工程令牌：
+   设计稿 docs/demos/visual-direction-preview.html 的 .tl* 规格落到工程令牌：
    片段宽度 = 真实 duration 比例（src/timeline-layout.ts 唯一权威），
    多轨 = 视频轨 / BGM 轨 / 参考·产物轨。标签列宽 56px 与播放头 left 公式同源。 */
 .csTlBody {

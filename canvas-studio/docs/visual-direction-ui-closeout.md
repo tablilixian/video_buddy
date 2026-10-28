@@ -1,6 +1,6 @@
 # 视觉升维 · UI 收口清单（距设计稿还差什么）
 
-> **定位**：把 [`visual-direction-preview.html`](./visual-direction-preview.html)（**视觉基准**，单文件交互设计稿）
+> **定位**：把 [`visual-direction-preview.html`](./demos/visual-direction-preview.html)（**视觉基准**，单文件交互设计稿）
 > 与当前实现**逐项对表**后的**施工清单**。
 >
 > **状态归属**：条目状态一律以 [`STATUS.md`](./STATUS.md) 为准；本文只回答
@@ -726,7 +726,7 @@ C3 真波形横跨 B 区 + 播放器 + C 区 —— **这三区的验收本来�
 
 | 文档 | 管什么 | 与本文关系 |
 | --- | --- | --- |
-| `visual-direction-preview.html` | **视觉基准**（交互设计稿，可双击看） | **上游**。本文是它的"对表结果" |
+| `demos/visual-direction-preview.html` | **视觉基准**（交互设计稿，可双击看） | **上游**。本文是它的"对表结果" |
 | `visual-direction-plan.md` | 方向 / 诊断 / 设计意图 / 硬约束 | 上游。本文不动方向 |
 | `visual-direction-execution-plan.md` | 逐批**文件级改动清单**（DD 批次契约） | **平级**。本文补的是"设计稿里有、DD 批次没覆盖"的部分；建议收口后把本文并回该文件附录，避免长期双份漂移 |
 | `STATUS.md` | **唯一事实来源**（状态） | 本文**不复述状态**，只列施工项 |
@@ -734,7 +734,7 @@ C3 真波形横跨 B 区 + 播放器 + C 区 —— **这三区的验收本来�
 
 ## 8. 与设计稿的功能对齐清单（2026-09-13 逐项核对，回应「距离完美复现还差什么」）
 
-> 逐项对照 `docs/visual-direction-preview.html` 的**功能**（不含对照/批注等演示装置）。
+> 逐项对照 `docs/demos/visual-direction-preview.html` 的**功能**（不含对照/批注等演示装置）。
 > 「✅ 已对齐」只列大类；差距分两类：**已立项**（进 C/D 批次队列）与**本次核对新发现**（收口清单外的零散项，标注拍板需求）。
 
 ### 8.1 已对齐（不再动）

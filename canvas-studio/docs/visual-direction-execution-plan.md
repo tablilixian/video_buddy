@@ -840,7 +840,7 @@ node -e 'const l=require("fs").readFileSync("src/client/styles.ts","utf8").split
 | 文档 | 管什么 | 与本文关系 |
 | --- | --- | --- |
 | `visual-direction-plan.md` | 方向、诊断、批次**设计意图**、硬约束 | **上游**。本文 = 它的工程落地清单（补 §7.2 缺失的那部分） |
-| `visual-direction-preview.html` | 交互设计稿（单文件 HTML，可双击看） | **视觉基准**。三档明度、时间轴、审批条的观感以它为准 |
+| `demos/visual-direction-preview.html` | 交互设计稿（单文件 HTML，可双击看） | **视觉基准**。三档明度、时间轴、审批条的观感以它为准 |
 | `archive/brand-identity-proposal.md` | 品牌识别（叫什么/什么色/什么 logo），已定案 | 本文不动品牌识别，只动界面骨架 |
 | `canvas-ux-backlog.md` | 交互缺陷（CV 条目技术细节） | 本文不改交互行为，**唯一例外**是 DD-02 退休 CV-035 的网格 workaround |
 | `STATUS.md` | **唯一事实来源** | DD-00 负责把本文登记的模块写进 §5 |

@@ -98,7 +98,7 @@
 | `node scripts/preview-*.mjs` | **布局静态预览生成器**（lobby / detail / mode / rail 等 20+ 台，输出 `canvas-studio/.workbuddy/preview/`），改布局样式后不开桌面即可肉眼验收 | 在役 |
 | [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增 skill 的目录格式、质量门与 PR 自查清单 | 在役 |
 | [minimax-skills-acceptance.md](./minimax-skills-acceptance.md) | skill 接入验收程序（数字为 09-01 轮快照，程序仍被引用） | 在役 |
-| [../plan.md](../plan.md) | 设置页实现记录、MiniMax-H3 接入试点 | 🗄️ 已归档（2026-09-09 自标停更） |
+| [archive/plan.md](./archive/plan.md) | 设置页实现记录、MiniMax-H3 接入试点 | 🗄️ 已归档（2026-09-09 自标停更；2026-10-28 由 `canvas-studio/plan.md` 迁入） |
 
 ## 四、接口参考
 
@@ -155,6 +155,11 @@
 | [demos/canvas-specrow-design-mock.html](./demos/canvas-specrow-design-mock.html) | 规格行（specrow）设计稿 | 同上 |
 | [demos/req022-acceptance-tour.html](./demos/req022-acceptance-tour.html) | REQ-022 验收走查页 | 同上 |
 | [demos/remotion/remotion-integration-demo.html](./demos/remotion/remotion-integration-demo.html) | REQ-034 Remotion 集成的**流程可视化**（编码在客户端渲染进程 CSR）—— devdoc 指定为「配套可视化参考」，可离线打开 | 2026-10-28 由仓根迁入 |
+| [demos/visual-direction-preview.html](./demos/visual-direction-preview.html) | ★ **视觉基准**：视觉升维（DD-01~09）的交互设计稿，单文件零外部依赖，双击即看。三档明度 / 时间轴 / 审批条观感以它为准 | 2026-10-28 由 `docs/` 顶层迁入 |
+| [demos/creation-skill-rewrite-blueprint-2026-10-15.html](./demos/creation-skill-rewrite-blueprint-2026-10-15.html) | skill 体系改造设计依据（判据二 / 槽位机制 / before-after），`skill-system-optimization-plan` 批次 3、5 引用 | 同上 |
+| [demos/skill-flow-proposal-2026-10-15.html](./demos/skill-flow-proposal-2026-10-15.html) | skill 流程提案（11 步流程 × 三层叠加、状态机现状），同一计划批次 7 引用 | 同上 |
+| [demos/skill-system-design-review-2026-10-15.html](./demos/skill-system-design-review-2026-10-15.html) | skill 体系设计评审稿。⚠️ **全仓 0 处引用**（此前也未进索引），保留作审阅留痕 | 同上 |
+| [demos/skill-user-upload-mockup-2026-10-16.html](./demos/skill-user-upload-mockup-2026-10-16.html) | 用户上传 skill 的 7 场景效果图（含拍板清单 + 「与现状代码的差异」表），`skill-user-upload-{design,devdoc}` 的视觉基线 | 同上 |
 | `demos/` 其余 | 既有演示与走查记录：REQ-001 资产库 demo、全链路 demo、`canvas-waterfall-demo-2026-10-26/`、`layout-demo-20261026/`、`acceptance-review-2026-10-19.md`、`phase3-in-this-film.md` 等 | 原有 |
 
 ---

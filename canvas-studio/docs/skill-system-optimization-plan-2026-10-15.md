@@ -4,7 +4,7 @@
 > 基线：`dev` @ `8fc99b4905`，**CV 已编到 CV-316（下一号 CV-317）**
 > 基线红：`tests/baseline-red.json` 的 `failing` 为 `[]` —— 任何 smoke 红都是真回归
 > 验证链（顺序不可变）：`corepack yarn check` = typecheck → build → verify:loader → test:smoke
-> 输入材料：本轮三份评审与讨论产物（`skill-system-design-review-2026-10-15.md` / `skill-flow-proposal-2026-10-15.html` / `creation-skill-rewrite-blueprint-2026-10-15.html`）
+> 输入材料：本轮三份评审与讨论产物（`skill-system-design-review-2026-10-15.md` / `demos/skill-flow-proposal-2026-10-15.html` / `demos/creation-skill-rewrite-blueprint-2026-10-15.html`）
 > 状态：**待审核**。审核通过后按 §2 总览分批执行，每批一个 CV 号。
 
 ---
@@ -565,7 +565,7 @@ git log -L '/CV-121：总纲防回弹/,+16:tests/skill-catalog.test.mjs'
 |---|---|
 | `skill-expansion-spec.md` | 硬约束来源。本方案不改其 §1.1 单一事实源、§1.2 目录即注册，只给 §1.3 渐进披露补上执行它的测试（批次 6） |
 | `skill-system-optimization.md` | 既有作战台。本方案是其数据复算后的替代升级，覆盖 B2 去重与 B4/B5；§4 护栏第 1、4 条转成本方案的批次 5、6 |
-| `creation-skill-rewrite-blueprint-2026-10-15.html` | 批次 3/5 的设计依据（判据二、槽位机制、before/after） |
-| `skill-flow-proposal-2026-10-15.html` | 批次 7 的依据（11 步流程 × 三层叠加、状态机现状） |
+| `demos/creation-skill-rewrite-blueprint-2026-10-15.html` | 批次 3/5 的设计依据（判据二、槽位机制、before/after） |
+| `demos/skill-flow-proposal-2026-10-15.html` | 批次 7 的依据（11 步流程 × 三层叠加、状态机现状） |
 | `skill-system-design-review-2026-10-15.md` | 四个失效机制的完整论证（激活机制 / description 上限 / 渐进披露规范 / 防回弹门禁） |
 | `../deepseek-harness/packages/skill/skill/src/index.ts` | 上游能力边界（§1 判据一的类型依据） |

@@ -38,3 +38,7 @@ e2e/
 
 # 一次性会话诊断报告（生成于仓库根；已移 docs/evidence/ 的不再生成新名）
 /session-*-report.html
+
+# 音频取证样本与探针报告（脚本可随时重造；audio-baseline-20261028.md S0）
+canvas-studio/tests/fixtures/audio/
+canvas-studio/build/

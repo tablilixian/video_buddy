@@ -456,6 +456,13 @@ S4 skill 1d（依赖 S1 契约定型，可与 S2b/S3 并行）
 | D-13 | S2b | D-01 字面要求「视频流 -an 后单独合流」，但转码期 -an 会废掉 `CANVAS_STUDIO_AUDIO_LEGACY_CONCAT` 回退（无音频中间产物可回退）且必改 CV-209 既有断言（红线外） | 转码**保留音频**（S2a 形态），合流期 `-map 0:v -map 1:a` 用装配轨**替换**母版音轨——交付语义与「-an 后合流」等价（成片音轨 100% 来自装配），legacy 回退零成本、CV-209 断言一字不动 | 红线（不改既有断言）> D-01 的实现手段；从零装配的目的是绝对时间坐标，已达成 | 中（若要真 -an 需同时改回退策略与两处测试） |
 | D-14 | S2b | D-02 拍板「短 BGM 默认自动补静音」与既有 CV-138 测试（短 BGM 报错）冲突，红线只授权改 compose.test.mjs:79-89 | CV-138 测试改为钉 **AUTOPAD=0 回退模式**的旧行为（`CANVAS_STUDIO_AUDIO_AUTOPAD='0'` env 注入，断言原文案不变）；默认模式（补静音 + 告知）由新判据③真机测试覆盖 | D-02 是用户拍板（裁决① 照做）；测试语义没删——旧行为继续被钉住，且在汇报中披露这处例外 | 低 |
 | D-15 | S2b | 「render 路径装配也走 buildAudioGraph」与「渲染器侧只做播放」的张力：Remotion 渲染在浏览器内播放音频，塞不进 ffmpeg 装配图 | render 路径复用的是**模型与派生**：`timelineFromManifestAudio`（audio-compose.ts，与 compose 侧适配器同层）→ `compositionFromTimeline`；渲染器继续按 manifest 自己播放。行数棘轮（manifest.ts 1928 只准减）也要求适配器不放 manifest.ts | §10.2 第 3 条：两条路径同一模型/同一校验已达成，播放机制本就不同属合理分工 | 低 |
+| D-16 | S3 | 计划 S3「真波形」预测「现状是 id 派生假波形，需缓存节点 waveform 字段」——实测 `use-waveform.ts` 已是**真包络**（`fetchStudioWaveform` Host 解码 + 三消费方共用 hook） | 不新增节点 `waveform` 字段（第二事实源），沿用既有实时解码通道 | §10.2 第 1 条：计划与现状不符时以代码为准；单一事实源纪律 | 无（不动代码） |
+| D-17 | S3 | 导出前预检「补静音/重新生成/继续」三选需要对话框组件；D-02 下「补静音」就是默认继续行为 | `window.confirm` 二选（确定=继续[含自动补静音告知]；取消=重新生成），预检纯函数 `composeAudioPrecheck` 收在 compose-selection.ts（客户端+测试共用） | 三选中的「补静音」与「继续」语义重合；仓库有 window.confirm 先例（ProjectRowMenu 等） | 低 |
+| D-18 | S3 | StudioFrame.tsx / styles.ts 均在行数棘轮白名单上（只准减不准增），S3 前端接线必然增行 | CSS 整体外置 `styles-audio.ts`（styles.ts 零增长）；预检逻辑收进 CanvasTimeline（它本就持有全部输入）；StudioFrame 仅余 +7 行接线——**file+func 两处白名单显式登记 +1 行都不遮掩**，注明「阶段 3 拆分时消化」 | 棘轮的目的是让增长可见，不是阻止必要功能；白名单改动在 commit 与汇报中双披露 | 中（阶段 3 拆分时消化） |
+| D-19 | S4 | 计划点名的「第 2c 步：声音规划」——2c 已被「分次写」占用 | 声音规划编号取 **2d**；第 8 步「定配音」动作收进 2d（REQ-034 O-14 的钉死短语全部保留在第 8 步原文） | 计划写作时未核对总纲既有编号；O-14 测试语义不动 | 无 |
+| D-20 | S5 | 「beats.json / lyrics.json」的载体：画布数据的天然载体是 canvas.json 节点字段，另落独立文件会造第二事实源 | 节点字段 `beats?: BeatAnalysis` / `lyricsTimeline?: LyricLine[]`（`lyrics` 已被歌词**文本**占用，时间轴字段改名 `lyricsTimeline`） | 单一事实源；「落音频节点」的计划语义不变 | 低 |
+| D-21 | S5 | 「lyrics.json 两条入口」的工具面：独立 align_lyrics 工具还是并入 | 并入 `analyze_beats` 的可选 `lyricsLines` 参数（入口①人工指定行数组=精确；入口②启发式对齐=estimated 必标）；少一件工具、少一处基线维护 | 工具总数基线（AR-06）的维护成本；两个入口本就共享同一分析 pass 的 silencedetect | 低 |
+| D-22 | S5 | host-tools.ts 文件/函数双棘轮 vs 新工具（analyze_beats / snap_cuts_to_beats ≈134 行） | 新工具整体落 **host-tools-audio.ts** 工厂（`defineAudioTools`/`generateMusicWithVariants`），host-tools 零净增长（4400 ≤ 4401）；工具基线 33→35 + 三档展示表登记 + param-guard 归类同步 | 拆分执行计划阶段 1 的方向就是目录化；新代码进新文件 | 低 |
 
 ### 10.4 完成汇报格式
 
@@ -469,6 +476,12 @@ S4 skill 1d（依赖 S1 契约定型，可与 S2b/S3 并行）
 
 | # | 阶段 | 遗留项 | 原因 | 下一步 |
 |---|---|---|---|---|
+| L-1 | S2b | `CANVAS_STUDIO_AUDIO_LEGACY_CONCAT=1` 回退路径的端到端探针未单列（其载体=单镜路径测试 + CV-138 AUTOPAD=0 测试，覆盖其守卫面） | 回退路径与单镜路径共用同一实现分支 | 桌面验收若触发回退，先补一条 env=1 的真机探针 |
+| L-2 | S3 | 混音面板的「旁白起点」编辑未做（只做音量/淡变/duck；起点来自 voiceOverNodeIds 顺序堆叠或显式 API） | D-04 只读首版边界；起点编辑属 S3b 交互 | S3b（拖拽编辑）一并做 |
+| L-3 | S4 | S4 退出条件「agent 第一次调用就填对 voiceOverNodeIds」以机器代理验收（工具 schema + skill 文案 + G1a Part 2 全链路探针）；真机 agent 行为验收未跑 | agent 真机行为需要桌面会话 | 桌面验收时跑「3 镜 + 2 句旁白 + BGM」剧本 |
+| L-4 | S5 | 卡点吸附只产出**切点建议**（工具回显），不直接改写故事板时长 | 改写要走唯一写入点（write_storyboard 分节合并），工具代写会造第二写入点 | agent 按回显用 write_storyboard 落（文案已指路） |
+| L-5 | S5 | music_generation variants 选定后的「其余作废」仍是人工/agent 动作（无自动 retired） | 无既有的「按 id 作废音频节点」工具；CV-108 supersede 语义属分镜版本链 | 后续补 canvas 节点作废工具或右键引导（回显已指路音频抽屉） |
+| L-6 | S6 | 计划 §S6 ⑦「混音面板音量不写回」与 §S6⑥「置信度阈值为 0」两处变异的落点分别在 compose-selection 纯函数与 analyze/snap 工具层 | ⑥ 的阈值在工具层 glue（无单测面），由 S5 M1（confidence 公式失效→红）+ G2 探针覆盖上游 | 工具层 glue 测试随桌面验收剧本补 |
 
 ### 10.6 红线（即使授权自决也不放开）
 

@@ -15,7 +15,7 @@
 | **与视频协作层 A 通道**（后期混音 `bgmNodeId`） | 功能完整、真可用 | ✅ 现在就能验 |
 | **与视频协作层 C 通道**（audio reference） | **代码全通 + 后端已开放**（2026-09-10 后端 0.2.8 更新） | ✅ 现在就能验 |
 | **与视频协作层 B 通道**（原生音轨 `generate_audio`） | 代码已透传；该字段**仍未见于后端文档** | ⚠️ 只能验「被拒时提示是否明确」 |
-| 音乐先行工作流（CV-126 总纲第 2c 步） | **未开工**（等拍板） | ❌ 无 |
+| 音乐先行工作流（总纲第 2d 步「声音规划」+ `audio-first.md` 分册，CV-379） | **已落地**（2026-10-28 收口；第 2c 编号被占用改 2d） | ✅ CV-379 |
 
 ---
 
@@ -28,7 +28,7 @@
 | S3 | 分册：Caption/Lyrics 规则 | ✅ | `references/caption-lyrics-rules.md` 10.3KB |
 | S4 | skill 注册（prompting / hidden）+ 同步产物 | ✅ | `src/skill-catalog.ts:124` |
 | S5 | 「歌词要交出去」流程节 | ✅ | SKILL.md §三 |
-| S6 | **音乐先行（总纲第 2c 步 + `audio-first.md` 分册）** | ❌ **未开工** | 总纲 SKILL.md 无「主音频」字样；references/ 无 audio-first.md |
+| S6 | **音乐先行（总纲第 2d 步 + `audio-first.md` 分册）** | ✅ **已落地**（CV-379，2026-10-28） | `references/audio-first.md` + 总纲 2d 步；另有 `music-prompt-writing/references/beat-editing.md` 与 `mv-production` skill |
 | V1 | 音频独立节点类 `kind='audio'` 260×116 | ✅ | `src/contracts/canvas.ts:32` |
 | V2 | 卡片：♪ + 标题 + 时长 + 波形 + ▶/⏸ + 可拖进度 + **歌词摘要行** | ✅ | `src/client/canvas/CanvasNode.tsx` |
 | V3 | 双击 → `AudioPlayerModal`（控制条 + 歌词面板） | ✅ | `src/client/canvas/AudioPlayerModal.tsx` 11.5KB |
@@ -36,21 +36,21 @@
 | V5 | **生成后即时刷新**（白名单补 `music_generation`） | ✅ | `src/asset-capture.ts` |
 | V6 | 历史节点迁移（`kind=video`+`text-to-audio` → `audio`，84→116 高） | ✅ | `src/projects.ts` `migrateAudioNode` |
 | V7 | 音频不会被当一镜拼进成片 | ✅ | `compose.collectClips` 只收 `kind='video'` |
-| V8 | **音频进 `@` 引用候选**（`aud-01` + 真 chip + hover 卡） | ❌ **未做** | `reference-handle.ts:56` 只认 image/video |
-| V9 | **音频进时间线轨道** | ❌ **未做** | `CanvasTimeline.tsx:40` 只数 `kind==='video'` |
-| V10 | 真波形缩略图（现为 id 派生假波形） | ❌ 未做（P3） | — |
+| V8 | **音频进 `@` 引用候选**（`aud-01` + 真 chip + hover 卡） | ✅ 已落地（2026-09-30） | `buildAssetHandles` 收 `audio`（见 audio-generation-plan.md §10 已划掉项） |
+| V9 | **音频进时间线轨道** | ✅ 已落地（CV-378，2026-10-28） | BGM 下拉轨 + 新「音频轨」（`layoutAudioLane` 装配预览）；拖拽编辑留 S3b |
+| V10 | 真波形缩略图 | ✅ 已落地（早于本表：`use-waveform.ts` 真包络 + 降级条） | `fetchStudioWaveform` Host 解码；CV-378 决策不加节点字段（D-16） |
 | A1 | **A 通道：后期混音** `compose_video(bgmNodeId)` → ffmpeg `amix` + 1s 淡入淡出，音量 0.8 | ✅ 真可用 | `src/compose.ts:155-200` |
 | A2 | BGM 放行音频扩展名（mp3/wav/m4a…） | ✅ | `compose.ts` `isVideoFile` |
 | B1 | **B 通道：原生音轨** `generateAudio` → `generate_audio`（默认不发送） | ⚠️ 代码已通 | `src/providers/drama.ts:34` |
 | C1 | **C 通道：audio reference** 契约 + 校验 + 双 provider + 工具参数 | ⚠️ 代码已通 | `src/audio-reference.ts` / `capability.ts:46` / `drama.ts` `audio1..audio3` / `fal.ts` `reference_audio_urls` |
 | C2 | 官方规格硬校验（≤3 段 / 2–15s / 合计 ≤15s / WAV·MP3 / 不能作唯一输入） | ✅ 生成前预检 | `src/generate.ts:1167` |
 | C3 | **后端音频入参字段名确认** | ✅ **已确认（2026-09-10）** | 后端 0.2.8：`image2videoref2va` 支持 `audio1`–`audio3`，与我们落字段**完全一致**；`generate_audio` 仍未见于文档 |
-| X1 | **BGM 时长守卫**（BGM ≥ 成片） | ❌ 未做（P2） | `compose_video` 不校验 |
-| X2 | **合成 UI 入口** | ⚠️ **入口在，但不传 BGM** | 时间线右上「导出成片」→ `StudioFrame.tsx:563` 调 `composeStudioVideo(projectId, clipIds)`（**第三参 `bgmNodeId` 没传**）。服务端 `routes.ts:1123` 与客户端 SDK 签名**都已支持** `bgmNodeId` → 只差接线。**要带 BGM 目前只能靠对话触发**（2026-09-10 核实修正） |
-| X3 | 节拍落点实算（`beats.json`） | ❌ 未做（P1） | 「按拍拆镜」只能估算 |
-| X4 | 歌词时间轴 LRC | ❌ 未做（P1） | 歌词只有文本无时间 |
-| X5 | 多版 BGM 抽卡并列对比 | ❌ 未做（P1） | — |
-| X6 | 对白 ducking / 循环接缝落拍点 / 生成剩余时间 | ❌ 未做（P3） | — |
+| X1 | **BGM 时长守卫**（BGM ≥ 成片） | ✅ 已落地（CV-138 报错 → D-02 改自动补静音并告知，AUTOPAD=0 回退报错；CV-377） | `bgmAutopadDecision` |
+| X2 | **合成 UI 入口** | ✅ 已接线（CV-006 起，bgmNodeId 经 composeSelection 传入；CV-378 加导出前预检） | `StudioFrame.handleComposeExport` |
+| X3 | 节拍落点实算（`beats.json`） | ✅ 已落地（CV-380，2026-10-28） | `beat-analyze.ts` + `analyze_beats` 工具；G2 真机 120/90/140 误差 ≤0.6、对齐 100% |
+| X4 | 歌词时间轴 LRC | ✅ 已落地（CV-380，启发式对齐 estimated；入口①人工指定行数组） | `analyze_beats` lyricsLines 参数 → 节点 `lyricsTimeline` |
+| X5 | 多版 BGM 抽卡并列对比 | ✅ 已落地（CV-381，D-06 仅显式 variants 2-3） | `music_generation` variants + 音频抽屉对比 |
+| X6 | 对白 ducking / 循环接缝落拍点 / 生成剩余时间 | ⚠️ 部分（ducking ✅ 装配期 sidechaincompress（面板 duck 开关 + render manifest duck）；落拍点 ✅ `snap_cuts_to_beats`；剩余时间 ❌ 后端不回显） | CV-377/CV-378/CV-380 |
 
 ---
 

@@ -1913,3 +1913,46 @@
 - **涉及文件**（4 改 + 2 新）：`src/reference-token.ts`、`src/reference-resolve.ts`、`src/host-tools.ts`（删本地实现 + 导入 + 裸文件名优先）、`src/errors/catalog.ts`（`CS-USER-001` 加 `{hint}`）、`src/routes.ts`（补 `hint: ''`）；新 `tests/shot-ref.test.mjs`、`tests/reference.test.mjs` 扩 4 条。
 - **验证**：`tsc -p tsconfig.json` + `tsc -p tsconfig.client.json --emitDeclarationOnly` 0 错、`tsdown` 两入口 Build complete、`verify:loader` 绿、文件大小棘轮 3/3（`host-tools.ts` **4373 ≤ 4401**，靠搬出函数回落，未上调阈值；`errors/catalog.ts#SPECS` 因为多写一行注释一度 991 > 990，删注释回落 —— 棘轮只准减不准增）。定向 38/38（reference 32 + shot-ref 6）、关联 10 套 108/108。**全量 `test:smoke` 2348·2348 全绿、门禁 0 新增红**（本轮沙箱未复现 CV-375 记录过的 EPERM 假红）。反向变异：M1 拆资产名兜底 → 1 红、M2 拆 sbRef 分支 → 1 红、M3 关候选提示 → 1 红、M4 关分镜候选 → 1 红。
 
+
+#### CV-377 · CV-040 收口主线：AudioTimeline 统一模型 + 止血 + 多镜从零装配
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0（计划正本 [audio-timeline-plan-20261028.md](./plans/audio-timeline-plan-20261028.md) §1.4 三组 ffmpeg 实测，基线取证见 [audio-baseline-20261028.md](./plans/audio-baseline-20261028.md)）
+- **三层修复**：
+  1. **统一模型**（S1）：新 `src/audio-timeline.ts` 纯函数层——`resolveAudioTimeline`（结构非法 error 拒收 / 语义可疑 warning 归一化）、`compositionFromTimeline`（8 枚举从段角色派生，`manifest.audioCompositionFrom` 降为兼容包装）、`buildAudioGraph`（装配 filter_complex **唯一生成点**：统一 48k 立体声 → atrim → volume → afade → adelay → amix normalize=0 → apad+atrim 钉片长）、`describeTimeline`（模型自查）、`timelineFromComposition`（老数据 D-03 只读反推）。`AUDIO_COMPOSITION_HINTS` 的「各镜环境声已丢弃」错文案撤（与 CV-209 行为冲突），`tests/audio-hints-doc.test.mjs` 把文案钉回行为。
+  2. **止血**（S2a）：`buildAudioCodecArgs`——无音轨段从 `-an`（丢流 ⇒ concat 流结构不一致 ⇒ 音轨断裂）改补 `anullsrc` 等长静音轨（按**探测真值** `-t`，探测失败退 `-shortest` 不伪造）；两分支统一 `-ar 48000 -ac 2`（实验 C：16k×48k 混拼实测容器虚报 12.02s + 解码器中途崩溃）；per-clip 探测顺带 `parseFfmpegDuration` 记真实时长（零额外进程）；结果逐段回显。`tests/compose.test.mjs:79-89` 的 `-an` 断言同批改（红线唯一例外，语义等价性在汇报披露）。
+  3. **从零装配**（S2b，D-01）：多镜成片改「逐段转码（保留音频）→ concat 母版 → AudioTimeline 装配一条完整音轨 → `-map 0:v -map 1:a -c:v copy` 合流（音轨 REPLACES 母版）」；`buildAmixArgs` 保留兼容包装（老单测逐字符成立）；单镜整出行为逐字符不变；短 BGM 自动 `apad` 补静音并明确告知（D-02，`CANVAS_STUDIO_AUDIO_AUTOPAD=0` 回退旧报错——CV-138 测试改钉回退模式）；装配层落 `src/audio-compose.ts`（`timelineFromComposeClips` / `buildAudioTrackArgs` / `buildMuxArgs` / `bgmAutopadDecision`）。
+- **验收**：取证探针 `scripts/probe/audio-baseline.probe.mjs` 修复前稳定 exit 1（音轨 4.011s vs 视频 6.000s 错位 −1.989s；16k×48k 混拼解码中止）→ 修复后 exit 0（A/V 差 0.037/0.032s）；G1a `audio-mix.probe.mjs` 全绿（双流差 0.037s ≤1 帧 0.041s；逐 0.5s RMS 无死区；Part 2 双旁白窗口能量抬升 0.091>0.073 / 0.097>0.074）；反向变异 12 处全部能变红（去探测/adelay 写死/apad 丢失/文案回退/映射错/置信度恒 1/吸附无视容差/面板写回失效等）；test:smoke 2411·0 红。
+- **涉及文件**：`src/audio-timeline.ts`（新）/ `src/audio-compose.ts`（新）/ `src/compose.ts` / `src/remotion/manifest.ts` / `src/contracts/canvas.ts` / `tests/audio-hints-doc.test.mjs`（新）/ `tests/compose-audio-pad.test.mjs`（新）/ `tests/audio-compose.test.mjs`（新）/ `tests/compose.test.mjs`（79-89 唯一例外断言 + CV-138 env 化）/ `scripts/probe/*`（新）。
+
+#### CV-378 · 时间轴只读音频轨 + 混音面板 + 导出前预检 + 音频抽屉
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1（D-04 只读首版；拖拽留 S3b）
+- **落地**：`layoutAudioLane`（timeline-layout.ts 纯函数：绝对坐标定位、越界裁切标 overflow——CV-007「音乐比成片长几秒」一眼可读、负起点钳 0、未探测占位标 measured=false）；CanvasTimeline 新「音频轨」lane（选中 BGM + 节点 `audioTimeline` 旁白段，标尺 = 预计成片时长）；`AudioMixPanel`（BGM 音量/淡入淡出、旁白音量/duck、环境声信息位——写回节点 `audioTimeline` 新契约字段，Host 装配读覆盖值）；导出前 `composeAudioPrecheck`（短 BGM / 无任何音频节点 → window.confirm：确定=继续[含 D-02 自动补静音告知]、取消=重新生成，D-17）；`AudioDrawer`（全项目音频列表：时长/来源工具/歌词首行/试听/失效版本多版对比）。真波形已存在（`fetchStudioWaveform` 实时解码），不加节点 waveform 字段（D-16）。
+- **验收**：`tests/timeline-audio-lane.test.mjs` 10 条（layout 6 + 面板写回/预检/抽屉 4）；反向变异 M1（丢 overflow）/ M2（预检分支失效）红。
+- **涉及文件**：`src/client/canvas/CanvasTimeline.tsx` / `src/client/AudioMixPanel.tsx`（新）/ `src/client/AudioDrawer.tsx`（新）/ `src/client/styles-audio.ts`（新——styles.ts 棘轮零增长）/ `src/client/StudioFrame.tsx`（+7 行接线，file+func 棘轮显式登记）/ `src/compose-selection.ts`（nodeAudioOverride / buildNodeAudioTimeline / composeAudioPrecheck 客户端+Host 共用）/ `src/compose.ts`（装配读节点覆盖）。
+
+#### CV-379 · 声音规划第 2d 步 + audio-first / beat-editing 分册 + mv-production skill
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1（把「纪律」换成「可填参数」；S4）
+- **落地**：总纲新增第 **2d** 步「声音规划」（2c 已被占用，D-19）——三件事（人声/纯器乐、有没有旁白、BGM 目标时长）+ 多句旁白 `voiceOverNodeIds` 写法（起点 = 镜头起始秒 + 入点留白，禁止自己算 ffmpeg）；第 8 步「定配音」动作收进 2d（REQ-034 O-14 钉死短语全部保留）；第 10 步音轨策略改指针；SKILL.md 11.9KB ≤14KB 闸。新 `references/audio-first.md`（音乐先行/视频先行两路线 + 失败判据 + 单句旁白走 bgmNodeId 自动识别）。`music-prompt-writing` 新 `references/beat-editing.md`（切点吸附算法、±0.5 拍容差、低置信禁卡点）。新 skill `skills/mv-production/`（platform.yaml + SKILL.md + BUNDLED_CATALOG 快照同步）。host-tools 三处描述加指针；`tts_voiceover` 结果文案改「多镜成片传 voiceOverNodeIds 数组」。
+- **验收**：S4 退出条件以机器代理验收（工具 schema + skill 文案 + G1a Part 2 全链路）；真机 agent 行为剧本见遗留 L-3。
+- **涉及文件**：`skills/canvas-studio-creation/SKILL.md` / `skills/canvas-studio-creation/references/audio-first.md`（新）/ `skills/music-prompt-writing/references/beat-editing.md`（新）/ `skills/mv-production/`（新）/ `src/host-tools.ts` / `src/skill-catalog.ts`。
+
+#### CV-380 · 本地节拍分析 + analyze_beats / snap_cuts_to_beats 工具（G2 机器验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1（从「能配乐」到「能对拍」；S5）
+- **落地**：新 `src/beat-analyze.ts`——astats/ametadata 响度包络 → onset 自相关粗估（基频优先：取 ≥0.9×峰值最小滞后）→ **梳状全网格精修**（周期 ±5% × 相位全扫；倍频平局 ≥0.80×带宽内取高频为基频——准周期抖动会让自相关偏爱 2× 周期，90/140 BPM 档实测）→ `confidence`（峰高差占比；<0.5 低置信禁卡点，D-05）；ebur128 LUFS 测量（只回填不做母带，§7 边界）；`snapCutsToBeats`（切点吸附最近拍，±0.5 拍容差超差告警，总漂移必须重算 durationInFrames）；`heuristicLyrics`（静音切分 + 字数兜底，必标 estimated）。节点字段 `beats` / `lyricsTimeline`（D-20）。新工具 `analyze_beats`（写节点 + **回填既有契约 06_sound.bgm.bpm/lufs**，唯一写入点 mergeStoryboardWrite）与 `snap_cuts_to_beats`（confidence<0.5 直接拒绝）——落 `src/host-tools-audio.ts` 工厂（host-tools 双棘轮零增长，D-22）；工具基线 33→35 + 三档展示表 + param-guard 归类同步。
+- **验收（G2）**：`scripts/probe/beat.probe.mjs` 真机 120/90/140 三档——误差 **0.1 / 0.0 / 0.6**（≤2）、拍点对齐率 **100%**（≤0.1s）、confidence 0.97–1；`tests/beat-analyze.test.mjs` 7 条（合成包络三档、噪声低置信、吸附/对齐/解析全分支）；反向变异 M1（confidence 恒 1）/ M2（吸附无视容差）红。
+- **涉及文件**：`src/beat-analyze.ts`（新）/ `src/host-tools-audio.ts`（新）/ `src/host-tools.ts` / `src/generate.ts` / `src/contracts/canvas.ts` / `src/param-guard.ts` / `src/tool-presentation.ts` / `tests/beat-analyze.test.mjs`（新）/ `tests/tool-registry.test.mjs` / `scripts/probe/beat.probe.mjs`（新）。
+
+#### CV-381 · music_generation variants 多版抽卡（D-06 仅显式）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **落地**：`variants: 2-3` 仅显式请求、不进默认路径（D-06）——内部循环生成（caption 微扰：BPM 数字 ±3 或编曲变体词），主产物 = 第一版原样，其余并列落画布进 `MusicResult.variants` 摘要；结果文本回显全部节点 id 并指路音频抽屉试听选订、其余作废（L-5：自动 retired 留待节点作废工具）。循环实现 `generateMusicWithVariants` 在 host-tools-audio.ts（span 棘轮外置）。
+- **验收**：schema 覆盖守卫绿（variants 进 musicResultSchema）；D-06「不进默认路径」由参数缺省语义保证（不传 variants = 单次生成原路径）。
+- **涉及文件**：`src/host-tools.ts` / `src/host-tools-audio.ts` / `src/generate.ts`。

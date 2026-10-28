@@ -290,8 +290,24 @@ async function main() {
   await parent()
 }
 
+/**
+ * Publish a failure as a workflow annotation. Job logs need repository rights
+ * while annotations travel with the check run, so this keeps a red Windows run
+ * diagnosable from the API. The worker stays silent: its stdout must remain a
+ * single JSON report for the parent to parse.
+ */
+function annotate(message) {
+  if (process.env.GITHUB_ACTIONS !== 'true' || process.argv.includes(WORKER_FLAG)) return
+  const payload = message
+    .replaceAll('%', '%25')
+    .replaceAll('\r', '%0D')
+    .replaceAll('\n', '%0A')
+  process.stdout.write(`::error title=verify-windows-minimal-pty::${payload.slice(0, 8_000)}\n`)
+}
+
 void main().catch(cause => {
   const detail = cause instanceof Error ? cause.stack ?? cause.message : String(cause)
   process.stderr.write(`verify-windows-minimal-pty: ${detail}\n`)
+  annotate(detail)
   process.exitCode = 1
 })

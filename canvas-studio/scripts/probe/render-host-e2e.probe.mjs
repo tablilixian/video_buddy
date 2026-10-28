@@ -67,6 +67,8 @@ let phase3Armed = false
 let phase3JobId = null
 const heartbeats = []
 let firstIdleAt = -1
+/** 页面发来的第一条自报携带的 Origin（真宿主 mutationAllowed 要求它非空）。 */
+let statusOrigin = null
 const commitWaiters = []
 let committedBytes = null
 let cancelledReason = null
@@ -95,6 +97,10 @@ const server = createServer((req, res) => {
     if (req.method === 'POST' && url.pathname === '/canvas-studio/render-host/status') {
       try {
         const report = JSON.parse(body.toString('utf8') || '{}')
+        // 真实性缺口（2026-10-28）：真宿主的 `/render-host/status` 走 `mutationAllowed`，
+        // 而它**要求请求带 `Origin`**；本探针的假宿主不做同源校验，于是「页面根本没发
+        // Origin ⇒ 真机 403 ⇒ 静默白屏」这类故障在这里永远是绿的。至少把这条头记下来并断言。
+        if (statusOrigin === null && req.headers.origin !== undefined) statusOrigin = req.headers.origin
         heartbeats.push({ at: Date.now(), state: report.state, detail: report.detail })
         recordRenderHostReport(report) // 喂给真实状态模块（renderHostReady 判活用）
         if (report.state === 'idle' && firstIdleAt < 0) {
@@ -179,7 +185,11 @@ async function main() {
   // ── 阶段 1：窗口自报就绪 ──
   await waitFor('first idle heartbeat', 30_000, () => firstIdleAt > 0)
   const bootMs = firstIdleAt - ensureAt
-  step('phase1:ok', { bootMs, heartbeats: heartbeats.length })
+  // 真宿主的同源闸靠这三样：host 端口 / Origin / sec-fetch-site。探针至少钉住 Origin ——
+  // 少了它，真机 403 而这里全绿（2026-10-28 的教训）。
+  const originOk = typeof statusOrigin === 'string' && statusOrigin.startsWith(`http://127.0.0.1:${port}`)
+  if (!originOk) throw new Error(`页面自报未携带同源 Origin（实际 ${String(statusOrigin)}）—— 真宿主的 mutationAllowed 会 403`)
+  step('phase1:ok', { bootMs, heartbeats: heartbeats.length, origin: statusOrigin })
   console.log(`\n阶段 1 ✅ 隐藏窗口页面真实启动并自报 idle：冷启 ${bootMs}ms（runRenderJob 的 hostWarmupMs 预算 = 3000ms）`)
 
   // ── 阶段 2：派单 → 渲染 → 回写成片（假单，纯验证接收端）──

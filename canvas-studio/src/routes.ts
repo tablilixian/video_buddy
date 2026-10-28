@@ -44,7 +44,7 @@ import { cancelRenderJob, claimRenderJobFor, commitRenderJob, failRenderHostJobs
 // REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
 import { renderHostHtml } from './render-host/page.js'
 import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
-import { setRenderHostLauncher, setRenderHostResetter } from './render-host/dispatch.js'
+import { setRenderHostLauncher, setRenderHostLogger, setRenderHostResetter, warnRenderRequestRejected } from './render-host/dispatch.js'
 import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHost } from './render-host/window.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -662,6 +662,13 @@ function asLibMediaArray(value: unknown): LibMedia[] | undefined {
  */
 export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, library: AssetLibrary): () => void {
   const expectedPort = (): number | undefined => ctx.webServer.port
+  // 同源闸唯一出口：过了返回 true；没过就 403 + 留痕（`loadURL` 把 403 当加载成功，不记就永远查不到）。
+  const requireAuthority = (req: IncomingMessage, res: ServerResponse, path: string): boolean => {
+    if (requestAllowed(req, expectedPort())) return true
+    warnRenderRequestRejected(req, path, expectedPort())
+    sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+    return false
+  }
   // REQ-005 v1.3（变体 A）：启动清扫 —— 回收上一次会话遗留的无人认领 draft 目录。
   // fire-and-forget：清扫失败不影响任何路由；结果只落日志。
   // CV-292：走 sweepOnceForCurrentRoot（按 root 键控、每进程每根至多一次）—— 这一拍
@@ -2985,10 +2992,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 宿主建单（工具 `render_composition`）→ 画布客户端轮询取单 → CSR 渲染 → 回写/撤单。
     // 三条都是「本机回环」面：pending 是只读 GET；commit / cancel 是写类 POST（同源校验）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_PENDING, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort())) {
-        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
-        return
-      }
+      if (!requireAuthority(req, res, ROUTE_REMOTION_PENDING)) return
       if (req.method !== 'GET') {
         sendJson(res, 405, { error: 'remotion pending requires GET' })
         return
@@ -3235,10 +3239,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // 页面只被隐藏窗口加载；`no-store` 是因为 bundle 名不变、构建后会换内容，
     // 缓存住会让「改了代码但窗口还是老的」这种问题查半天。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort())) {
-        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
-        return
-      }
+      if (!requireAuthority(req, res, ROUTE_RENDER_HOST)) return
       if (req.method !== 'GET') {
         sendJson(res, 405, { error: 'render host page only supports GET' })
         return
@@ -3251,10 +3252,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     }}),
 
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_JS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort())) {
-        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
-        return
-      }
+      if (!requireAuthority(req, res, ROUTE_RENDER_HOST_JS)) return
       if (req.method !== 'GET') {
         sendJson(res, 405, { error: 'render host bundle only supports GET' })
         return
@@ -3274,10 +3272,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
 
     // 自报状态：页面每拍报一次；GET 供验收/调试读（含生命周期快照，判断窗口是否还活着）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_RENDER_HOST_STATUS, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort())) {
-        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
-        return
-      }
+      if (!requireAuthority(req, res, ROUTE_RENDER_HOST_STATUS)) return
       if (req.method === 'GET') {
         sendJson(res, 200, {
           report: lastRenderHostReport() ?? null,
@@ -3462,6 +3457,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     }}),
   ]
   // ── REQ-034 · O-06：RenderHost 派单登记 ──
+  // P0-3①：派单侧观测出口（`render-job.ts` 不依赖 cordis，只喊话；见 dispatch.ts）。
+  setRenderHostLogger((message) => { ctx.logger.info(message) })
   // 默认**懒启**：只有真要渲染时才建隐藏窗口（空闲零成本），`CANVAS_STUDIO_RENDER_HOST=0` 可整体关掉。
   // `=1` 时额外在启动阶段就拉起（S1 人工验收要看 `/render-host/status` 自报 idle，等不到派单）。
   if (process.env.CANVAS_STUDIO_RENDER_HOST !== '0') {
@@ -3487,6 +3484,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
     setRenderHostLauncher(undefined)
     setRenderHostResetter(undefined)
+    setRenderHostLogger(undefined)
     stopLoopback()
     disposeRenderHost('plugin-dispose')
     for (const dispose of routes) dispose()

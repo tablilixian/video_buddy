@@ -12,6 +12,8 @@
  * （决定这张单归谁渲染，决定后不再改）。
  */
 
+import type { IncomingMessage } from 'node:http'
+
 export type RenderHostLauncher = () => boolean
 
 /**
@@ -26,6 +28,16 @@ export type RenderHostResetter = (reason: string) => void
 
 let launcher: RenderHostLauncher | undefined
 let resetter: RenderHostResetter | undefined
+/**
+ * 宿主日志出口（`routes.ts` 注册成 `ctx.logger.info`）。
+ *
+ * 为什么需要它：`render-job.ts` 是**渲染无关**的宿主逻辑，故意不依赖 cordis ctx；
+ * 但「这张单为什么没派给隐藏窗口」只有它知道，而这条信息此前**完全没有留痕**
+ * （日志里只有「RenderHost 已创建」，28s 后直接报「画布页从未取单」）。
+ * 与 launcher / resetter 同一注入风格：模块只喊话，谁记日志由宿主决定。
+ */
+export type RenderHostLogger = (message: string) => void
+let logger: RenderHostLogger | undefined
 // 初值取 -Infinity：0 会被"距上次重置 30s"判成刚重置过，导致**第一次失败反而不重置**。
 let lastResetAt = Number.NEGATIVE_INFINITY
 
@@ -40,6 +52,51 @@ export function setRenderHostLauncher(next: RenderHostLauncher | undefined): voi
 
 export function hasRenderHostLauncher(): boolean {
   return launcher !== undefined
+}
+
+/** 登记日志出口（`undefined` = 关掉；纯 CLI / 单测下没登记就静默丢弃）。 */
+export function setRenderHostLogger(next: RenderHostLogger | undefined): void {
+  logger = next
+}
+
+/**
+ * 往宿主日志写一行（没登记出口时是空操作）。
+ *
+ * 为什么吞异常：排障日志写失败（logger 抛错）绝不能连累一次渲染 —— 这是**观测**
+ * 通道，不是控制流。
+ */
+export function logRenderHost(message: string): void {
+  try {
+    logger?.(message)
+  } catch { /* 观测失败不影响渲染 */ }
+}
+
+/** 被拒请求的留痕频率上限：页面 1s 一拍，不限频会立刻刷屏。 */
+const REJECTED_WARN_INTERVAL_MS = 10_000
+let lastRejectedWarnAt = 0
+
+/**
+ * **渲染链路的请求被本机同源闸拒绝**时留痕（P0-3④）。
+ *
+ * 为什么这条日志比什么都重要：Electron 的 `loadURL` 把 403 / 404 / 503 一律当「加载成功」，
+ * 于是页面是个白屏、没有脚本、没有自报，宿主侧**一个字都不会记**。本机 10-15 起的
+ * 34 次 `CS-RENDER-002` 就是这种「静默白屏」：12 次建窗、0 条自报、0 条加载失败。
+ * 而仓里所有探针的假宿主**不做同源校验** ⇒ 探针全绿、真机全红。这条日志把鸿沟摊开。
+ *
+ * 放在本模块而不是 `routes.ts`：`routes.ts` 有只减不增的行数棘轮，而这里是渲染链路的
+ * 观测出口，`render-job.ts` 与本文件已经是「谁喊话 / 谁记日志」的分工。
+ */
+export function warnRenderRequestRejected(req: IncomingMessage, path: string, expectedPort: number | undefined): void {
+  if (Date.now() - lastRejectedWarnAt < REJECTED_WARN_INTERVAL_MS) return
+  lastRejectedWarnAt = Date.now()
+  const site = req.headers['sec-fetch-site']
+  logRenderHost(
+    `[canvas-studio] 渲染链路的请求被本机同源闸拒绝：${req.method ?? '?'} ${path}`
+    + ` · host=${req.headers.host ?? '-'} · origin=${req.headers.origin ?? '-'}`
+    + ` · sec-fetch-site=${typeof site === 'string' ? site : '-'}`
+    + ` · peer=${req.socket.remoteAddress ?? '-'} · 期望端口=${String(expectedPort)}`
+    + ' —— 页面会因此白屏且不会自报状态（CS-RENDER-002 的静默成因）',
+  )
 }
 
 /**
@@ -90,6 +147,8 @@ export function resetRenderHostAfterFailure(reason: string, now = Date.now()): b
 export function resetRenderHostDispatch(): void {
   launcher = undefined
   resetter = undefined
+  logger = undefined
   lastWarmAt = 0
   lastResetAt = Number.NEGATIVE_INFINITY
+  lastRejectedWarnAt = 0
 }

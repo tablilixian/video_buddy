@@ -32,7 +32,7 @@ import {
   releaseRenderSlot,
   type RenderJobView,
 } from './render-queue.js'
-import { hasRenderHostLauncher, warmRenderHost } from '../render-host/dispatch.js'
+import { hasRenderHostLauncher, logRenderHost, warmRenderHost } from '../render-host/dispatch.js'
 import { RENDER_HOST_STALE_MS, renderHostCanTakeOver, renderHostHealth, renderHostReady } from '../render-host/status.js'
 import { resetRenderHostAfterFailure } from '../render-host/dispatch.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
@@ -147,6 +147,38 @@ export function describeDiagnostics(d: RenderJobDiagnostics): string {
   return `${who}已渲染 ${waited}s，进度 ${Math.round(d.maxProgress * 100)}%${d.takeover ? '（曾发生过改派）' : ''}`
 }
 
+/**
+ * 把诊断快照压成**拼在正文末尾**的一行（P0-1）。
+ *
+ * 为什么直接拼进 `message` 而不是另开一个模板参数（`{hint}`）：
+ * - `detail` 只进 `devMessage`，而 `routeError` 在 `devMode=false`（桌面端默认）时只交
+ *   `userMessage`、`recordStudioToolFailure` 也只记 `action.message` ⇒ **两边都到不了**。
+ *   本机 4 个会话 34 次 `CS-RENDER-002` 里模型看到的全是「请重试」，`job` 快照一个字都没
+ *   露过面，于是它唯一的处置就是 sleep + 重试（最坏 28 分钟 37 次连败）。
+ * - 这个码的正文本来就由**调用方**填（`{message}`，客户端撤单时填的是渲染器原话），
+ *   诊断属于同一类信息，拼在一起不需要动错误码表（`catalog.ts#SPECS` 有只减不增的行数棘轮）。
+ */
+function diagHint(diag: RenderJobDiagnostics): string {
+  return `\n工单：${describeDiagnostics(diag)}`
+}
+
+/**
+ * 隐藏窗口此刻为什么不能接单 / 接管 —— 拼进**模型可见**的文案。
+ *
+ * 覆盖 `renderHostCanTakeOver()` 为假的全部原因。不说清楚的话，「没有窗口」与
+ * 「窗口在但干不了活」在文案里长得一样，排障只能靠猜（10-15 至 10-28 全程如此）。
+ */
+function renderHostUnavailableReason(now: number): string {
+  if (!hasRenderHostLauncher()) return '本宿主没有隐藏渲染窗口'
+  const health = renderHostHealth(now)
+  if (!health.alive) {
+    return health.ageMs === Number.POSITIVE_INFINITY
+      ? '隐藏渲染窗口从未自报就绪'
+      : `隐藏渲染窗口失联 ${Math.round(health.ageMs / 1000)}s`
+  }
+  return `隐藏渲染窗口自报 ${health.state}`
+}
+
 /** 三期 W6-1：一张抽帧（已落盘的同源 URL）。 */export interface RenderSampleResult {
   frame: number
   url: string
@@ -199,6 +231,11 @@ export interface RunRenderJobOptions {
   heartbeatStaleMs?: number
   /** client 单「取单后一帧没动」的判死阈值（缺省 `CLIENT_CLAIM_STALL_MS`）。测试注入短值。 */
   clientClaimStallMs?: number
+  /**
+   * 同上，但只在**隐藏窗口不可用**时生效（缺省 `CLIENT_CLAIM_STALL_NO_HOST_MS`）。
+   * 注入 `clientClaimStallMs` 却不注入本项时，本项跟随前者（测试不必白等一分钟）。
+   */
+  clientClaimStallNoHostMs?: number
   /** client 单「开渲后停滞」的判死阈值（缺省 `CLIENT_PROGRESS_STALL_MS`）。测试注入短值。 */
   clientProgressStallMs?: number
 }
@@ -277,6 +314,8 @@ interface ActiveRenderJob {
   deadlineAt: number
   /** client 单「取单后一帧没动」的判死阈值（见 `CLIENT_CLAIM_STALL_MS`）。 */
   claimStallMs: number
+  /** 隐藏窗口不可用时的同上阈值（见 `CLIENT_CLAIM_STALL_NO_HOST_MS`）。 */
+  claimStallNoHostMs: number
   /** client 单「开渲后停滞」的判死阈值（见 `CLIENT_PROGRESS_STALL_MS`）。 */
   progressStallMs: number
 }
@@ -364,6 +403,22 @@ export const RENDER_HOST_TAKEOVER_GRACE_MS = 15_000
  * 90s 的工具超时下限。
  */
 export const CLIENT_CLAIM_STALL_MS = 20_000
+
+/**
+ * **隐藏窗口不可用**时的「取单后一帧没动」判死阈值（毫秒）—— P0-4。
+ *
+ * 为什么需要第二档：`CLIENT_CLAIM_STALL_MS` 的 20s 是「反正窗口能接管」前提下的
+ * 快速失败。窗口**恒不可用**时这个前提没了，画布页就是唯一执行者，而它的取单是
+ * `setInterval(1000)`：主窗口一旦在后台就会被 Chromium 节流到几十秒一拍
+ * （`dsh-plugin-desktop` 的主窗口没关 `backgroundThrottling`，属宿主本体、不碰）。
+ * ⇒ 20s 必然杀掉一个「只是被节流」的健康页面。本机 10-15 起的 34 次
+ * `CS-RENDER-002` 全部落在「窗口创建 + 28s」（8s 冷启 + 20s 判死）这一个节拍上
+ * —— 这就是「按有能力兜底来计时」在真没有兜底时打出来的结果。
+ *
+ * 为什么是 60s：够盖住一次被节流的轮询间隔（~1 拍/分钟），又远小于工具超时下限
+ * （90s），不会让用户白等几分钟。
+ */
+export const CLIENT_CLAIM_STALL_NO_HOST_MS = 60_000
 
 /**
  * 「开渲后停滞」的判定阈值（毫秒）。
@@ -588,6 +643,20 @@ async function pickExecutor(options: RunRenderJobOptions): Promise<RenderExecuto
 }
 
 /**
+ * 一张单据派给画布页时，说明**为什么没有**给隐藏窗口（P0-3①，只进日志）。
+ *
+ * 三种情况分别对应三条可操作的修法：没有拉起器（宿主能力）/ 显式指定（测试或排障）/
+ * 冷启等到超时仍没自报（页面脚本没跑起来）。日志里不写这一行，事后只能靠时间差猜。
+ */
+function executorFallbackReason(options: RunRenderJobOptions, fast: RenderExecutor | undefined): string {
+  if (options.executor === 'client') return '调用方指定 executor=client'
+  if (!hasRenderHostLauncher()) return '本宿主没有隐藏渲染窗口（CANVAS_STUDIO_RENDER_HOST=0 或纯 CLI 宿主）'
+  if (fast === 'client') return '窗口未自报就绪且不等待（hostWarmupMs=0）'
+  const budget = Math.round((options.hostWarmupMs ?? RENDER_HOST_WARMUP_MS) / 1000)
+  return `冷启等待 ${budget}s 仍未就绪（${renderHostUnavailableReason(Date.now())}）`
+}
+
+/**
  * 心跳看门狗：**两种执行者都装**（此前只给 `render-host` 装，见下方"为什么改"）。
  *
  * 判据按执行者分开，因为两条路能拿到的证据不同：
@@ -613,13 +682,25 @@ function armLivenessWatchdog(job: ActiveRenderJob, staleMs: number): void {
     settleAndForget(job, 'failed', `${stall.detail} · ${describeDiagnostics(diag)}`)
     if (diag.path === 'render-host') resetRenderHostAfterFailure(`render host stalled: ${stall.detail}`)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: stall.message,
+      message: `${stall.message}${diagHint(diag)}`,
       detail: `${stall.detail} · ${describeDiagnostics(diag)}`,
       job: diag,
     }))
   }, tick)
   ;(timer as unknown as { unref?: () => void }).unref?.()
   job.watchdog = timer
+}
+
+/**
+ * 本单「取单后一帧没动」该等多久（毫秒）—— P0-4，阈值与**兜底能力**耦合。
+ *
+ * 只在这里放宽、不在 `clientJobOrphanReason` 里放宽：那张判据决定「什么时候允许改派」，
+ * 窗口不在时它压根不生效；这里决定「什么时候判死」，而判死**只在没人能兜底时**才发生
+ * （下面紧跟着的 `renderHostCanTakeOver` 一为真就放行，把命交给改派）。
+ * ⇒ 能接管时这条阈值不决定生死，用短值即可；不能接管时它是最后一道闸，必须放宽。
+ */
+function claimStallLimitOf(job: ActiveRenderJob, now: number): number {
+  return renderHostCanTakeOver(now) ? job.claimStallMs : Math.max(job.claimStallMs, job.claimStallNoHostMs)
 }
 
 /** 看门狗判定：返回 `null` 表示"还活着"，否则给出结算理由。 */
@@ -637,16 +718,29 @@ function silenceOf(
     }
   }
   // client：看「有没有真的动起来」+「有没有报活」（CV-373：报活也是活性证据，
-  // 口径与 clientJobOrphanReason 一致 —— 最后一次活性证据起算 20s）。
+  // 口径与 clientJobOrphanReason 一致 —— 最后一次活性证据起算）。
   if (job.maxProgress <= 0) {
     const lastAlive = Math.max(job.clientClaimedAt ?? job.dispatchedAt ?? now, job.lastProgressAt)
     const waited = now - lastAlive
-    if (waited < job.claimStallMs) return null
+    if (waited < claimStallLimitOf(job, now)) return null
     // 有窗口能干活 ⇒ 把「救活」的机会留给改派（它会重渲这一单），别在这里判死。
     if (renderHostCanTakeOver(now)) return null
+    const seconds = Math.round(waited / 1000)
+    const why = renderHostUnavailableReason(now)
+    const aliveFor = Math.round((now - job.lastProgressAt) / 1000)
+    // P0-2：分两档。此前「从未取单」与「取单后没动」共用一句
+    // 「画布页取单后一直没开始渲染」——而两者的修法完全相反（前者要用户把画布页
+    // 摆到前台/打开对应项目，后者是页面主线程被占）。34 次失败全是第一档，模型却
+    // 按第二档去「重试」，白烧 28 分钟 37 次。
+    if (job.clientClaimedAt === undefined) {
+      return {
+        message: `渲染单已派给画布页，但画布页 ${seconds}s 内从未取走它（该项目的画布页没打开 / 不在前台 / 轮询已停）。${why}，无法接管。请重试。`,
+        detail: `client never claimed the job (${seconds}s since dispatch, last liveness ${aliveFor}s ago), ${why}`,
+      }
+    }
     return {
-      message: '画布页取单后一直没开始渲染，已中止本次渲染。请重试。',
-      detail: `client claimed but produced no progress for ${Math.round(waited / 1000)}s (last liveness ${Math.round((now - job.lastProgressAt) / 1000)}s ago)`,
+      message: `画布页已取走这张单，但 ${seconds}s 内一帧都没有渲染（页面被切到后台或主线程被占用）。${why}，无法接管。请重试。`,
+      detail: `client claimed but produced no progress for ${seconds}s (last liveness ${aliveFor}s ago), ${why}`,
     }
   }
   const stalled = now - job.lastProgressAt
@@ -670,11 +764,14 @@ export function failRenderHostJobs(reason: string): number {
   let count = 0
   for (const job of [...activeJobs.values()]) {
     if (job.executor !== 'render-host' || job.settled) continue
+    // F-01：窗口失联这条也要带诊断（此前只带 `reason`，模型看到的消息里没有工单快照）。
+    const diag = diagnosticsOf(job, 'failed')
     job.settled = true
     settleAndForget(job, 'failed', reason)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: '渲染窗口异常，已中止本次渲染。请重试。',
+      message: `渲染窗口异常，已中止本次渲染。请重试。${diagHint(diag)}`,
       detail: reason,
+      job: diag,
     }))
     count += 1
   }
@@ -709,6 +806,19 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
   const executor = fastExecutor ?? await pickExecutor(options)
   const heartbeatStaleMs = Math.max(50, options.heartbeatStaleMs ?? RENDER_HOST_STALE_MS)
   const jobId = `rj-${newAssetId()}`
+  // P0-4：判死阈值分两档（见 `CLIENT_CLAIM_STALL_NO_HOST_MS`）。
+  const claimStallMs = Math.max(1, options.clientClaimStallMs ?? CLIENT_CLAIM_STALL_MS)
+  const claimStallNoHostMs = Math.max(
+    claimStallMs,
+    options.clientClaimStallNoHostMs
+      ?? (options.clientClaimStallMs !== undefined ? claimStallMs : CLIENT_CLAIM_STALL_NO_HOST_MS),
+  )
+  // P0-3①：把「为什么没派给隐藏窗口」写进宿主日志。此前这个决定**完全没有留痕** ——
+  // 日志里只有「RenderHost 已创建」，然后 28s 后报「画布页取单后一直没开始渲染」，
+  // 中间的派单理由一个字都没有，真机上只能靠推。
+  if (executor === 'client') {
+    logRenderHost(`[canvas-studio] 渲染工单 ${jobId} 交给画布页（${executorFallbackReason(options, fastExecutor)}）`)
+  }
   // 入队 + 尝试派发（同步入表 ⇒ 客户端当拍可见；并发 = 1 ⇒ 第二单要等前一单结算）。
   const slot = reserveRenderSlot(
     { jobId, projectId, durationInFrames: manifest.meta.durationInFrames, fps },
@@ -737,7 +847,8 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       heartbeatStaleMs,
       timeoutMs,
       deadlineAt: 0,
-      claimStallMs: Math.max(1, options.clientClaimStallMs ?? CLIENT_CLAIM_STALL_MS),
+      claimStallMs,
+      claimStallNoHostMs,
       progressStallMs: Math.max(1, options.clientProgressStallMs ?? CLIENT_PROGRESS_STALL_MS),
       ...(signal !== undefined ? { signal } : {}),
     }
@@ -914,6 +1025,8 @@ export interface CancelRenderInput {
 export function cancelRenderJob(jobId: string, input: CancelRenderInput = {}): boolean {
   const job = activeJobs.get(jobId)
   if (job === undefined || job.settled) return false
+  // F-01：结算前取诊断快照（撤单也是失败的一种，模型同样需要知道单死在哪个阶段）。
+  const diag = diagnosticsOf(job, input.failed === true ? 'failed' : 'cancelled')
   job.settled = true
   settleAndForget(
     job,
@@ -922,8 +1035,9 @@ export function cancelRenderJob(jobId: string, input: CancelRenderInput = {}): b
   )
   if (input.failed === true) {
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: input.reason ?? '客户端渲染失败，请重试。',
+      message: `${input.reason ?? '客户端渲染失败，请重试。'}${diagHint(diag)}`,
       detail: input.reason ?? 'client render failed',
+      job: diag,
     }))
   } else {
     job.reject(makeCanvasError('CS-GEN-207', { detail: input.reason ?? 'render job cancelled by client' }))

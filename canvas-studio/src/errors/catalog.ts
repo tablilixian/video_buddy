@@ -309,7 +309,7 @@ const SPECS: CanvasErrorSpec[] = [
   {
     // 客户端（Electron 渲染进程）渲染失败：client 侧 `renderMediaOnWeb` 抛错后经
     // `POST /canvas-studio/remotion/cancel?failed=1` 把原因回写宿主，宿主据此立即
-    // 结束等待（而不是干等到 10min 超时）。文案由客户端上报的 reason 填充。
+    // 结束等待（而不是干等到 10min 超时）。文案由客户端上报的 reason 填充；P0-1：正文必须自带「工单：」诊断（拼法见 `render-job.ts#diagHint`）。
     code: 'CS-RENDER-002',
     module: 'RENDER',
     severity: 'S2',
@@ -318,7 +318,7 @@ const SPECS: CanvasErrorSpec[] = [
     channel: 'conversation',
     userMessage: '{message}',
     devMessage: 'client-side render failed: {detail}',
-    recoveryHint: '按提示修正 manifest（素材 / 尺寸 / 时长）后重试；必要时把 manifest 传小一份先验证链路。',
+    recoveryHint: '先读消息末尾「工单：」那一行。写「从未取走 / 一帧都没渲染 / 失联 / 未自报就绪」= 执行器链路故障（不是画面问题）：不要改 manifest，直接重试；连续失败请把应用窗口切到该项目并保持前台（画布页在后台会被节流），仍不行就重启客户端。写「已渲染 N%」= 渲到一半中断，再按渲染器给出的报错原文处理素材 / 尺寸 / 时长。',
   },
   {
     // 宿主建单后无人结算：既可能是没人取单，也可能是取走后没回写。

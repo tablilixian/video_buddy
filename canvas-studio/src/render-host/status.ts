@@ -20,6 +20,16 @@ export const RENDER_HOST_HEARTBEAT_MS = 1000
  */
 export const RENDER_HOST_STALE_MS = 30_000
 
+/**
+ * 「窗口建好了，但一整个冷启预算内一声不响」的报警阈值（毫秒）—— P0-3②。
+ *
+ * 取值与 `RENDER_HOST_WARMUP_MS`（8s，派单侧等它自报就绪的预算）对齐：这一刻仍没有
+ * 没自报，就意味着**本单必然回退画布页**，而且是「页面脚本压根没跑起来」那种。
+ * 本机 10-15 起的 12 次建窗、34 次 `CS-RENDER-002` 全部落在这个签名上，但日志里
+ * 从来没有一句话说「窗口没自报」—— 排障只能靠时间差推。这条日志把它变成显式事实。
+ */
+export const RENDER_HOST_FIRST_REPORT_WARN_MS = 8_000
+
 export type RenderHostReportState = 'booting' | 'idle' | 'rendering' | 'unsupported' | 'error'
 
 export interface RenderHostSelfCheckReport {

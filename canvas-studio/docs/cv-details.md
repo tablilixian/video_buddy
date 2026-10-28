@@ -1565,7 +1565,7 @@
 - **验证**：`tsc` 三连（`-p tsconfig.json` / `-p tsconfig.client.json --emitDeclarationOnly` / `typecheck`）**exit 0，无语法/类型错误**；定向 6 组 skill 门禁 + 物化守卫 = **58·58、失败 0**；skill 体积仍在闸内（总纲 10435 ≤ 11264 B）。**全量 `test:smoke` 本批未跑**（用户口径：留待拍板）。
 - **⚠️ 自动覆盖边界**：本组能证伪的只是「物化与拒收逻辑本身」；**「真素材（含音轨）走完整产品链路能否出片」不在自动覆盖内** ⇒ 仍需桌面 **Z-4 / Z-5**；**Z-8 的硬失败行为**也需桌面实测。
 - **另一已知边界**：物化层**只转 URL、不搬文件** —— 项目资产目录**之外**的磁盘素材仍不可用（会得到明确中文拒收，而非静默 404）。要支持「任意磁盘素材」需独立决策（命名 / 体积 / 幂等 / 清理），本批按最小改动未引入拷贝副作用。
-- **涉及文件**：新增 `src/remotion/materialize.ts` + `tests/remotion-materialize.test.mjs`；改 `src/remotion/manifest.ts`、`src/remotion/asset-check.ts`、`src/host-tools.ts`、`docs/canvas-studio-tools.md`、`docs/acceptance-test-cases.md`、`docs/plans/REQ-034-剩余工作-20261016.md`、`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{fonts,manifest-contract}.md`、根仓 `remotion-integration-devdoc-2026-10-14.md`。
+- **涉及文件**：新增 `src/remotion/materialize.ts` + `tests/remotion-materialize.test.mjs`；改 `src/remotion/manifest.ts`、`src/remotion/asset-check.ts`、`src/host-tools.ts`、`docs/canvas-studio-tools.md`、`docs/acceptance-test-cases.md`、`docs/plans/REQ-034-剩余工作-20261016.md`、`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{fonts,manifest-contract}.md`、`plans/remotion/remotion-integration-devdoc-2026-10-14.md`。
 - **文档回填**：devdoc §8.3 方案段换源勘误；剩余工作清单 R3 标「代码前置 ✅」、Z-8 标「已定案并落地（待桌面验）」+ 总述改「剩 4 项」。
 
 

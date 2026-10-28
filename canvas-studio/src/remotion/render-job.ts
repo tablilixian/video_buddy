@@ -1,7 +1,7 @@
 /**
  * REQ-034（Remotion 集成）· B3 route B 渲染工单桥（宿主半，**无浏览器**）。
  *
- * 技术事实源 = 仓根 `remotion-integration-devdoc-2026-10-14.md` §6.3（v1.5）。
+ * 技术事实源 = `docs/plans/remotion/remotion-integration-devdoc-2026-10-14.md` §6.3（v1.5）。
  *
  * 路线 B（CSR）下真正的渲染发生在 Electron 渲染进程（`@remotion/web-renderer`），
  * 宿主拿不到 `<canvas>` / `VideoEncoder`；于是走一条**工单桥**：

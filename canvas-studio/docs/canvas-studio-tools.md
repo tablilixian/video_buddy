@@ -516,7 +516,7 @@
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `manifest` | string（与 `manifestPath` 二选一） | `CompositionManifest` 的 JSON 字符串（`meta` + `tracks`），字段口径见根仓 `remotion-integration-devdoc-2026-10-14.md` §4 |
+| `manifest` | string（与 `manifestPath` 二选一） | `CompositionManifest` 的 JSON 字符串（`meta` + `tracks`），字段口径见 `plans/remotion/remotion-integration-devdoc-2026-10-14.md` §4 |
 | `manifestPath` | string（与 `manifest` 二选一） | CV-360：manifest JSON 文件的**绝对路径**（先落盘再引用）。长片推荐——内联 JSON 过大被截断时，「尾部完整性校验」（`manifestTruncationError`：`meta.durationInFrames` 必须 = 全部轨道最大结束帧，缩水即 `CS-USER-ERR` 拒收）会拦下报错，白烧一轮渲染窗口；文件通道无此风险 |
 | `projectId` | string | 可选；缺省用当前会话项目 |
 

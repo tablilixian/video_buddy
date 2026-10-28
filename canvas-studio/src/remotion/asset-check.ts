@@ -1,7 +1,7 @@
 /**
  * REQ-034（Remotion 集成）· B3 route B 素材核对（宿主侧，**无浏览器**）。
  *
- * 技术事实源 = 仓根 `remotion-integration-devdoc-2026-10-14.md` §8.2（v1.5）。
+ * 技术事实源 = `docs/plans/remotion/remotion-integration-devdoc-2026-10-14.md` §8.2（v1.5）。
  *
  * route B 下渲染发生在 Electron 渲染进程、页面与素材**同源**，因此宿主**不拷素材**
  * （route A 的 `renderDir` / `staticFile()` / `link` / 临时目录一整套作废）。宿主只做：

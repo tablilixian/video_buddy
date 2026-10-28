@@ -39,7 +39,7 @@
 | **[plans/REQ-005-首页对话式创建与项目排序方案.md](./plans/REQ-005-首页对话式创建与项目排序方案.md)** | 首页宿主对话卡 + 项目按改动时间倒序（v1.4） | ✅ CV-256~262 桌面验收通过 |
 | **[plans/REQ-008-对话流中文tool显示与降噪方案.md](./plans/REQ-008-对话流中文tool显示与降噪方案.md)** | 对话流三档中文 tool 行（`tool-presentation.ts` 唯一口径） | ✅ CV-263/264 桌面验收通过 |
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]`） | ✅ 三步全部落地，2026-09-29 桌面验收通过（CV-255） |
-| **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是根仓 `remotion-integration-devdoc-2026-10-14.md`（v1.6） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）与 B4 skill `code-driven-explainer`、R1 随包中文字体（CV-328）已落码待验收** |
+| **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是 [`plans/remotion/remotion-integration-devdoc-2026-10-14.md`](./plans/remotion/remotion-integration-devdoc-2026-10-14.md)（v1.6） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）与 B4 skill `code-driven-explainer`、R1 随包中文字体（CV-328）已落码待验收** |
 | **[plans/2026-10-25-交接-新会话继续.md](./plans/2026-10-25-交接-新会话继续.md)** | ★★ **新会话入口**：30 秒上手 / 状态看板 / 未完成任务（故事板强约束 L1–L5、shotcraft D19–D22、B3–B5）/ 铁律与坑 / 验证套路 | 每次交接先读这份 |
 | **[plans/2026-10-25-故事板强约束-彻底方案.md](./plans/2026-10-25-故事板强约束-彻底方案.md)** | ★★ **待落码的最大一块**：故事板强约束 L1–L5（声明式 gate / 单一事实源 + 自愈 / auto 自动落地 / 老项目迁移工具 / G6 契约补齐）+ 逐文件改动清单 + 测试矩阵 | 已拍板，**零落码**；顺序铁律 L3→L1→L2，L4 必须与 L1 同批 |
 | **[plans/2026-10-25-会话5诊断-shotcraft能解决什么.md](./plans/2026-10-25-会话5诊断-shotcraft能解决什么.md)** | ★ 会话 #5 诊断（187.6min / 219 步 / 211 次 bash / 88 次 python3 / `render_composition` **0 次**）：故事板被跳过的实证 + "布局坐标表比卡片库值钱" | **优先级调整依据**（D19–D22 来源） |
@@ -84,9 +84,10 @@
 | [visual-direction-execution-plan.md](./visual-direction-execution-plan.md) | DD 工程清单（STATUS 活跃引用） | 在役 |
 | [visual-direction-ui-closeout.md](./visual-direction-ui-closeout.md) | 对照 preview 的 UI 差距清单（含 F 补验分区） | 在役 |
 | [competitor-analysis.md](./competitor-analysis.md) | 竞品分析工作区（DA 草案 → 合并 CV/STATUS） | 在役 |
-| **[plans/2026-10-27-文档与散落资产归位方案.md](./plans/2026-10-27-文档与散落资产归位方案.md)** | ★ 仓库级**位置治理**：根目录 12 项 + 根 `docs/` 5 项 + 本目录 6 项 + `api-playground/` 的搬迁清单，含逐文件引用核查（file:line）与「调查后判定不动」的理由。只挪位置、不改内容、不改体积 | 🚩 待执行（未动任何文件） |
+| **[plans/2026-10-27-文档与散落资产归位方案.md](./plans/2026-10-27-文档与散落资产归位方案.md)** | ★ 仓库级**位置治理**：根目录 12 项 + 根 `docs/` 5 项 + 本目录 6 项 + `api-playground/` 的搬迁清单，含逐文件引用核查（file:line）与「调查后判定不动」的理由。只挪位置、不改内容、不改体积 | 🚧 执行中：Batch 1、2 已落地（2026-10-28） |
 | **[plans/2026-10-27-超大文件清单与拆分方案.md](./plans/2026-10-27-超大文件清单与拆分方案.md)** | ★ 代码侧**可维护性清单**：6 个 P0 超大文件（`styles.ts` / `host-tools.ts` / `generate.ts` / `routes.ts` / `StudioFrame.tsx` / `client/index.ts`）+ 15 个 P1，含结构实测、拆分方案、**读源码测试的阻力矩阵**与落地节奏 | 📋 参考清单（未动代码） |
 | **[plans/2026-10-28-超大文件拆分执行计划.md](./plans/2026-10-28-超大文件拆分执行计划.md)** | ★ 上一行的**施工单（用例先行）**：7 阶段 / ~11 PR / ~30 条新测试；每域先落画像测试（快照、路由枚举、byte-equal、锚点盘点）再搬动，含 desktop / market 补漏（修正了清单未覆盖的两处类跨度误报）与登记式修改三处例外（T2.4 / T4.4 / T6.2） | 🚧 执行中：PR-0 大小闸已落地（2026-10-28） |
+| **[plans/remotion/](./plans/remotion/)** | ★ **REQ-034 Remotion 专题（4 份）**：`remotion-integration-devdoc-2026-10-14.md`（**唯一实现事实源**，v1.7 / 1,517 行）· `remotion-integration-roadmap-2026-10-13.md`（早期路线图，已被取代）· `remotion-research-2026-10-13.md`（范式与生态调研）· `openmontage-adoption-analysis-2026-10-13.md`（对标分析）。后三份均带顶部勘误声明，**勿照抄其中 API** | 事实源在役；其余三份为背景（2026-10-28 由仓根迁入） |
 
 ## 三、开发流程
 
@@ -153,6 +154,7 @@
 | [demos/canvas_studio_flow.html](./demos/canvas_studio_flow.html) | R-P0-01 / REQ-022 创作流水线全景十段式（REQ-022 会话交接的主展示材料） | 同上 |
 | [demos/canvas-specrow-design-mock.html](./demos/canvas-specrow-design-mock.html) | 规格行（specrow）设计稿 | 同上 |
 | [demos/req022-acceptance-tour.html](./demos/req022-acceptance-tour.html) | REQ-022 验收走查页 | 同上 |
+| [demos/remotion/remotion-integration-demo.html](./demos/remotion/remotion-integration-demo.html) | REQ-034 Remotion 集成的**流程可视化**（编码在客户端渲染进程 CSR）—— devdoc 指定为「配套可视化参考」，可离线打开 | 2026-10-28 由仓根迁入 |
 | `demos/` 其余 | 既有演示与走查记录：REQ-001 资产库 demo、全链路 demo、`canvas-waterfall-demo-2026-10-26/`、`layout-demo-20261026/`、`acceptance-review-2026-10-19.md`、`phase3-in-this-film.md` 等 | 原有 |
 
 ---

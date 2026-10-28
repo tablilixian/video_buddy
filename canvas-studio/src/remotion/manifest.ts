@@ -1,7 +1,7 @@
 /**
  * REQ-034（Remotion 集成）· B1 契约层：`CompositionManifest` 类型与纯函数校验/派生。
  *
- * 技术事实源 = 仓根 `remotion-integration-devdoc-2026-10-14.md` §4（v1.3）。
+ * 技术事实源 = `docs/plans/remotion/remotion-integration-devdoc-2026-10-14.md` §4（v1.3）。
  * 本文件**零 Remotion 依赖**：只有纯数据契约 + 纯函数，两条渲染路线（SSR/CSR）
  * 都复用同一套，故先于 Phase 2/3 落地且不返工。
  *

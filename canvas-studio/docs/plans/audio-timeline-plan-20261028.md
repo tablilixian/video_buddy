@@ -450,6 +450,8 @@ S4 skill 1d（依赖 S1 契约定型，可与 S2b/S3 并行）
 | D-07 | S0 | 实验 C 计划用 44.1k/48k，样本集定为 16k/48k 后损坏比预测重（容器虚报 12.02s + 解码器中止），wav 导出非零退出 | 探针把「部分解码」作为合法实测值（`decodePartial` 标注），不崩、照常出判据 | 损坏本身就是取证对象；修复后该分支自然不再触发 | 低（探针内一个分支） |
 | D-08 | S1 | ①计划 §S1 的链序 `adelay → volume/afade` 会让淡变落在前插静音上；②`onShort:'loop'` v1 装配不支持 | ①链序改为 `volume → afade → adelay`（淡变锚内容起点）；②loop 按 pad 降级 + `loop-unsupported` warning | ①正确性优先于计划的示意箭头；②不静默丢语义（§10.2 第 3 条） | 低（纯函数内重排/分支） |
 | D-09 | S2a | ①ffmpeg 选项按「下一个文件」归属，计划草图的 anullsrc 参数位（原 `-c:a` 处）实测报 `Option vf cannot be applied to input`；②补静音后 concat 恒有音频流，角标会冒充「原生声」；③补静音回显通道 | ①anullsrc 输入整体紧跟 `-i` 输入区（`buildAudioCodecArgs` 产出放在 `-vf` 之前）；②新增 `hasNativeAudio = hasConcatAudio && 至少一段真有声`，角标/amix 分支/静片警告全用后者（行为与补静音前一致）；③回显走 `warnings`（renderComposeResult 已渲染，零 schema 变更） | ①实测约束；②③不破坏既有行为 + 可观测（§10.2 第 3 条） | 低（各一处调用点） |
+| D-10 | G1a | 计划内在顺序矛盾：任务书要求探针覆盖「3 段 + BGM + 2 句旁白」，但多旁白（`voiceOverNodeIds`）是 S2b 才落的能力，而 G1a 卡在 S2b 之前 | 探针分两部分：Part 1（3 段含 1 无声 + BGM，S2a 能力）立即跑、exit 0 才进 S2b；Part 2（双旁白差分断言）挂在能力标记 `timelineFromComposeClips` 导出上，S2b 落地后自动激活，S6 前必须全绿。另：「逐秒 RMS 无死区」判据=无真静音 bin（<0.02），BGM 铺底区合法低能量 ≈0.04 不算死区 | 计划 §6 G1a 判据原文只要求时长/RMS/1 帧，场景细化来自任务书；两全处理不放宽任何断言 | 低（探针内条件分支，S6 时移除条件） |
+| D-11 | G1a | G1a 实测发现修复前 BGM 场景的隐藏断裂：`amix duration=first` 以 concat 音轨（4.09s）为界 → **带 BGM 也尾段静音**（此前只知无 BGM 场景断裂） | G1a 判据「逐秒 RMS 无死区」固化该现象；S2b 的从零装配天然消除（音轨独立装配不受 concat 音轨时长钳制） | 修复前实测 bins [8,12)≈0 的现象必须在验收尺里，防回归 | 低 |
 
 ### 10.4 完成汇报格式
 

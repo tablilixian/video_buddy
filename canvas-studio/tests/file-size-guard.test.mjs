@@ -58,7 +58,9 @@ export const FILE_WHITELIST = {
   'src/client/styles.ts': 10731,
   'src/host-tools.ts': 4401,
   'src/generate.ts': 3582,
-  'src/routes.ts': 3495,
+  // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
+  // 阶段 2 按域拆分时随 routes 段消化。
+  'src/routes.ts': 3531,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   'src/client/StudioFrame.tsx': 3168,
@@ -78,7 +80,7 @@ export const FILE_WHITELIST = {
  */
 export const FUNC_WHITELIST = {
   'src/client/styles.ts#STUDIO_STYLES': { lines: 10714, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
-  'src/routes.ts#registerStudioRoutes': { lines: 2833, note: '阶段 2 按域拆' },
+  'src/routes.ts#registerStudioRoutes': { lines: 2868, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（显式登记，2026-10-29）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2764, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行' },
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },

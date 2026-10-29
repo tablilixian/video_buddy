@@ -5,7 +5,8 @@
  * requirement (the established community-market pattern).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { BlockList, isIP } from 'node:net'
 import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1142,14 +1143,21 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         return
       }
       try {
-        let data: Buffer
+        // CR-004（CV-382）：流式交付。stat 探测两条路径拿 size（根 → .trash 兜底），
+        // 全程 createReadStream —— 不再整文件进内存（旧行为：每个 Range 分段请求都
+        // 重读一次整个文件）。读流错误是异步事件、发头后再 catch 无意义，存在性
+        // 决策必须留在同步可判的 stat 上（D-04），不用 try/catch 包 createReadStream。
+        const trashTarget = join(base, ASSET_TRASH_DIR, file)
+        let finalPath = target
+        let size: number
         try {
-          data = await readFile(target)
+          size = (await stat(target)).size
         } catch (error) {
           // CV-243：根目录 miss → 回收站兜底。删除节点文件移入 `.trash/` 后，
           // undo 恢复的节点（url 不变）从这里继续回源，图片/视频不断链。
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-          data = await readFile(join(base, ASSET_TRASH_DIR, file))
+          finalPath = trashTarget
+          size = (await stat(trashTarget)).size // 双 miss：ENOENT 落到下方 catch → 404
         }
         const contentType = ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream'
         res.setHeader('content-type', contentType)
@@ -1157,23 +1165,54 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.setHeader('x-content-type-options', 'nosniff')
         // Media elements issue `Range` requests; honor a single byte range so
         // <video> can stream and seek (206), falling back to the full 200 body.
-        const range = parseByteRange(req.headers.range, data.byteLength)
+        const range = parseByteRange(req.headers.range, size)
         if (range === 'invalid') {
           res.statusCode = 416
-          res.setHeader('content-range', `bytes */${data.byteLength}`)
+          res.setHeader('content-range', `bytes */${size}`)
           res.end()
           return
         }
-        if (range !== undefined) {
-          res.statusCode = 206
-          res.setHeader('accept-ranges', 'bytes')
-          res.setHeader('content-range', `bytes ${range.start}-${range.end}/${data.byteLength}`)
-          res.end(data.subarray(range.start, range.end + 1))
+        if (process.env.CANVAS_STUDIO_ASSET_LEGACY_BUFFER === '1') {
+          // §8 止损开关：真机播放器回归时回退旧整读形态（CR-004 改造前行为逐字符等价）。
+          const data = await readFile(finalPath)
+          if (range === undefined) {
+            res.statusCode = 200
+            res.setHeader('accept-ranges', 'bytes')
+            res.end(data)
+          } else {
+            res.statusCode = 206
+            res.setHeader('accept-ranges', 'bytes')
+            res.setHeader('content-range', `bytes ${range.start}-${range.end}/${size}`)
+            res.end(data.subarray(range.start, range.end + 1))
+          }
           return
         }
-        res.statusCode = 200
-        res.setHeader('accept-ranges', 'bytes')
-        res.end(data)
+        const stream = range === undefined
+          ? createReadStream(finalPath)
+          : createReadStream(finalPath, { start: range.start, end: range.end })
+        // 断连清理：请求方 abort / 响应关闭一律销毁读流，不留 fd（§8 止损）。
+        res.on('close', () => { stream.destroy() })
+        // 发头顺序（坑 5）：setHeader 不发头，首个数据块才发 —— 错误早于首块时
+        // headersSent 仍为 false，可按旧 catch 形态回 404；晚于首块只能掐连接。
+        stream.on('error', () => {
+          stream.unpipe(res)
+          if (res.headersSent) {
+            res.destroy()
+            return
+          }
+          sendJson(res, 404, { error: 'asset not found' })
+        })
+        if (range === undefined) {
+          res.statusCode = 200
+          res.setHeader('accept-ranges', 'bytes')
+          res.setHeader('content-length', size)
+        } else {
+          res.statusCode = 206
+          res.setHeader('accept-ranges', 'bytes')
+          res.setHeader('content-range', `bytes ${range.start}-${range.end}/${size}`)
+          res.setHeader('content-length', range.end - range.start + 1)
+        }
+        stream.pipe(res)
       } catch {
         sendJson(res, 404, { error: 'asset not found' })
       }

@@ -1956,3 +1956,12 @@
 - **落地**：`variants: 2-3` 仅显式请求、不进默认路径（D-06）——内部循环生成（caption 微扰：BPM 数字 ±3 或编曲变体词），主产物 = 第一版原样，其余并列落画布进 `MusicResult.variants` 摘要；结果文本回显全部节点 id 并指路音频抽屉试听选订、其余作废（L-5：自动 retired 留待节点作废工具）。循环实现 `generateMusicWithVariants` 在 host-tools-audio.ts（span 棘轮外置）。
 - **验收**：schema 覆盖守卫绿（variants 进 musicResultSchema）；D-06「不进默认路径」由参数缺省语义保证（不传 variants = 单次生成原路径）。
 - **涉及文件**：`src/host-tools.ts` / `src/host-tools-audio.ts` / `src/generate.ts`。
+
+#### CV-382 · 资产交付内存基线 + CR 台账对账（CR-004 收口 + 双轨统一 + 机器闸）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **落地**：① **CR-004 收口**——`routes.ts` 资产前缀路由从「整读 `readFile` 再 Buffer 切片」（`accept-ranges` + 206 假流式：每个分段请求重读整个文件）改 `stat` 探测两条路径拿 size（根 → `.trash/` 兜底；D-04：存在性决策留在同步的 stat 上，不 try/catch 包 createReadStream）+ `createReadStream` 流式（200 全量 / 206 切段 / 416 保持 `bytes */size`）；`no-store`（D-02）/ `nosniff` / content-type / 403 越界校验逐字符保留；`res 'close'` 一律 `destroy()` 读流；发头顺序按坑 5（`headersSent` 未发头回 404、已发头只掐连接）；`CANVAS_STUDIO_ASSET_LEGACY_BUFFER=1` 回退旧整读形态（§8 止损，兼作探针 before 相对测姿势）。② **CR 台账对账**——§1/§3 双轨矛盾 **8 处**一次对齐（CR-032/035/036/042/045/046/089 两表统一为已修复·待验收；**CR-104 补登 §3**（2026-09-04 已修复·待验收，闸①当场抓出 §1.1 有条而 §3 漏行）；CR-023 核实关账：`compose.ts` 已无整读形态）；已修项 §3 备注列补「方案一句话」；模块文档 01-host-core.md 的 CR-004/CR-023 状态行同步（D-11）。③ **机器闸**——新 `tests/code-review-ledger.test.mjs` 4 条结构断言（D-03 只做结构：①§1 ⊆ §3 + 两表无重复 ID ②同 ID 状态词一致（剥括注）③状态词白名单（§0 五词 + 已定案，D-09）④已修条目 §3 表行外须有方案留痕）。
+- **验收**：`tests/asset-range.test.mjs` 6 条 **T0 先锁语义再改造**（旧实现上全绿后才动 T1）：200 全量 / 206 单段 / 206 后缀 / 416 / 畸形 Range 回退 / `.trash` 兜底（含 Range）。探针 `scripts/probe/asset-memory.probe.mjs`（60MB × 10 Range，奇数 5 次 50MB 段「首块即断」）：RSS 峰值增量 **125.45MB → 7.83MB**（判 <20MB ✅）、fd 增量 0。反向变异 3 处全部实证变红（206 去 content-length → 锁②③红；改回整读 → 探针 125.84MB 红退出 1；台账矛盾状态 + 孤儿 ID → 闸②①红）。验证链：clean → tsdown → tsc×2 → verify:loader → test:smoke **2429·0 红**。
+- **踩坑记档**（计划 §9.1 D-05~D-07）：① 探针客户端不能用 fetch/undici + arrayBuffer——同进程装置每请求留 ~6-8MB GC 滞后垃圾，把 after 相推到 40.8MB 假超阈；换裸 `http.request`（无 keep-alive、数据即弃）后降到阈内。② 1 次「中途 abort」在 loopback 上 0 次触发（小段先 end），fd 断言空转；且只断 1 次时泄漏 1 fd 恰 ≤2 假绿——改 5 次 50MB 段首块即断 + abort 计数硬判定。③ before 相以 `CANVAS_STUDIO_ASSET_LEGACY_BUFFER=1` 在同一构建上实测，同客户端同构建对测（T0 时点 fetch 版 before=148MB 留作历史证据）。
+- **涉及文件**：`src/routes.ts`（净 +39 行，文件 3495→3531 / registerStudioRoutes 2833→2868 棘轮显式登记）/ `tests/asset-range.test.mjs`（新）/ `tests/code-review-ledger.test.mjs`（新）/ `scripts/probe/asset-memory.probe.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）/ `docs/code-review/README.md` + `docs/code-review/01-host-core.md`（对账）。

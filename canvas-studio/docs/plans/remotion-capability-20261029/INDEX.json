@@ -2,17 +2,50 @@
   {
     "id": "01",
     "title": "3D / WebGL（R3F 场景 + 贴图）",
-    "status": "todo",
-    "autoScore": null,
-    "dir": null
+    "status": "done",
+    "autoScore": 5,
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/01-3d-webgl",
+    "outFile": "cap01.mp4"
+  },
+  {
+    "id": "02",
+    "title": "Skia 着色器（磨砂 / 噪点 / 光晕）· 近似片",
+    "status": "substitute",
+    "autoScore": 5,
+    "outFile": "cap02.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/02-skia-shader"
   },
   {
     "id": "03",
     "title": "全量捕获（绕过 CSS 白名单）",
     "status": "done",
-    "autoScore": 4,
+    "autoScore": 5,
     "outFile": "cap03.mp4",
-    "dir": "/tmp/cap03f/03-html-in-canvas"
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/03-html-in-canvas"
+  },
+  {
+    "id": "04",
+    "title": "数据可视化（柱/折线 + 抽象 hexmap）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap04.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/04-chart-map"
+  },
+  {
+    "id": "05",
+    "title": "词级字幕（karaoke + 自动换行）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap05.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/05-caption-word"
+  },
+  {
+    "id": "06",
+    "title": "音频驱动视觉（波形 / 频谱）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap06.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/06-audio-viz"
   },
   {
     "id": "07",
@@ -21,6 +54,22 @@
     "autoScore": 5,
     "outFile": "cap07.mp4",
     "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/07-path-morph"
+  },
+  {
+    "id": "08",
+    "title": "滤镜 / 调色链",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap08.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/08-effects"
+  },
+  {
+    "id": "09",
+    "title": "转场（8 种现有 + clock-poly 修正 + 3 种近似）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap09.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/09-transition"
   },
   {
     "id": "10",

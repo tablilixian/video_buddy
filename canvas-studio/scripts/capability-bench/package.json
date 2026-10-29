@@ -1,0 +1,10 @@
+{
+  "name": "capability-bench",
+  "private": true,
+  "description": "Remotion 能力基准独立子工程（D3）：只声明主包没有的测试依赖；react/react-dom/remotion 绝不写在这里，向上解析 canvas-studio 的唯一副本（G1）。",
+  "dependencies": {
+    "@react-three/fiber": "8.18.0",
+    "@remotion/three": "4.0.535",
+    "three": "0.170.0"
+  }
+}

@@ -3,9 +3,8 @@
 > 一条命令：`bundle → 静态服务 → Electron → renderMediaOnWeb → 5 条硬检查 → contact sheet → verdict/README/probe`。
 > **产品代码零改动**，新代码只在本目录；产物落 repo 外（`~/Desktop/job/VideoOut/remotion-capability-<date>/NN-axis/`）。
 
-**当前进度（2026-10-29 23:10）**：已出片 **#03 / #07 / #10**（都 5/5 硬检查、逐帧 md5 全等），remaining **#01 #02 #04 #05 #06 #08 #09 = `status: 'todo'`（代码还没写）**。
-`--all` 只跑 `status === 'done'` 的项；`--only=<todo>` 会 warn 跳过。**加一条 = 写 tsx + 注册 + 把 status 改 done**，runner / 检查 / 报告脚本不用动。
-下一步顺序与断点清单见方案文档 `docs/plans/渲染环境与Remotion能力上限测试方案-20261029.md` §13.5 / §13.6。
+**当前进度（2026-10-30 凌晨，十项全部完成）**：**10/10 出片、H1~H5 全绿**（`--repeat=2` 逐帧 md5 全等）。目视分：#04 #05 #06 #07 #10 = 5；#01 #02 #08 #09 = 4（各扣 1 处渲染器已知边界）；#03 = 3（全量捕获丢 WebGL canvas 内容）。产物根 `~/Desktop/job/VideoOut/remotion-capability-20261029/`（REPORT/metrics/INDEX/DECISIONS 齐），repo 内索引 `docs/plans/remotion-capability-20261029/INDEX.md`。收尾汇总脚本：`NODE_OPTIONS= node scripts/capability-bench/summarize.mjs`。
+**四个新实证的渲染器边界（复跑前先读）**：① `mix-blend-mode` 无视（A9）；② clock 的 conic mask 无视 + flipX 的 perspective 丢失（A2，clip-path polygon 修法已演示）；③ 全量捕获丢 WebGL canvas 内容（默认模式反而正常，#01 证据）；④ `useVideoTexture` 的 `<video>` 永不 loaded（#01 降级记录）。写法约束：图片用 `<Img>` 不用 `background-image: url()`；`<Audio>/<Video>` 从 `@remotion/media` 导入。
 
 ## 一、怎么跑
 

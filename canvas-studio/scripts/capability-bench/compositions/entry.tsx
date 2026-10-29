@@ -24,13 +24,27 @@ import {
   renderStillOnWeb,
 } from '@remotion/web-renderer'
 import * as cap03 from './03-html-in-canvas.js'
+import * as cap01 from './01-3d-webgl.js'
+import * as cap02 from './02-skia-shader.js'
+import * as cap05 from './05-caption-word.js'
+import * as cap04 from './04-chart-map.js'
+import * as cap06 from './06-audio-viz.js'
 import * as cap07 from './07-path-morph.js'
+import * as cap08 from './08-effects.js'
+import * as cap09 from './09-transition.js'
 import * as cap10 from './10-editing.js'
 
 /** 全部能力项。key = 两位编号，与产物文件夹 `NN-<axis>` 一一对应。 */
 const REGISTRY: Record<string, { Composition: React.FC }> = {
+  '01': cap01,
+  '02': cap02,
   '03': cap03,
+  '05': cap05,
+  '04': cap04,
+  '06': cap06,
   '07': cap07,
+  '08': cap08,
+  '09': cap09,
   '10': cap10,
 }
 

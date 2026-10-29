@@ -15,6 +15,8 @@ export const FONT_FAMILY = 'BenchSansSC, "PingFang SC", sans-serif'
 export const POOL = {
   clip: '/pool/clip',
   bgm: '/pool/bgm',
+  image: '/pool/image',
+  tts: '/pool/tts',
 } as const
 
 export const COLORS = {

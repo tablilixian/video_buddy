@@ -1,0 +1,237 @@
+{
+  "stamp": "2026-10-29T13-22-26",
+  "window": "hidden",
+  "throttle": false,
+  "noSandbox": false,
+  "raw": {
+    "mode": "hidden",
+    "throttling": false,
+    "visible": false,
+    "app": {
+      "electron": "43.4.0",
+      "chrome": "150.0.7871.224",
+      "node": "24.18.1",
+      "v8": "15.0.245.28-electron.0",
+      "platform": "darwin arm64",
+      "argv": []
+    },
+    "gpuFeatureStatus": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "enabled_on",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "gpuInfo": {
+      "auxAttributes": {
+        "amdSwitchable": false,
+        "canSupportThreadedTextureMailbox": false,
+        "glImplementationParts": "(gl=none,angle=none)",
+        "glResetNotificationStrategy": 0,
+        "inProcessGpu": true,
+        "initializationTime": 0,
+        "isAsan": false,
+        "isClangCoverage": false,
+        "jpegDecodeAcceleratorSupported": false,
+        "optimus": false,
+        "passthroughCmdDecoder": false,
+        "sandboxed": false,
+        "skiaBackendType": "None",
+        "subpixelFontRendering": true,
+        "targetCpuBits": 64,
+        "visibilityCallbackCallCount": 0
+      },
+      "gpuDevice": [
+        {
+          "active": true,
+          "deviceId": 0,
+          "gpuPreference": 0,
+          "vendorId": 4203
+        }
+      ],
+      "machineModelName": "Mac",
+      "machineModelVersion": "15.4"
+    },
+    "page": {
+      "runtime": {
+        "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) capability-bench-env/0.0.0 Chrome/150.0.7871.224 Electron/43.4.0 Safari/537.36",
+        "hardwareConcurrency": 8,
+        "deviceMemory": 16,
+        "visibilityState": "visible",
+        "hasFocus": false,
+        "isSecureContext": true
+      },
+      "webgl1": {
+        "ok": true,
+        "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+        "glsl": "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)",
+        "vendor": "WebKit",
+        "renderer": "WebKit WebGL",
+        "unmaskedVendor": "Google Inc. (Apple)",
+        "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)",
+        "maxTextureSize": 16384,
+        "maxRenderbufferSize": 16384,
+        "extensions": 39,
+        "isLost": false,
+        "readPixels": [
+          51,
+          102,
+          204,
+          255
+        ]
+      },
+      "webgl2": {
+        "ok": true,
+        "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "glsl": "WebGL GLSL ES 3.00 (OpenGL ES GLSL ES 3.0 Chromium)",
+        "vendor": "WebKit",
+        "renderer": "WebKit WebGL",
+        "unmaskedVendor": "Google Inc. (Apple)",
+        "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)",
+        "maxTextureSize": 16384,
+        "maxRenderbufferSize": 16384,
+        "extensions": 36,
+        "isLost": false,
+        "readPixels": [
+          51,
+          102,
+          204,
+          255
+        ]
+      },
+      "webgpu": {
+        "navigatorGpu": true,
+        "adapter": {
+          "info": {
+            "vendor": "apple",
+            "architecture": "metal-3",
+            "description": ""
+          },
+          "features": [
+            "depth32float-stencil8",
+            "rg11b10ufloat-renderable",
+            "texture-formats-tier1",
+            "bgra8unorm-storage",
+            "texture-compression-bc",
+            "dual-source-blending",
+            "core-features-and-limits",
+            "float32-filterable",
+            "indirect-first-instance",
+            "texture-compression-astc-sliced-3d",
+            "float32-blendable",
+            "texture-compression-astc",
+            "texture-compression-etc2",
+            "depth-clip-control",
+            "texture-compression-bc-sliced-3d",
+            "shader-f16",
+            "timestamp-query",
+            "texture-formats-tier2",
+            "clip-distances",
+            "primitive-index",
+            "texture-component-swizzle",
+            "subgroups"
+          ],
+          "maxBufferSize": 4294967292
+        }
+      },
+      "canvasCapture": {
+        "drawElementImage": "undefined",
+        "requestPaint": "undefined",
+        "captureElementImage": "undefined",
+        "transferControlToOffscreen": "function",
+        "protoDrawElementImage": "undefined",
+        "protoRequestPaint": "undefined",
+        "protoCaptureElementImage": "undefined"
+      },
+      "encoders": {
+        "hasVideoEncoder": true,
+        "hasAudioEncoder": true,
+        "video": {
+          "avc1.42001f": true,
+          "avc1.4d0028": true,
+          "hvc1.1.6.L93.B0": true,
+          "hev1.1.6.L93.B0": true,
+          "vp8": true,
+          "vp09.00.10.08": true,
+          "av01.0.08M.08": true
+        },
+        "audio": {
+          "mp4a.40.2": true,
+          "opus": true,
+          "mp3": false,
+          "flac": false,
+          "vorbis": false,
+          "pcm-s16": false,
+          "pcm-f32": false
+        }
+      },
+      "mediaRecorder": {
+        "has": true,
+        "mimes": {
+          "video/mp4": true,
+          "video/mp4;codecs=avc1.42001f": true,
+          "video/webm": true,
+          "video/webm;codecs=vp9": true,
+          "video/webm;codecs=vp8": true,
+          "audio/mp4": true,
+          "audio/webm": true
+        }
+      },
+      "decoders": {
+        "VideoDecoder": true,
+        "VideoFrame": true,
+        "AudioDecoder": true,
+        "AudioData": true,
+        "ImageDecoder": true,
+        "OffscreenCanvas": true,
+        "createImageBitmap": true,
+        "webgl2Offscreen": true
+      },
+      "svg": {
+        "ok": true,
+        "redPixels": 3930,
+        "greenPixels": 2605,
+        "nonBgPixels": 6750
+      },
+      "timers": {
+        "rafTicksIn1s": 62,
+        "rafElapsedMs": 1006,
+        "tenTimeouts50msElapsedMs": 510,
+        "timeoutDriftRatio": 1.02
+      },
+      "fonts": {
+        "systemUi": true,
+        "pingfang": true,
+        "heiti": true,
+        "arial": true
+      },
+      "cssSupport": {
+        "mixBlendMode": true,
+        "backdropFilter": true,
+        "maskLinear": true,
+        "maskConic": true,
+        "perspective": true,
+        "transformStyle": true,
+        "objectPosition": true,
+        "clipPathInset": true,
+        "clipPathUrl": true,
+        "filterSvg": true,
+        "filterBlur": true,
+        "backgroundClipText": true,
+        "writingMode": true,
+        "textStroke": true
+      },
+      "elapsedMs": 1811
+    },
+    "pageError": null
+  }
+}

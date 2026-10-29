@@ -1,0 +1,17 @@
+[
+  {
+    "id": "01",
+    "title": "3D / WebGL（R3F 场景 + 贴图）",
+    "status": "todo",
+    "autoScore": null,
+    "dir": null
+  },
+  {
+    "id": "10",
+    "title": "剪辑：跳剪 / 变速 / 独立音轨",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap10.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/10-editing"
+  }
+]

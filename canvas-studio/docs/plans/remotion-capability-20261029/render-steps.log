@@ -1,0 +1,60 @@
+[s10] 打包 bundle（webpack，一次性）…
+[s10] 静态服务： http://127.0.0.1:61521/
+[page] [verify] {"step":"env","chromeMajor":150,"webCodecs":true}
+[page] [verify] {"step":"codecs","video":["h264","h265","vp8","vp9","av1"],"audio":["aac","opus","mp3","pcm-s16","flac"]}
+[OpenH264] this = 0x0x13401e33ae0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[page] [verify] {"step":"canRender","value":{"canRender":true,"issues":[],"resolvedVideoCodec":"h264","resolvedAudioCodec":"aac","resolvedOutputTarget":"web-fs"}}
+[page] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[page] [verify] {"step":"still:title","bytes":49815,"ms":106}
+[page] [verify] {"step":"still:image","bytes":21054,"ms":45}
+[page] [verify] {"step":"still:clip","bytes":233856,"ms":156}
+[page] [verify] {"step":"render:start","label":"video-only","frames":180}
+[OpenH264] this = 0x0x1340d014bc0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[page] [verify] {"step":"render:done","label":"video-only","bytes":1151017,"ms":1266,"msPerFrame":7}
+[page] [verify] {"step":"render:start","label":"with-audio","frames":180}
+[OpenH264] this = 0x0x1340ce9ddd0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[page] [verify] {"step":"render:done","label":"with-audio","bytes":1176243,"ms":2197,"msPerFrame":12}
+[page] [verify] {"step":"still:title","bytes":347864,"ms":107}
+[page] [verify] {"step":"still:image","bytes":347882,"ms":98}
+[page] [verify] {"step":"still:clip","bytes":350722,"ms":119}
+[page] [verify] {"step":"render:start","label":"orbit","frames":360}
+[OpenH264] this = 0x0x1340d0b78c0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[page] [verify] {"step":"render:done","label":"orbit","bytes":1788170,"ms":26595,"msPerFrame":74}
+[page] [verify] {"step":"still:phase2","frame":20,"bytes":520821,"ms":42}
+[page] [verify] {"step":"still:phase2","frame":90,"bytes":520022,"ms":34}
+[page] [verify] {"step":"still:phase2","frame":165,"bytes":618533,"ms":51}
+[page] [verify] {"step":"still:phase2","frame":300,"bytes":674513,"ms":76}
+[page] [verify] {"step":"still:phase2","frame":400,"bytes":654151,"ms":62}
+[page] [verify] {"step":"render:start","label":"phase2","frames":420}
+[OpenH264] this = 0x0x1340e0c3bd0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[page] [verify] {"step":"render:done","label":"phase2","bytes":1777372,"ms":5947,"msPerFrame":14}
+[page] [verify] {"step":"finished"}
+[s10] render-flow.mp4  bytes=859290  streams=[video:h264]  duration=10s
+[s10] render-orbit-v2.mp4  bytes=734471  streams=[video:h264]  duration=12s
+[s10] render-orbit.mp4  bytes=1788170  streams=[video:h264, audio:aac]  duration=12.074667s
+[s10] render-phase2.mp4  bytes=1777372  streams=[video:h264, audio:aac]  duration=14.08s
+[s10] render-video-only.mp4  bytes=1151017  streams=[video:h264, audio:aac]  duration=6.08s
+[s10] render-with-audio.mp4  bytes=1176243  streams=[video:h264, audio:aac]  duration=6.08s
+[s10] still-clip.png  bytes=350722  streams=[video:png]  duration=?s
+[s10] still-flow-f040.png  bytes=37080  streams=[video:png]  duration=?s
+[s10] still-flow-f120.png  bytes=41226  streams=[video:png]  duration=?s
+[s10] still-flow-f200.png  bytes=39203  streams=[video:png]  duration=?s
+[s10] still-image.png  bytes=347882  streams=[video:png]  duration=?s
+[s10] still-orbit-f000.png  bytes=35559  streams=[video:png]  duration=?s
+[s10] still-orbit-f080.png  bytes=45051  streams=[video:png]  duration=?s
+[s10] still-orbit-f160.png  bytes=47374  streams=[video:png]  duration=?s
+[s10] still-orbit-f240.png  bytes=46508  streams=[video:png]  duration=?s
+[s10] still-phase2-165.png  bytes=618533  streams=[video:png]  duration=?s
+[s10] still-phase2-20.png  bytes=520821  streams=[video:png]  duration=?s
+[s10] still-phase2-300.png  bytes=674513  streams=[video:png]  duration=?s
+[s10] still-phase2-400.png  bytes=654151  streams=[video:png]  duration=?s
+[s10] still-phase2-90.png  bytes=520022  streams=[video:png]  duration=?s
+[s10] still-title.png  bytes=347864  streams=[video:png]  duration=?s
+[s10] ✅ 端到端渲染完成

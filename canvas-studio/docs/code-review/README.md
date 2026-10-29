@@ -3,6 +3,7 @@
 > 本目录收录 **2026-09-02 全源码逐文件代码审查**发现的问题与优化点，统一编号为 **CR-xxx**，便于按文档**依次修复与验收**。
 > 每次修复完成后在本文件「状态总表」更新该条目状态，并勾掉对应模块文档里的清单。
 > **与 STATUS 的关系（2026-09-30 对账批注）**：本表状态只推进到「已修复·待验收」，**桌面验收事实一律以 [STATUS.md](../STATUS.md) 的 CV 序列为准**，本表不单设「已完成」状态（防双轨分叉）。同批对账：CR-033 两表统一为已修复·待验收（2026-09-03 第五批落地，代码核对 `index.ts:82-90` / `generate.ts:94`）；CR-040 随根因 CR-104 收口；CR-012 定案维持不注入。
+> **2026-10-29 对账批注（CR-004 收口 + 双轨统一 + 机器闸）**：§1 与 §3 的 **8 处双轨矛盾**一次对齐 —— CR-032/035/036/042/045/046/089 两表统一为已修复·待验收；**CR-104 补登**进 §3（§1.1 有条而 §3 漏行）；**CR-004** 本轮真修收口（`routes.ts` 资产路由流式化，CV-382）；**CR-023** 核实关账（`compose.ts` 已无整读形态）。已修条目 §3 备注列补「方案一句话」（下次核对按实现读，勿凭条目名猜）。新增机器闸 [tests/code-review-ledger.test.mjs](../../tests/code-review-ledger.test.mjs)：两表 ID 集合 / 状态词 / 方案留痕四条结构断言，改状态词请**同步 §1 与 §3**。
 
 ---
 
@@ -63,21 +64,21 @@
 | CR-021 | 中 | HOST | `extractVideoStyle` 中途失败遗留孤儿视频/抽帧 | [video-style.ts](../../src/video-style.ts#L136-L173) | 已修复·待验收 |
 | CR-022 | 中 | HOST | compose 逐段用首片分辨率非等比拉伸，画幅不一致会变形 | [compose.ts](../../src/compose.ts#L241) | 已修复·待验收 |
 | CR-031 | 中 | 契约 | `@ref[...]` token 边界未约束（标题含 `]` 截断；单值多 token 静默取首） | [reference-token.ts](../../src/reference-token.ts#L22-L35) | 已修复·待验收 |
-| CR-032 | 中 | 契约 | `error-kind` 判定 `unreachable` 先于 `config`，双命中消息误导用户 | [error-kind.ts](../../src/error-kind.ts#L46-L51) | 待处理 |
+| CR-032 | 中 | 契约 | `error-kind` 判定 `unreachable` 先于 `config`，双命中消息误导用户 | [error-kind.ts](../../src/error-kind.ts#L46-L51) | 已修复·待验收 |
 | CR-033 | 中 | 契约 | `resolveDramaApiKey` 全缺时 fail-fast 抛错，空 key 不被判缺失 | [index.ts](../../src/index.ts#L55-L63) | 已修复·待验收 |
-| CR-035 | 中 | 契约 | placeholder `renderText` 无守卫强转，`text` 可能为 undefined | [placeholder-tools.ts](../../src/skills/placeholder-tools.ts#L20-L23) | 待处理 |
-| CR-036 | 中 | 契约 | MiniMax frontmatter 解析不含 `>` 折叠与引号剥离 | [minimax-skills.ts](../../src/skills/minimax-skills.ts#L35-L64) | 待处理 |
+| CR-035 | 中 | 契约 | placeholder `renderText` 无守卫强转，`text` 可能为 undefined | [placeholder-tools.ts](../../src/skills/placeholder-tools.ts#L20-L23) | 已修复·待验收 |
+| CR-036 | 中 | 契约 | MiniMax frontmatter 解析不含 `>` 折叠与引号剥离 | [minimax-skills.ts](../../src/skills/minimax-skills.ts#L35-L64) | 已修复·待验收 |
 | CR-041 | 中 | UI | StudioFrame 大量内联回调/派生数组每渲染重建，击穿子组件 memo | [StudioFrame.tsx](../../src/client/StudioFrame.tsx) | 已修复·待验收 |
-| CR-042 | 中 | UI | `installBrandStyles` cleanup 不移除 DOM，重装会累积 `<style>` 元素 | [brand-inject.ts](../../src/client/brand-inject.ts#L59) | 待处理 |
-| CR-045 | 中 | UI | LogoMark 铰链/白板硬编码灰，不随明暗主题联动 | [LogoMark.tsx](../../src/client/brand/LogoMark.tsx#L31-L33) | 待处理 |
-| CR-046 | 中 | UI | SkillCard hover 菜单键盘用户可能完全无法触达 | [SkillCard.tsx](../../src/client/SkillCard.tsx#L57-L74) | 待处理 |
+| CR-042 | 中 | UI | `installBrandStyles` cleanup 不移除 DOM，重装会累积 `<style>` 元素 | [brand-inject.ts](../../src/client/brand-inject.ts#L59) | 已修复·待验收 |
+| CR-045 | 中 | UI | LogoMark 铰链/白板硬编码灰，不随明暗主题联动 | [LogoMark.tsx](../../src/client/brand/LogoMark.tsx#L31-L33) | 已修复·待验收 |
+| CR-046 | 中 | UI | SkillCard hover 菜单键盘用户可能完全无法触达 | [SkillCard.tsx](../../src/client/SkillCard.tsx#L57-L74) | 已修复·待验收 |
 | CR-061 | 中 | 画布 | CanvasSurface 单击选中也 push 历史 + 触发持久化（undo 快照膨胀） | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L394) | 已修复·待验收 |
 | CR-062 | 中 | 画布 | 方向键连发每次持久化写盘，无节流 | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L286-L296) | 已修复·待验收 |
 | CR-063 | 中 | 画布 | 拖拽逐帧整棵 surface 所有节点+边全量重渲染 | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L580-L656) | 已修复·待验收 |
 | CR-066 | 中 | 画布 | 每个 loading 节点独立 1s `setInterval`，批量生成 N 个定时器 | [CanvasNode.tsx](../../src/client/canvas/CanvasNode.tsx#L91-L97) | 已修复·待验收 |
 | CR-071 | 中 | 画布 | Minimap 命中/跳转 fallback 用 `window` 尺寸，与实测尺寸首帧不一致 | [Minimap.tsx](../../src/client/canvas/Minimap.tsx#L72-L73) | 已修复·待验收 |
 | CR-081 | 中 | 画布 | 节点用 `left/top` 布局不走合成层，拖拽重绘开销大 | [styles.ts](../../src/client/styles.ts#L857-L858) | 已修复·待验收 |
-| CR-089 | 中 | 基础设施 | question 卡片本地选态在 `data.answer/note` 回流后不清零，展示冲突 | [question-capture.tsx](../../src/client/question-capture.tsx#L120-L123) | 待处理 |
+| CR-089 | 中 | 基础设施 | question 卡片本地选态在 `data.answer/note` 回流后不清零，展示冲突 | [question-capture.tsx](../../src/client/question-capture.tsx#L120-L123) | 已修复·待验收 |
 
 ### 1.3 低危
 见各模块文档末尾「低危清单表」。
@@ -103,7 +104,7 @@
 | CR-001 | 高 | 已修复·待验收 | 2026-09-02 | |
 | CR-002 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-003 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-004 | 中 | 待处理 | | |
+| CR-004 | 中 | 已修复·待验收 | 2026-10-29 | 方案：`stat` 探测两条路径拿 size（根 → `.trash/` 兜底）→ `createReadStream` 流式交付（200 全量 / 206 切段 / 416 保持 `bytes */size`）+ `res close` 时 `destroy()` 读流；`CANVAS_STUDIO_ASSET_LEGACY_BUFFER=1` 回退开关。实测 60MB 资产 × 10 Range：RSS 峰值增量 125.45MB → 7.83MB（CV-382，plan asset-delivery-memory-20261029） |
 | CR-005 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-006 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-007 | 中 | 已修复·待验收 | 2026-09-03 | |
@@ -122,7 +123,7 @@
 | CR-020 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-021 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-022 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-023 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-023 | 中 | 已修复·待验收 | 2026-09-03 | 方案：无 BGM 分支改 `copyFile`（不再整读大视频进内存）。2026-10-29 核实关账：`compose.ts` 已无整读形态（`readFile`/`copyFile` 零命中，`grep -E` 复核） |
 | CR-024 | 低 | 待处理 | | |
 | CR-025 | 低 | 待处理 | | |
 | CR-026 | 低 | 待处理 | | |
@@ -131,21 +132,21 @@
 | CR-029 | 高 | 已修复·待验收 | 2026-09-02 | |
 | CR-030 | 高 | 已否决 | | 误报：formatRefToken 实被 StudioFrame.tsx:356 使用（子代理漏检） |
 | CR-031 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-032 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-032 | 中 | 已修复·待验收 | 2026-09-03 | 方案：error-kind 拆「硬/软网络信号」——硬信号（ECONNREFUSED 等）优先 unreachable，软信号与 config 关键词同现归 config（第五批） |
 | CR-033 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-034 | 低 | 待处理 | | |
-| CR-035 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-036 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-035 | 中 | 已修复·待验收 | 2026-09-03 | 方案：placeholder `renderText` 防御性取 text（第六批） |
+| CR-036 | 中 | 已修复·待验收 | 2026-09-03 | 方案：frontmatter 支持 `>` 折叠 + 引号剥离（第六批） |
 | CR-037 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-038 | 低 | 待处理 | | |
 | CR-039 | 低 | 待处理 | | |
 | CR-040 | 高 | 已修复·待验收 | 2026-09-02 | |
 | CR-041 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-042 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-042 | 中 | 已修复·待验收 | 2026-09-03 | 方案：cleanup 里 `brandElement.remove()` **真移除** DOM（不是 querySelector 清理），并清 favicon link 与 BRAND_ATTR（第五批） |
 | CR-043 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-044 | 低 | 已修复·待验收 | 2026-09-03 | |
-| CR-045 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-046 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-045 | 中 | 已修复·待验收 | 2026-09-03 | 方案：LogoMark 铰链/白板改主题令牌 `--dsw-alias-border-l2` / `--dsw-alias-bg-layer-1`（第五批） |
+| CR-046 | 中 | 已修复·待验收 | 2026-09-03 | 方案：`.csSkillHover` 加 `:focus-within`（键盘可触达）（第五批） |
 | CR-047 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-048 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-049 | 低 | 待处理 | | |
@@ -188,9 +189,10 @@
 | CR-086 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-087 | 低 | 已修复·待验收 | 2026-09-03 | |
 | CR-088 | 低 | 待处理 | | |
-| CR-089 | 中 | 已修复·待验收 | 2026-09-03 | |
+| CR-089 | 中 | 已修复·待验收 | 2026-09-03 | 方案：question 卡片权威结果回流时清空本地选态（第六批） |
 | CR-090 | 低 | 待处理 | | |
 | CR-091 | 低 | 待处理 | | |
+| CR-104 | 高 | 已修复·待验收 | 2026-09-04 | 对账补登（2026-10-29 机器闸：§1.1 有此条而 §3 漏行）。方案：SettingsModal `credentials.describe` 按嵌套 `RpcResponse`（`result.value.credentials`）读取，不再当扁平结构（CR-040 根因，随其收口） |
 
 ---
 
@@ -218,6 +220,7 @@
 ## 6. 变更记录
 | 日期 | 条目 | 说明 |
 | --- | --- | --- |
+| 2026-10-29 | CR-004 / CR-023 / CR-032 / CR-035 / CR-036 / CR-042 / CR-045 / CR-046 / CR-089 / CR-104 | **对账批（CR-004 真修 + 双轨统一 + 机器闸，CV-382）**：① **CR-004 收口**——`routes.ts` 资产路由从「整读 `readFile` 再 Buffer 切片」改 `stat` 探测 + `createReadStream` 流式（200 全量 / 206 切段 / 416 语义不变，`.trash` 兜底与 no-store 逐字符保留；`res close` 时 `destroy()` 防 fd 泄漏；`CANVAS_STUDIO_ASSET_LEGACY_BUFFER=1` 回退开关）。实测（60MB 资产 × 10 Range，含 5 次首块即断）：RSS 峰值增量 **125.45MB → 7.83MB**，fd 增量 0；新增 `tests/asset-range.test.mjs` 6 条锁语义 + `scripts/probe/asset-memory.probe.mjs` 内存探针；反向变异 2 处（206 去 content-length / 改回整读）均能变红。② **双轨统一**——§1.2 的 CR-032/035/036/042/045/046/089 对齐 §3 为已修复·待验收；**CR-104 补登** §3（2026-09-04 已修复·待验收）；**CR-023 关账**（`compose.ts` 已无整读形态，`grep -E` 复核零命中）。③ **机器闸**——新增 `tests/code-review-ledger.test.mjs` 四条结构断言（ID 集合 / 状态词一致 / 状态词白名单 / 已修条目方案留痕），反向变异（矛盾状态 / §3 外孤儿 ID）各红一条。 |
 | 2026-09-30 | CR-033 / CR-040 / CR-012 | **对账批（纯文档）**：CR-033 状态总表（§1.2）漏更，与台账统一为**已修复·待验收**（2026-09-03 第五批落地；代码复核 `index.ts:82-90` 空 key 判缺 + `generate.ts:94` 未注入兜底）；CR-040 由「修复中」收口为**已修复·待验收**（本体 2026-09-02 修复 + 根因 CR-104 已于 2026-09-04 修复·待验收）；CR-012 由「待拍板」**定案为维持不注入**——后端至今无鉴权（api.md 0.4.0 无任何鉴权语义），key 经 credential-ref 解析但不随请求发送，CR-033 语义已兜底。另：README 头部新增「与 STATUS 的关系」批注——本表只记到已修复·待验收，验收事实以 STATUS CV 序列为准 |
 | 2026-09-02 | — | 建立本目录，录入代码审查问题 CR-001 ~ CR-091 |
 | 2026-09-02 | CR-001 / CR-029 / CR-040 / CR-059 / CR-060 | **第一批（高危）修复落地**：CR-001 缺省选片排除成片节点（抽纯函数 `defaultComposeClips`，+4 测试）；CR-029 `normalizeWorkflow` options 缺失打可见告警（+2 测试）；CR-040 TinyFish effect 补 `value` 依赖；CR-059 删除重复 marker、`import` 常驻 marker 集合；CR-060 节点/缩放/link 手势加 pointer capture（marquee 按 CV-008 约定保持拖出取消）。验证链全绿：tsc Host emit ✓ / typecheck（Host+Client）✓ / tsdown ✓ / test:smoke **185/185** ✓。状态 → **已修复·待验收**（5 条）。桌面回归方法见 README §0 |

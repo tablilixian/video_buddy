@@ -41,6 +41,7 @@
 - **影响**：多并发点播/上传时内存放大明显。
 - **解决方案**：全量响应用 `createReadStream`；范围响应用 `createReadStream({start,end})`。
 - **验收方式**：并发拉取多个大视频，观察内存峰值显著下降、功能不变。
+- **状态**：✅ **已修复·待验收**（2026-10-29，CV-382）——`routes.ts` 资产前缀路由改 `stat` 探测两条路径拿 size（根 → `.trash/` 兜底，D-04 同步决策点）+ `createReadStream` 流式（200 全量 / 206 切段 / 416 保持 `bytes */size`），`res 'close'` 一律 `destroy()` 读流防 fd 泄漏；`no-store` / `nosniff` / content-type / 403 越界校验逐字符保留；`CANVAS_STUDIO_ASSET_LEGACY_BUFFER=1` 回退旧整读形态。实测 60MB × 10 Range：RSS 峰值增量 **125.45MB → 7.83MB**、fd 增量 0；`tests/asset-range.test.mjs` 6 条锁语义 + `scripts/probe/asset-memory.probe.mjs` 探针（反向变异 2 处实证可红）。
 
 ### CR-006｜[中] `appendCanvasNode` 每次全量读+写，内部再读一次
 - **位置**：[projects.ts#L271-L275](../../src/projects.ts#L271-L275)、[#L201-L225](../../src/projects.ts#L201-L225)
@@ -120,6 +121,7 @@
 - **影响**：合成长视频内存峰值高。
 - **解决方案**：用 `copyFile` 或流式 pipe。
 - **验收方式**：合成长视频时内存峰值显著下降，产物一致。
+- **状态**：✅ **已修复·待验收**（2026-09-03 第六批：改 `copyFile`）；**2026-10-29 核实关账**——`compose.ts` 已无整读形态（`grep -E` 复核 `readFile`/`copyFile` 调用零命中），台账曾长期双轨标注「待处理」属假待处理。
 
 ### CR-004（资产整读内存）已见上方；CR-023 与其同类。
 

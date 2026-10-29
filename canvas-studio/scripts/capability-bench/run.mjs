@@ -82,7 +82,7 @@ function sha256Prefix(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 12)
 }
 
-async function renderOnce({ spec, runDir, outName, window, flags, durationInFrames, timeoutMs, label }) {
+async function renderOnce({ spec, runDir, outName, window, flags, durationInFrames, timeoutMs, label, htmlOverride }) {
   const { server, url } = await startBenchServer({
     bundleDir: BUNDLE_DIR,
     outDir: runDir,
@@ -97,6 +97,9 @@ async function renderOnce({ spec, runDir, outName, window, flags, durationInFram
       durationInFrames,
       stills: spec.__stills,
       window,
+      // R1：html-in-canvas 走整帧 DOM 截图，绕过 CSS 白名单。默认 false，仅在 spec 声明时开。
+      // `--html=0/1` 可临时覆盖，用来跑"开/不开"的 A/B 对照（同一份合成）。
+      allowHtmlInCanvas: htmlOverride === null ? spec.allowHtmlInCanvas === true : htmlOverride,
     },
   })
 
@@ -136,7 +139,7 @@ async function renderOnce({ spec, runDir, outName, window, flags, durationInFram
 }
 
 async function runOne(spec, options) {
-  const { outRoot, window, flags, repeat, timeoutMs } = options
+  const { outRoot, window, flags, repeat, timeoutMs, htmlOverride } = options
   // probe.mjs 会把 --out 指到条目目录本身；此时不要再套一层 `NN-axis`
   const itemName = `${spec.id}-${spec.axis}`
   const runDir = basename(outRoot) === itemName ? outRoot : join(outRoot, itemName)
@@ -145,8 +148,9 @@ async function runOne(spec, options) {
   spec.__width = 1920
   spec.__height = 1080
   spec.__fps = 30
-  spec.__stills = spec.id === '10' ? [0, 120, 299] : [0]
   const durationInFrames = spec.durationInFrames ?? 300
+  // 每条都给首/中/末三张静帧（成本可忽略：同一次 Electron 会话里连渲），便于不看成片也能目视
+  spec.__stills = spec.stills ?? [0, Math.floor((durationInFrames - 1) / 2), durationInFrames - 1]
 
   log(`— ${spec.id} ${spec.title} → ${runDir}`)
   const first = await renderOnce({
@@ -158,6 +162,7 @@ async function runOne(spec, options) {
     durationInFrames,
     timeoutMs,
     label: 'run-1',
+    htmlOverride,
   })
 
   let secondTarget = null
@@ -172,6 +177,7 @@ async function runOne(spec, options) {
       durationInFrames,
       timeoutMs,
       label: 'run-2',
+      htmlOverride,
     })
     secondTarget = second.target
   }
@@ -241,6 +247,8 @@ async function main() {
   const repeat = Number(arg('repeat', '1'))
   const timeoutMs = Number(arg('timeout', '600000'))
   const flags = arg('flags', '').split(',').map((s) => s.trim()).filter(Boolean)
+  const htmlArg = arg('html', '')
+  const htmlOverride = htmlArg === '1' ? true : htmlArg === '0' ? false : null
 
   if (!only && !all) {
     console.log('用法：--only=NN | --all [--repeat=2] [--window=hidden] [--flags=CanvasDrawElement] [--bundle-only]')
@@ -270,7 +278,7 @@ async function main() {
       results.push({ id, title: spec.title, status: 'todo', autoScore: null, dir: null })
       continue
     }
-    const result = await runOne(spec, { outRoot, window, flags, repeat, timeoutMs })
+    const result = await runOne(spec, { outRoot, window, flags, repeat, timeoutMs, htmlOverride })
     results.push({
       id,
       title: spec.title,

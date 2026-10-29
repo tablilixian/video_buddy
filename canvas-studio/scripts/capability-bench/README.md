@@ -3,6 +3,10 @@
 > 一条命令：`bundle → 静态服务 → Electron → renderMediaOnWeb → 5 条硬检查 → contact sheet → verdict/README/probe`。
 > **产品代码零改动**，新代码只在本目录；产物落 repo 外（`~/Desktop/job/VideoOut/remotion-capability-<date>/NN-axis/`）。
 
+**当前进度（2026-10-29 23:10）**：已出片 **#03 / #07 / #10**（都 5/5 硬检查、逐帧 md5 全等），remaining **#01 #02 #04 #05 #06 #08 #09 = `status: 'todo'`（代码还没写）**。
+`--all` 只跑 `status === 'done'` 的项；`--only=<todo>` 会 warn 跳过。**加一条 = 写 tsx + 注册 + 把 status 改 done**，runner / 检查 / 报告脚本不用动。
+下一步顺序与断点清单见方案文档 `docs/plans/渲染环境与Remotion能力上限测试方案-20261029.md` §13.5 / §13.6。
+
 ## 一、怎么跑
 
 ```bash
@@ -17,8 +21,15 @@ NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=10 --repeat=2
 # 3) 换窗口档 / 开 Chromium 能力开关
 NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=03 --window=hidden --flags=CanvasDrawElement
 
-# 4) 只验能不能打包（30–60s，不启 Electron）
+# 4) 只验能不能打包（2–5s，不启 Electron）
 NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=10 --bundle-only
+
+# 5) 跑所有已完成项（status=done）
+NODE_OPTIONS= node scripts/capability-bench/run.mjs --all --repeat=2
+
+# 6) 强制开/关全量捕获（A/B 对照用；不给就跑 spec.allowHtmlInCanvas）
+NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=03 --flags=CanvasDrawElement --html=1
+NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=03 --html=0
 ```
 
 - `NODE_OPTIONS=` 必须留空：父 shell 的注入项会干扰 esbuild/webpack。

@@ -23,10 +23,14 @@ import {
   renderMediaOnWeb,
   renderStillOnWeb,
 } from '@remotion/web-renderer'
+import * as cap03 from './03-html-in-canvas.js'
+import * as cap07 from './07-path-morph.js'
 import * as cap10 from './10-editing.js'
 
 /** 全部能力项。key = 两位编号，与产物文件夹 `NN-<axis>` 一一对应。 */
-const REGISTRY: Record<string, typeof cap10> = {
+const REGISTRY: Record<string, { Composition: React.FC }> = {
+  '03': cap03,
+  '07': cap07,
   '10': cap10,
 }
 
@@ -82,6 +86,7 @@ type Config = {
   durationInFrames: number
   stills: number[]
   window: string
+  allowHtmlInCanvas: boolean
 }
 
 async function main() {
@@ -119,6 +124,12 @@ async function main() {
       }),
     })
 
+    // R1：HTML-in-canvas 走 Chromium 实验 API（drawElementImage）。这里只报告"内核有没有这个 API"，
+    // 真正的开关是下面传给 renderMediaOnWeb 的 allowHtmlInCanvas。
+    const probeCanvas = document.createElement('canvas').getContext('2d') as CanvasRenderingContext2D | null
+    const drawApi = probeCanvas ? typeof (probeCanvas as unknown as { drawElementImage?: unknown }).drawElementImage : 'no-ctx'
+    report('htmlInCanvas', { api: String(drawApi), allow: config.allowHtmlInCanvas })
+
     const composition = {
       id: `${config.id}-bench`,
       component: capability.Composition,
@@ -136,6 +147,7 @@ async function main() {
         composition,
         inputProps: {},
         frame,
+        allowHtmlInCanvas: config.allowHtmlInCanvas,
         licenseKey: 'free-license',
       })
       const blob = await still.blob({ format: 'png' })
@@ -151,6 +163,7 @@ async function main() {
       videoCodec: 'h264',
       audioCodec: 'aac',
       outputTarget: 'arraybuffer',
+      allowHtmlInCanvas: config.allowHtmlInCanvas,
       licenseKey: 'free-license',
     })
     const blob = await result.getBlob()

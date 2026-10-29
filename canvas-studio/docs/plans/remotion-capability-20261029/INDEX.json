@@ -7,6 +7,22 @@
     "dir": null
   },
   {
+    "id": "03",
+    "title": "全量捕获（绕过 CSS 白名单）",
+    "status": "done",
+    "autoScore": 4,
+    "outFile": "cap03.mp4",
+    "dir": "/tmp/cap03f/03-html-in-canvas"
+  },
+  {
+    "id": "07",
+    "title": "矢量路径变形（interpolatePath）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap07.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/07-path-morph"
+  },
+  {
     "id": "10",
     "title": "剪辑：跳剪 / 变速 / 独立音轨",
     "status": "done",

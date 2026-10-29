@@ -41,6 +41,10 @@
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]`） | ✅ 三步全部落地，2026-09-29 桌面验收通过（CV-255） |
 | **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是 [`plans/remotion/remotion-integration-devdoc-2026-10-14.md`](./plans/remotion/remotion-integration-devdoc-2026-10-14.md)（v1.6） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）与 B4 skill `code-driven-explainer`、R1 随包中文字体（CV-328）已落码待验收** |
 | **[plans/2026-10-25-交接-新会话继续.md](./plans/2026-10-25-交接-新会话继续.md)** | ★★ **新会话入口**：30 秒上手 / 状态看板 / 未完成任务（故事板强约束 L1–L5、shotcraft D19–D22、B3–B5）/ 铁律与坑 / 验证套路 | 每次交接先读这份 |
+| **[plans/audio-timeline-plan-20261028.md](./plans/audio-timeline-plan-20261028.md)** | ★★ **音频子系统收口（CV-040 主体）**：`AudioTimeline` 唯一事实源 + S2a 止血（统一 48k/立体声 + 无音轨段补等长静音）/ S2b 视频流 concat + 音轨从零装配 / 前端音频轨 + 混音面板 / skill 第 2c 步「声音规划」/ MV 节拍与歌词轨。**含 2026-10-28 三组内置 ffmpeg 实测**（音轨 4.09s vs 视频 6.02s、采样率混拼静默变速、补静音方案成立） | **已拍板 D-01~D-06，零落码**；S0→S1→S2a 无阻塞，G1 真机验收后进 S2b（§9 列出剩余卡点分类） |
+| **[plans/asset-delivery-memory-20261029.md](./plans/asset-delivery-memory-20261029.md)** | ★ **资产交付内存基线 + CR 台账对账（小计划，4 任务 / 2 人日）**：资产 Range 是「假流式」（`readFile` 整读后在 Buffer 上切，每次 seek 全量读）→ 改 `createReadStream` + `stat` 探测；同时收口 CR-023 假待处理与 §1/§3 双轨矛盾 7 条，新增台账结构闸。**含 2026-10-29 逐条代码核实表** | **已拍板 D-01~D-04，零落码**；零外部依赖（RSS 峰值 + 断言 + 台账闸全离线可验） |
+| **[plans/渲染全链路失败点与真机排查手册-20261029.md](./plans/渲染全链路失败点与真机排查手册-20261029.md)** | ★ **渲染错误全链路**：8 阶段执行路径（file:line）+ 每步全部失败分支（CS-PARAM/USER/STORY/RENDER-002/RENDER-TIMEOUT/GEN-207）+ 两层 403 + **9 条真机日志疑点**（28.106s 三组实测、17:35 三段式现场、老日志零留痕）+ S0~S12 排查 SOP + H1~H8 假设与证伪方法 + 按耗时分类的决策树 | **取证结论**（渲染能力 OK / 断点在派单→取单；两条断点并存 28s 与 149s）；RA-01 真机验证 P0 未做 |
+| **[plans/渲染环境与Remotion能力上限测试方案-20261029.md](./plans/渲染环境与Remotion能力上限测试方案-20261029.md)** | ★ **真实渲染环境 + 能力上限测法**：Electron 43.4.0 / Chromium 取法 / Remotion 4.0.535 落点、5 个现成真渲染入口（`verify.mjs` · `render-forensics` Q1~Q11 · `render-host-e2e` · `render-host-session` · 真机 `yarn dev`）逐条原样命令、自写脚本两路线骨架 + 6 铁律、L1/L2/L3 三层通过标准与 9 项指标记录表 | **已跑 3/10**（#10 / #07 / #03 全绿，见该文 §13.0；余 7 条 `status=todo`）；**开工提示词在该文 §14（整段粘贴）**；GPU 真 Metal、html-in-canvas 与 DOM SVG 双验绿；系统 Chrome 只作 SSR 对照，禁把 Electron 当 `browserExecutable`（devdoc R16） |
 | **[plans/2026-10-25-故事板强约束-彻底方案.md](./plans/2026-10-25-故事板强约束-彻底方案.md)** | ★★ **待落码的最大一块**：故事板强约束 L1–L5（声明式 gate / 单一事实源 + 自愈 / auto 自动落地 / 老项目迁移工具 / G6 契约补齐）+ 逐文件改动清单 + 测试矩阵 | 已拍板，**零落码**；顺序铁律 L3→L1→L2，L4 必须与 L1 同批 |
 | **[plans/2026-10-25-会话5诊断-shotcraft能解决什么.md](./plans/2026-10-25-会话5诊断-shotcraft能解决什么.md)** | ★ 会话 #5 诊断（187.6min / 219 步 / 211 次 bash / 88 次 python3 / `render_composition` **0 次**）：故事板被跳过的实证 + "布局坐标表比卡片库值钱" | **优先级调整依据**（D19–D22 来源） |
 | **[plans/2026-10-25-方案验证报告-镜头卡与主题预设.md](./plans/2026-10-25-方案验证报告-镜头卡与主题预设.md)** | 真渲 14 张镜头卡 + 2 套主题：**14/14 通过**，抓出 3 个真问题（`kenBurns` 死字段 / `animate` 无 `scaleX·Y` / ink-press 太暗）；热态 1.4s/张 | 卡片库的实测底稿 |
@@ -121,7 +125,8 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| [canvas-studio-handoff.md](./canvas-studio-handoff.md) | 🗄️ 历史归档（2026-08-21 交接快照）：已验证机制、命令备忘仍有参考价值；**现状与待办以 tracking.md / STATUS.md 为准**，勿按其「当前权威」行动 |
+| [plans/handoff-2026-10-19.md](./plans/handoff-2026-10-19.md) | 🗄️ 交接快照（REQ-034 三期 O-01~O-14 执行单）：铁律与环境陷阱仍有效，**任务状态已过期，勿按其「当前权威」行动** |
+| **[plans/handoff-2026-10-29-渲染链路与能力测试.md](./plans/handoff-2026-10-29-渲染链路与能力测试.md)** | ★ **当前在役交接**：渲染链路取证（C1~C5 已定案结论）+ RA-01~RA-05 下一批任务 + 5 条已拍板决策 + 铁律/环境陷阱/工作区卫生 + 故意未做的登记事项（STATUS/CV 台账）。粘贴式自包含，**新会话从这里进** |
 | `archive/` 内四份带日期 handoff | 🗄️ 历史交接快照（handoff-2026-09-04 / HANDOFF-2026-09-07 / handoff-node-state / handoff-product-consultant） |
 
 ## 七、跨模块专题（文件在根 `docs/`）

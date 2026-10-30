@@ -107,13 +107,14 @@ const electron = vi.hoisted(() => {
     isEmpty: vi.fn(() => false),
     setTemplateImage: vi.fn(),
   }
+  const mainSession = {
+    webRequest,
+    // 0.2.1 browser-auth preflight; the real session mints the cookie.
+    fetch: vi.fn(async () => ({ status: 200, body: { cancel: async () => {} } })),
+  }
   const webContents = {
     id: 73,
-    session: {
-      webRequest,
-      // 0.2.1 browser-auth preflight; the real session mints the cookie.
-      fetch: vi.fn(async () => ({ status: 200, body: { cancel: async () => {} } })),
-    },
+    session: mainSession,
     closeDevTools: vi.fn(() => { devToolsOpened = false }),
     executeJavaScript: vi.fn(async (_code: string, _userGesture?: boolean) => null as string | null),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -124,6 +125,16 @@ const electron = vi.hoisted(() => {
     reloadIgnoringCache: vi.fn(),
     setZoomLevel: vi.fn((level: number) => { zoomLevel = level }),
     setWindowOpenHandler: vi.fn(),
+  }
+  // Module-level `electron.webContents` namespace backing the renderer-capability
+  // filter: 74 rides the same renderer session (the canvas plugin's hidden render
+  // host), 75 lives on a foreign session.
+  const renderHostWebContents = { id: 74, session: mainSession }
+  const foreignWebContents = { id: 75, session: { webRequest: { onBeforeSendHeaders: vi.fn() } } }
+  const webContentsModule = {
+    fromId: (id: number): unknown => (
+      id === 73 ? webContents : id === 74 ? renderHostWebContents : id === 75 ? foreignWebContents : undefined
+    ),
   }
   const nativeTheme = {
     themeSource: 'system',
@@ -256,6 +267,7 @@ const electron = vi.hoisted(() => {
     Tray,
     trays,
     webContents,
+    webContentsModule,
     webRequest,
   }
 })
@@ -285,6 +297,7 @@ vi.mock('electron', () => ({
   screen: electron.screen,
   shell: electron.shell,
   Tray: electron.Tray,
+  webContents: electron.webContentsModule,
 }))
 
 const spec: DesktopShellSpec = {
@@ -500,6 +513,28 @@ describe('Electron desktop runtime', () => {
       },
     })
 
+    // A first-party window hosted on the same renderer session under its own
+    // webContentsId (the canvas plugin's hidden render host) qualifies too —
+    // its HTML document must not be fenced off into a silent white page.
+    const renderHostCallback = vi.fn()
+    listener({
+      id: 8,
+      url: 'http://127.0.0.1:43120/canvas-studio/render-host',
+      method: 'GET',
+      webContentsId: 74,
+      frame: mainFrame,
+      resourceType: 'mainFrame',
+      referrer: '',
+      timestamp: 8,
+      requestHeaders: { Accept: 'text/html' },
+    }, renderHostCallback)
+    expect(renderHostCallback).toHaveBeenCalledWith({
+      requestHeaders: {
+        Accept: 'text/html',
+        [spec.rendererAccessHeader.name]: spec.rendererAccessHeader.value,
+      },
+    })
+
     for (const details of [
       {
         id: 3,
@@ -519,7 +554,7 @@ describe('Electron desktop runtime', () => {
         id: 4,
         url: 'http://127.0.0.1:43120/api/private',
         method: 'GET',
-        webContentsId: 74,
+        webContentsId: 75,
         frame: mainFrame,
         resourceType: 'xhr',
         referrer: 'http://127.0.0.1:43120/',
@@ -571,7 +606,7 @@ describe('Electron desktop runtime', () => {
         url: 'http://127.0.0.1:43120/api/private',
         method: 'GET',
         webContentsId: 73,
-        webContents: { id: 74 },
+        webContents: { id: 75 },
         frame: mainFrame,
         resourceType: 'xhr',
         referrer: 'http://127.0.0.1:43120/',

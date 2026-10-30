@@ -78,6 +78,22 @@ export function decideDesktopBrowserAccess(
   return 'browser'
 }
 
+/**
+ * Whether a request's webContents lives on the renderer session. The capability
+ * identifies the session, not the main window alone: first-party windows hosted
+ * in the same session (the canvas plugin's hidden render host) carry their own
+ * webContentsId and must qualify too. Main-process `session.fetch` provides no
+ * webContentsId and never qualifies.
+ */
+export function requestRidesRendererSession(
+  providedWebContentsIds: readonly (number | undefined)[],
+  sessionOf: (webContentsId: number) => { readonly session: unknown } | undefined,
+  rendererSession: unknown,
+): boolean {
+  const ids = providedWebContentsIds.filter((value): value is number => value !== undefined)
+  return ids.length > 0 && ids.every(id => sessionOf(id)?.session === rendererSession)
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Launcher-owned request gate present only in a Desktop Host generation. */

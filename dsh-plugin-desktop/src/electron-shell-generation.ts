@@ -9,6 +9,7 @@ import {
   screen,
   shell,
   Tray,
+  webContents,
 } from 'electron'
 import { formatDesktopExitCode } from './desktop-logger.ts'
 import { showDesktopMessageBox } from './desktop-dialog-window.ts'
@@ -22,7 +23,10 @@ import {
   windowsUsesLegacyAcrylic,
 } from './window-material.ts'
 import { setWindowsAcrylic } from './windows-acrylic.ts'
-import type { DesktopRendererAccessHeader } from './desktop-browser-access.ts'
+import {
+  requestRidesRendererSession,
+  type DesktopRendererAccessHeader,
+} from './desktop-browser-access.ts'
 import {
   fitMainWindowBounds,
   sameMainWindowBounds,
@@ -61,13 +65,9 @@ function withoutRendererAccessHeader(
   )
 }
 
-function requestBelongsToRenderer(
-  details: Electron.OnBeforeSendHeadersListenerDetails,
-  webContentsId: number,
-): boolean {
-  const providedIds = [details.webContentsId, details.webContents?.id]
-    .filter((value): value is number => value !== undefined)
-  return providedIds.length > 0 && providedIds.every(value => value === webContentsId)
+/** Unknown ids (already-destroyed webContents) resolve to `undefined`, failing closed. */
+function sessionOfWebContents(id: number): Electron.WebContents | undefined {
+  return webContents.fromId(id)
 }
 
 function requestComesFromRendererOrigin(
@@ -85,6 +85,13 @@ function requestComesFromRendererOrigin(
  * Attach one generation-only capability to the renderer's HTTP and WebSocket
  * traffic. Query markers are intentionally insufficient because subresources,
  * API requests, and upgrades do not retain the main-frame query string.
+ *
+ * The capability rides on the renderer session, not on the main window alone:
+ * first-party windows hosted in the same session (the canvas plugin's hidden
+ * render host) carry their own webContentsId and must qualify too, or their
+ * HTML document is fenced off and Electron's loadURL turns the 403 into a
+ * silent white page. Main-process `session.fetch` has no webContentsId and
+ * never qualifies — run such requests before installing this filter.
  */
 function installRendererAccessHeader(
   window: BrowserWindow,
@@ -93,7 +100,7 @@ function installRendererAccessHeader(
 ): () => void {
   const webSocketOrigin = pairedWebSocketOrigin(origin)
   const webRequest = window.webContents.session.webRequest
-  const webContentsId = window.webContents.id
+  const rendererSession = window.webContents.session
   const listener = (
     details: Electron.OnBeforeSendHeadersListenerDetails,
     callback: (response: Electron.BeforeSendResponse) => void,
@@ -101,7 +108,7 @@ function installRendererAccessHeader(
     // This listener owns a dedicated renderer session and sees every target so
     // a redirect can never carry the capability away from the local carrier.
     const requestHeaders = withoutRendererAccessHeader(details.requestHeaders, header.name)
-    if (!requestBelongsToRenderer(details, webContentsId)
+    if (!requestRidesRendererSession([details.webContentsId, details.webContents?.id], sessionOfWebContents, rendererSession)
       || !sameRendererCarrierOrigin(details.url, origin, webSocketOrigin)
       || !requestComesFromRendererOrigin(details, origin)) {
       callback({ requestHeaders })

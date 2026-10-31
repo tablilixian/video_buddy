@@ -55,8 +55,9 @@ const GENERATED_DIRS = new Set(['src/contracts/generated'])
 
 /** 文件行数棘轮。键 = `src/...` 相对包根路径，值 = 当前实测行数（拆分时逐段下调，达标即删）。 */
 export const FILE_WHITELIST = {
-  // CV-384（2026-10-31）：.csNode 的 will-change 规则删除、注释等行改写 —— 净 0。
-  'src/client/styles.ts': 10731,
+  // CV-384（2026-10-31）：批 1 删 .csNode will-change 净 0（注释等行改写）；
+  // 批 3 世界层 will-change → translate3d（提升通道改走 3D 变换），注释换规则行 +3。
+  'src/client/styles.ts': 10734,
   'src/host-tools.ts': 4401,
   'src/generate.ts': 3582,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
@@ -73,7 +74,7 @@ export const FILE_WHITELIST = {
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
   // 批 2（同日真机迭代）：手势期 cv-auto 抑制 +22 净行（gesturing 态 + 滚轮去抖回落），
   // 1727 → 1749 / func 1347 → 1368。
-  'src/client/canvas/CanvasSurface.tsx': 1749,
+  'src/client/canvas/CanvasSurface.tsx': 1752,
   'src/client/project-store.ts': 1612,
   'src/projects.ts': 1575,
   'src/remotion/timing.ts': 1315,
@@ -85,7 +86,7 @@ export const FILE_WHITELIST = {
  * 实测回填于 2026-10-28（PR-0）。拆分推进时逐段下调；达标（≤600）后删除条目。
  */
 export const FUNC_WHITELIST = {
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 10714, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 10717, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
   'src/routes.ts#registerStudioRoutes': { lines: 2868, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（显式登记，2026-10-29）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2764, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行' },
@@ -94,7 +95,7 @@ export const FUNC_WHITELIST = {
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。
-  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1368, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
+  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1371, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
   'src/client/project-store.ts#createProjectStore': { lines: 990, note: 'P1：按域切 store 切片' },
   'src/errors/catalog.ts#SPECS': { lines: 990, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
   // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。

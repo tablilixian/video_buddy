@@ -1985,13 +1985,16 @@ const STUDIO_STYLES = `
   user-select: text;
 }
 
+/* CV-384 批 3：世界层**不写 will-change** —— cc 把它当「随时可能启动动画」的
+   信号，低倍率（10%）下光栅刻度被钉在高处，而此时可见世界面积最大 ⇒ 瓦片需求
+   爆炸、连壳层瓦片一起被逐出（真机现象：10% 边界顶栏/侧栏抖动）。合成提升改由
+   CanvasSurface 的 translate3d（3D 变换同样成层，平移仍是纯合成更新）。 */
 .csCanvasLayer {
   position: absolute;
   top: 0;
   left: 0;
   width: 0;
   height: 0;
-  will-change: transform;
 }
 
 .csEdges {

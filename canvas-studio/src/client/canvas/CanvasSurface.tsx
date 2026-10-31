@@ -1486,7 +1486,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     >
       <div
         className={waterfallOn ? 'csCanvasLayer csWaterfall' : 'csCanvasLayer'}
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}
+        // CV-384 批 3：世界层用 translate3d 提升（3D 变换强制成层，平移仍是纯
+        // 合成更新）—— 不写 will-change：那会被 cc 当「可能动画」信号把光栅刻度
+        // 钉在高处，低倍率（可见世界面积最大）时瓦片需求爆炸。
+        style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`, transformOrigin: '0 0' }}
       >
         {/* CV-224 镜位框：画在最底层（DOM 首位），所以它只当背景带、不遮节点。
             用分镜的语义色（琥珀，与 storyboard 血缘边同源）而不是 demo 里的蓝。

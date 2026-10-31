@@ -45,12 +45,18 @@ test('G1-①：.csNode 不得含 will-change —— 节点不再常驻合成层�
     '.csNode 挂回 will-change = 每节点一层，瓦片预算摊爆（CV-384 根因回归）')
 })
 
-test('G1-②：世界层 .csCanvasLayer 的 will-change 必须保留 —— 该合成的是世界层', () => {
+test('G1-②：世界层用 3D transform 提升而非 will-change（批 3：10% 边界抖动）', () => {
+  // 批 3 真机现象：缩到 10%（整个世界可见、可见世界面积最大）时壳层（顶栏/侧栏）
+  // 一起抖 = 页面共享瓦片预算被世界层吃爆。头号嫌疑是 .csCanvasLayer 的
+  // will-change —— cc 把它当「随时可能启动动画」的信号把光栅刻度钉在高处。
+  // 提升通道改走 translate3d（3D 变换同样成层），will-change 通道关死。
   const block = ruleBlock(STYLES, '\\.csCanvasLayer')
-  assert.ok(block.includes('will-change'), '世界层去合成会让拖缩回到逐帧 paint，方向反了')
-  // 全文件 will-change 只剩两处：世界层 + 讲片器轨道（styles.ts:10380 csPcTrack）。
+  assert.ok(!block.includes('will-change'),
+    '.csCanvasLayer 不得写 will-change（光栅刻度钉高通道，批 3 假设的 10% 抖动根因）')
+  assert.match(SURFACE, /translate3d\(\$\{view\.x\}px, \$\{view\.y\}px, 0\) scale\(\$\{view\.scale\}\)/,
+    '世界层必须用 translate3d 保持合成提升（平移仍是纯合成更新）')
   const count = (STYLES.match(/will-change/g) ?? []).length
-  assert.equal(count, 2, `styles.ts 的 will-change 应为 2 处（世界层 + csPcTrack），实测 ${count}`)
+  assert.equal(count, 1, `styles.ts 的 will-change 应只剩 csPcTrack 一处，实测 ${count}`)
 })
 
 test('G1-③：CanvasNode 定位必须是 2D translate —— translate3d 本身就强制合成层', () => {

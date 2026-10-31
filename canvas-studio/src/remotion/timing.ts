@@ -269,7 +269,7 @@ export function reconcileManifestVideoDurations(
 /**
  * 转场效果（与 `TransitionTrack.effect` 同域）。
  *
- * 二期 A4 新增四种，全部**按帧求值**（`clipPath` / `maskImage` / `rotateY`），
+ * 二期 A4 新增四种，全部**按帧求值**（`clipPath` / `maskImage` / `scaleXPercent`），
  * 不用 CSS transition —— 逐帧截图走真实时钟，CSS 过渡会让同一份 manifest 渲两次不同。
  */
 export type TransitionEffect =
@@ -300,12 +300,15 @@ export interface TrackTransitionOverride {
   /** 三期 W2-6：垂直位移（占画布高度百分比），`slide` 的上下方向用。 */
   translateYPercent: number
   scale: number
-  /** `wipeLeft` / `wipeRight` 的硬边裁切（空串 = 不裁）。 */
+  /** `wipeLeft` / `wipeRight` 的硬边裁切（空串 = 不裁）；`clock` 的扇形扫描也走这里。 */
   clipPath: string
-  /** `clock` 的扇形扫描遮罩（空串 = 不遮）；三期起也承载软边 wipe。 */
+  /** 软边 wipe 的渐变遮罩（空串 = 不遮）。只认 linear-gradient —— web-renderer 的
+   *  parseMaskImage 不读 radial/conic（能力基准 #09 T07 实测：conic 被整字段无视），
+   *  其它 mask 一律别往这放。 */
   maskImage: string
-  /** `flipX` 的 Y 轴翻转角度（度，0 = 未翻）。 */
-  rotateY: number
+  /** `flipX` 的水平压扁（1 = 不压）。web-renderer 4.0.535 不读 `perspective()`，
+   *  rotateY 会退化成"压扁穿越黑帧"（能力基准 #09 T09 实测）⇒ 有意降级为 2D 压扁翻面。 */
+  scaleXPercent: number
 }
 
 /** 收起一个轨道的全部转场窗口（来自 manifest 的 `transition` 轨）。 */
@@ -328,15 +331,34 @@ export function trackTransitionWindows(manifest: CompositionManifest, trackId: s
 }
 
 /**
+ * `clock` 的扇形裁切（clip-path polygon）：12 点方向起、顺时针扫过 `[startDeg, endDeg]`，
+ * 半径 150% 盖住画布四角（对角线半长 ≈70.7%）。不用 conic-gradient mask ——
+ * web-renderer 的 parseMaskImage 只认 linear-gradient/url，conic 被整字段无视会让转场
+ * 退化成整层突现（能力基准 #09 T07 实测）；polygon 在白名单内，#09 T08 已证像素级可用。
+ */
+function clockFanPolygon(startDeg: number, endDeg: number): string {
+  const steps = Math.max(2, Math.ceil((endDeg - startDeg) / 10))
+  const pts = ['50% 50%']
+  for (let i = 0; i <= steps; i += 1) {
+    const deg = startDeg + ((endDeg - startDeg) * i) / steps
+    const rad = ((deg - 90) * Math.PI) / 180
+    pts.push(`${(50 + 150 * Math.cos(rad)).toFixed(2)}% ${(50 + 150 * Math.sin(rad)).toFixed(2)}%`)
+  }
+  return `polygon(${pts.join(', ')})`
+}
+
+/**
  * 给定绝对帧与轨道的转场窗口，算出可见性覆盖（纯函数，组件只消费）。
  * - `fade` / `dissolve`：只改 opacity（`to` 由 0→1，`from` 由 1→0）；
  * - `slide`：opacity 同上，并叠加 12% 画布宽的水平位移（`to` 从右入、`from` 向左出）；
  * - `zoom`：opacity 同上，并叠加轻微缩放（`to` 0.92→1，`from` 1→0.96）；
  * - `wipeLeft` / `wipeRight`（A4）：硬边推进，用 `clipPath: inset(...)`，opacity 保持 1
  *   （遮罩本身就是遮挡，再乘 opacity 会出现"半透明条带"）；
- * - `clock`（A4）：`conic-gradient` 从 12 点方向扫描，`to` 逐步揭开、`from` 逐步遮住；
- * - `flipX`（A4）：`rotateY` 翻面（`to` 90°→0、`from` 0→-90°），前 1/4 段压 opacity
- *   避免两张片子同时可见的重影。
+ * - `clock`（A4）：clip-path polygon 扇形从 12 点方向扫描（原 conic-gradient mask 在
+ *   web-renderer 被整字段无视 ⇒ 整层突现），`to` 逐步揭开、`from` 逐步遮住；
+ * - `flipX`（A4）：2D 压扁翻面（`to` scaleX 0→1、`from` 1→0）。原实现是 rotateY+perspective，
+ *   但 web-renderer 不读 perspective() ⇒ rotateY 退化成压扁穿越黑帧（能力基准 #09 T09 实测），
+ *   改为有意的压扁 swap：压到 0 的瞬间换面，无重影、无需压 opacity。
  * 窗口外不参与；多个窗口乘性叠加；opacity clamp 到 [0,1]。
  */
 export function transitionOverride(
@@ -349,7 +371,7 @@ export function transitionOverride(
   let scale = 1
   let clipPath = ''
   let maskImage = ''
-  let rotateY = 0
+  let scaleXPercent = 1
   for (const window of windows) {
     if (window.durationInFrames <= 0) continue
     if (frame < window.startFrame || frame >= window.startFrame + window.durationInFrames) continue
@@ -396,13 +418,17 @@ export function transitionOverride(
         maskImage = incoming ? reveal : hide
       }
     } else if (window.effect === 'clock') {
-      const deg = (progress * 360).toFixed(2)
-      maskImage = incoming
-        ? `conic-gradient(#000 ${deg}deg, transparent 0deg)`
-        : `conic-gradient(transparent ${deg}deg, #000 0deg)`
+      const sweep = progress * 360
+      if (incoming) {
+        clipPath = clockFanPolygon(0, sweep)
+      } else if (sweep <= 0) {
+        clipPath = '' // 还没开始吃 ⇒ 全圆可见，等于不裁（保持恒等快路径可用）
+      } else {
+        clipPath = clockFanPolygon(sweep, 360)
+      }
     } else if (window.effect === 'flipX') {
-      rotateY = incoming ? 90 * (1 - progress) : -90 * progress
-      opacity *= incoming ? Math.min(1, progress * 2) : Math.min(1, (1 - progress) * 2)
+      // 压扁翻面：前半程 outgoing 1→0，后半程 incoming 0→1，压到 0 的瞬间换面。
+      scaleXPercent *= incoming ? Math.sin(progress * (Math.PI / 2)) : Math.cos(progress * (Math.PI / 2))
     } else {
       opacity *= incoming ? progress : 1 - progress
     }
@@ -414,7 +440,7 @@ export function transitionOverride(
     scale,
     clipPath,
     maskImage,
-    rotateY,
+    scaleXPercent,
   }
 }
 

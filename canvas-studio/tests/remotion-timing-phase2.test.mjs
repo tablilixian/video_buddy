@@ -267,19 +267,32 @@ test('transitionOverride：wipeLeft / wipeRight 用 clipPath 硬边裁切，中�
   assert.match(mirrored.clipPath, /inset\(0 0 0 50\.000%\)/, 'wipeRight 方向相反')
 })
 
-test('transitionOverride：clock 用 conic-gradient 扇形扫描', () => {
+test('transitionOverride：clock 用 clip-path polygon 扇形扫描（conic mask 在 web-renderer 被无视）', () => {
   const incoming = transitionOverride(110, [windowOf('clock', 'to')])
-  assert.match(incoming.maskImage, /^conic-gradient\(#000 180\.00deg, transparent 0deg\)$/, '中点扫过 180°')
+  assert.match(incoming.clipPath, /^polygon\(50% 50%/, '中点：扇形从圆心出发')
+  assert.match(incoming.clipPath, /-?[0-9.]+% -?[0-9.]+%\)$/, '扇形以弧点收尾')
+  assert.equal(incoming.maskImage, '', 'clock 不再走 mask（conic 会被渲染器整字段无视）')
   const outgoing = transitionOverride(110, [windowOf('clock', 'from')])
-  assert.match(outgoing.maskImage, /^conic-gradient\(transparent 180\.00deg, #000 0deg\)$/, 'outgoing 反向遮罩')
+  assert.match(outgoing.clipPath, /^polygon\(50% 50%/, 'outgoing 可见扇形随 progress 收缩')
+  // 中点：incoming 扫过 0→180°，outgoing 剩 180→360°，两侧拼起来是整圆
+  assert.notEqual(incoming.clipPath, outgoing.clipPath, '两侧扇形互补不重合')
+  // 起点帧：incoming 全隐（所有弧点重合在 12 点方向）、outgoing 全显（不裁）
+  const atStartTo = transitionOverride(100, [windowOf('clock', 'to')])
+  assert.equal(atStartTo.clipPath, 'polygon(50% 50%, 50.00% -100.00%, 50.00% -100.00%, 50.00% -100.00%)', 'sweep=0 ⇒ 弧点全部重合在 12 点方向（零面积 = 不可见）')
+  const atStartFrom = transitionOverride(100, [windowOf('clock', 'from')])
+  assert.equal(atStartFrom.clipPath, '', 'sweep=0 ⇒ outgoing 全圆可见（不裁）')
 })
 
-test('transitionOverride：flipX 用 rotateY 翻面，中点两侧都在换面', () => {
+test('transitionOverride：flipX 压扁翻面（perspective 不被 web-renderer 读取，降级 2D swap）', () => {
   const incoming = transitionOverride(110, [windowOf('flipX', 'to')])
-  assert.equal(incoming.rotateY, 45, 'incoming：90° → 0°，中点 45°')
+  closeTo(incoming.scaleXPercent, Math.sin(Math.PI / 4), 1e-12, 'incoming 中点 scaleX = sin(45°)')
   const outgoing = transitionOverride(110, [windowOf('flipX', 'from')])
-  assert.equal(outgoing.rotateY, -45, 'outgoing：0 → -90°，中点 -45°')
-  assert.ok(incoming.opacity >= 0 && incoming.opacity <= 1, 'opacity 必须留在 0–1')
+  closeTo(outgoing.scaleXPercent, Math.cos(Math.PI / 4), 1e-12, 'outgoing 中点 scaleX = cos(45°)')
+  assert.equal(incoming.opacity, 1, '压扁 swap 无重影，不再压 opacity')
+  assert.equal(outgoing.opacity, 1, 'outgoing 同理全可见')
+  // 终点附近：incoming 展开到 1，outgoing 压到 0
+  const nearEnd = transitionOverride(119, [windowOf('flipX', 'to')])
+  closeTo(nearEnd.scaleXPercent, Math.sin(19 * Math.PI / 40), 1e-12, 'incoming 末帧接近全显')
 })
 
 test('transitionOverride：老四种效果语义不变（窗口外恒等）', () => {
@@ -293,7 +306,8 @@ test('transitionOverride：老四种效果语义不变（窗口外恒等）', ()
     scale: 1,
     clipPath: '',
     maskImage: '',
-    rotateY: 0,
+    // flipX 降级为压扁翻面后，恒等位是 scaleXPercent=1（不再是 rotateY=0）。
+    scaleXPercent: 1,
   }, '窗口外必须是恒等串（老片逐像素不变的前提）')
 
   const fadeMid = transitionOverride(110, [windowOf('fade', 'to')])

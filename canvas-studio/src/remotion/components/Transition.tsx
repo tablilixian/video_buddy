@@ -5,7 +5,8 @@
  * 路线 B（CSR）约束：**不使用 `z-index`**，层叠一律靠 DOM 顺序（§7.6）。
  *
  * 二期 A4：除 opacity / translateX / scale 外，新增三种原语 ——
- * `clipPath`（wipeLeft / wipeRight）、`maskImage`（clock）、`rotateY`（flipX）。
+ * `clipPath`（wipeLeft / wipeRight / clock）、`maskImage`（软边 wipe，只认 linear-gradient）、
+ * `scaleXPercent`（flipX 的 2D 压扁翻面）。
  * 三者都是**按帧求值**的静态样式，绝不用 CSS `transition`/`@keyframes`
  * （逐帧截图走真实时钟 ⇒ 同一份 manifest 渲两次会不一样）。
  */
@@ -17,25 +18,24 @@ export const TransitionShell: React.FC<{ override: TrackTransitionOverride; chil
   override,
   children,
 }) => {
-  const { opacity, translateXPercent, translateYPercent, scale, clipPath, maskImage, rotateY } = override
+  const { opacity, translateXPercent, translateYPercent, scale, clipPath, maskImage, scaleXPercent } = override
   const identity =
     opacity === 1 && translateXPercent === 0 && translateYPercent === 0 && scale === 1 &&
-    clipPath === '' && maskImage === '' && rotateY === 0
+    clipPath === '' && maskImage === '' && scaleXPercent === 1
   if (identity) return <AbsoluteFill>{children}</AbsoluteFill>
-  // ⚠️ `perspective()` 必须写进 transform 串**且在 rotateY 之前** —— 写成元素的
-  // `perspective` 属性只对**子元素**生效，自己身上的 rotateY 会退化成"水平压扁"，
-  // 看起来像没有 3D。身份判据已在上面短路，老 manifest 不会走到这里。
+  // flipX 走 2D 压扁翻面：web-renderer 4.0.535 不读 transform 串里的 `perspective()`，
+  // rotateY 会退化成"压扁穿越黑帧"（能力基准 #09 T09 实测）⇒ 不再发 rotateY，
+  // 改由 timing.ts 直接给 scaleXPercent（有意压到 0 换面，渲染器白名单内）。身份判据已在上面短路。
   const translate = translateYPercent === 0
     ? `translateX(${translateXPercent}%)`
     : `translate(${translateXPercent}%, ${translateYPercent}%)`
-  const transform = `${translate} scale(${scale})${rotateY === 0 ? '' : ' perspective(1200px)'} rotateY(${rotateY}deg)`
+  const transform = `${translate} scale(${scale})${scaleXPercent === 1 ? '' : ` scaleX(${scaleXPercent})`}`
   return (
     <AbsoluteFill
       style={{
         opacity,
         transform,
         transformOrigin: 'center',
-        ...(rotateY === 0 ? {} : { transformStyle: 'preserve-3d' }),
         ...(clipPath === '' ? {} : { clipPath }),
         ...(maskImage === '' ? {} : { maskImage, WebkitMaskImage: maskImage }),
       }}

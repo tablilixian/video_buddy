@@ -77,7 +77,10 @@ export const FILE_WHITELIST = {
   'src/client/canvas/CanvasSurface.tsx': 1752,
   'src/client/project-store.ts': 1612,
   'src/projects.ts': 1575,
-  'src/remotion/timing.ts': 1315,
+  // 转场坏点修复（2026-10-31，能力基准 #09 收口）：clock 的 conic mask 在 web-renderer 被
+  // 整字段无视 ⇒ 换 clip-path polygon 扇形（clockFanPolygon +22 净行 + 注释），flipX 的
+  // perspective() 不被读取 ⇒ 降级 2D 压扁翻面（净 +3）。1315 → 1340 显式登记。
+  'src/remotion/timing.ts': 1340,
   'src/client/api.ts': 1268,
 }
 

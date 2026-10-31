@@ -10,6 +10,7 @@
  */
 import React from 'react'
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
+import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import { useFontFamilyStack } from './font-context.js'
@@ -27,16 +28,24 @@ function axisMax(values: readonly number[]): number {
 const DEFAULT_BAR_COLOR = '#4f9cf9'
 const DEFAULT_LINE_COLOR = '#ffb454'
 
-export const Chart: React.FC<{ track: ChartTrack }> = ({ track }) => {
+export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineData | null | undefined }> = ({
+  track,
+  timelineData,
+}) => {
   const frame = useCurrentFrame()
   const { width: canvasWidth } = useVideoConfig()
   const fontFamily = useFontFamilyStack()
   const anim = resolveAnimatedStyle(track, frame)
 
-  const { labels, values, unit = '', lineUnit = '' } = track
+  // 数据来源（A2）：source:'timeline' 时由 Root 传入推导数据，优先于内联字段。
+  const labels = timelineData?.labels ?? track.labels ?? []
+  const values = timelineData?.values ?? track.values ?? []
+  const lineValues = timelineData && track.variant === 'dual' ? timelineData.lineValues : track.lineValues
+  const unit = timelineData?.unit ?? track.unit ?? ''
+  const lineUnit = timelineData?.lineUnit ?? track.lineUnit ?? ''
   const n = labels.length
   const barMax = axisMax(values)
-  const lineMax = track.lineValues ? axisMax(track.lineValues) : 0
+  const lineMax = lineValues ? axisMax(lineValues) : 0
   const dur = Math.max(1, track.durationInFrames)
 
   // 入场时序（bench 实测参数按轨长归一）：柱子错峰 8 帧/根、26 帧长完；折线 30%→55% 揭示。
@@ -111,7 +120,7 @@ export const Chart: React.FC<{ track: ChartTrack }> = ({ track }) => {
               {formatValue(t * barMax)}
               {unit}
             </div>
-            {track.lineValues ? (
+            {lineValues ? (
               <div
                 style={{
                   position: 'absolute',
@@ -192,7 +201,7 @@ export const Chart: React.FC<{ track: ChartTrack }> = ({ track }) => {
         })}
 
         {/* 折线（dual）：右轴量纲，clip inset 从左往右揭示 */}
-        {track.lineValues ? (
+        {lineValues ? (
           <svg
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
@@ -210,14 +219,14 @@ export const Chart: React.FC<{ track: ChartTrack }> = ({ track }) => {
               stroke={lineColor}
               strokeWidth={2.2}
               vectorEffect="non-scaling-stroke"
-              points={track.lineValues
+              points={lineValues
                 .map(
                   (v, i) =>
                     `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(2)},${(100 - (v / lineMax) * 100).toFixed(2)}`,
                 )
                 .join(' ')}
             />
-            {track.lineValues.map((v, i) => (
+            {lineValues.map((v, i) => (
               <circle
                 key={i}
                 cx={((i + 0.5) / Math.max(1, n)) * 100}

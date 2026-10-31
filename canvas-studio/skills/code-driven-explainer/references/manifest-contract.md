@@ -340,6 +340,7 @@
 
 | 字段 | 缺省 | 说明 |
 | --- | --- | --- |
+| `source` | 内联数据 | `'timeline'` = 从 manifest 的 video 轨真值推导（按时间线排序，值 = ffprobe 校正后的每镜时长秒数；`dual` 折线 = 累计时长，labels 自动 `镜1..n`，单位秒）。**与内联 labels/values/lineValues 互斥**；无 video 轨拒收 |
 | `variant` | 必填 | `bars` 柱状图 / `dual` 柱状+折线双轴 |
 | `labels` | 必填 | 类目标签数组（1–32 项，与 `values` 一一对应） |
 | `values` | 必填 | 柱数据（非负有限数，至少一个 > 0） |

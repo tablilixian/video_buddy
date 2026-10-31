@@ -73,7 +73,9 @@ export const FILE_WHITELIST = {
   // caption 轨（同日，#05 收口）：CaptionTrack 接口 + 字段白名单 + 校验分支
   // （words 形状/双重播放告警）+ 音轨构成计入 ≈ +104 净行。2002 → 2106 显式登记。
   // A1 audioViz 分频段（同日，#06 收口）：bandSplit/bandColors 校验 +29。2106 → 2135。
-  'src/remotion/manifest.ts': 2135,
+  // A2 chart source:'timeline'（同日）：校验分支重构 + source 互斥/无 video 拒收 +22。
+  // 2135 → 2157。
+  'src/remotion/manifest.ts': 2157,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。

@@ -104,3 +104,41 @@ test('chart：内容轨身份 —— box 生效、animate/exit 通用字段可�
   assert.equal(v.ok, true, JSON.stringify(v.errors))
   assert.ok(!v.errors.some((e) => e.includes('.box 只支持')), 'chart 是内容轨，box 不应被拒')
 })
+
+// ── A2（2026-10-31）：source:'timeline' 数据来源 ────────────────────────────
+
+test('chart source:timeline：合法放行零告警（manifest 无需内联数据）', () => {
+  const v = validateManifest(base({
+    meta: { title: '图表契约', width: 1280, height: 720, fps: 30, durationInFrames: 360, lint: 'off' },
+    tracks: [
+      shot('a', 0, 240),
+      shot('b', 240, 120),
+      { id: 'c1', type: 'chart', variant: 'dual', source: 'timeline', startFrame: 0, durationInFrames: 360 },
+    ],
+  }))
+  assert.equal(v.ok, true, JSON.stringify(v.errors))
+  assert.deepEqual(v.warnings, [], JSON.stringify(v.warnings))
+})
+
+test('chart source:timeline：与内联数据互斥；无 video 轨拒收；非法值报错', () => {
+  const withVideo = [shot('a', 0, 240)]
+  const conflict = validateManifest(base({
+    tracks: [...withVideo, { id: 'c1', type: 'chart', variant: 'dual', source: 'timeline', labels: ['a'], values: [1], startFrame: 0, durationInFrames: 240 }],
+  }))
+  assert.ok(conflict.errors.some((e) => e.includes("source:'timeline' 与内联 labels/values/lineValues 互斥")))
+
+  const noVideo = validateManifest(base({
+    tracks: [{ id: 't', type: 'textCard', variant: 'title', text: 'x', startFrame: 0, durationInFrames: 300 },
+      { id: 'c1', type: 'chart', variant: 'bars', source: 'timeline', startFrame: 0, durationInFrames: 300 }],
+  }))
+  assert.ok(noVideo.errors.some((e) => e.includes('需要 manifest 里至少一条 video 轨')))
+
+  const badValue = validateManifest(base({
+    tracks: [...withVideo, { id: 'c1', type: 'chart', variant: 'bars', source: 'magic', startFrame: 0, durationInFrames: 240 }],
+  }))
+  assert.ok(badValue.errors.some((e) => e.includes(".source 只允许 'timeline'")))
+})
+
+function shot(id, startFrame, durationInFrames) {
+  return { id, type: 'video', src: `/canvas-studio/assets/p1/${id}.mp4`, startFrame, durationInFrames }
+}

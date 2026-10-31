@@ -555,6 +555,14 @@ export interface AudioVizTrack extends BaseTrack {
  */
 export interface ChartTrack extends BaseTrack {
   type: 'chart'
+  /**
+   * 数据来源（A2，2026-10-31）：
+   * - 缺省 = 内联 `labels` / `values`（必填，当前唯一老写法）；
+   * - `'timeline'` = 从 manifest 的 video 轨真值推导（按 startFrame 排序，值 = ffprobe
+   *   校正后的每镜时长秒数；`dual` 的折线 = 累计时长）。**数据来源必须唯一**：
+   *   该模式下再内联 labels/values/lineValues 会被拒收。
+   */
+  source?: 'timeline'
   /** 图表形态：`bars` = 柱状图；`dual` = 柱状 + 折线双轴（`lineValues` 必填）。 */
   variant: 'bars' | 'dual'
   /** 类目标签（与 `values` 一一对应；上限 32 项）。 */
@@ -778,7 +786,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
-  chart: new Set(['variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
+  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
@@ -1592,42 +1600,56 @@ export function validateManifest(input: unknown): ManifestValidation {
         if (variant !== 'bars' && variant !== 'dual') {
           errors.push(`${at}.variant 只允许 bars / dual（当前：${String(variant)}）`)
         }
-        const labels = track.labels
-        if (
-          !Array.isArray(labels) || labels.length === 0 || labels.length > 32 ||
-          !labels.every((l) => isNonEmptyString(l))
-        ) {
-          errors.push(`${at}.labels 必须是非空字符串数组（1–32 项，与 values 一一对应）`)
+        // A2（2026-10-31）：数据来源 —— 'timeline' 从 video 轨真值推导，与内联互斥。
+        const timelineMode = track.source === 'timeline'
+        if (track.source !== undefined && !timelineMode) {
+          errors.push(`${at}.source 只允许 'timeline'（缺省 = 内联 labels / values）`)
         }
-        const values = track.values
-        const valuesOk =
-          Array.isArray(values) && values.length > 0 &&
-          values.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-        if (!valuesOk) {
-          errors.push(`${at}.values 必须是非负有限数值数组（柱高数据，不允许负值）`)
-        } else if (Array.isArray(labels) && labels.length > 0 && Array.isArray(values) && values.length !== labels.length) {
-          errors.push(`${at}.values 长度（${String(Array.isArray(values) ? values.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
-        } else if (Array.isArray(values) && values.every((v) => v === 0)) {
-          errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
-        }
-        if (track.lineValues !== undefined) {
-          if (variant === 'bars') {
-            warnings.push(`${at} 是 variant:'bars'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
-          } else {
-            const lv = track.lineValues
-            const lineOk =
-              Array.isArray(lv) && lv.length > 0 &&
-              lv.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-            if (!lineOk) {
-              errors.push(`${at}.lineValues 必须是非负有限数值数组（折线数据）`)
-            } else if (Array.isArray(labels) && labels.length > 0 && lv.length !== labels.length) {
-              errors.push(`${at}.lineValues 长度（${String(Array.isArray(lv) ? lv.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
-            } else if (Array.isArray(lv) && lv.every((v) => v === 0)) {
-              errors.push(`${at}.lineValues 不能全为 0`)
-            }
+        if (timelineMode) {
+          const inline = track.labels !== undefined || track.values !== undefined || track.lineValues !== undefined
+          if (inline) {
+            errors.push(`${at} 的 source:'timeline' 与内联 labels/values/lineValues 互斥（数据来源必须唯一）`)
+          } else if (!input.tracks.some((t) => isRecord(t) && t.type === 'video')) {
+            errors.push(`${at} 的 source:'timeline' 需要 manifest 里至少一条 video 轨（每镜时长真值）`)
           }
-        } else if (variant === 'dual') {
-          errors.push(`${at} 是 variant:'dual'，必须提供 lineValues（折线数据，长度同 labels）`)
+        } else {
+          const labels = track.labels
+          if (
+            !Array.isArray(labels) || labels.length === 0 || labels.length > 32 ||
+            !labels.every((l) => isNonEmptyString(l))
+          ) {
+            errors.push(`${at}.labels 必须是非空字符串数组（1–32 项，与 values 一一对应）`)
+          }
+          const values = track.values
+          const valuesOk =
+            Array.isArray(values) && values.length > 0 &&
+            values.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+          if (!valuesOk) {
+            errors.push(`${at}.values 必须是非负有限数值数组（柱高数据，不允许负值）`)
+          } else if (Array.isArray(labels) && labels.length > 0 && Array.isArray(values) && values.length !== labels.length) {
+            errors.push(`${at}.values 长度（${String(Array.isArray(values) ? values.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
+          } else if (Array.isArray(values) && values.every((v) => v === 0)) {
+            errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
+          }
+          if (track.lineValues !== undefined) {
+            if (variant === 'bars') {
+              warnings.push(`${at} 是 variant:'bars'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
+            } else {
+              const lv = track.lineValues
+              const lineOk =
+                Array.isArray(lv) && lv.length > 0 &&
+                lv.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+              if (!lineOk) {
+                errors.push(`${at}.lineValues 必须是非负有限数值数组（折线数据）`)
+              } else if (Array.isArray(labels) && labels.length > 0 && lv.length !== labels.length) {
+                errors.push(`${at}.lineValues 长度（${String(Array.isArray(lv) ? lv.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
+              } else if (Array.isArray(lv) && lv.every((v) => v === 0)) {
+                errors.push(`${at}.lineValues 不能全为 0`)
+              }
+            }
+          } else if (variant === 'dual') {
+            errors.push(`${at} 是 variant:'dual'，必须提供 lineValues（折线数据，长度同 labels）`)
+          }
         }
         for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor'] as const) {
           if (track[key] !== undefined && !isNonEmptyString(track[key])) {

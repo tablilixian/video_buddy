@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { AbsoluteFill, Composition, Sequence, continueRender, delayRender, useCurrentFrame } from 'remotion'
 import { fontFamilyStack, resolveFonts } from '../fonts.js'
+import { chartDataFromTimeline } from '../chart-data.js'
 import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { duckWindowsFromSubtitles, lookStyles, trackTransitionWindows, transitionOverride } from '../timing.js'
 import { AudioTrack } from './AudioTrack.js'
@@ -144,7 +145,7 @@ function usePrefetchMedia(manifest: CompositionManifest): void {
   }, [key, handle])
 }
 
-const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
+const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManifest }> = ({ track, manifest }) => {
   switch (track.type) {
     case 'video':
       return <VideoClip track={track} />
@@ -157,7 +158,8 @@ const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
     case 'audioViz':
       return <AudioViz track={track} />
     case 'chart':
-      return <Chart track={track} />
+      // A2：source:'timeline' 时由 manifest 真值推导数据（组件本身不接触 manifest）
+      return <Chart track={track} timelineData={track.source === 'timeline' ? chartDataFromTimeline(manifest, track) : undefined} />
     case 'caption':
       return <Caption track={track} />
     case 'transition':
@@ -184,7 +186,7 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
         {manifest.tracks.filter(isContentTrack).map((track) => (
           <Sequence key={track.id} from={track.startFrame} durationInFrames={Math.max(1, track.durationInFrames)}>
             <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
-              <TrackBody track={track} />
+              <TrackBody track={track} manifest={manifest} />
             </TransitionShell>
           </Sequence>
         ))}

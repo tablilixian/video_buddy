@@ -484,10 +484,14 @@ export interface TransitionTrack extends BaseTrack {
    * 作用于相邻两轨的转场类型。
    *
    * 老 4 种（`fade` / `slide` / `zoom` / `dissolve`）语义不变；二期 A4 新增
-   * `wipeLeft` / `wipeRight`（`clipPath` 硬边推进）、`clock`（`conic-gradient` 扫描）、
-   * `flipX`（`rotateY` 翻面）—— 全部按帧求值，**不用** CSS transition。
+   * `wipeLeft` / `wipeRight`（`clipPath` 硬边推进）、`clock`（polygon 扇形扫描）、
+   * `flipX`（2D 压扁翻面）—— 全部按帧求值，**不用** CSS transition。
+   * 能力基准 #09 收口（2026-10-31）新增三种无 WebGL 近似转场：`zoomBlur`（径向
+   * 模糊推近）/ `linearBlur`（方向模糊横移）/ `crossWarp`（水平挤压交换），
+   * 全部 transform + `filter: blur` 白名单内，参数为基准实测值。
    */
   effect: 'fade' | 'slide' | 'zoom' | 'dissolve' | 'wipeLeft' | 'wipeRight' | 'clock' | 'flipX'
+    | 'zoomBlur' | 'linearBlur' | 'crossWarp'
   /** 作用的源轨道 id（前一轨）。 */
   fromTrackId: string
   /** 作用的目标轨道 id（后一轨）。 */
@@ -608,6 +612,8 @@ const EFFECTS = new Set([
   'fade', 'slide', 'zoom', 'dissolve',
   // 二期 A4
   'wipeLeft', 'wipeRight', 'clock', 'flipX',
+  // 能力基准 #09 收口（2026-10-31）：无 WebGL 近似转场
+  'zoomBlur', 'linearBlur', 'crossWarp',
 ])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
 /** CV-334：缓动白名单（三期 W2-1 扩档；与 `AnimateEasing` 同域，非法值报错而非静默回退）。 */

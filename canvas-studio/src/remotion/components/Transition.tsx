@@ -6,7 +6,8 @@
  *
  * 二期 A4：除 opacity / translateX / scale 外，新增三种原语 ——
  * `clipPath`（wipeLeft / wipeRight / clock）、`maskImage`（软边 wipe，只认 linear-gradient）、
- * `scaleXPercent`（flipX 的 2D 压扁翻面）。
+ * `scaleXPercent`（flipX 的 2D 压扁翻面）+ `filter`（zoomBlur / linearBlur / crossWarp 的
+ * 运动模糊，能力基准 #09 收口）。
  * 三者都是**按帧求值**的静态样式，绝不用 CSS `transition`/`@keyframes`
  * （逐帧截图走真实时钟 ⇒ 同一份 manifest 渲两次会不一样）。
  */
@@ -18,10 +19,10 @@ export const TransitionShell: React.FC<{ override: TrackTransitionOverride; chil
   override,
   children,
 }) => {
-  const { opacity, translateXPercent, translateYPercent, scale, clipPath, maskImage, scaleXPercent } = override
+  const { opacity, translateXPercent, translateYPercent, scale, clipPath, maskImage, scaleXPercent, filter } = override
   const identity =
     opacity === 1 && translateXPercent === 0 && translateYPercent === 0 && scale === 1 &&
-    clipPath === '' && maskImage === '' && scaleXPercent === 1
+    clipPath === '' && maskImage === '' && scaleXPercent === 1 && filter === ''
   if (identity) return <AbsoluteFill>{children}</AbsoluteFill>
   // flipX 走 2D 压扁翻面：web-renderer 4.0.535 不读 transform 串里的 `perspective()`，
   // rotateY 会退化成"压扁穿越黑帧"（能力基准 #09 T09 实测）⇒ 不再发 rotateY，
@@ -38,6 +39,7 @@ export const TransitionShell: React.FC<{ override: TrackTransitionOverride; chil
         transformOrigin: 'center',
         ...(clipPath === '' ? {} : { clipPath }),
         ...(maskImage === '' ? {} : { maskImage, WebkitMaskImage: maskImage }),
+        ...(filter === '' ? {} : { filter }),
       }}
     >
       {children}

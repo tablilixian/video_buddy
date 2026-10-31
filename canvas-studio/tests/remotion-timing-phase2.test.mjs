@@ -295,6 +295,29 @@ test('transitionOverride：flipX 压扁翻面（perspective 不被 web-renderer 
   closeTo(nearEnd.scaleXPercent, Math.sin(19 * Math.PI / 40), 1e-12, 'incoming 末帧接近全显')
 })
 
+test('transitionOverride：zoomBlur / linearBlur / crossWarp 三近似转场（能力基准 #09 收口）', () => {
+  const zbIn = transitionOverride(110, [windowOf('zoomBlur', 'to')])
+  closeTo(zbIn.scale, 1.175, 1e-12, 'zoomBlur 中点 B scale = 1.35 − 0.35×0.5')
+  assert.equal(zbIn.opacity, 0.5)
+  assert.equal(zbIn.filter, 'blur(12.00px)', '径向模糊中点 24px 的一半')
+  const zbOut = transitionOverride(110, [windowOf('zoomBlur', 'from')])
+  closeTo(zbOut.scale, 1.175, 1e-12, 'outgoing A 放大半程同为 1.175')
+  assert.equal(zbOut.filter, 'blur(12.00px)')
+
+  const lbIn = transitionOverride(110, [windowOf('linearBlur', 'to')])
+  assert.equal(lbIn.translateXPercent, 15, 'linearBlur 中点 B 还剩 15% 位移（30% × 0.5）')
+  assert.equal(lbIn.filter, 'blur(10.00px)')
+  const lbOut = transitionOverride(110, [windowOf('linearBlur', 'from')])
+  assert.equal(lbOut.translateXPercent, -15, 'outgoing 向左糊出')
+
+  const cwIn = transitionOverride(110, [windowOf('crossWarp', 'to')])
+  closeTo(cwIn.scaleXPercent, 0.5, 1e-12, 'crossWarp 中点 B 压到半宽')
+  assert.equal(cwIn.filter, 'blur(8.00px)')
+  assert.equal(cwIn.opacity, 0.5)
+
+  assert.equal(transitionOverride(0, []).filter, '', '窗口外 filter 必须为空串（恒等）')
+})
+
 test('transitionOverride：老四种效果语义不变（窗口外恒等）', () => {
   const identity = transitionOverride(0, [])
   assert.deepEqual(identity, {
@@ -308,6 +331,8 @@ test('transitionOverride：老四种效果语义不变（窗口外恒等）', ()
     maskImage: '',
     // flipX 降级为压扁翻面后，恒等位是 scaleXPercent=1（不再是 rotateY=0）。
     scaleXPercent: 1,
+    // 三近似转场（#09 收口）新增的运动模糊：恒等 = 空串。
+    filter: '',
   }, '窗口外必须是恒等串（老片逐像素不变的前提）')
 
   const fadeMid = transitionOverride(110, [windowOf('fade', 'to')])

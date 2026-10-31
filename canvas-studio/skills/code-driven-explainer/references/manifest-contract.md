@@ -272,7 +272,7 @@
   "effect": "fade", "fromTrackId": "clip-a", "toTrackId": "clip-b" }
 ```
 
-`effect` 取 `fade` / `slide` / `zoom` / `dissolve` / `wipeLeft` / `wipeRight` / `clock` / `flipX`：
+`effect` 取 `fade` / `slide` / `zoom` / `dissolve` / `wipeLeft` / `wipeRight` / `clock` / `flipX` / `zoomBlur` / `linearBlur` / `crossWarp`：
 
 | effect | 观感 |
 | --- | --- |
@@ -281,7 +281,10 @@
 | `zoom` | 推近切换 |
 | `wipeLeft` / `wipeRight` | **硬边擦除**（幕布左→右 / 右→左推进）—— 章节切换、时间线推进 |
 | `clock` | **扇形扫描**（钟表指针式转场）—— 数据揭晓、循环感 |
-| `flipX` | **横向翻面**（3D 翻转）—— 前后对照、卡片翻页 |
+| `flipX` | **2D 压扁翻面**（水平压到 0 换面再展开）—— 前后对照、卡片翻页（CSR 下无真 3D 透视，已按渲染器能力降级） |
+| `zoomBlur` | **径向模糊推近**（A 放大糊出、B 糊入）—— 强调揭晓、冲击切换 |
+| `linearBlur` | **方向模糊横移**（A 向左糊出、B 从右糊入）—— 高速运动感换段 |
+| `crossWarp` | **水平挤压交换**（中线对折 warp 观感）—— 快节奏换镜头 |
 
 `fromTrackId` / `toTrackId` 必须指向**真实存在且互不相同**的两条轨道；两轨**必须重叠**——首尾相接（无重叠）会退化为硬切（warning），完全不相交会直接报错。
 

@@ -275,6 +275,8 @@ export function reconcileManifestVideoDurations(
 export type TransitionEffect =
   | 'fade' | 'slide' | 'zoom' | 'dissolve'
   | 'wipeLeft' | 'wipeRight' | 'clock' | 'flipX'
+  // 能力基准 #09（2026-10-30）：无 WebGL 近似转场 —— 全部 transform+filter 白名单内。
+  | 'zoomBlur' | 'linearBlur' | 'crossWarp'
 
 /** 一条转场相对某个轨道的角色：该轨是转场的 `from`（淡出）还是 `to`（淡入）。 */
 export interface TrackTransitionWindow {
@@ -309,6 +311,10 @@ export interface TrackTransitionOverride {
   /** `flipX` 的水平压扁（1 = 不压）。web-renderer 4.0.535 不读 `perspective()`，
    *  rotateY 会退化成"压扁穿越黑帧"（能力基准 #09 T09 实测）⇒ 有意降级为 2D 压扁翻面。 */
   scaleXPercent: number
+  /** `zoomBlur` / `linearBlur` / `crossWarp` 的运动模糊（空串 = 无）。多窗口叠加时
+   *  **后写覆盖**（与 clipPath / maskImage 同口径）—— blur 没有乘性合成，别在同帧叠两个
+   *  blur 类转场窗口。 */
+  filter: string
 }
 
 /** 收起一个轨道的全部转场窗口（来自 manifest 的 `transition` 轨）。 */
@@ -359,6 +365,9 @@ function clockFanPolygon(startDeg: number, endDeg: number): string {
  * - `flipX`（A4）：2D 压扁翻面（`to` scaleX 0→1、`from` 1→0）。原实现是 rotateY+perspective，
  *   但 web-renderer 不读 perspective() ⇒ rotateY 退化成压扁穿越黑帧（能力基准 #09 T09 实测），
  *   改为有意的压扁 swap：压到 0 的瞬间换面，无重影、无需压 opacity。
+ * - `zoomBlur` / `linearBlur` / `crossWarp`（能力基准 #09 收口，2026-10-31）：无 WebGL
+ *   近似转场，全部 transform + `filter: blur` 白名单内（#09 T10–T12 像素实证）。
+ *   参数取基准实测值（blur 24/20/16px 上限）；`filter` 多窗口后写覆盖。
  * 窗口外不参与；多个窗口乘性叠加；opacity clamp 到 [0,1]。
  */
 export function transitionOverride(
@@ -372,6 +381,7 @@ export function transitionOverride(
   let clipPath = ''
   let maskImage = ''
   let scaleXPercent = 1
+  let filter = ''
   for (const window of windows) {
     if (window.durationInFrames <= 0) continue
     if (frame < window.startFrame || frame >= window.startFrame + window.durationInFrames) continue
@@ -429,6 +439,39 @@ export function transitionOverride(
     } else if (window.effect === 'flipX') {
       // 压扁翻面：前半程 outgoing 1→0，后半程 incoming 0→1，压到 0 的瞬间换面。
       scaleXPercent *= incoming ? Math.sin(progress * (Math.PI / 2)) : Math.cos(progress * (Math.PI / 2))
+    } else if (window.effect === 'zoomBlur') {
+      // 径向模糊推近（近似 webgl-transition 的 zoomBlur）：A 放大糊出、B 从大到小糊入。
+      if (incoming) {
+        scale *= 1.35 - 0.35 * progress
+        filter = `blur(${((1 - progress) * 24).toFixed(2)}px)`
+        opacity *= progress
+      } else {
+        scale *= 1 + 0.35 * progress
+        filter = `blur(${(progress * 24).toFixed(2)}px)`
+        opacity *= 1 - progress
+      }
+    } else if (window.effect === 'linearBlur') {
+      // 方向模糊横移：A 向左糊出、B 从右糊入（方向固定 —— 需要其它方向用 slide 的 direction）。
+      if (incoming) {
+        translateXPercent += (1 - progress) * 30
+        filter = `blur(${((1 - progress) * 20).toFixed(2)}px)`
+        opacity *= progress
+      } else {
+        translateXPercent += -30 * progress
+        filter = `blur(${(progress * 20).toFixed(2)}px)`
+        opacity *= 1 - progress
+      }
+    } else if (window.effect === 'crossWarp') {
+      // 水平挤压交换：A 压扁糊出、B 从压扁展开（画面中线对折的 warp 观感）。
+      if (incoming) {
+        scaleXPercent *= Math.max(0.08, progress)
+        filter = `blur(${((1 - progress) * 16).toFixed(2)}px)`
+        opacity *= progress
+      } else {
+        scaleXPercent *= Math.max(0.08, 1 - progress)
+        filter = `blur(${(progress * 16).toFixed(2)}px)`
+        opacity *= 1 - progress
+      }
     } else {
       opacity *= incoming ? progress : 1 - progress
     }
@@ -441,6 +484,7 @@ export function transitionOverride(
     clipPath,
     maskImage,
     scaleXPercent,
+    filter,
   }
 }
 

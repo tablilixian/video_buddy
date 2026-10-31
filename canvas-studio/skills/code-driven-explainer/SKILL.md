@@ -59,7 +59,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 - **图片轨道**：默认 `fit: "kenburns"`（缓慢推近，零额外成本）；或加一条 `animate` 滑入。
 - **标题 / 数据卡 / 要点卡**（`title` / `dataCard` / `bullets`）：默认滑入 `animate`（`x:115→50` + `opacity:0→1`，`durationInFrames:18`，`easing:"easeOut"`），并显式写 `fadeFrames:0`。
-- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（fade / slide）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。
+- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（fade / slide / wipe / clock / zoomBlur 等 11 种，全表见 `references/manifest-contract.md`）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。数据揭晓优先 `clock`（扇形扫描）或 `zoomBlur`（径向模糊）；章节切换用 `wipe` 或 `crossWarp`。
 - **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；绕点转圈、路径描边生长这类**关系型运动**用 `orbit` / `shape:"path"`+`draw`（一行声明，别手算关键帧）；范式的选择见 `motion-patterns.md` §2。
 - **发光 / 描边 / 投影 / 虚化样式**：用 `fx`（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），不要试图用多层 shape + 透明度硬模拟。
 - **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。

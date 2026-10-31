@@ -80,7 +80,9 @@ export const FILE_WHITELIST = {
   // 转场坏点修复（2026-10-31，能力基准 #09 收口）：clock 的 conic mask 在 web-renderer 被
   // 整字段无视 ⇒ 换 clip-path polygon 扇形（clockFanPolygon +22 净行 + 注释），flipX 的
   // perspective() 不被读取 ⇒ 降级 2D 压扁翻面（净 +3）。1315 → 1340 显式登记。
-  'src/remotion/timing.ts': 1340,
+  // 同日批 2：三近似转场 zoomBlur/linearBlur/crossWarp（+44 净行：override.filter 字段 +
+  // 三个求值分支 + 注释），1340 → 1384 显式登记。
+  'src/remotion/timing.ts': 1384,
   'src/client/api.ts': 1268,
 }
 

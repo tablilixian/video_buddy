@@ -71,7 +71,9 @@ export const FILE_WHITELIST = {
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
-  'src/client/canvas/CanvasSurface.tsx': 1727,
+  // 批 2（同日真机迭代）：手势期 cv-auto 抑制 +22 净行（gesturing 态 + 滚轮去抖回落），
+  // 1727 → 1749 / func 1347 → 1368。
+  'src/client/canvas/CanvasSurface.tsx': 1749,
   'src/client/project-store.ts': 1612,
   'src/projects.ts': 1575,
   'src/remotion/timing.ts': 1315,
@@ -91,8 +93,8 @@ export const FUNC_WHITELIST = {
   'src/host-tools.ts#createStudioTools': { lines: 2436, note: '阶段 1 目录化（先搬 inspect 打样）' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
-  // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。
-  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1347, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
+  // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。
+  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1368, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
   'src/client/project-store.ts#createProjectStore': { lines: 990, note: 'P1：按域切 store 切片' },
   'src/errors/catalog.ts#SPECS': { lines: 990, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
   // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。

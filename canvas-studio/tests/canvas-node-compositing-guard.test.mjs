@@ -83,6 +83,19 @@ test('G1-⑦：合并器收口 —— onPointerUp 与 onPointerCancel 都必须�
     'pointermove 必须落合并器（不再每事件同步应用）')
 })
 
+test('G1-⑧（批 2）：手势期 cv-auto 抑制在位 —— 缩小的「翻边界」失效风暴', () => {
+  // 缩小时大量节点跨越 content-visibility 的「相关」边界，每帧子树布局 + 瓦片
+  // 失效叠加在 scale 全量重光栅上；手势中可见区节点反正全要画。规则与接线都要在。
+  const block = ruleBlock(PERF_STYLES, '\\.csCanvasGesturing \\.csNode')
+  assert.ok(block.includes('content-visibility: visible'),
+    '.csCanvasGesturing .csNode 必须压回 content-visibility: visible（手势期抑制）')
+  assert.match(SURFACE, /gesturing \? 'csCanvasSurface csCanvasGesturing' : 'csCanvasSurface'/,
+    '表面必须按手势态挂 .csCanvasGesturing')
+  assert.match(SURFACE, /setGesturing\(true\)/, '手势开始（armPointer / 滚轮 apply）必须点亮手势态')
+  assert.ok((SURFACE.match(/setGesturing\(false\)/g) ?? []).length >= 2,
+    'onPointerUp / onPointerCancel / 滚轮去抖 至少两处回落')
+})
+
 /* 反向变异（仓库惯例：改源码 → 跑闸验红 → 还原，结果记台账，不进守卫本体）：
  *   M1 把 `will-change: transform;` 塞回 .csNode 规则块   → G1-① 红
  *   M2 canvas-cull.ts 的 margin 去掉 `/ view.scale`       → G2-② 红

@@ -36,6 +36,8 @@ const WHEEL_ZOOM_DIVISOR = 800
 interface WheelFrame { x: number; y: number; logFactor: number }
 const mergeWheelFrame = (prev: WheelFrame, next: WheelFrame): WheelFrame =>
   ({ x: next.x, y: next.y, logFactor: prev.logFactor + next.logFactor })
+/** CV-384 批 2：滚轮没有手势终点事件（无 wheelend），手势态用它去抖回落。 */
+const WHEEL_IDLE_GESTURE_MS = 200
 /**
  * CV-286：空白「单击」清选的位移阈值（|dx|+|dy| 路径累计，屏幕 px）。
  * 比 3px 拖拽阈值宽一档 —— 2026-09-13 验收教训是「零容忍阈值让肉眼上的
@@ -462,6 +464,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       apply: frame => { applyPointerMoveRef.current(frame.x, frame.y) },
     })
   }
+  // CV-384 批 2：手势进行中标记（渲染态）—— 驱动 `.csCanvasGesturing`（手势期
+  // 压掉节点级 cv-auto，见 styles-canvas-perf.ts：缩小时节点翻越「相关」边界的
+  // 每帧布局+瓦片失效是 tile 告警的叠加源）。滚轮没有终点事件，用去抖计时回落。
+  const [gesturing, setGesturing] = useState(false)
+  const wheelIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
@@ -526,6 +533,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 捕获的必须是终生不变的实例。这三个都只碰 gesture.current / containerRef。
   const armPointer = useCallback((event: React.PointerEvent): void => {
     gesture.current = { ...gesture.current, pointerId: event.pointerId, captured: false }
+    // CV-384 批 2：四类指针手势（平移/拖节点/缩放/连线）都在这里汇聚 ——
+    // 手势态点亮 .csCanvasGesturing。
+    setGesturing(true)
   }, [])
   /** CV-071：首次实际移动时才真正捕获（纯点击/双击全程不捕获，dblclick 正常）。 */
   const ensureCaptured = useCallback((): void => {
@@ -612,7 +622,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   if (wheelCoalescerRef.current === null) {
     wheelCoalescerRef.current = createFrameCoalescer({
       merge: mergeWheelFrame,
-      apply: frame => { zoomAround(frame.x, frame.y, Math.exp(frame.logFactor)) },
+      apply: frame => {
+        zoomAround(frame.x, frame.y, Math.exp(frame.logFactor))
+        // CV-384 批 2：滚轮手势态点亮 + 去抖回落（停 200ms 才算手势结束）。
+        setGesturing(true)
+        if (wheelIdleTimerRef.current !== null) clearTimeout(wheelIdleTimerRef.current)
+        wheelIdleTimerRef.current = setTimeout(() => {
+          wheelIdleTimerRef.current = null
+          // 指针手势可能在滚轮去抖窗口内接棒 —— 只有真空闲才回落。
+          if (gesture.current.mode === 'none') setGesturing(false)
+        }, WHEEL_IDLE_GESTURE_MS)
+      },
     })
   }
 
@@ -1178,6 +1198,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     setSpotDragIds(null)
     releasePointer()
     gesture.current = { mode: 'none', startX: 0, startY: 0 }
+    // CV-384 批 2：手势态收档（滚轮去抖计时器若还挂着，回调里的 mode 守卫会放行这次回落）。
+    setGesturing(false)
   }
 
   // CR-063：派生数组用 useMemo——nodes 引用稳定时（非拖拽的无关重渲染）不再
@@ -1408,7 +1430,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   return (
     <div
-      className="csCanvasSurface"
+      className={gesturing ? 'csCanvasSurface csCanvasGesturing' : 'csCanvasSurface'}
       ref={containerRef}
       onPointerDown={onSurfacePointerDown}
       onPointerMove={onPointerMove}
@@ -1441,6 +1463,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         setSpotDragIds(null)
         releasePointer()
         gesture.current = { mode: 'none', startX: 0, startY: 0 }
+        setGesturing(false)
       }}
       onPointerLeave={() => {
         if (gesture.current.mode === 'link') {

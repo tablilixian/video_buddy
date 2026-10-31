@@ -28,6 +28,15 @@ const CANVAS_PERF_STYLES = `
 .csNodeDragging {
   will-change: transform;
 }
+
+/* CV-384 批 2（真机反馈：拖动改善、缩小仍有 tile 告警）：手势进行中临时关掉
+   节点级 cv-auto。缩小时大量节点跨越「相关」边界，每帧子树布局 + 瓦片失效
+   叠加在 scale 驱动的全量重光栅上；手势中可见区内节点反正全要画，cv-auto
+   只剩失效成本。滚轮停 200ms / 指针松手回落（.csCanvasGesturing 由
+   CanvasSurface 的手势态挂）。 */
+.csCanvasGesturing .csNode {
+  content-visibility: visible;
+}
 `
 
 let installed = false

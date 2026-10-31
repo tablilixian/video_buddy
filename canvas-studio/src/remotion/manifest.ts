@@ -25,6 +25,7 @@ import type { StudioAudioComposition } from '../contracts/canvas.js'
 import { compositionFromPresence, compositionFromTimeline } from '../audio-timeline.js'
 import { timelineFromManifestAudio } from '../audio-compose.js'
 import { formatMotionLint, lintMotion } from './motion-lint.js'
+import { countSpokenChars } from './word-timing.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
@@ -98,7 +99,7 @@ export interface ManifestLook {
   grain?: number
 }
 
-/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表。 */
+/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕。 */
 export type CompositionTrack =
   | VideoClipTrack
   | ImageClipTrack
@@ -107,6 +108,7 @@ export type CompositionTrack =
   | TransitionTrack
   | AudioVizTrack
   | ChartTrack
+  | CaptionTrack
 
 export interface BaseTrack {
   /**
@@ -565,6 +567,36 @@ export interface ChartTrack extends BaseTrack {
 }
 
 /**
+ * 能力基准 #05 收口（2026-10-31）：**词级字幕（karaoke）**轨 —— 单句一条轨。
+ *
+ * `src` 为该句 TTS mp3（本轨自播），`text` 为同步文本。词级时间戳：`words` 显式声明
+ * （帧，外部对齐数据的即插即用口）或缺省走能量谷推导（`word-timing.ts`，±1–3 帧）。
+ * 与 `textCard` 的句级字幕**并存不替代**：句级硬切走 textCard，逐字卡拉OK走本轨。
+ */
+export interface CaptionTrack extends BaseTrack {
+  type: 'caption'
+  /** 该句旁白音频 URL（本轨自播；同源约束同 `tracks[].src`）。 */
+  src: string
+  /** 同步文本（单句；标点不参与切分，骑在前后字间隙上）。 */
+  text: string
+  /**
+   * 显式词级时间戳（帧，**可选**）—— 与文本的口播字符（非标点）按顺序一一对应；
+   * 不写 = 能量谷推导。后端将来提供词级时间戳时直接填这里。
+   */
+  words?: { text: string; from: number; to: number }[]
+  /** 字号（px，缺省 = 画布高 × 0.11，bench 实测 120px@1080）。 */
+  fontSize?: number
+  /** 折行最大宽度（占画布宽百分比，缺省 66 —— bench 的 1280px@1920）。 */
+  widthPercent?: number
+  /** 已读字颜色（缺省白）。 */
+  color?: string
+  /** 当前字颜色（缺省青 #5ad2ff + 辉光）。 */
+  activeColor?: string
+  /** 未读字颜色（缺省 28% 白）。 */
+  dimColor?: string
+}
+
+/**
  * O-10：**单条旁白**（多句旁白各占一段时间轴）。
  *
  * 真机症状：三句旁白要落在 2.60 / 7.07 / 11.90 秒，而 `voiceOverUrl` 只收一个文件 ——
@@ -632,7 +664,7 @@ export interface ManifestValidation {
   warnings: string[]
 }
 
-const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart'])
+const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption'])
 const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
@@ -738,6 +770,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient']),
   chart: new Set(['variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
+  caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
@@ -1574,6 +1607,72 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         break
       }
+      case 'caption': {
+        if (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src)) {
+          errors.push(`${at}.src 必须是 ${ASSET_URL_PREFIX} 开头的同源资产 URL（或以 / 开头的绝对路径，须位于本项目资产目录内）`)
+        }
+        if (!isNonEmptyString(track.text)) {
+          errors.push(`${at}.text 必须是非空字符串（单句同步文本）`)
+        } else if (track.text.includes('\n')) {
+          errors.push(`${at}.text 不应含换行（单句一条 caption 轨；折行由渲染层按宽度自动做）`)
+        }
+        // 双重播放告警：caption 轨自播旁白，同一 src 再挂 audio.voiceOver 会叠两次人声。
+        const audio0 = input.audio
+        if (isRecord(audio0) && isNonEmptyString(track.src)) {
+          const dup = (isNonEmptyString(audio0.bgmUrl) && audio0.bgmUrl === track.src) ||
+            (isNonEmptyString(audio0.voiceOverUrl) && audio0.voiceOverUrl === track.src) ||
+            (Array.isArray(audio0.voiceOver) && audio0.voiceOver.some((v) => isRecord(v) && v.src === track.src))
+          if (dup) {
+            warnings.push(`${at}(${String(id)}) 的 src 同时出现在 audio.voiceOver/bgmUrl —— caption 轨自带播放，会双重人声；从 audio 里去掉这条 src`)
+          }
+        }
+        const spokenCount = isNonEmptyString(track.text) ? countSpokenChars(track.text) : 0
+        if (track.words !== undefined) {
+          const words = track.words
+          if (!Array.isArray(words)) {
+            errors.push(`${at}.words 必须是数组（[{text,from,to}]，与口播字符按顺序一一对应）`)
+          } else {
+            if (spokenCount > 0 && words.length !== spokenCount) {
+              errors.push(`${at}.words 长度（${String(words.length)}）必须与口播字符数（${String(spokenCount)}，不含标点）一致`)
+            }
+            words.forEach((w, i) => {
+              if (!isRecord(w) || !isNonEmptyString(w.text)) {
+                errors.push(`${at}.words[${String(i)}].text 必须是非空字符串`)
+                return
+              }
+              for (const key of ['from', 'to'] as const) {
+                if (typeof w[key] !== 'number' || !Number.isFinite(w[key]) || w[key] < 0) {
+                  errors.push(`${at}.words[${String(i)}].${key} 必须是非负有限数（帧）`)
+                }
+              }
+              if (typeof w.from === 'number' && typeof w.to === 'number' && w.from > w.to) {
+                errors.push(`${at}.words[${String(i)}].from 不能大于 to`)
+              }
+            })
+            const sorted = words.every((w, i) =>
+              i === 0 || !isRecord(words[i - 1]) ||
+              (typeof (words[i - 1] as { from?: unknown }).from === 'number' &&
+                typeof (w as { from?: unknown }).from === 'number' &&
+                (words[i - 1] as { from: number }).from <= (w as { from: number }).from)
+            )
+            if (words.length > 1 && !sorted) {
+              warnings.push(`${at}.words 未按 from 升序 —— 高亮推进会跳字，建议按顺序给`)
+            }
+          }
+        }
+        if (track.fontSize !== undefined && (typeof track.fontSize !== 'number' || !Number.isFinite(track.fontSize) || track.fontSize < 8 || track.fontSize > 400)) {
+          errors.push(`${at}.fontSize 必须是 8–400 的数值（px）`)
+        }
+        if (track.widthPercent !== undefined && (typeof track.widthPercent !== 'number' || !Number.isFinite(track.widthPercent) || track.widthPercent < 10 || track.widthPercent > 100)) {
+          errors.push(`${at}.widthPercent 必须是 10–100 的数值（折行宽度占画布宽百分比）`)
+        }
+        for (const key of ['color', 'activeColor', 'dimColor'] as const) {
+          if (track[key] !== undefined && !isNonEmptyString(track[key])) {
+            errors.push(`${at}.${key} 必须是非空颜色字符串`)
+          }
+        }
+        break
+      }
       case 'transition':
         if (typeof track.effect !== 'string' || !EFFECTS.has(track.effect)) {
           errors.push(`${at}.effect 非法（${String(track.effect)}）`)
@@ -1794,7 +1893,8 @@ export function collectAnimationWindows(manifest: CompositionManifest): TrackAni
  * 保证成片无声，agent 无需再做任何音频验证。
  *
  * 统计口径：出声源 = 未 muted 的 video 轨 + `audio.bgmUrl` + `audio.voiceOverUrl`
- * + `audio.voiceOver[]` 条数。image/textCard/shape 天然无声，不计。
+ * + `audio.voiceOver[]` 条数 + `caption` 轨数（自播旁白）。image/textCard/shape/chart
+ * 天然无声，不计。
  */
 export interface ManifestAudioSummary {
   /** 声明了 `muted: true` 的 video 轨数。 */
@@ -1807,9 +1907,13 @@ export function summarizeManifestAudio(manifest: CompositionManifest): ManifestA
   let mutedVideoTracks = 0
   let audibleSources = 0
   for (const track of manifest.tracks) {
-    if (track.type !== 'video') continue
-    if (track.muted === true) mutedVideoTracks += 1
-    else audibleSources += 1
+    if (track.type === 'video') {
+      if (track.muted === true) mutedVideoTracks += 1
+      else audibleSources += 1
+    } else if (track.type === 'caption') {
+      // caption 轨自带旁白播放（<Audio>）—— 计入出声源
+      audibleSources += 1
+    }
   }
   const audio = manifest.audio
   if (audio !== undefined) {

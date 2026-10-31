@@ -1,6 +1,6 @@
 ---
 name: code-driven-explainer
-description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → list_shots / list_references 取素材真值 → 组装 manifest → ask_user_choice 给轨道时序预览（可调时长档位 / 字幕粒度 / 卡片取舍）→ render_composition。边界：不改写总纲的流程与审批语义；不做词级字幕对齐（后端 TTS 无时间戳数据源）；纯片段顺序拼接仍走 compose_video，不用本工具。
+description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → list_shots / list_references 取素材真值 → 组装 manifest → ask_user_choice 给轨道时序预览（可调时长档位 / 字幕粒度 / 卡片取舍）→ render_composition。边界：不改写总纲的流程与审批语义；词级卡拉OK走 `caption` 轨（能量谷推导或显式 words；句级硬切仍走 textCard）；纯片段顺序拼接仍走 compose_video，不用本工具。
 ---
 
 # 代码驱动科普成片（code-driven-explainer）
@@ -59,11 +59,11 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 - **图片轨道**：默认 `fit: "kenburns"`（缓慢推近，零额外成本）；或加一条 `animate` 滑入。
 - **标题 / 数据卡 / 要点卡**（`title` / `dataCard` / `bullets`）：默认滑入 `animate`（`x:115→50` + `opacity:0→1`，`durationInFrames:18`，`easing:"easeOut"`），并显式写 `fadeFrames:0`。
-- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（fade / slide / wipe / clock / zoomBlur 等 11 种，全表见 `references/manifest-contract.md`）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。数据揭晓优先 `clock`（扇形扫描）或 `zoomBlur`（径向模糊）；章节切换用 `wipe` 或 `crossWarp`。
+- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（11 种，选型表见 `references/manifest-contract.md`；数据揭晓用 `clock` / `zoomBlur`）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。
 - **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；绕点转圈、路径描边生长这类**关系型运动**用 `orbit` / `shape:"path"`+`draw`（一行声明，别手算关键帧）；范式的选择见 `motion-patterns.md` §2。
 - **发光 / 描边 / 投影 / 虚化样式**：用 `fx`（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），不要试图用多层 shape + 透明度硬模拟。
 - **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。
-- **数据对比 / 数值展示**：≥3 项的数据对比用 `chart` 轨（柱状/双轴，数据显式声明、柱高严格成比例）；2–4 个大数字用 `textCard` 的 `dataCard`。字段见 `references/manifest-contract.md` 的 chart 节。
+- **数据对比**：≥3 项用 `chart` 轨（柱状/双轴），2–4 个大数字用 `dataCard`；字段见 `references/manifest-contract.md`。
 
 **保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景——这条不变，不要给字幕卡加 `fadeFrames`。
 

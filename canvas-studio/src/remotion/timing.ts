@@ -1200,20 +1200,72 @@ export function waveformBarsSmoothed(
   frame: number,
   options: WaveformOptions,
 ): number[] {
-  const smoothing = Math.max(0, Math.min(0.9, options.smoothing ?? 0))
-  if (smoothing <= 0) return waveformBars(amplitudes, frame, options)
+  return smoothedBars((a, f) => waveformBars(a, f, options), amplitudes, frame, options.smoothing ?? 0)
+}
+
+/**
+ * 能力基准 #06 收口（2026-10-31）：**分频段**柱高 —— 第 i 根柱属于第
+ * `floor(i / bars × 段数)` 段，从该段的低通包络取样（取样契约与 `waveformBars`
+ * 完全同构：`(base + i) % total`）。包络由组件侧六级 box 低通级联产出
+ * （窗口随采样率缩放），每段按自身峰值归一。
+ * 输入是「段数个包络数组」；段内相邻柱采样相邻桶 ⇒ 区内起伏来自包络时序本身，
+ * 不需要额外的纹理扰动。空段包络返回 0（组件画基线，同 waveformBars 口径）。
+ */
+export function bandWaveformBars(
+  bandEnvelopes: readonly (readonly number[])[],
+  frame: number,
+  options: WaveformOptions,
+): number[] {
+  const count = Math.max(1, Math.min(128, Math.floor(options.bars)))
+  const gain = Number.isFinite(options.gain ?? 1) ? Math.max(0, Math.min(4, options.gain ?? 1)) : 1
+  const speed = Number.isFinite(options.speed ?? 1) ? Math.max(0, options.speed ?? 1) : 1
+  const base = (options.offset ?? 0) + Math.floor(frame * speed)
+  const bandCount = Math.max(1, bandEnvelopes.length)
+  const out: number[] = []
+  for (let i = 0; i < count; i += 1) {
+    const band = Math.min(bandCount - 1, Math.floor((i / count) * bandCount))
+    const env = bandEnvelopes[band] ?? []
+    const total = env.length
+    if (total === 0) {
+      out.push(0)
+      continue
+    }
+    const value = env[(((base + i) % total) + total) % total] ?? 0
+    out.push(clampUnit(Math.abs(value) * gain))
+  }
+  return out
+}
+
+/** `bandWaveformBars` 的平滑版（EMA 口径与 `waveformBarsSmoothed` 一致）。 */
+export function bandWaveformBarsSmoothed(
+  bandEnvelopes: readonly (readonly number[])[],
+  frame: number,
+  options: WaveformOptions,
+): number[] {
+  return smoothedBars((a, f) => bandWaveformBars(a, f, options), bandEnvelopes, frame, options.smoothing ?? 0)
+}
+
+/** 平滑公用的 EMA 循环：从 `frame − 30` 收敛（理由见 waveformBarsSmoothed 注释）。 */
+function smoothedBars<A>(
+  sample: (amplitudes: A, frame: number) => number[],
+  amplitudes: A,
+  frame: number,
+  smoothing: number,
+): number[] {
+  const s = Math.max(0, Math.min(0.9, smoothing))
+  if (s <= 0) return sample(amplitudes, frame)
   const target = Math.max(0, Math.floor(frame))
   const from = Math.max(0, target - 30)
   let state: number[] | null = null
   for (let f = from; f <= target; f += 1) {
-    const raw = waveformBars(amplitudes, f, options)
+    const raw = sample(amplitudes, f)
     if (state === null) {
       state = raw
       continue
     }
     state = state.map((value, index) => value * smoothing + (raw[index] ?? 0) * (1 - smoothing))
   }
-  return state ?? waveformBars(amplitudes, frame, options)
+  return state ?? sample(amplitudes, frame)
 }
 
 // ─────────────────── 三期 W4-2 · 文本动效预设（纯函数） ───────────────────

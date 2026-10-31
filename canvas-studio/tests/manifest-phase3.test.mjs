@@ -343,3 +343,31 @@ test('契约外字段：新增子对象（startAfter / colorShift / animOptions 
   // 只是 normalize 阶段的事），这里只要求「被点名」。
   assert.match(joined, /startAfter 含契约外字段 "delay"/)
 })
+
+
+// ── 能力基准 #06 收口（2026-10-31）：audioViz 分频段 ────────────────────────
+
+test('audioViz bandSplit：合法放行零告警；line/gradient 组合告警；bandColors 形状', () => {
+  const viz = (overrides = {}) => ({
+    id: 'w', type: 'audioViz', src: '/canvas-studio/assets/p1/bgm.mp3',
+    startFrame: 0, durationInFrames: 300, ...overrides,
+  })
+  const ok = validateManifest(base({ tracks: [viz({ bandSplit: true })] }))
+  assert.equal(ok.ok, true, JSON.stringify(ok.errors))
+  assert.deepEqual(ok.warnings, [], JSON.stringify(ok.warnings))
+
+  const line = validateManifest(base({ tracks: [viz({ bandSplit: true, mode: 'line' })] }))
+  assert.ok(line.warnings.some((w) => w.includes("mode:'line' 下不生效")))
+
+  const grad = validateManifest(base({ tracks: [viz({ bandSplit: true, gradient: { from: '#fff' } })] }))
+  assert.ok(grad.warnings.some((w) => w.includes('gradient 不生效')))
+
+  const tooFew = validateManifest(base({ tracks: [viz({ bandSplit: true, bandColors: ['#fff'] })] }))
+  assert.ok(tooFew.errors.some((e) => e.includes('2–6 个非空颜色字符串')))
+
+  const nonBool = validateManifest(base({ tracks: [viz({ bandSplit: 'yes' })] }))
+  assert.ok(nonBool.errors.some((e) => e.includes('.bandSplit 必须是布尔值')))
+
+  const clean = validateManifest(base({ tracks: [viz({ bandSplit: true, bandColors: ['#5ad2ff', '#4f9cf9', '#7b61ff', '#b44dff', '#ffb454', '#ff5c5c'] })] }))
+  assert.deepEqual(clean.warnings, [], JSON.stringify(clean.warnings))
+})

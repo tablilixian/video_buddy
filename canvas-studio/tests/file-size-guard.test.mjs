@@ -72,7 +72,8 @@ export const FILE_WHITELIST = {
   // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
   // caption 轨（同日，#05 收口）：CaptionTrack 接口 + 字段白名单 + 校验分支
   // （words 形状/双重播放告警）+ 音轨构成计入 ≈ +104 净行。2002 → 2106 显式登记。
-  'src/remotion/manifest.ts': 2106,
+  // A1 audioViz 分频段（同日，#06 收口）：bandSplit/bandColors 校验 +29。2106 → 2135。
+  'src/remotion/manifest.ts': 2135,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
@@ -86,7 +87,9 @@ export const FILE_WHITELIST = {
   // perspective() 不被读取 ⇒ 降级 2D 压扁翻面（净 +3）。1315 → 1340 显式登记。
   // 同日批 2：三近似转场 zoomBlur/linearBlur/crossWarp（+44 净行：override.filter 字段 +
   // 三个求值分支 + 注释），1340 → 1384 显式登记。
-  'src/remotion/timing.ts': 1384,
+  // A1 audioViz 分频段（同日，#06 收口）：bandWaveformBars/Smoothed + smoothedBars
+  // 泛型抽取，+52 净行。1384 → 1436 显式登记。
+  'src/remotion/timing.ts': 1436,
   'src/client/api.ts': 1268,
 }
 

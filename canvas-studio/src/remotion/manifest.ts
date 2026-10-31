@@ -534,6 +534,15 @@ export interface AudioVizTrack extends BaseTrack {
   smoothing?: number
   /** 三期 W3-3：柱体渐变（缺省纯色）。 */
   gradient?: { from?: string; to?: string }
+  /**
+   * 能力基准 #06 收口（2026-10-31）：**分频段**模式 —— 六级 box 低通级联（窗口随
+   * 采样率缩放）拆出低/中/高能量，柱高取各自频段包络、柱色按频段族（低蓝→高红）。
+   * 只对 `bars` / `mirror` 生效（`line` 模式校验层告警忽略）；`gradient` 同时给会被告警
+   * 不生效（逐柱用 `bandColors`）。
+   */
+  bandSplit?: boolean
+  /** 分频段柱色（低→高，2–6 项非空颜色；缺省 bench #06 实测六色族）。 */
+  bandColors?: string[]
 }
 
 /**
@@ -768,7 +777,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions']),
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
-  audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient']),
+  audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   chart: new Set(['variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
 }
@@ -1554,6 +1563,26 @@ export function validateManifest(input: unknown): ManifestValidation {
                 errors.push(`${at}.gradient.${key} 必须是非空颜色字符串`)
               }
             }
+          }
+        }
+        // 能力基准 #06 收口（2026-10-31）：分频段模式。
+        if (track.bandSplit !== undefined && typeof track.bandSplit !== 'boolean') {
+          errors.push(`${at}.bandSplit 必须是布尔值`)
+        }
+        if (track.bandColors !== undefined) {
+          const ok =
+            Array.isArray(track.bandColors) && track.bandColors.length >= 2 && track.bandColors.length <= 6 &&
+            track.bandColors.every((c) => isNonEmptyString(c))
+          if (!ok) {
+            errors.push(`${at}.bandColors 必须是 2–6 个非空颜色字符串的数组（低→高，按频段族取色）`)
+          }
+        }
+        if (track.bandSplit === true) {
+          if (track.mode === 'line') {
+            warnings.push(`${at} 的 bandSplit 在 mode:'line' 下不生效（连续波形线不分频段，已忽略）`)
+          }
+          if (track.gradient !== undefined) {
+            warnings.push(`${at} 的 bandSplit 逐柱用 bandColors 取色，gradient 不生效（已忽略）`)
           }
         }
         break

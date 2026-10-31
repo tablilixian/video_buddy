@@ -36,6 +36,8 @@ import {
   springEasing,
   splitTextUnits,
   textUnitProgress,
+  bandWaveformBars,
+  bandWaveformBarsSmoothed,
   waveformBars,
   waveformBarsSmoothed,
 } from '../lib/remotion/timing.js'
@@ -442,4 +444,32 @@ test('pickSampleFrames：4 张均匀 + 转场中点，升序、去重、上限 8
 test('pickSampleFrames：极短片（1 帧）也只取合法的 0', () => {
   const picks = pickSampleFrames({ id: 'm', meta: { title: 't', width: 1, height: 1, fps: 30, durationInFrames: 1 }, tracks: [] })
   assert.deepEqual(picks, [0])
+})
+
+
+// ── 能力基准 #06 收口（2026-10-31）：分频段柱高 ─────────────────────────────
+
+test('bandWaveformBars：柱按所属频段取样，区内起伏来自包络时序', () => {
+  const bands = [
+    Array.from({ length: 12 }, () => 0.2), // 低频段恒 0.2
+    Array.from({ length: 12 }, () => 0.9), // 高频段恒 0.9
+  ]
+  const bars = bandWaveformBars(bands, 0, { bars: 8, gain: 1 })
+  assert.equal(bars.length, 8)
+  for (let i = 0; i < 4; i += 1) assert.ok(Math.abs(bars[i] - 0.2) < 1e-9, `前 4 根属低频段（${bars[i]}）`)
+  for (let i = 4; i < 8; i += 1) assert.ok(Math.abs(bars[i] - 0.9) < 1e-9, `后 4 根属高频段（${bars[i]}）`)
+
+  // 区内起伏来自包络时序：爬升包络下相邻柱取相邻桶，值单调
+  const climb = bandWaveformBars([Array.from({ length: 12 }, (_, i) => 0.1 + i * 0.05), Array.from({ length: 12 }, () => 0.9)], 0, { bars: 4, gain: 1 })
+  assert.ok(climb[0] < climb[1] && climb[1] < climb[2], `段内柱高随包络爬升（${climb.slice(0, 3)}）`)
+
+  const clamped = bandWaveformBars(bands, 0, { bars: 2, gain: 4 })
+  assert.ok(clamped[1] !== undefined && clamped[1] <= 1, 'clamp 到 1')
+
+  const withEmpty = bandWaveformBars([[], [0.5]], 0, { bars: 2, gain: 1 })
+  assert.equal(withEmpty[0], 0, '空段包络 → 0（基线口径，同 waveformBars）')
+
+  const a = bandWaveformBarsSmoothed(bands, 10, { bars: 4, smoothing: 0.3 })
+  const b = bandWaveformBarsSmoothed(bands, 10, { bars: 4, smoothing: 0.3 })
+  assert.deepEqual(a, b, '平滑版确定性：同输入两次逐帧全等')
 })

@@ -19,6 +19,8 @@ export const POOL_SOURCES = {
   image: '/Users/wl/Desktop/job/VideoOut/new222/projects/帮我制作一段科普视频，玻璃为什么是透明的/assets/28d8647d-2557-4ca9-970e-ebab5b37c50d.png',
   // #05 的 TTS 真配音（本轮自产，3.864s；词级时间戳见 05-caption-word.tsx 头注释）
   tts: '/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/_assets/cap05-tts.mp3',
+  // 02S 真 Skia 冒烟：CanvasKit wasm 同源服务（locateFile 指到 /pool/canvaskit/）
+  canvaskit: '/Users/wl/Desktop/job/learn/video_buddy/canvas-studio/scripts/capability-bench/node_modules/canvaskit-wasm/bin/full/canvaskit.wasm',
 }
 
 export const SPECS = [
@@ -46,6 +48,18 @@ export const SPECS = [
     deps: '近似方案零依赖；真 Skia 需 @remotion/skia + @shopify/react-native-skia（解包 9.6MB + CanvasKit wasm，可选冒烟本轮未做）',
     design: '近似三连：磨砂卡（手动模糊底图副本模拟 backdrop-filter）+ 三层 repeating-gradient 帧偏移噪点 + blur 光斑扫过；全部 filter 白名单内纯函数。',
     assets: ['image'],
+    expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: false, minMotion: true },
+  },
+  {
+    id: '02S',
+    axis: 'skia-smoke',
+    title: '真 Skia runtime shader 冒烟（#02 的可选冒烟项）',
+    reference: 'skia-shader',
+    status: 'substitute',
+    durationInFrames: 120,
+    deps: '@remotion/skia@4.0.535 + @shopify/react-native-skia@2.14.0（bench 子工程，23MB）；CanvasKit wasm 同源服务',
+    design: '30 行 SkiaCanvas + SKSL runtime shader（uProgress 驱动波纹环），只判"能出片、逐帧在动"，不判画质。',
+    assets: ['image', 'canvaskit'],
     expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: false, minMotion: true },
   },
   {

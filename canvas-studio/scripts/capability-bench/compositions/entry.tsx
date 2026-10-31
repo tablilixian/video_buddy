@@ -33,6 +33,7 @@ import * as cap07 from './07-path-morph.js'
 import * as cap08 from './08-effects.js'
 import * as cap09 from './09-transition.js'
 import * as cap10 from './10-editing.js'
+import * as cap02S from './02S-skia-smoke.js'
 import * as capS1 from './S1-stress.js'
 
 /** 全部能力项。key = 两位编号，与产物文件夹 `NN-<axis>` 一一对应（'S1' = 压力样片，见 stress.mjs）。 */
@@ -48,6 +49,7 @@ const REGISTRY: Record<string, { Composition: React.FC }> = {
   '09': cap09,
   '10': cap10,
   S1: capS1,
+  '02S': cap02S,
 }
 
 /* ------------------------------- 日志 / 上报 ------------------------------- */
@@ -113,6 +115,19 @@ async function main() {
     if (!capability) throw new Error(`未注册的能力项：${config.id}（在 entry.tsx 的 REGISTRY 里加一行）`)
 
     await loadFonts()
+
+    // 02S 特有一步：CanvasKit wasm + rn-skia 内层必须在任何抽帧/渲染前就绪
+    // （rn-skia 主模块要求 global.CanvasKit 先就绪才能 import；组件读模块级变量避免 state 竞速）
+    if (config.id === '02S') {
+      const mod = REGISTRY['02S'] as unknown as { ensureSkiaLoaded?: () => Promise<void> }
+      try {
+        await mod.ensureSkiaLoaded?.()
+      } catch (e) {
+        // 诊断：'S' 是压缩后的属性名，必须看堆栈才能定位是哪个模块缺了什么
+        report('skia-load-error', { message: String((e as Error).message), stack: String((e as Error).stack ?? '').slice(0, 700) })
+        throw e
+      }
+    }
 
     report('env', {
       chromeMajor: Number((navigator.userAgent.match(/Chrome\/(\d+)/) ?? [])[1] ?? 0),
@@ -208,5 +223,13 @@ async function main() {
 const Anchor: React.FC = () => null
 const Root: React.FC = () => <Composition id="anchor" component={Anchor} durationInFrames={1} fps={30} width={16} height={16} />
 registerRoot(Root)
+
+// 诊断：未捕获异常的堆栈（renderMediaOnWeb 内部回调抛出时只有 message，看不到栈）
+window.addEventListener('error', (e) => {
+  report('page-error', {
+    message: e.message,
+    stack: String((e.error && e.error.stack) || '').slice(0, 500),
+  })
+})
 
 void main()

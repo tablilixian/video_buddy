@@ -67,6 +67,18 @@ async function buildBundle() {
       resolve: {
         ...(config.resolve ?? {}),
         extensionAlias: { ...((config.resolve && config.resolve.extensionAlias) || {}), '.js': ['.ts', '.tsx', '.js'] },
+        // 02S 真 Skia 冒烟：@shopify/react-native-skia 的 web 变体（Platform.web.js 等）
+        // 必须先于 node 变体被选中，否则会去解析 react-native 包（浏览器里不存在）
+        extensions: ['.web.js', '.web.ts', '.web.tsx', ...((config.resolve && config.resolve.extensions) || [])],
+        alias: {
+          // 02S：rn-skia web 变体的条件 require 静态解析（垫片见 compositions/rn-shim.js）
+          'react-native/Libraries/Image/AssetRegistry$': join(HERE, 'compositions', 'rn-shim.js'),
+          // rn-skia web 的标准解法：react-native → react-native-web（shim 只兜 AssetRegistry 深路径）
+          'react-native$': 'react-native-web',
+          ...((config.resolve && config.resolve.alias) || {}),
+        },
+        // 02S：canvaskit-wasm 的 emscripten 外壳引用 node fs（浏览器路径用不到，置 false）
+        fallback: { ...((config.resolve && config.resolve.fallback) || {}), fs: false, path: false },
       },
     }),
   })

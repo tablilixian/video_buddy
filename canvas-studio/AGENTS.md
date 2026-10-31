@@ -25,6 +25,9 @@ corepack yarn typecheck && corepack yarn build && corepack yarn verify:loader &&
 | UI 可见性判定与执行侧前置检查共用同一纯函数 | 可点的必然真能执行 |
 | reserved 字段不伪造已生效 | 统一挂「待接入」角标 |
 | 画布持久化是事件驱动：每类手势一个落盘点，别加全局定时器 | 机制见 `docs/canvas-studio-task-timeout-spec.md` 与 StudioFrame persistAfter |
+| CSR：`<Audio>/<Video>` 只从 `@remotion/media` 导入 | remotion 核心版在 web-renderer 下直接抛错；机检在 `tests/csr-writing-guard.test.mjs` |
+| CSR：`background-image: url()` 必须同文件配 preload+delayRender 兜底 | 渲染器不等待背景图加载（"本地有图、成片没图"）；先例 Root.tsx 颗粒层，或改用 `<Img>` |
+| CSR：mask 只写 linear-gradient/url；blend/perspective/backdrop-filter 别新写 | 4.0.535 整字段无效（能力基准 #09/#08 像素实证）；等升级后按 `scripts/capability-bench/` 回归再放开 |
 
 ## 收尾四步（强制）
 

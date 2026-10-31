@@ -34,7 +34,11 @@ import {
 } from './render-queue.js'
 import { hasRenderHostLauncher, logRenderHost, warmRenderHost } from '../render-host/dispatch.js'
 import { RENDER_HOST_STALE_MS, renderHostCanTakeOver, renderHostHealth, renderHostReady } from '../render-host/status.js'
-import { resetRenderHostAfterFailure } from '../render-host/dispatch.js'
+import {
+  markRenderHostServedJob,
+  recycleRenderHostIfServed,
+  resetRenderHostAfterFailure,
+} from '../render-host/dispatch.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
 /**
@@ -438,6 +442,32 @@ export const CLIENT_PROGRESS_STALL_MS = 90_000
  */
 export const RENDER_HOST_WARMUP_MS = 8_000
 
+/**
+ * 上一次派单用的窗口已经脏了 ⇒ 丢掉它，让这一单重新拉起一扇干净的。
+ *
+ * 为什么在**派单前**回收而不是结算后：结算发生在 `POST /remotion/commit` 的处理过程中，
+ * 那一刻页面正等着响应；同步销毁窗口会把它的 fetch 打断，凭空造出两条噪音日志。挪到
+ * 派单这一侧，没有人在等这个窗口，回收就变成一次纯粹的「换新」。
+ *
+ * 两个调用点都是必需的：
+ * - `runRenderJob` 开头：顺序渲染（最常见）时让 `pickExecutor` 就在干净状态上决策；
+ * - `armTimeout`（真正拿到槽位那一刻）：并发出单时前一张单可能在后一张单**建好之后**才结束，
+ *   那扇窗到这一刻才变脏 —— 不在这里补一刀，排队单接的就是上一单用过的窗（必挂）。
+ *
+ * @param exceptJobId 正在拿到槽位的那张单：它还没开始用窗口，不算「在飞」。
+ */
+function recycleServedRenderHost(exceptJobId?: string): void {
+  for (const job of activeJobs.values()) {
+    if (job.jobId === exceptJobId) continue
+    // 并发=1，所以这里最多只可能是「另一张还在跑」——它的窗口不能动。
+    if (!job.settled && job.executor === 'render-host') return
+  }
+  if (!recycleRenderHostIfServed('previous render job settled: one window per render job')) return
+  // 刚丢掉的正是本单要用的窗口 ⇒ 立刻重建，否则这张单会挂在一扇不存在的窗口上，
+  // 白等一个判死周期（`warmRenderHost` 的 2s 防抖已被回收清掉，这里是真拉起）。
+  if (exceptJobId !== undefined) warmRenderHost()
+}
+
 /** 滞留改派的可调参数（`claimRenderJobFor` 第三参；生产路径不传）。 */
 export interface ClaimRenderJobOptions {
   /** 现在时刻（测试注入假时钟）。 */
@@ -594,6 +624,8 @@ function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | '
     job.watchdog = null
   }
   if (job.onAbort !== undefined) job.signal?.removeEventListener('abort', job.onAbort)
+  // 这扇窗已经用过了：下一次派单会换新的（见 `recycleServedRenderHost`）。
+  if (job.executor === 'render-host') markRenderHostServedJob()
   activeJobs.delete(job.jobId)
   releaseRenderSlot(job.jobId, state, error)
 }
@@ -713,7 +745,10 @@ function silenceOf(
     const silentFor = Math.min(renderHostHealth(now).ageMs, now - job.lastProgressAt)
     if (silentFor <= staleMs) return null
     return {
-      message: '渲染窗口异常，已中止本次渲染。请重试。',
+      // 与「窗口已退出」（`failRenderHostJobs`）分开说：两者修法完全不同 ——
+      // 这里是渲染器还在、但把主线程按死了（真机实测：心跳与进度同时停），
+      // 那边是窗口/进程没了。此前两句一模一样，模型只能靠猜。
+      message: `渲染窗口异常：隐藏窗口 ${Math.round(silentFor / 1000)}s 内既没有心跳也没有进度（渲染器被卡住），已中止本次渲染。请重试。`,
       detail: `render host heartbeat lost for ${Math.round(silentFor / 1000)}s`,
     }
   }
@@ -769,7 +804,7 @@ export function failRenderHostJobs(reason: string): number {
     job.settled = true
     settleAndForget(job, 'failed', reason)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: `渲染窗口异常，已中止本次渲染。请重试。${diagHint(diag)}`,
+      message: `渲染窗口异常：窗口已退出（${reason}），已中止本次渲染。请重试。${diagHint(diag)}`,
       detail: reason,
       job: diag,
     }))
@@ -802,6 +837,8 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
     throw makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' })
   }
   // O-06：先定执行者（可能要等窗口冷启），再建单 —— 等待不该算进渲染预算。
+  // 上一单用过的窗口一律丢掉（真机：复用窗口渲第二单必挂），这一单从干净窗口开始。
+  recycleServedRenderHost()
   const fastExecutor = immediateExecutor(options)
   const executor = fastExecutor ?? await pickExecutor(options)
   const heartbeatStaleMs = Math.max(50, options.heartbeatStaleMs ?? RENDER_HOST_STALE_MS)
@@ -855,6 +892,9 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
     activeJobs.set(jobId, job)
     const armTimeout = (): void => {
       if (job.settled) return
+      // 排队期间上一张单可能刚结束（窗口到这一刻才变脏）⇒ 换新窗再派。
+      // 并发=1，此刻除本单外没有别的单在用窗口（`exceptJobId` 已排除自己）。
+      if (job.executor === 'render-host') recycleServedRenderHost(job.jobId)
       // 滞留改派以本时刻为宽限起点（armTimeout 恰在「获得槽位」时跑一次）。
       job.dispatchedAt = Date.now()
       // 排队可能很久；进度/存活计时都从**真正派发**起算，否则排在前面的单会误判超时。

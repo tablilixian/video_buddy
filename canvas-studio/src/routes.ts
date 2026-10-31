@@ -3511,11 +3511,11 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       },
     }) !== undefined
     setRenderHostLauncher(launchRenderHost)
-    // B2-2（D10）：窗口自己失败时把它丢掉，下一单拿干净的 —— 事故里"越试越死"
-    // 就是半残窗口继续接单造成的。节流在 dispatch 侧（30s 内不重复重置）。
+    // B2-2（D10）：窗口自己失败时把它丢掉，下一单拿干净的 —— 事故里"越试越死"就是半残窗口
+    // 继续接单造成的。节流在 dispatch 侧。10-30 真机取证后「每单结束都走一次」（一扇窗只渲一单），用 info。
     setRenderHostResetter((reason) => {
       disposeRenderHost(reason)
-      ctx.logger.warn(`[canvas-studio] 渲染窗口已重置（${reason}），下一单将重建`)
+      ctx.logger.info(`[canvas-studio] 渲染窗口已回收（${reason}），下一单将重建`)
     })
     if (process.env.CANVAS_STUDIO_RENDER_HOST === '1') launchRenderHost()
   }

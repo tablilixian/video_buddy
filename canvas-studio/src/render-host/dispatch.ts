@@ -143,6 +143,58 @@ export function resetRenderHostAfterFailure(reason: string, now = Date.now()): b
   }
 }
 
+/** 「这扇窗已经服务过一单」—— 标志放在本模块，`resetRenderHostDispatch()` 才能一并清干净。 */
+let servedJob = false
+
+/** 一单结算：这扇窗从此算脏，下一次派单要换新的。 */
+export function markRenderHostServedJob(): void {
+  servedJob = true
+}
+
+/**
+ * 脏窗 ⇒ 回收（**一扇窗只渲一单**，2026-10-30 真机取证）。
+ *
+ * 真机实测（`scripts/probe/render-host-stall.probe.mjs`，会话里那份 63 轨 / 5415 帧 /
+ * 26 段真视频的 manifest，draft 档）：同一扇窗连续渲，第 1 单 102.8s 成交，**第 2 单
+ * 取单后 11 拍心跳到第 10s，随后心跳与进度同时全停、139.1s 零帧**；每单换新窗则 3/3
+ * 全成交，且成片字节数三次完全相同（9,512,139 B）。⇒ 挂死来自**窗口复用**，与内容、
+ * 帧数、大小无关；重建一扇窗只要 404–684ms，比「判死 30s + 人工重试」便宜两个数量级。
+ *
+ * @returns true = 真的回收了；false = 没有脏窗 / 没有钩子（纯 CLI / 单测）。
+ */
+export function recycleRenderHostIfServed(reason: string): boolean {
+  if (!servedJob) return false
+  servedJob = false
+  return recycleRenderHost(reason)
+}
+
+/**
+ * **一单渲完就把隐藏窗口丢掉**。
+ *
+ * 与 `resetRenderHostAfterFailure` 的区别只有一条，但很关键：**不吃 30s 节流**。
+ * 挂死是「窗口复用」造成的，所以回收必须每单都发生；而原来的失败重置有 30s 节流，
+ * 恰好把「一次失败」放大成「连续失败」——会话里 19:31 之后 63 轨片 5/5 全死的形状。
+ *
+ * 顺手把 `lastWarmAt` 清零：回收后下一次派单必须**立刻**重建，否则会被 `warmRenderHost`
+ * 的 2s 防抖吞掉 —— 那时窗口并不存在，单会派给空气（28s 后报「从未取单」）。
+ *
+ * @returns true = 真的回收了；false = 没有钩子（纯 CLI / 单测）。
+ */
+export function recycleRenderHost(reason: string): boolean {
+  const dispose = resetter
+  if (dispose === undefined) return false
+  // 回收是「计划内」的：不参与失败节流，也把节流窗口清干净（下一次真失败要能重建）。
+  lastResetAt = Number.NEGATIVE_INFINITY
+  lastWarmAt = 0
+  try {
+    dispose(reason)
+    return true
+  } catch {
+    // 回收失败不是致命错误：下一单 `pickExecutor` 会重试拉起（等不到就回退客户端）。
+    return false
+  }
+}
+
 /** 测试用：清掉登记与防抖时间戳。 */
 export function resetRenderHostDispatch(): void {
   launcher = undefined
@@ -151,4 +203,5 @@ export function resetRenderHostDispatch(): void {
   lastWarmAt = 0
   lastResetAt = Number.NEGATIVE_INFINITY
   lastRejectedWarnAt = 0
+  servedJob = false
 }

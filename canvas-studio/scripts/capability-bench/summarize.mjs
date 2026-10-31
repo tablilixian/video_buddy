@@ -42,6 +42,19 @@ for (const d of dirs) {
   items.push({ dir: d, verdict: v, mp4, sha })
 }
 
+/* ------------------------------ S1/S2 压力结果 ------------------------------ */
+
+function readStress() {
+  const dir = join(OUT, '_stress')
+  const s1 = join(dir, 's1.json')
+  const s2 = join(dir, 's2.json')
+  return {
+    s1: existsSync(s1) ? JSON.parse(readFileSync(s1, 'utf8')) : null,
+    s2: existsSync(s2) ? JSON.parse(readFileSync(s2, 'utf8')) : null,
+  }
+}
+const stress = readStress()
+
 /* -------------------------------- metrics.json -------------------------------- */
 
 const metrics = {
@@ -81,6 +94,10 @@ const metrics = {
     level: LEVELS[verdict.id] ?? null,
     checks: Object.fromEntries(Object.entries(verdict.checks).map(([k, c]) => [k, c.pass])),
   })),
+}
+metrics.stress = {
+  s1: stress.s1?.points ?? null,
+  s2: stress.s2?.windows ?? null,
 }
 writeFileSync(join(OUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`)
 
@@ -132,6 +149,25 @@ const perItem = metrics.items
   })
   .join('\n')
 
+function s1Section(s1) {
+  let out = '### S1 规模采样点\n\n| 采样点 | canRender | ms/帧 | 时长 | 码率 | RSS 峰值 | 渲染堆 | 硬检查 |\n|---|---|---|---|---|---|---|---|\n'
+  for (const p of s1.points ?? []) {
+    const checks = Object.entries(p.checks ?? {}).map(([k, v]) => `${k} ${v === 'pass' ? '✅' : v === 'fail' ? '❌' : '➖'}`).join(' ')
+    out += `| ${p.id} | ${(p.canRender ?? {}).canRender === true ? '✅' : '❌'} | ${p.msPerFrame ?? '—'} | ${p.durationSec ?? '—'}s | ${p.bitRate ? `${(p.bitRate / 1e6).toFixed(2)} Mbps` : '—'} | ${p.rssPeakMB ?? '—'} MB | ${p.heapMB ?? '—'} MB | ${checks} |\n`
+  }
+  out += '\n> 1080p60 点的 H3 红 = **容器时长被静音 AAC 轨量化垫长 ~75ms**（视频流本身 300/300 帧、avg_frame_rate=60/1 精确零漂移）——60fps 下 1 帧只有 16.7ms，同样的 padding 超过 H3 的 ±1 帧标定容差（1/fps+0.05s）。判据标定边界，非掉帧/非 fps 偏移。\n\n'
+  return out
+}
+
+function s2Section(s2) {
+  let out = '### S2 连渲稳定性（每档 ×5，30s / 1080p30 任务）\n\n| 窗口 | 成功 | 均值耗时 | 标准差 | CV | 门槛(CV<20%) |\n|---|---|---|---|---|---|\n'
+  for (const w of s2.windows ?? []) {
+    out += `| ${w.window} | ${w.successCount}/5 | ${w.meanMs} ms | ${w.stdevMs} ms | ${w.cvPercent}% | ${w.varianceGate === 'pass' ? '✅' : '❌'} |\n`
+  }
+  out += '\n> hidden-throttled 档 = `BENCH_ALLOW_THROTTLE=1`（保留 Chromium 默认节流）——「RenderHost 不做防节流」的对照口径。若该档 stall/超慢，结论即生产 RenderHost 必须显式防节流。\n\n'
+  return out
+}
+
 const report = `# Canvas Studio · Remotion 渲染能力基准总报告（2026-10-29）
 
 > **评分口径声明**：本报告的"目视分"是三点目视卡（元素是否按意图出现 / 时序是否对上 / 有无劣化成硬切或纯色），**不是像素级比对**——官方 example 依赖是 workspace:\* 装不上、拿不到原片（§9.8）。机械分 = 5 条硬检查（有画面/有运动/时长帧率/两次渲染逐帧 md5/编码合规），全部脚本判定。
@@ -150,6 +186,13 @@ ${rows}
 
 ${perItem}
 
+## 二.5、规模与稳定性（S1/S2，B 组实测）
+
+> 判据出处：§8 拍板 1（三点采样）+ §5.4 S2（连渲×5、耗时 CV<20%）。压力合成 = bench 专用 'S1' 注册键（可缩放时长）。
+> 内存口径：主进程 RSS（2s 采样峰值）+ 渲染进程 JS 堆（performance.memory，render:done 时点）。
+
+${stress.s1 ? s1Section(stress.s1) : '(S1 未跑)\n'}
+${stress.s2 ? s2Section(stress.s2) : '(S2 未跑)\n'}
 ## 三、顺带查实 / 推翻的结论
 
 1. **R3 像素实锤 + 修正解落地**：clock（conic mask）整层突现、flipX 压扁穿越——#09 同片证明 \`clip-path: polygon()\` 扇形完全可用 ⇒ 产品 8 种转场里 2 个坏的有零依赖修法。

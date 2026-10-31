@@ -17,12 +17,12 @@ export const ELECTRON_APP = join(HERE, '..', 'electron')
 
 /**
  * 起一次渲染。返回 { code, lines, stats }；`lines` 是所有 `[bench] {...}` 的结构化行。
- * @param {{ binary: string, url: string, window?: 'visible'|'hidden', flags?: string[], timeoutMs?: number, onLine?: (line: string) => void }} options
+ * @param {{ binary: string, url: string, window?: 'visible'|'hidden', flags?: string[], timeoutMs?: number, extraEnv?: Record<string, string>, onLine?: (line: string) => void }} options
  */
 export function launchRenderer(options) {
-  const { binary, url, window = 'visible', flags = [], timeoutMs = 600000, onLine } = options
+  const { binary, url, window = 'visible', flags = [], timeoutMs = 600000, extraEnv = {}, onLine } = options
 
-  const env = { ...process.env }
+  const env = { ...process.env, ...extraEnv }
   delete env.ELECTRON_RUN_AS_NODE // 坑 1
   env.BENCH_URL = url
   env.BENCH_WINDOW = window

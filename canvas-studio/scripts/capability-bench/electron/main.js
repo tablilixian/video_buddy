@@ -19,9 +19,22 @@ if (process.env.CSR_NO_SANDBOX === '1') {
   app.commandLine.appendSwitch('disable-gpu-sandbox')
 }
 
-// 渲染在渲染进程里跑：关掉节流，避免失焦/后台被拖慢。
-app.commandLine.appendSwitch('disable-renderer-backgrounding')
-app.commandLine.appendSwitch('disable-background-timer-throttling')
+// 渲染在渲染进程里跑：默认关掉节流，避免失焦/后台被拖慢。
+// S2 节流档（BENCH_ALLOW_THROTTLE=1）：保留 Chromium 默认节流 —— hidden 窗口下
+// rAF/计时器会被节流，这正是"RenderHost 若不做防节流会发生什么"的实测口径。
+const allowThrottle = process.env.BENCH_ALLOW_THROTTLE === '1'
+if (!allowThrottle) {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+}
+
+// S1/S2 内存曲线（BENCH_RSS=1）：主进程每 2s 报一条 RSS（渲染进程堆由页面侧 render:done 报）。
+if (process.env.BENCH_RSS === '1') {
+  const rssTimer = setInterval(() => {
+    console.log('[bench] ' + JSON.stringify({ step: 'main-rss', rssMB: Number((process.memoryUsage().rss / 1048576).toFixed(1)) }))
+  }, 2000)
+  rssTimer.unref?.()
+}
 
 // 能力开关（例：CanvasDrawElement ⇒ 打通 drawElementImage 四件套，见文档 §10.2）
 const flags = (process.env.BENCH_FLAGS || '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -35,7 +48,8 @@ app.whenReady().then(() => {
     height: 800,
     show: !hidden,
     webPreferences: {
-      backgroundThrottling: false,
+      // 节流档：连 webPreferences 的 backgroundThrottling 也一并保留（完整节流语义）
+      backgroundThrottling: !allowThrottle,
       // 素材来自 127.0.0.1 同源；不涉及远程内容。
       webSecurity: true,
     },

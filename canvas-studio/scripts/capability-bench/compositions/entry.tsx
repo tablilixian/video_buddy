@@ -33,8 +33,9 @@ import * as cap07 from './07-path-morph.js'
 import * as cap08 from './08-effects.js'
 import * as cap09 from './09-transition.js'
 import * as cap10 from './10-editing.js'
+import * as capS1 from './S1-stress.js'
 
-/** 全部能力项。key = 两位编号，与产物文件夹 `NN-<axis>` 一一对应。 */
+/** 全部能力项。key = 两位编号，与产物文件夹 `NN-<axis>` 一一对应（'S1' = 压力样片，见 stress.mjs）。 */
 const REGISTRY: Record<string, { Composition: React.FC }> = {
   '01': cap01,
   '02': cap02,
@@ -46,6 +47,7 @@ const REGISTRY: Record<string, { Composition: React.FC }> = {
   '08': cap08,
   '09': cap09,
   '10': cap10,
+  S1: capS1,
 }
 
 /* ------------------------------- 日志 / 上报 ------------------------------- */
@@ -190,6 +192,11 @@ async function main() {
       ms,
       frames: config.durationInFrames,
       msPerFrame: Math.round(ms / config.durationInFrames),
+      // S1/S2 内存观察：渲染进程 JS 堆（Chromium 专有 API，拿不到就是 null）
+      heapMB: (() => {
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory
+        return mem ? Number((mem.usedJSHeapSize / 1048576).toFixed(1)) : null
+      })(),
     })
     report('finished', { totalMs: Math.round(performance.now() - started) })
   } catch (error) {

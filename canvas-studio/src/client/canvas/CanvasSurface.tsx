@@ -6,6 +6,9 @@ import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
+import { createFrameCoalescer, mergeLatestPoint, type FrameCoalescer } from '../../canvas-gesture-raf.js'
+import { viewportWorldRect } from '../../canvas-cull.js'
+import { installCanvasPerfStyles } from '../styles-canvas-perf.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
@@ -26,6 +29,13 @@ import type { ResolutionId } from '../../resolution-tiers.js'
  * 除数 = 凑成 e 倍所需的滚动像素数（800px ≈ ×2.718）。
  */
 const WHEEL_ZOOM_DIVISOR = 800
+/**
+ * CV-384 P0-2：滚轮缩放的折叠帧 —— 锚点取**最新事件**位置，因子在 log 域累加
+ * （触控板一帧可发多段 delta，中间量丢弃会改变缩放总量，见 canvas-gesture-raf.ts）。
+ */
+interface WheelFrame { x: number; y: number; logFactor: number }
+const mergeWheelFrame = (prev: WheelFrame, next: WheelFrame): WheelFrame =>
+  ({ x: next.x, y: next.y, logFactor: prev.logFactor + next.logFactor })
 /**
  * CV-286：空白「单击」清选的位移阈值（|dx|+|dy| 路径累计，屏幕 px）。
  * 比 3px 拖拽阈值宽一档 —— 2026-09-13 验收教训是「零容忍阈值让肉眼上的
@@ -439,6 +449,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // pointerup / pointercancel 两条出口，选区有十几处写入点 —— 绑选区的版本
   // 出现过「松手后压暗不恢复」（CV-171 退场的直接起因）。
   const [spotDragIds, setSpotDragIds] = useState<readonly string[] | null>(null)
+  // CV-384：渲染性能批样式（content-visibility 裁剪 / 拖拽态合成层）随表面挂载注入。
+  useEffect(() => { installCanvasPerfStyles() }, [])
+  // CV-384 P0-2：手势帧合并器（详见 ../../canvas-gesture-raf.ts）。合并器终生一个；
+  // 应用逻辑走 ref 转发 —— 帧回调拿到的是最新渲染的闭包（onMoveNode 等 props
+  // 引用可能随渲染抖动，不能在合并器创建时捕获）。
+  const applyPointerMoveRef = useRef<(x: number, y: number) => void>(() => {})
+  const moveCoalescerRef = useRef<FrameCoalescer<{ x: number; y: number }> | null>(null)
+  if (moveCoalescerRef.current === null) {
+    moveCoalescerRef.current = createFrameCoalescer({
+      merge: mergeLatestPoint,
+      apply: frame => { applyPointerMoveRef.current(frame.x, frame.y) },
+    })
+  }
   const containerRef = useRef<HTMLDivElement>(null)
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
@@ -518,10 +541,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     delete gesture.current.pointerId
     delete gesture.current.captured
   }, [])
-  /** CV-071：屏幕位移是否已越过拖拽阈值。 */
-  const exceededThreshold = (event: React.PointerEvent, current: Gesture): boolean =>
-    Math.abs(event.clientX - current.startX) > DRAG_THRESHOLD
-    || Math.abs(event.clientY - current.startY) > DRAG_THRESHOLD
+  /** CV-071：屏幕位移是否已越过拖拽阈值（CV-384 起收坐标而非事件 —— 应用体在帧回调里跑）。 */
+  const exceededThreshold = (x: number, y: number, current: Gesture): boolean =>
+    Math.abs(x - current.startX) > DRAG_THRESHOLD
+    || Math.abs(y - current.startY) > DRAG_THRESHOLD
   // CR-061：节点/缩放手势在「首帧真正 move」时才 push undo 快照（onBeginEdit）。
   // 单击（无位移）不会触发——历史里不再出现空快照。
   const beginEditOnce = (current: Gesture): void => {
@@ -582,6 +605,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onViewChangeRef.current({ x: px - wx * newScale, y: py - wy * newScale, scale: newScale })
   }, [])
 
+  // CV-384 P0-2：滚轮事件同样合帧 —— 因子 log 域累加（中间量丢失会改变缩放
+  // 总量），锚点取最新事件位置。zoomAround 只碰 ref（useCallback([]) 稳定），
+  // 可直接进 apply。
+  const wheelCoalescerRef = useRef<FrameCoalescer<WheelFrame> | null>(null)
+  if (wheelCoalescerRef.current === null) {
+    wheelCoalescerRef.current = createFrameCoalescer({
+      merge: mergeWheelFrame,
+      apply: frame => { zoomAround(frame.x, frame.y, Math.exp(frame.logFactor)) },
+    })
+  }
+
   // Native non-passive wheel listener so preventDefault works (React roots
   // attach wheel as passive). REQ-004/R-P2-01：滚轮=绕光标缩放（单手习惯）；
   // Ctrl/Cmd+滚轮同义保留；平移=空白处按住拖动（pan 手势）。
@@ -605,7 +639,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         : event.deltaMode === 2
           ? event.deltaY * 100
           : event.deltaY
-      zoomAround(event.clientX, event.clientY, Math.exp(-deltaPixels / WHEEL_ZOOM_DIVISOR))
+      // CV-384 P0-2：事件落合并器，帧回调里应用（一帧一次，因子 log 域累加）。
+      wheelCoalescerRef.current?.push({
+        x: event.clientX,
+        y: event.clientY,
+        logFactor: -deltaPixels / WHEEL_ZOOM_DIVISOR,
+      })
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => { el.removeEventListener('wheel', onWheel) }
@@ -919,34 +958,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }, [])
   const onLinkPointerDownNoop = useCallback((_event: React.PointerEvent, _node: StudioCanvasNode): void => {}, [])
 
-  const onPointerMove = (event: React.PointerEvent): void => {
+  // CV-384 P0-2：pointermove 的**应用体** —— 由 moveCoalescer 每帧至多调一次
+  // （详见 ../../canvas-gesture-raf.ts）。旧实现每个事件同步执行（触控板
+  // 120Hz+ = 一帧多渲多 store 写）；现在事件先合并、帧回调里应用。收口语义：
+  // onPointerUp / onPointerCancel 前先 flush（最后一帧坐标必须入账）；失联
+  // 恢复（buttons === 0 的鼠标）留在包装器上逐事件判定。
+  const applyPointerMove = (clientX: number, clientY: number): void => {
     const current = gesture.current
     if (current.mode === 'none') return
-    // The mouse button was released outside the surface (its pointerup never
-    // reached us): end the gesture so plain hover moves never pan/drag.
-    if (event.pointerType === 'mouse' && event.buttons === 0) {
-      onPointerUp(event)
-      return
-    }
     const el = containerRef.current
     if (el === null) return
     if (current.mode === 'pan') {
       // CV-286：累计位移路径（在 startX/startY 被改写**之前**算，逐帧累加）——
       // 松手时据此区分单击（清选）与拖拽平移（不清）。见 CLICK_CLEAR_SLOP。
       current.movedDist = (current.movedDist ?? 0)
-        + Math.abs(event.clientX - current.startX)
-        + Math.abs(event.clientY - current.startY)
+        + Math.abs(clientX - current.startX)
+        + Math.abs(clientY - current.startY)
       ensureCaptured()
-      panBy(event.clientX - current.startX, event.clientY - current.startY)
-      current.startX = event.clientX
-      current.startY = event.clientY
+      panBy(clientX - current.startX, clientY - current.startY)
+      current.startX = clientX
+      current.startY = clientY
       return
     }
     if (current.mode === 'node' && current.nodeId !== undefined && current.originX !== undefined && current.originY !== undefined) {
       // CV-071：3px 拖拽阈值 —— 手抖未过阈值时不移动、不捕获、不入 undo。
       // 既避免双击的微小抖动产生一条空快照 + 一次写盘，也保证纯点击全程
       // 无 pointer capture（dblclick 才能落到节点上）。
-      if (!current.editBegun && !exceededThreshold(event, current)) return
+      if (!current.editBegun && !exceededThreshold(clientX, clientY, current)) return
       ensureCaptured()
       // CR-061：首帧 move 前 push undo 快照（后续帧不再重复）。
       const firstMove = current.editBegun !== true
@@ -960,8 +998,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           ...(current.moveProxyId !== undefined ? [current.moveProxyId] : []),
         ])
       }
-      const dx = (event.clientX - current.startX) / viewRef.current.scale
-      const dy = (event.clientY - current.startY) / viewRef.current.scale
+      const dx = (clientX - current.startX) / viewRef.current.scale
+      const dy = (clientY - current.startY) / viewRef.current.scale
       // CV-008：多选整体移动 —— 以被按下的节点为主，snap 校正量均摊到全体。
       if (current.origins !== undefined && current.origins.length > 1) {
         const dragged = nodesRef.current.find(candidate => candidate.id === current.nodeId)
@@ -1000,12 +1038,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       && current.originY !== undefined && current.originWidth !== undefined && current.originHeight !== undefined
       && current.corner !== undefined) {
       // CV-071：同 node 手势，未过阈值不动、不捕获、不入 undo。
-      if (!current.editBegun && !exceededThreshold(event, current)) return
+      if (!current.editBegun && !exceededThreshold(clientX, clientY, current)) return
       ensureCaptured()
       // CR-061：首帧 resize 前 push undo 快照。
       beginEditOnce(current)
-      const dx = (event.clientX - current.startX) / viewRef.current.scale
-      const dy = (event.clientY - current.startY) / viewRef.current.scale
+      const dx = (clientX - current.startX) / viewRef.current.scale
+      const dy = (clientY - current.startY) / viewRef.current.scale
       const corner = current.corner
       const mediaAspect = lockedResizeAspect(
         nodesRef.current.find(candidate => candidate.id === current.nodeId),
@@ -1061,14 +1099,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     if (current.mode === 'link' && current.fromWorldX !== undefined && current.fromWorldY !== undefined) {
       ensureCaptured()
-      const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+      const world = screenToWorld(clientX, clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
       setLinkLine({ fromX: current.fromWorldX, fromY: current.fromWorldY, toX: world.x, toY: world.y })
       // R-P0-12 二增量：拖线中高亮悬停的可落目标（与松手连线同一份命中判定）。
       setLinkTargetId(linkDropTargetAt(nodesRef.current, world, current.sourceId)?.id ?? null)
     }
   }
+  // CV-384 P0-2：渲染期把最新应用体交给合并器（渲染期 ref 回填先例：
+  // selectedEdgeRef.current / waterfallNodesRef.current）。
+  applyPointerMoveRef.current = applyPointerMove
+
+  const onPointerMove = (event: React.PointerEvent): void => {
+    const current = gesture.current
+    if (current.mode === 'none') return
+    // The mouse button was released outside the surface (its pointerup never
+    // reached us): end the gesture so plain hover moves never pan/drag.
+    if (event.pointerType === 'mouse' && event.buttons === 0) {
+      onPointerUp(event)
+      return
+    }
+    // CV-384 P0-2：事件先落合并器，帧回调里应用（一帧一次，取最新坐标）。
+    moveCoalescerRef.current?.push({ x: event.clientX, y: event.clientY })
+  }
 
   const onPointerUp = (event: React.PointerEvent): void => {
+    // CV-384 P0-2：松手前先把待应用帧落账 —— 最后一帧坐标必须入账（拖拽终点
+    // 精度），否则最后一帧的位置会丢。canvas-gesture-raf 测试钉死 flush 语义。
+    moveCoalescerRef.current?.flush()
     const current = gesture.current
     // CV-286（拍板②「单击空白」的字面兑现）：pan 松手且累计位移 ≤ 5px = 点击，
     // 此刻才清选 + 清边选（Ctrl/Cmd 例外与按下时代一致）。拖拽平移全程保留
@@ -1229,15 +1286,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // A-2 步骤二：边视口裁剪的世界坐标框 —— 屏幕可视区反算（world = (screen − view) / scale）
   // 再按屏幕余量放宽。拖拽期间 view/surfaceSize 都不变 → 引用稳定，CanvasEdges
   // 侧不因它多渲染；平移/缩放每帧变，但那本来就是全量重画的帧。
+  // CV-384：口径抽进 canvas-cull.ts —— 连线裁剪与节点 B 案兜底（React 条件挂载）
+  // 共用一份实现，纯函数有单测盯着。
   const edgeViewport = useMemo(() => {
     if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return undefined
-    const margin = EDGE_CULL_MARGIN_PX / view.scale
-    return {
-      x: -view.x / view.scale - margin,
-      y: -view.y / view.scale - margin,
-      width: surfaceSize.width / view.scale + margin * 2,
-      height: surfaceSize.height / view.scale + margin * 2,
-    }
+    return viewportWorldRect(
+      { x: view.x, y: view.y, scale: view.scale },
+      { width: surfaceSize.width, height: surfaceSize.height },
+      EDGE_CULL_MARGIN_PX,
+    )
   }, [view.x, view.y, view.scale, surfaceSize.width, surfaceSize.height])
 
   /**
@@ -1374,6 +1431,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // grabbing、后续 pointermove 继续按上个手势改坐标。用户视角正是
       // 「鼠标松开了，画面没有恢复」。drop 与 pointerup 同款，位移过的手势照样落盘。
       onPointerCancel={() => {
+        // CV-384 P0-2：cancel 有自己的收口（不走 onPointerUp）—— 待应用帧同样先落账。
+        moveCoalescerRef.current?.flush()
         const current = gesture.current
         if (current.mode === 'link') { setLinkLine(null); setLinkTargetId(null) }
         if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
@@ -1508,6 +1567,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
+              // CV-384 P0-1：拖拽中的节点（主拖 + 随从 + 托盘代理）才提升合成层 ——
+              // R-P0-12 纪律：不参与的节点不传，props 全等，memo 不破。
+              {...(spotDragIds?.includes(node.id) === true ? { dragging: true } : {})}
               // CV-186：拖动中的血缘明度档位（亮档整条不传，props 保持干净）。
               {...(tier !== undefined ? { tier } : {})}
               // R-P0-12 二增量：拖线悬停的可落目标（同亮档约定：false 不传，

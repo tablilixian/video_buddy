@@ -99,6 +99,13 @@ export interface CanvasNodeProps {
    * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
   primary?: boolean
   /**
+   * CV-384 P0-1：拖拽手势进行中（主拖 + 随从 + 托盘代理，spotDragIds 命中）
+   * —— 挂 `.csNodeDragging` 把这张卡**单独**提升为合成层。静态节点画进世界层
+   * 的瓦片（不再每节点一层），只有被拖的卡逐帧动。R-P0-12 纪律不变：不参与的
+   * 节点不传，props 全等，memo 不破。
+   */
+  dragging?: boolean
+  /**
    * R-P0-12 二增量：拖线手势的**悬停可落目标**（高亮即所得 —— 松手连线与
    * 拖线高亮共用 CanvasSurface 的同一份命中判定 linkDropTargetAt）。
    */
@@ -179,7 +186,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, dragging = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -583,6 +590,8 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     'csNode',
     selected ? 'csNodeSelected' : '',
     selected && primary ? 'csNodePrimary' : '',
+    // CV-384 P0-1：拖拽中的节点才提升合成层（styles-canvas-perf.ts）。
+    dragging ? 'csNodeDragging' : '',
     // R-P0-12 二增量：拖线悬停的可落目标 —— accent 环随光标在卡间移动。
     linkTarget ? 'csNodeLinkTarget' : '',
     node.locked ? 'csNodeLocked' : '',
@@ -611,8 +620,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   return (
     <div
       className={className}
-      // CR-081：节点位移走 transform（合成层），不用 left/top 逐帧改布局——
-      // 拖拽/微调是每帧高频路径，translate3d 让浏览器走合成而不触发布局重绘。
+      // CR-081 / CV-384：节点位移走 transform，不用 left/top 逐帧改布局——
+      // 改 transform 永不触发布局重绘。CV-384 起定位用 **2D translate**：
+      // translate3d 是 3D 变换，会和 will-change 一样强制每节点常驻合成层，
+      // 节点一多就把合成器瓦片内存预算摊爆（拖缩全员重光栅 = 抖动根源）；
+      // 拖拽中的节点由 .csNodeDragging 单独提升（styles-canvas-perf.ts）。
       // DD-03：**不透明度的唯一出口是 `--cs-node-opacity`**。数据层（node.opacity）
       // 只写这个变量，状态层与血缘层各自只写一个乘数，最终 opacity 由
       // `.csNode` 一条 calc 统一算。改前这里是裸 `opacity`（inline），
@@ -621,9 +633,12 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       style={{
         left: 0,
         top: 0,
-        transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
+        transform: `translate(${node.x}px, ${node.y}px)`,
         width: node.width,
         height: node.height,
+        // CV-384 P0-3：content-visibility: auto（styles-canvas-perf.ts）的
+        // 占位尺寸按节点真实尺寸填 —— 离屏跳渲染时框不塌。
+        containIntrinsicSize: `${node.width}px ${node.height}px`,
         '--cs-node-opacity': opacity,
       } as CSSProperties}
       onPointerDown={handleNodePointerDown}

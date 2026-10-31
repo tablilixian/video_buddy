@@ -2011,9 +2011,9 @@ const STUDIO_STYLES = `
 
 .csNode {
   position: absolute;
-  /* CR-081：位移走 transform（CanvasNode 用 translate3d 定位），提升为合成层，
-     拖拽/微调不触发布局重绘。 */
-  will-change: transform;
+  /* CR-081 / CV-384：位移走 transform 永不触发布局重绘；但节点**不再常驻合成层** ——
+     will-change 与 translate3d 双重强制让每节点各占一套瓦片，摊爆瓦片预算（CV-384）。
+     拖拽中的提升见 styles-canvas-perf.ts 的 .csNodeDragging。 */
   /* C10：节点是**三段竖列** —— 头（类型 + 标题）/ 体（画面或正文）/ 脚（读数）。
      改前是「一块内容 + 若干绝对定位角标」：height: 100% 的内容区各自为政，
      角标只能浮在画面之上，压画面、压彼此、被圆角裁掉。改成 flex 列之后，

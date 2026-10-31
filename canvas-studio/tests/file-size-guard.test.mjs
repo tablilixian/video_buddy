@@ -55,6 +55,7 @@ const GENERATED_DIRS = new Set(['src/contracts/generated'])
 
 /** 文件行数棘轮。键 = `src/...` 相对包根路径，值 = 当前实测行数（拆分时逐段下调，达标即删）。 */
 export const FILE_WHITELIST = {
+  // CV-384（2026-10-31）：.csNode 的 will-change 规则删除、注释等行改写 —— 净 0。
   'src/client/styles.ts': 10731,
   'src/host-tools.ts': 4401,
   'src/generate.ts': 3582,
@@ -67,7 +68,10 @@ export const FILE_WHITELIST = {
   'src/client/index.ts': 2983,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   'src/remotion/manifest.ts': 1928,
-  'src/client/canvas/CanvasSurface.tsx': 1665,
+  // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
+  // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
+  // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
+  'src/client/canvas/CanvasSurface.tsx': 1727,
   'src/client/project-store.ts': 1612,
   'src/projects.ts': 1575,
   'src/remotion/timing.ts': 1315,
@@ -86,10 +90,13 @@ export const FUNC_WHITELIST = {
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
   'src/host-tools.ts#createStudioTools': { lines: 2436, note: '阶段 1 目录化（先搬 inspect 打样）' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
-  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1295, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
+  // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
+  // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。
+  'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1347, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
   'src/client/project-store.ts#createProjectStore': { lines: 990, note: 'P1：按域切 store 切片' },
   'src/errors/catalog.ts#SPECS': { lines: 990, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
-  'src/client/canvas/CanvasNode.tsx#CanvasNodeInner': { lines: 819, note: 'P1：节点态 / 预览 / 手势' },
+  // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。
+  'src/client/canvas/CanvasNode.tsx#CanvasNodeInner': { lines: 827, note: 'P1：节点态 / 预览 / 手势' },
   'src/client/ModelSettingsPanel.tsx#ModelSettingsPanel': { lines: 674, note: 'P1' },
 }
 

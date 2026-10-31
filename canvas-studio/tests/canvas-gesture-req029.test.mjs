@@ -137,7 +137,12 @@ test('REQ-029 手势③：缩放范围维持 10%~500%（演示 25%~400% 让步�
 test('REQ-004/CV-286 滚轮灵敏度：按滚动量指数化，不再每事件固定步长', async () => {
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
   assert.match(surface, /const WHEEL_ZOOM_DIVISOR = 800\b/, '滚轮灵敏度除数必须在位（800px ≈ e 倍）')
-  assert.match(surface, /Math\.exp\(-deltaPixels \/ WHEEL_ZOOM_DIVISOR\)/, '滚轮因子必须按滚动量指数化（exp(−δ/除数)）')
+  // CV-384 P0-2：事件先落帧合并器（log 域累加），帧回调里再 exp —— 指数化
+  // 语义不变，只是应用从「每事件」改「每帧一次」。中间量丢失会改变缩放总量，
+  // 所以这里同时钉住「累加」与「exp 应用」两端。
+  assert.match(surface, /logFactor: -deltaPixels \/ WHEEL_ZOOM_DIVISOR/, '滚轮因子必须按滚动量指数化（log 域：−δ/除数）')
+  assert.match(surface, /Math\.exp\(frame\.logFactor\)/, '帧回调必须对累加后的 logFactor 取 exp')
+  assert.match(surface, /merge: mergeWheelFrame/, '滚轮折叠必须用累加合并（不能取最新帧，会丢 delta）')
   assert.match(surface, /deltaMode === 1/, '须兼容行/页滚动单位（deltaMode 换算）')
   assert.ok(!/ZOOM_STEP/.test(surface), '每事件固定步长 ZOOM_STEP 不得复用（触控板连乘爆炸的根因）')
 })

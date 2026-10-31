@@ -16,6 +16,14 @@
     "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/02-skia-shader"
   },
   {
+    "id": "02S",
+    "title": "真 Skia runtime shader 冒烟（#02 的可选冒烟项）",
+    "status": "substitute",
+    "autoScore": 4,
+    "outFile": "cap02S.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/02S-skia-smoke"
+  },
+  {
     "id": "03",
     "title": "全量捕获（绕过 CSS 白名单）",
     "status": "done",

@@ -19,6 +19,7 @@ import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { duckWindowsFromSubtitles, lookStyles, trackTransitionWindows, transitionOverride } from '../timing.js'
 import { AudioTrack } from './AudioTrack.js'
 import { AudioViz } from './AudioViz.js'
+import { Chart } from './Chart.js'
 import { FontFamilyContext } from './font-context.js'
 import { ImageClip } from './ImageClip.js'
 import { Shape } from './Shape.js'
@@ -154,6 +155,8 @@ const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
       return <Shape track={track} />
     case 'audioViz':
       return <AudioViz track={track} />
+    case 'chart':
+      return <Chart track={track} />
     case 'transition':
       return null
   }

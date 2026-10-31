@@ -98,7 +98,7 @@ export interface ManifestLook {
   grain?: number
 }
 
-/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化。 */
+/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表。 */
 export type CompositionTrack =
   | VideoClipTrack
   | ImageClipTrack
@@ -106,6 +106,7 @@ export type CompositionTrack =
   | ShapeTrack
   | TransitionTrack
   | AudioVizTrack
+  | ChartTrack
 
 export interface BaseTrack {
   /**
@@ -126,7 +127,7 @@ export interface BaseTrack {
    * - 语义与 `ShapeTrack` 的既有 `box` 完全同域（本字段就是从那里上提的）：
    *   **0–100 画布百分比，`x` / `y` 是区域中心**（渲染层 `translate(-50%,-50%)`
    *   中心对齐），`w` / `h` 是区域宽高。铺满 = `{x:50,y:50,w:100,h:100}`。
-   * - 只对 **video / image / textCard / shape** 生效；`transition` / `audioViz`
+   * - 只对 **video / image / textCard / shape / chart** 生效；`transition` / `audioViz`
    *   给出 `box` 会被 `validateManifest` 拒收（它们的位置由别的字段决定）。
    * - **与位置维度互斥（video / image / textCard）**：`transform.x/y`、`animate` 的
    *   `from.to.x/y`、`exit.to.x/y`、`orbit` 与 `box` 同时声明 ⇒ 报错（位置来源必须唯一，
@@ -534,6 +535,36 @@ export interface AudioVizTrack extends BaseTrack {
 }
 
 /**
+ * 能力基准 #04 收口（2026-10-31）：**数据图表**轨 —— 柱状图 / 柱状+折线双轴图。
+ *
+ * 纯 DOM/SVG 渲染（零依赖，bench 04-chart-map 同款视觉），数据由 manifest 内联
+ * `labels` + `values` 声明（**不**自动取镜头时长等时间线真值 —— 数据来源由模型/工具
+ * 显式给出，校验层只查数值合法性）。动画全部纯帧函数：柱子错峰生长 + 数值标签 +
+ * 折线 clip 揭示（bench 实测参数）。
+ */
+export interface ChartTrack extends BaseTrack {
+  type: 'chart'
+  /** 图表形态：`bars` = 柱状图；`dual` = 柱状 + 折线双轴（`lineValues` 必填）。 */
+  variant: 'bars' | 'dual'
+  /** 类目标签（与 `values` 一一对应；上限 32 项）。 */
+  labels: string[]
+  /** 主序列（柱，左轴；非负、有限，至少一个 > 0）。 */
+  values: number[]
+  /** `variant:'dual'` 专用：副序列（折线，右轴），长度必须与 `labels` 一致。 */
+  lineValues?: number[]
+  /** 折线图例文案（`dual` 时显示在右轴旁）。 */
+  lineLabel?: string
+  /** 主序列单位后缀（轴标签与数值标签用，如 `s` / `%`；缺省无）。 */
+  unit?: string
+  /** 副序列单位后缀（缺省无）。 */
+  lineUnit?: string
+  /** 柱色（缺省主题蓝 #4f9cf9）。 */
+  color?: string
+  /** 折线色（缺省琥珀 #ffb454）。 */
+  lineColor?: string
+}
+
+/**
  * O-10：**单条旁白**（多句旁白各占一段时间轴）。
  *
  * 真机症状：三句旁白要落在 2.60 / 7.07 / 11.90 秒，而 `voiceOverUrl` 只收一个文件 ——
@@ -601,7 +632,7 @@ export interface ManifestValidation {
   warnings: string[]
 }
 
-const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz'])
+const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart'])
 const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
@@ -706,6 +737,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient']),
+  chart: new Set(['variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
@@ -1489,6 +1521,55 @@ export function validateManifest(input: unknown): ManifestValidation {
                 errors.push(`${at}.gradient.${key} 必须是非空颜色字符串`)
               }
             }
+          }
+        }
+        break
+      }
+      case 'chart': {
+        const variant = track.variant
+        if (variant !== 'bars' && variant !== 'dual') {
+          errors.push(`${at}.variant 只允许 bars / dual（当前：${String(variant)}）`)
+        }
+        const labels = track.labels
+        if (
+          !Array.isArray(labels) || labels.length === 0 || labels.length > 32 ||
+          !labels.every((l) => isNonEmptyString(l))
+        ) {
+          errors.push(`${at}.labels 必须是非空字符串数组（1–32 项，与 values 一一对应）`)
+        }
+        const values = track.values
+        const valuesOk =
+          Array.isArray(values) && values.length > 0 &&
+          values.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+        if (!valuesOk) {
+          errors.push(`${at}.values 必须是非负有限数值数组（柱高数据，不允许负值）`)
+        } else if (Array.isArray(labels) && labels.length > 0 && Array.isArray(values) && values.length !== labels.length) {
+          errors.push(`${at}.values 长度（${String(Array.isArray(values) ? values.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
+        } else if (Array.isArray(values) && values.every((v) => v === 0)) {
+          errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
+        }
+        if (track.lineValues !== undefined) {
+          if (variant === 'bars') {
+            warnings.push(`${at} 是 variant:'bars'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
+          } else {
+            const lv = track.lineValues
+            const lineOk =
+              Array.isArray(lv) && lv.length > 0 &&
+              lv.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+            if (!lineOk) {
+              errors.push(`${at}.lineValues 必须是非负有限数值数组（折线数据）`)
+            } else if (Array.isArray(labels) && labels.length > 0 && lv.length !== labels.length) {
+              errors.push(`${at}.lineValues 长度（${String(Array.isArray(lv) ? lv.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
+            } else if (Array.isArray(lv) && lv.every((v) => v === 0)) {
+              errors.push(`${at}.lineValues 不能全为 0`)
+            }
+          }
+        } else if (variant === 'dual') {
+          errors.push(`${at} 是 variant:'dual'，必须提供 lineValues（折线数据，长度同 labels）`)
+        }
+        for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor'] as const) {
+          if (track[key] !== undefined && !isNonEmptyString(track[key])) {
+            errors.push(`${at}.${key} 必须是非空字符串`)
           }
         }
         break

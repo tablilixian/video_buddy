@@ -68,7 +68,9 @@ export const FILE_WHITELIST = {
   'src/client/StudioFrame.tsx': 3168,
   'src/client/index.ts': 2983,
   'src/client/canvas/NodeInputCard.tsx': 2087,
-  'src/remotion/manifest.ts': 1928,
+  // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
+  // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
+  'src/remotion/manifest.ts': 2002,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。

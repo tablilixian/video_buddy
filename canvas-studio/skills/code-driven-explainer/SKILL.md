@@ -63,6 +63,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；绕点转圈、路径描边生长这类**关系型运动**用 `orbit` / `shape:"path"`+`draw`（一行声明，别手算关键帧）；范式的选择见 `motion-patterns.md` §2。
 - **发光 / 描边 / 投影 / 虚化样式**：用 `fx`（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），不要试图用多层 shape + 透明度硬模拟。
 - **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。
+- **数据对比 / 数值展示**：≥3 项的数据对比用 `chart` 轨（柱状/双轴，数据显式声明、柱高严格成比例）；2–4 个大数字用 `textCard` 的 `dataCard`。字段见 `references/manifest-contract.md` 的 chart 节。
 
 **保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景——这条不变，不要给字幕卡加 `fadeFrames`。
 

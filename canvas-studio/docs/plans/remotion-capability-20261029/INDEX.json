@@ -86,5 +86,13 @@
     "autoScore": 5,
     "outFile": "cap10.mp4",
     "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/10-editing"
+  },
+  {
+    "id": "11",
+    "title": "sourceRect 精灵图子区域裁切（CV-392）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap11.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/11-sprite-rect"
   }
 ]

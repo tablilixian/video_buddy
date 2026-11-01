@@ -41,7 +41,8 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
 全表在 `references/remake-mapping.md` §2–§3。速记：
 
 - 实拍段/产品演示 → `video` 轨；静帧/产品图 → `image` 轨（`fit: cover/contain/
-  kenburns`，kenburns 推近是白嫖节奏感的第一手段）。
+  kenburns`，kenburns 推近是白嫖节奏感的第一手段）；一张精灵图切多格 → 每格一条
+  轨加 `sourceRect` 百分比子区域。
 - 口播/歌词逐字 → `caption` 轨（词级卡拉OK，`src` 挂该句旁白，`tts_voiceover`
   逐句出）；句级字幕条/标题 → `textCard`（`anim` 四种入场动效）。
 - 真数据表/对比 → `chart` 轨（`bars`/`dual`）；讲「每镜多长」这类结构数据直接

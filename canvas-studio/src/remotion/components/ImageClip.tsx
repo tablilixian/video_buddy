@@ -3,17 +3,24 @@
  * 会话效率优化（2026-10-26）：`track.box` 在场时整轨约束到该子区域（语义与
  * VideoClip 相同：盒子定位层 + overflow hidden + cover 裁剪）；背景色进盒子。
  * `caption` 仍铺满画布贴底（区域化字幕请改用 textCard 轨 + box）。
+ * CV-392（REQ-036 R-2）：`sourceRect` 圈出源图子区域按 fit 语义铺层 —— cover/contain
+ * 的等比缩放需要自然尺寸，onLoad 里测（Remotion delayRender 官方模式，帧截图必等
+ * 测量完成；AudioViz decodeAudioData 同款先例）；坏图退回纯百分比拉伸兜底，不卡渲染。
+ * 无 sourceRect 的路径与 2026-10-31 之前逐字节同构（老 manifest 逐帧不变）。
  */
+import { useState } from 'react'
 import type React from 'react'
-import { AbsoluteFill, Img, useCurrentFrame } from 'remotion'
+import { AbsoluteFill, Img, continueRender, delayRender, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import { boxStyle } from '../shape-geometry.js'
 import type { ImageClipTrack } from '../manifest.js'
+import { spriteRegionStyle } from '../sprite.js'
 import { useFontFamilyStack } from './font-context.js'
 
 export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const fontFamily = useFontFamilyStack()
+  const { width: canvasW, height: canvasH } = useVideoConfig()
   const duration = Math.max(1, track.durationInFrames)
   const fit = track.fit ?? 'cover'
   const kenBurns = fit === 'kenburns' ? 1 + 0.08 * (frame / duration) : 1
@@ -21,6 +28,19 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   // 缺省参数下 `layerTransform` 是恒等串，与 CV-334 之前的 `scale(kenBurns)` 等价。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   const box = track.box
+  const sourceRect = track.sourceRect
+  // CV-392：测量态只服务 sourceRect 路径；无 sourceRect 时零 delayRender（老 manifest 零影响）。
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
+  const [measureHandle] = useState(() =>
+    sourceRect === undefined ? null : delayRender('image sourceRect: 等图片加载测自然尺寸'),
+  )
+  const settleWith = (img: { naturalWidth: number; naturalHeight: number } | null) => {
+    if (measureHandle === null) return
+    setNatural(img === null ? { w: 0, h: 0 } : { w: img.naturalWidth, h: img.naturalHeight })
+    continueRender(measureHandle)
+  }
+  const layerW = box === undefined ? canvasW : (canvasW * box.w) / 100
+  const layerH = box === undefined ? canvasH : (canvasH * box.h) / 100
   // OPT-8（2026-10-26）：兜底底色只跟**媒体层**走（与 VideoClip 同修）——
   // 挂铺满容器会让 z 序更高的图片轨把整幅画布涂成深底、盖掉下方内容轨。
   const layerStyle: React.CSSProperties = box === undefined
@@ -42,10 +62,31 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
       }}
     >
       <AbsoluteFill style={layerStyle}>
-        <Img
-          src={track.src}
-          style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}
-        />
+        {sourceRect === undefined ? (
+          <Img
+            src={track.src}
+            style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}
+          />
+        ) : (
+          <Img
+            src={track.src}
+            onLoad={(e) => settleWith(e.currentTarget)}
+            onError={() => settleWith(null)}
+            style={
+              natural === null
+                ? { position: 'absolute', visibility: 'hidden', width: '100%', height: '100%' }
+                : {
+                    position: 'absolute',
+                    objectFit: 'fill',
+                    ...spriteRegionStyle(sourceRect, natural, {
+                      mode: fit === 'contain' ? 'contain' : 'cover',
+                      layerW,
+                      layerH,
+                    }),
+                  }
+            }
+          />
+        )}
       </AbsoluteFill>
       {track.caption !== undefined && track.caption.length > 0 ? (
         <AbsoluteFill

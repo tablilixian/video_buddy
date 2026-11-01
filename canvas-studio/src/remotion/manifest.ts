@@ -25,6 +25,8 @@ import type { StudioAudioComposition } from '../contracts/canvas.js'
 import { compositionFromPresence, compositionFromTimeline } from '../audio-timeline.js'
 import { timelineFromManifestAudio } from '../audio-compose.js'
 import { formatMotionLint, lintMotion } from './motion-lint.js'
+import type { SpriteRect } from './sprite.js'
+import { validateSpriteRect } from './sprite.js'
 import { countSpokenChars } from './word-timing.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
@@ -423,6 +425,12 @@ export interface ImageClipTrack extends BaseTrack {
   src: string
   /** 图片展示形态：`cover`（默认，填满）/ `contain`（留边）/ `kenburns`。 */
   fit?: 'cover' | 'contain' | 'kenburns'
+  /**
+   * CV-392（REQ-036 R-2）：精灵图子区域裁切 —— 百分比 `{x,y,w,h}`（0–100，与 box
+   * 同口径），圈出的**子区域**按 `fit` 语义铺进轨道层（「把圈出的区域当作这张图」；
+   * kenburns 仍可叠加）。缺省不写 = 整图，老 manifest 逐帧不变。
+   */
+  sourceRect?: SpriteRect
   caption?: string
 }
 
@@ -1456,6 +1464,9 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         if (type === 'image' && track.fit !== undefined && (typeof track.fit !== 'string' || !IMAGE_FITS.has(track.fit))) {
           errors.push(`${at}.fit 非法（${String(track.fit)}）`)
+        }
+        if (type === 'image' && track.sourceRect !== undefined) {
+          validateSpriteRect(track.sourceRect, at, errors)
         }
         // 三期 W3-1：裁剪 / 速率 / 静音 / 音量 / 循环（只对 video 有意义）。
         if (type === 'video') {

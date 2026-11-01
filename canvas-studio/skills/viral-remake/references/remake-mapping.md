@@ -28,7 +28,7 @@
 | 参考片元素 | 轨道 | 关键字段 | 决策备注 |
 |---|---|---|---|
 | 实拍段（产品演示/人物/食物） | `video` | `src`（同源 URL） | 素材先落画布（生视频走画布 video 节点，产物引用资产 URL）；一镜一段，不剪辑 |
-| 静帧/产品图 | `image` | `fit: cover / contain / kenburns` | `kenburns` 推近营造节奏；多图轮换 = 多条轨接续 + 转场 |
+| 静帧/产品图 | `image` | `fit: cover / contain / kenburns` | `kenburns` 推近营造节奏；多图轮换 = 多条轨接续 + 转场；**一张精灵图切多格** → 每格一条轨 + `sourceRect {x,y,w,h}` 百分比子区域（0–100，与 box 同口径，越界硬失败） |
 | 口播/歌词逐字 | `caption` | `src` + `text`（单句一条轨） | 词级卡拉OK；`words` 显式时间戳或能量谷推导（±1–3 帧） |
 | 句级字幕条/标题卡 | `textCard` | `variant: subtitle / title`、`anim` | `anim` 四选一：`fadeUp` / `maskReveal` / `typewriter` / `wordStagger` |
 | 要点列表 | `textCard` | `variant: bullets` | 逐行入场；数据真成表用 chart |

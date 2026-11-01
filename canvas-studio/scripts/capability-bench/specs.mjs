@@ -164,6 +164,18 @@ export const SPECS = [
     assets: ['clip', 'bgm'],
     expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true, minMotion: true },
   },
+  {
+    id: '11',
+    axis: 'sprite-rect',
+    title: 'sourceRect 精灵图子区域裁切（CV-392）',
+    reference: 'REQ-036 R-2 · sprite sheet 复用',
+    status: 'done',
+    durationInFrames: 90,
+    deps: '零依赖（产品 sprite.ts 纯函数直连 + canvas 合成精灵图 dataURL）',
+    design: '2×2 四色象限精灵图，4 块板取 q1/q2/q3/q4：cover×2 + 宽扁盒 cover（验裁切方向）+ contain（验留边居中）；走 onLoad 测自然尺寸的 delayRender 门。',
+    assets: [],
+    expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: false, minMotion: true },
+  },
 ]
 
 export function getSpec(id) {

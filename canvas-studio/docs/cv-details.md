@@ -2034,3 +2034,16 @@
 - **验证**：18 个 skill 门禁测试文件定向 **152·152** 全绿（skill-catalog 双向 / skill-platform-meta 深等 / progressive-disclosure 12KB·断链·审批门 / tool-refs / slots / role-consistency / guardrail / discipline 等）；全量 smoke **2496·2496** 门禁 0 新增红；typecheck 绿。
 - **验收出口**：桌面重启后会话里说「复刻这条视频 / 做个同款把产品换成 X」应触发本 skill；真机全流程一次跑通（参考视频 → 拆解表 → manifest → `render_composition` 出片 → 换素材再出一版），对照五项 PASS（REQ-036 方案 §四）。
 - **涉及文件**：`skills/viral-remake/SKILL.md`、`skills/viral-remake/references/remake-mapping.md`、`skills/viral-remake/platform.yaml`（均新）/ `src/skill-catalog.ts`（+13）/ `tests/viral-remake-skill.test.mjs`（新）。
+
+---
+
+#### CV-392 · image 轨 sourceRect 精灵图子区域裁切（REQ-036 R-2）（2026-10-31，待桌面验收）
+
+- **需求**：REQ-036 爆款复刻 R-2 —— 精灵图（Sprite Sheet）物料复用：一张拼图素材切多块，多条 image 轨各取一格（方案 `docs/plans/REQ-036-爆款复刻-需求转化计划-20261031.md` §二.R-2）。
+- **语义**：`ImageClipTrack.sourceRect: {x,y,w,h}` 百分比 0–100（与 box 同口径），四字段全必填；圈出的子区域按既有 `fit` 语义（cover/contain/kenburns）铺进轨道层 ——「把圈出的区域当作这张图」；不写 = 整图，**老 manifest 逐帧不变**。
+- **实现**：① 新纯函数模块 `src/remotion/sprite.ts`（103 行，零依赖）：`validateSpriteRect`（四字段有限 / x·y ∈ 0–100 / w·h > 0 / x+w·y+h ≤ 100，1e-6 浮点容差，越界硬失败）+ `spriteRegionStyle`（几何：scale = max/min(层尺寸/区域尺寸) → 整图元素按 scale 放大、负偏移让区域左上角落在层内居中位、层 overflow hidden 裁溢出 + `objectFit:'fill'` 精确拉伸 —— **不用 background-position**（CSR 写法护栏：url() 不等待加载）；退化口径：坏图 natural=0 → 纯百分比拉伸填满，不抛错卡渲染）；② `manifest.ts` 校验接线（image 分支，+11 净行棘轮 2157→2168 显式登记）；③ `ImageClip.tsx` sourceRect 分支：onLoad 测自然尺寸（Remotion 官方 delayRender/continueRender 模式，帧截图必等测量；AudioViz decodeAudioData 同款先例）+ `useVideoConfig` 算层尺寸（box ? 画布×box% : 画布）；**无 sourceRect 路径与改动前逐字节同构**（零 delayRender、零新元素）。
+- **验证**：`tests/sprite-rect.test.mjs` 11 条（契约 6：合法形态×4 / 非对象缺字段非数值 / 越界 6 形态 / 浮点尾差容差 / 直连报错带轨道前缀；几何 5：cover 宽主 / 偏移映射 / contain 留边 / 退化兜底 / 四象限对角 —— 全部精确数值断言）；**反向变异 2 处实证变红**（M1 cover scale 换 min → 几何 2 红；M2 删越界判据 → 契约 3 红）还原绿；全量 smoke **2507·2507** 0 新增红；build + tsc 绿。
+- **bench E2E（11 号）**：composition **直连产品 `src/remotion/sprite.ts`**（bench webpack extensionAlias `.js→.ts`，公式零拷贝防漂移）；offscreen canvas 合成 2×2 四色象限精灵图 dataURL；4 块板 q1/q2 cover + q3 宽扁盒 cover（验裁切方向）+ q4 contain（验留边居中）—— **autoScore 5/5、`--repeat=2` 字节数全等（643518）**、still 目视四象限全对（q2 左缘白分隔条、q3 双竖条、q4 四角斑 + 黑边）。**踩坑（README §五记档）**：canvas 合成素材用 `fillText`/`arc` ⇒ GPU 文本/圆弧光栅跨页面加载不确定，首轮 H4 **86/90 视频帧不一致**（音频流全等定位到视频流后锁定根因）；自造素材只用整数坐标 fillRect。
+- **文档四处同步**：`code-driven-explainer/references/manifest-contract.md`（image 节 sourceRect 行）/ `viral-remake/references/remake-mapping.md` §2 image 行 / `viral-remake/SKILL.md` §2 速记 / bench README（进度行 + §五坑表）。
+- **验收出口（桌面）**：真机渲一条含 `sourceRect` 多格精灵图的 manifest（四格与目视对照）；老 manifest（无 sourceRect）渲染逐帧不变。
+- **涉及文件**：`src/remotion/sprite.ts`（新）/ `src/remotion/manifest.ts`（+11）/ `src/remotion/components/ImageClip.tsx`（65→106 行）/ `tests/sprite-rect.test.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）/ `scripts/capability-bench/compositions/11-sprite-rect.tsx`（新）+ `specs.mjs` + `compositions/entry.tsx` / 文档四处。

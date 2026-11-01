@@ -3,7 +3,7 @@
 > 一条命令：`bundle → 静态服务 → Electron → renderMediaOnWeb → 5 条硬检查 → contact sheet → verdict/README/probe`。
 > **产品代码零改动**，新代码只在本目录；产物落 repo 外（`~/Desktop/job/VideoOut/remotion-capability-<date>/NN-axis/`）。
 
-**当前进度（2026-10-31 深夜，十项完成 + S1/S2 实测 + 02S 真 Skia 冒烟）**：十项出片全绿 + S1 三采样点（1080p60/1080p30×60s/720p30×180s，4–6ms/帧，RSS≤151MB）+ S2 三窗口连渲 15/15（CV<20%，节流档不减速 ⇒ web-renderer 不依赖 rAF）；02S 真 Skia 冒烟（`--only=02S`）：**CanvasKit wasm 直绘 <canvas> 出片 ✓，rn-skia 组件层不出画 ✗**（rn-skia 2.x 要 React 19；1.12.4 + react-native-web 别名 + AssetRegistry 垫片 + fs:false + pool 整段路径 locateFile + JSX 大写陷阱，排障全程见 02S README）。压力驱动 `stress.mjs`（--s1/--s2）。
+**当前进度（2026-10-31 深夜，十项完成 + S1/S2 实测 + 02S 真 Skia 冒烟 + 11 sprite 裁切）**：十项出片全绿 + S1 三采样点（1080p60/1080p30×60s/720p30×180s，4–6ms/帧，RSS≤151MB）+ S2 三窗口连渲 15/15（CV<20%，节流档不减速 ⇒ web-renderer 不依赖 rAF）；02S 真 Skia 冒烟（`--only=02S`）：**CanvasKit wasm 直绘 <canvas> 出片 ✓，rn-skia 组件层不出画 ✗**（rn-skia 2.x 要 React 19；1.12.4 + react-native-web 别名 + AssetRegistry 垫片 + fs:false + pool 整段路径 locateFile + JSX 大写陷阱，排障全程见 02S README）；**11 号 sourceRect 精灵图裁切**（CV-392）：4 块板 q1~q4（cover×2 + 宽扁盒 cover 裁切 + contain 留边）5/5 全绿、`--repeat=2` 字节数全等，**直接 import 产品 `src/remotion/sprite.ts` 纯函数**（公式零拷贝，漂移即本条失真）。压力驱动 `stress.mjs`（--s1/--s2）。
 **当前进度（2026-10-30 凌晨，十项全部完成）**：**10/10 出片、H1~H5 全绿**（`--repeat=2` 逐帧 md5 全等）。目视分：#04 #05 #06 #07 #10 = 5；#01 #02 #08 #09 = 4（各扣 1 处渲染器已知边界）；#03 = 3（全量捕获丢 WebGL canvas 内容）。产物根 `~/Desktop/job/VideoOut/remotion-capability-20261029/`（REPORT/metrics/INDEX/DECISIONS 齐），repo 内索引 `docs/plans/remotion-capability-20261029/INDEX.md`。收尾汇总脚本：`NODE_OPTIONS= node scripts/capability-bench/summarize.mjs`。
 **四个新实证的渲染器边界（复跑前先读）**：① `mix-blend-mode` 无视（A9）；② clock 的 conic mask 无视 + flipX 的 perspective 丢失（A2，clip-path polygon 修法已演示）；③ 全量捕获丢 WebGL canvas 内容（默认模式反而正常，#01 证据）；④ `useVideoTexture` 的 `<video>` 永不 loaded（#01 降级记录）。写法约束：图片用 `<Img>` 不用 `background-image: url()`；`<Audio>/<Video>` 从 `@remotion/media` 导入。
 
@@ -82,6 +82,7 @@ NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=03 --html=0
 | `--repeat=1` | H4 记 `not-run`，autoScore 掉到 4 | 交最终产物时用 `--repeat=2` |
 | 字体 | 不注入就回退系统字体，换机 tofu / 不可复现 | `entry.tsx` 已注入 `@font-face` 并等 `document.fonts.ready` |
 | `--flags=CanvasDrawElement` | 带 flag 时 `loadURL` 偶发 `ERR_FAILED`（约 2/9） | 重试一次；仍失败就记 `A10` |
+| **canvas 合成素材**（#11 实测） | 页面里 `canvas.toDataURL` 自造图，用了 `fillText`/`arc` ⇒ **H4 大面积红**（86/90 视频帧不一致）：2D 文本/圆弧的 GPU 光栅跨页面加载不确定 | 自造素材**只用整数坐标 `fillRect`**（实心矩形是精确光栅）；文字/圆弧一概不画 |
 
 ## 六、回归 SOP（渲染器升级 / 重构后重跑）
 

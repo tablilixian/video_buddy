@@ -2023,3 +2023,14 @@
 
 - **内容**：`bandSplit` + `bandColors`：BAND_WINDOWS_AT_48K 六级 box 低通级联（窗口随采样率缩放）、前缀和低通 + 残差 RMS 拆低/中/高能量、自峰值归一化；柱高取各自频段包络（`bandWaveformBars`，取样契约与 waveformBars 同构 + smoothed 泛型 EMA），柱色按频段六色族（低蓝→高红，bench #06 实测）；仅 bandSplit 时走频段路径 ⇒ **老 manifest 解码路径一字不变**；line 模式/gradient 同给告警。
 - **提交**：`32163fc0d9`。
+
+---
+
+#### CV-391 · viral-remake 爆款复刻编排 skill（REQ-036 R-1）（2026-10-31，待桌面验收）
+
+- **内容**：新决策型 skill `skills/viral-remake/`（stage `'preview'`）+ catalog 快照登记（`src/skill-catalog.ts` BUNDLED_CATALOG +13 行）：① SKILL.md（5.9KB，12KB 闸内）——前置自检（参考片来源 / 复刻深度 / 替换清单）→ 拆解「爆款拆解表」（inspect_image 读抽帧，五列：镜序/起止秒/内容类型/转场入/字幕文案+素材需求）→ 映射（速记指针）→ 组装渲染（manifest 契约让位 code-driven-explainer 分册、draft 档先行、工单并发 1）→ 五项对照验收（节奏 ≤0.2s / 转场 / 字幕 / 信息卡 / 整体）→ 批量换装（变量表循环，文案不盲替）→ 边界（任意代码动效不复刻 / A2·A9 差异告知 / 素材质量不评 / 版权默认换掉）；② `references/remake-mapping.md` —— 拆解表模板 / 内容类型→轨道映射表（video·image·caption·textCard·chart·shape·audioViz 全覆盖，chart `source:'timeline'` 结构数据零手填）/ 转场 11 式全表（就近近似口径，A2/A9 差异说明）/ 时长节奏→manifest 骨架 / 批量变量表模板；③ platform.yaml（spec / film / hue 168 / decision / general / preview）。
+- **守卫**：新 `tests/viral-remake-skill.test.mjs` 5 条 —— 三件套在位 + name 逐字一致 / 分册转场全表与 manifest `EFFECTS` **双向**一致（引擎加新转场分册没跟 = 红；分册写了引擎没有的效果 = 红）/ 核心轨道覆盖 ⊆ `TRACK_TYPES` / 文字动效与 `TEXT_ANIM_PRESETS` 双向一致 / 编排定位（决策型不得写知识型让位哨兵）。集合提取直读 `src/remotion/manifest.ts` 源文本（EFFECTS/TRACK_TYPES/TEXT_ANIM_PRESETS 未导出）。**反向变异 M1**（分册删 `clock` 行）实证变红、还原绿。
+- **踩坑记档**：① 让位声明哨兵「流程、审批门禁与工具契约一律以」是 **knowledge 型专用**（`skill-role-consistency.test.mjs` 的 YIELDS_WORKFLOW）——决策型 skill 写它 = CV-324 红，改「编排定位」表述；② 反向断言的 fade 前缀会撞 `fadeUp`（textCard anim 值不是转场），集合提取后先排除 TEXT_ANIM_PRESETS；③ `BUNDLED_CATALOG` 是 platform.yaml 的派生快照，两处必须同批同步（`skill-platform-meta` 深等门）。
+- **验证**：18 个 skill 门禁测试文件定向 **152·152** 全绿（skill-catalog 双向 / skill-platform-meta 深等 / progressive-disclosure 12KB·断链·审批门 / tool-refs / slots / role-consistency / guardrail / discipline 等）；全量 smoke **2496·2496** 门禁 0 新增红；typecheck 绿。
+- **验收出口**：桌面重启后会话里说「复刻这条视频 / 做个同款把产品换成 X」应触发本 skill；真机全流程一次跑通（参考视频 → 拆解表 → manifest → `render_composition` 出片 → 换素材再出一版），对照五项 PASS（REQ-036 方案 §四）。
+- **涉及文件**：`skills/viral-remake/SKILL.md`、`skills/viral-remake/references/remake-mapping.md`、`skills/viral-remake/platform.yaml`（均新）/ `src/skill-catalog.ts`（+13）/ `tests/viral-remake-skill.test.mjs`（新）。

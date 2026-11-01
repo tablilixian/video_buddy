@@ -1,0 +1,17 @@
+# 技能广场展示元数据（CV-324 单一事实源）。
+# 本文件是 viral-remake 的展示元数据唯一载体：广场卡片、skill 侧栏、推荐横滚都从这里派生。
+# 改展示字段只改本文件，不要再改 src/skill-catalog.ts 里的快照。
+# 字段契约见 src/skill-catalog.ts 文件头；role/slot 为放开用户上传预留（CV-325）。
+
+name: "viral-remake"
+title: "爆款复刻"
+summary: "给一条参考视频：逐镜拆解节奏与结构 → 映射 manifest 轨道 → 出片对照 → 换素材换文案批量裂变。"
+category: "spec"
+icon: "film"
+hue: 168
+featured: false
+# 试跑期：功能可用但尚未转正（广场可见时 UI 标「试跑」角标，CV-118）。
+stage: "preview"
+# 决策型（规定「怎么做」的下游创作分支），不是知识型；故不进能力槽位绑定表，slot 用 general。
+role: "decision"
+slot: "general"

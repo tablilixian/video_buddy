@@ -386,6 +386,18 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  // CV-391（REQ-036 R-1）：爆款复刻编排 —— 参考视频拆解 → manifest 轨道映射 → 对照验收 → 批量换装。
+  // stage 'preview' = 试跑期（新路径，待桌面验收转正）。
+  {
+    name: 'viral-remake',
+    title: '爆款复刻',
+    summary: '给一条参考视频：逐镜拆解节奏与结构 → 映射 manifest 轨道 → 出片对照 → 换素材换文案批量裂变。',
+    category: 'spec',
+    icon: 'film',
+    hue: 168,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 提示词技术 ----
   {
     name: 'h3-prompt-writing',

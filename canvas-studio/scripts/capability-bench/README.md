@@ -82,3 +82,13 @@ NODE_OPTIONS= node scripts/capability-bench/run.mjs --only=03 --html=0
 | `--repeat=1` | H4 记 `not-run`，autoScore 掉到 4 | 交最终产物时用 `--repeat=2` |
 | 字体 | 不注入就回退系统字体，换机 tofu / 不可复现 | `entry.tsx` 已注入 `@font-face` 并等 `document.fonts.ready` |
 | `--flags=CanvasDrawElement` | 带 flag 时 `loadURL` 偶发 `ERR_FAILED`（约 2/9） | 重试一次；仍失败就记 `A10` |
+
+## 六、回归 SOP（渲染器升级 / 重构后重跑）
+
+> 什么时候跑：`@remotion/web-renderer` 升级（如等 4.0.540 的 mix-blend-mode）、Electron/Chromium 升级、渲染链路重构后。全程 headless，不碰产品代码。
+
+1. **全量出片**：`NODE_OPTIONS= node scripts/capability-bench/run.mjs --all --repeat=2 --out=<新产物根>`（约 40–60 分钟；可先 `--bundle-only` 快验能不能打包）。
+2. **压力两项**：`NODE_OPTIONS= node scripts/capability-bench/stress.mjs --s1` 与 `--s2`（判据见 REPORT §二.5：S1 4–6ms/帧 / RSS≤151MB；S2 15/15 CV<20%）。
+3. **汇总对比**：`NODE_OPTIONS= node scripts/capability-bench/summarize.mjs`，新旧 REPORT.md 逐项对比 humanScore 与 A1~A10 归因——**结论变化即渲染器行为变化**，先查归因表再下结论。
+4. **边界回归清单**（每项都要新像素证据）：A9 mix-blend-mode 是否仍无视；A2 conic mask / perspective；html-in-canvas 全量捕获是否仍丢 WebGL；`useVideoTexture` 的 `<video>` 是否仍不 loaded。
+5. **产品侧护栏**：`corepack yarn test`（含 `csr-writing-guard`）。护栏只拦「必炸」写法，渲染器开始支持新写法不会误拦；bench 新结论同步进 `docs/plans/渲染能力边界与修复清单-20261030.md`。

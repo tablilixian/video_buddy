@@ -1988,3 +1988,38 @@
 - **涉及文件**：`src/canvas-gesture-raf.ts`（新）/ `src/canvas-cull.ts`（新）/ `src/client/styles-canvas-perf.ts`（新）/ `src/client/styles.ts`（删 will-change，净 0）/ `src/client/canvas/CanvasNode.tsx`（+8：dragging prop / 2D translate / contain-intrinsic-size）/ `src/client/canvas/CanvasSurface.tsx`（+62，func +52：合并器接线 + applyPointerMove 应用体化 + wheel 合帧 + flush 双收口 + dragging 接线 + edgeViewport 接 canvas-cull）/ `tests/canvas-gesture-raf.test.mjs`、`tests/canvas-viewport-cull.test.mjs`、`tests/canvas-node-compositing-guard.test.mjs`（新）/ `tests/canvas-gesture-req029.test.mjs`（滚轮断言改写）/ `tests/file-size-guard.test.mjs`（棘轮显式登记）/ `scripts/probe/canvas-raster.probe.mjs`（新）。
 - **批 2（同日真机迭代：拖动明显改善 / 缩小仍有 tile 告警，低倍率尤甚）**：机制复盘——平移只改 translate，合成器把已有瓦片整体挪位**不重光栅**（所以 P0 批收益明显）；缩放每改一档 scale 世界层全部可见瓦片作废重光栅（DOM 画布固有成本）；**缩小方向独有两个放大器**：① 大量节点跨越 cv-auto「相关」边界，每帧子树布局 + 瓦片失效**叠加**在 scale 全量重光栅上；② 低倍率可见图片最多，跨 scale 档批量重解码。修法（批 2）：**手势期 cv-auto 抑制**——`.csCanvasGesturing .csNode { content-visibility: visible }`（styles-canvas-perf.ts），手势中可见区内节点反正全要画，cv-auto 只剩失效成本，手势结束一次性回落；`gesturing` 渲染态由 `armPointer`（平移/拖节点/缩放/连线四类指针手势汇聚点）点亮、`onPointerUp`/`onPointerCancel` 收档，滚轮无终点事件用 **200ms 去抖**回落（回调带 `gesture.mode === 'none'` 守卫，防指针手势接棒时被误落）。G1-⑧ 守卫钉住规则与两端接线；棘轮 1727→1749（func 1347→1368）。剩余两个候选杠杆按真机读数分流：**D-04 GPU 预算开关实验**（`force-gpu-mem-available-mb`，若加开关告警消失 = 预算是约束，拍板是否落包）与 **D-03 缩略图**（若 Layer borders / 探针显示低倍率下重解码是主因，则启动）。
 - **批 3（真机迭代：10% 边界抖动 + 壳层同抖的定性）**：现象收窄——拖动已好；**缩到 10%（MIN_VIEW_SCALE）附近抖动严重，且红框里的顶栏 / 左侧竖条（画布外的壳层）一起抖**；放大过 ~10.5% 即停（0.100~0.105 之间标签四舍五入恒显 10%，纯显示口径）。机制：10% 时整个世界（164 节点）全部落进视口，世界层要光栅的「可见世界面积」达到最大；瓦片预算是**页面共享**的，世界层在此处把预算吃爆，壳层自己的瓦片被逐出 → 顶栏/侧栏隔帧画不出 = 壳层抖动。头号嫌疑：`.csCanvasLayer` 的 `will-change: transform` —— cc 把它当「随时可能启动动画」的信号，低倍率下光栅刻度钉在高处（本应 0.2），可见面积最大 × 刻度未降 = 瓦片需求爆炸。修法（批 3）：世界层**弃 will-change 改 translate3d 提升**（3D 变换同样强制成层，平移仍是纯合成更新，把「可能动画」通道关死；styles.ts 删 `.csCanvasLayer` 的 will-change，CanvasSurface 世界 transform 改 `translate3d(...) scale(...)`）；G1-② 改写钉住「无 will-change + translate3d 在位 + 全文件 will-change 恒 1」。若批 3 后 10% 仍抖 → 嫌疑顺延：D-04 预算开关实验（判定预算是否约束）→ D-03 缩略图（低倍率批量重解码）→ P2-5 背景网格根层每帧重绘。棘轮 10731→10734 / 1749→1752（func 1368→1371）登记。
+
+---
+
+#### CV-385 · 渲染能力基准 bench 收口：10/10 出片 + S1/S2 压力 + 02S 真 Skia 冒烟（2026-10-30~31，REQ-034 延伸，待桌面验收）
+
+- **内容**：独立子工程 `scripts/capability-bench/`（产品代码零改动，新代码只在本目录）：bundle → 同源静态服务（`/pool/<key>` 整段路径）→ Electron（`renderMediaOnWeb`，OpenH264）→ H1~H5 硬检查 → contact sheet → verdict/README/INDEX/DECISIONS。**十项能力轴 10/10 出片全绿**（`--repeat=2` 逐帧 md5 全等，772/772）；**S1 压力**三采样点（1080p60×300f / 1080p30×1800f / 720p30×5400f，4–6ms/帧，RSS≤151MB；60fps 容器填充为 H3 校准项 D21）；**S2 稳定性**三窗口连渲 15/15 CV<20%，节流档（BENCH_ALLOW_THROTTLE=1）不减速 ⇒ web-renderer 帧步进不依赖 rAF；**02S 真 Skia 冒烟**：CanvasKit wasm 直绘 `<canvas>` 出片 ✓（SKSL runtime shader 逐帧驱动），rn-skia 组件层不出画 ✗（2.x 要 React 19 内部；锁 1.12.4 + react-native-web 别名 + AssetRegistry 垫片 + fs:false + pool 整段路径 locateFile + JSX 小写成宿主元素陷阱；A6 ref-vs-capture 竞速记降级）。
+- **四个新实证的渲染器边界**（A1~A10 归因表）：① `mix-blend-mode` 无视（A9）；② clock 的 conic mask 无视 + flipX 的 perspective 丢失（A2，clip-path polygon 修法已演示）；③ html-in-canvas 全量捕获丢 WebGL canvas 内容，默认模式反而正常（#01 证据）；④ `useVideoTexture` 的 `<video>` 永不 loaded（28s delayRender 超时）。
+- **产物**：repo 外产物根 `~/Desktop/job/VideoOut/remotion-capability-20261029/`（REPORT.md 含 §二.5 S1/S2 / metrics.json / INDEX.json / DECISIONS.md D19~D21 / _stress）；repo 内索引 `docs/plans/remotion-capability-20261029/INDEX.md`；技术事实源 `docs/plans/渲染能力边界与修复清单-20261030.md`（13 条边界 + D-01~D-11 代拍板）与 bench README（回归 SOP §六）。
+- **涉及文件**：`scripts/capability-bench/**`（run / specs / stress / summarize / lib / compositions / electron main）+ `docs/plans/remotion-capability-20261029/`。
+- **提交**：`eeafc4f2f0` / `7bb727d82b` / `b3690cdf34` / `47ac208ffd` / `0aa9ce81d6` / `69a3a73a3f`。
+
+#### CV-386 · CSR 渲染写法护栏：三条硬约束机检落守卫测试（2026-10-31，REQ-034 延伸，待桌面验收）
+
+- **内容**：`tests/csr-writing-guard.test.mjs` 把 bench 实证的三条 CSR 写法硬约束变成机检：① `<Audio>/<Video>` 禁从 `remotion` 核心包导入（web-renderer 抛 `Html5Audio is not supported`，必须 `@remotion/media`）；② `backgroundImage: url()` 必须配 preload/delayRender 配对检查（web-renderer 不等待图片加载，首帧黑场）；③ 逐文件扫描 src/remotion 违例即红。`AGENTS.md` 编码约束同步 +3 行。
+- **提交**：`b446d6958d`。
+
+#### CV-387 · 转场收口：clock/flipX 坏点修复 + zoomBlur/linearBlur/crossWarp 三近似（2026-10-31，REQ-034 延伸，待桌面验收）
+
+- **内容**：① clock 转场改 `clockFanPolygon`（12 点起顺时针、半径 150% 的 clip-path polygon，绕开 conic mask 被 web-renderer 无视的 A2 边界；分摊步进 ≤10°/段）；② flipX 的 `perspective()` 被丢弃（rotateY 呈平扁化）⇒ 改 `scaleXPercent` 正弦/余弦模拟翻转挤压；③ TrackTransitionOverride 新增 `filter` 字段承载 **zoomBlur / linearBlur / crossWarp** 三近似（参数取 bench 实测值；manifest EFFECTS +3），rotateY 恒等化（`scaleXPercent:1`）；`Transition.tsx` 消费 scaleXPercent+filter、删 perspective/preserve-3d。skill effect 全表同步。棘轮 timing.ts 1315→1384 显式登记。
+- **提交**：`79594c49fa`（坏点修复）/ `441748566d`（三近似）。
+
+#### CV-388 · chart 数据图表轨 + source:'timeline' 时间线数据源（2026-10-31，REQ-034 延伸，待桌面验收）
+
+- **内容**：① **ChartTrack**（variant bars/dual、labels 1–32、值非负且非全零、dual 必须给 lineValues；`components/Chart.tsx` 纯帧函数柱状+折线+错峰生长：stagger=min(8,dur×0.02) / grow 26 / line reveal 30%→55%；resolveAnimatedStyle+box+useFontFamilyStack 复用既有排版底座）；② **source:'timeline'**：数据从 video 轨 ffprobe 真值推导（`chart-data.ts` 纯函数：按 startFrame 排序、每镜时长秒数 2dp、dual 折线=累计、labels 自动 镜1..n；Root 传参，组件不接触 manifest），与内联数据互斥、无 video 轨拒收。skill manifest-contract chart 节同步。棘轮 manifest.ts 1928→2157 显式登记。
+- **提交**：`9b0942f93d`（chart 轨）/ `a1c73c6d00`（timeline 源）。
+
+#### CV-389 · caption 词级卡拉OK字幕轨（能量谷对齐 ±1–3 帧）（2026-10-31，REQ-034 延伸，待桌面验收）
+
+- **内容**：① **`word-timing.ts`** 离线能量谷对齐纯函数：10ms RMS 包络 → 语音门控（12%）→ 字间谷检测（深度 <35% 峰值、最小间隙 80ms、平谷取尾部=下一字起音点）→ 比例间隙内插（最大余数法）→ 均匀窗兜底；实测 ±1–3 帧 @30fps；② **`components/Caption.tsx`** 三态卡拉OK（未读/当前/已读，charStyle）+ measureText 模块级同步折行 + 自播旁白（Audio 从 `@remotion/media`）；③ 显式 `words` 逃生口（与能量谷推导二选一，长度必须 = countSpokenChars）；④ 音轨构成计入出声源（summarizeManifestAudio）；⑤ SKILL.md 边界句改写（「不做词级字幕对齐」→「词级走 caption 轨：能量谷推导或显式 words；句级硬切仍走 textCard」）+ `references/subtitle-timing.md` 词级章节；⑥ **另交付 D1**：`docs/plans/TTS-词级时间戳接口需求-20261031.md`（方案 A `words`+audioDuration / 方案 B `/align` 端点，精度 ±66ms，转交后端）。
+- **提交**：`f41676d34d`（caption 轨）/ `7a11c5b307`（D1 文档）。
+
+#### CV-390 · audioViz 分频段模式 bandSplit（六级低通级联）（2026-10-31，REQ-034 延伸，待桌面验收）
+
+- **内容**：`bandSplit` + `bandColors`：BAND_WINDOWS_AT_48K 六级 box 低通级联（窗口随采样率缩放）、前缀和低通 + 残差 RMS 拆低/中/高能量、自峰值归一化；柱高取各自频段包络（`bandWaveformBars`，取样契约与 waveformBars 同构 + smoothed 泛型 EMA），柱色按频段六色族（低蓝→高红，bench #06 实测）；仅 bandSplit 时走频段路径 ⇒ **老 manifest 解码路径一字不变**；line 模式/gradient 同给告警。
+- **提交**：`32163fc0d9`。

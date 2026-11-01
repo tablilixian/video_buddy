@@ -765,6 +765,7 @@
 | REQ-032 | 画布 audio 节点的设计和交互（AudioNode） | P0 | 已排期（2026-10-07 迭代新增；「编号」列空，无别名） | — | **已实现 · 2026-10-13 桌面验收通过**（CV-287 五步；验收出口 = 方案 §九：§四总表逐项 + 三功能各一次生成 + D1 听感 A/B + 参数规范化走查 + 手势零回归，全过）——**过程记录**：Step 1 形态骨架+词库底座 `src/voice-dims.ts`（`84a4e008e2`）→ Step 2 四层设置面板 `VoiceLayerPop.tsx`（`43fb7d02c7`）→ Step 3 参考音色三来源 + music `duration=estSeconds`（`af32227474`）→ Step 4 host 转真 `local:` 剥前缀 `promoteAssetFile` + 陈旧句柄错误归一 + progSub 副文案 + `TOOL_TITLES` 补项（`391edab41c`）→ Step 5 节点卡空态/字幕条/工具栏四项/资产库第五分类「音色」（`29990bd34a`）。守卫：方案 §七 4 个新守卫文件合并落 `voice-dims-req032.test.mjs`（16 条，Step 1/3/4/5）+ `canvas-input-card-req029.test.mjs` 扩展（Step 1 卡 + Step 2 面板，13 处 REQ-032 断言）；run-smoke **1394 条 0 失败**、门禁 ✅。**验收出口 = 方案 §九**（§四总表逐项 + 三功能各一次生成 + D1 听感 A/B + 参数规范化走查 + 手势零回归）。 | Client 画布节点 UI（与 REQ-029 image 节点、REQ-031 video 节点同源）/ 音频管线（tts_voiceover / 音乐生成） | **CV-287**（2026-10-09 五步落码，**2026-10-13 桌面验收通过**） |
 | REQ-033 | agent 聊天上方 toolbar（新建对话 / 项目消耗 / 历史对话） | P0 | 已排期（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **未开始** | 右栏聊天通道（`.csChat`）/ 会话管理与上下文 | — |
 | REQ-034 | 学习赶超 OpenMontage（Remotion / HyperFrames） | P0 | 已排期（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **进行中**——路线已拍 **B（CSR）**；**B1 契约层 + B2 时序/组件/风险已入库**（`de24b534b0`）；**B3 工具链（`render_composition`，CV-327）已落码，桌面 CSR 渲染跑通（2026-10-16）**（客户端 CSR 渲染 + 宿主工单桥 + 8 处登记；Z 组边界用例待补）；**B4 `code-driven-explainer` skill 已落码（2026-10-16，CV-327，待桌面验收）**（决策型下游分支：取真值 → 组装 `CompositionManifest` → 澄清预览 → `render_composition`）；**R1 随包中文字体已落码（2026-10-16，CV-328，待桌面验收）**；**二期（A1 语义原语 / D1 长片队列 / A2·A3·A4 / A5·B1·B2 / D2 / D6）已全量落码（2026-10-17，CV-338~CV-348，待桌面验收）**。技术事实源 = `plans/remotion/remotion-integration-devdoc-2026-10-14.md`（**v1.7**，§0.9 二期回填）；需求正本 = `plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md`；验收用例 = 本文档 `acceptance-test-cases.md` 第二十九 · Z 组。 | 编排 / 视频合成（ffmpeg、Remotion） | **CV-327 / CV-328 / CV-329 / CV-330 / CV-338~CV-348** |
+| REQ-036 | 爆款复刻（参考视频拆解 → 换素材/文案批量出片） | P1 | 已排期（2026-10-31 本仓立项；「编号」列空，无别名） | — | **未开始（方案已落档）**——`plans/REQ-036-爆款复刻-需求转化计划-20261031.md`：R-1 爆款复刻编排 skill（1–2 天，skill 层，验收窗内可开工）/ R-2 image 轨 sprite 子区域裁切 `sourceRect`（0.5–1 天，等桌面验收窗口）/ R-3 素材供给（现有生图/生视频工具链零开发）；能力对照结论：核心管线同构，8 项具备 / 2 项缺口；D-R1~R3 预拍板建议已附不阻塞。 | skill 编排 / 渲染层（image 轨） | — |
 <!-- GENERATED:INDEX:REQ-001~034 END -->
 
 > 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §二；本表含全量 34 行（索引行自 2026-10-13 起手工维护）。
@@ -1143,11 +1144,24 @@
 - **归属模块**：端到端编排 / 视频合成（ffmpeg、Remotion / HyperFrames 接入）
 - **关联 CV**：**CV-327 / CV-328 / CV-329 / CV-330**（CV-327 = B3 工具链 `render_composition` + B4 `code-driven-explainer` skill；CV-328 = R1 随包中文字体；CV-329 = R6 成片合成二择路由接线；CV-330 = R3 素材物化层 + R4 缺素材硬失败。均路线 B / CSR，2026-10-16 落码待验收）
 - **二期关联 CV（2026-10-17）**：**CV-338~CV-348** 共 11 条 —— CV-338/339 = A1 语义原语（`orbit`/`draw`/`shape:"path"`，契约与校验 / 接线与 skill）；CV-340 = D1 长片渲染队列 + 进度通道；CV-341/342/343 = A2 `fx` / A3 形状族 / A4 四式转场；CV-344/345/346 = A5 排版自适配 / B1 `audioViz` / B2 探真时长；CV-347 = D2 失败分类与有界重试；CV-348 = D6 `compose_video` 旁白音轨判定（线外，源自纯代码短片线）
+- **能力基准与转化增量（2026-10-30~31，CV-385~390 待桌面验收）**：`scripts/capability-bench/` 十项能力基准 10/10 出片 + S1/S2 压力 + 02S 真 Skia 冒烟（CV-385）；转化落产品五批——CSR 写法护栏（CV-386）/ 转场收口 clock·flipX 坏点 + zoomBlur·linearBlur·crossWarp 三近似（CV-387）/ chart 轨 + timeline 数据源（CV-388）/ caption 词级卡拉OK轨（CV-389）/ audioViz bandSplit（CV-390）。
 - **需求描述**：学习、赶超 [OpenMontage](https://github.com/calesthio/OpenMontage)，支持 Remotion 与 HyperFrames，支持多种免费 / 低成本视频制作（wiki、科教、教育类视频）。
 - **样例**（资料库所附的一句话 prompt 原文，产出即附件 mp4）：「"How Salt Made History" — a 100-second cinematic documentary about the mineral that funded empires, shaped trade routes, sparked revolutions, and gave us the word "salary." Real-world footage is woven together with original narration and hand-authored motion graphics for its etched title, etymology reveal, animated maps, historical timeline, and closing thesis.」
 - **当前落地状态**：**进行中（2026-10-16）**。调研 ✅ → 设计 ✅ → **路线 B（CSR，客户端 `@remotion/web-renderer` 软编）拍板 ✅** → B0 Spike ✅ → S10 端到端验证器入库 ✅ → **B1 契约层 + B2 时序/组件/风险 ✅（`de24b534b0`）** → **B3 工具链 ✅ 落码待验收（CV-327）** → **B4 skill ✅ 落码待验收（CV-327）**。B3 交付：`src/remotion/render-job.ts`（内存工单桥）+ `asset-check.ts`（只核对素材）+ `client/remotion-render.ts`（CSR 渲染器）+ `routes.ts` 三路由 + `client/index.ts` 空闲即停轮询 + `host-tools.ts` 的 `render_composition` + 8 处登记。B4 交付：`skills/code-driven-explainer/**`（SKILL.md + platform.yaml + 5 本 references）+ `src/skill-catalog.ts` 的 `BUNDLED_CATALOG` 一条。 **R1 交付（CV-328）**：`scripts/build-font-subset.mjs` + `font-subset-chars.txt`（GB2312 6962 字）→ `assets/fonts/noto-sans-sc-{400,700}.woff2`（1.93MB）+ 宿主只读路由 + `src/remotion/fonts.ts` 四态解析 + `components/font-context.tsx` + 渲染前 `applyFontsBeforeRender()` 就绪闸门；守卫 16 条、全量 1745·1745。 **R6 交付（CV-329）**：成片合成二择路由接线 —— 总纲第 10 步 + 分册 `shot-format.md` 双处给出「纯拼接 → `compose_video` / 卡片与逐帧控制 → `render_composition`」判据（只点名工具、不点名 skill），承接链闭合到 `code-driven-explainer` 的 description；守卫 3 条 + 反向变异三轮，全量 1748·1748。→ **R3 代码前置 ✅（素材物化层）+ R4 Z-8 ✅（缺素材硬失败）已落码待桌面验**（CV-330；R4 的 Z-7/Z-9/Z-11 已有实现、待带 GUI 验）→ **二期全量落码（2026-10-17，`4017f8f908`，CV-338~CV-348，待桌面验收）**：语义原语（公转 / 路径生长）/ 长片队列（并发 1 · 上限 4 · FIFO · 超时从派发算）+ 进度通道 / `fx` 五式 / 形状族 4 新 / 转场 4 新 / 排版自适配 / `audioViz` / 探真时长 / 仅 encode 重试 / 旁白音轨判定（D6）。三级 `tsc` 全绿 + tsdown 通过 + 定向 171 断言；**全量 `test:smoke` 与 GUI 真渲按用户口径本批未跑**。→ **剩 R2 成片质量门 / R5 打包联调**。
 - **验收标准**：见需求方案 §五（AC-1~AC-11）+ `acceptance-test-cases.md` 第二十九 · Z 组（Z-1~Z-16）。**桌面验收（2026-10-16）**：客户端 CSR 真机渲染**跑通出片**（首次端到端确认，顺带修 2 枚缺陷：`projectId` 伪 id 快速失败 / 补进审批门 `FORMAL_TOOLS`）；**Z 组边界用例（Z-7/Z-8/Z-9/Z-11）待补**，B4 skill 已落码待验收（与 Z-1~Z-3 澄清环节预览一并验）。
-- **资料库来源**：需求表 行 10（2026-10-13 增）。｜ **图证**：`assets/library-2026-10-13/`——1 个样例 mp4（`635845001-a524f02a-2d18-42ca-a2c4-d3dc09503546.mp4`，「How Salt Made History」100 秒纪录片）+ 7 张参考截图（`c74673d4…` / `7c8c157e…` / `bf19f0ac…` / `799f1ff9…` / `0b00115c…` / `7e5054a2…` / `cb6b4107…`，资料库附件原名，已拉取入库）。
+- **资料库来源**：需求表 行 10（2026-10-13 增）。
+
+### REQ-036 ｜ 爆款复刻（参考视频拆解 → 换素材/文案批量出片）（别名 — · P1 · 资料：—（本仓自立条目，2026-10-31））
+
+- **优先级**：P1
+- **状态(资料库)**：—（未入资料库；用户会话直接立项 2026-10-31）
+- **资料库别名**：—
+- **归属模块**：skill 编排（复刻编排 skill）/ 渲染层（image 轨 sprite 裁切）
+- **需求描述**：复刻「OiiOii 全能复刻」类工作流（用户提供微信文章，2026-10-31）：给一条爆款参考视频，拆解镜头/节奏/转场/字幕 → 换产品换文案 → 批量出片；实拍段走视频模型，界面/文案/动效走代码渲染。能力对照结论：核心管线与 Canvas Studio 的 manifest→CSR 渲染同构，**8 项具备 / 2 项缺口**（sprite 子区域裁切 + 爆款拆解编排 skill），逐项判定与证据锚点见方案 §一。
+- **实现方案**：R-1 爆款复刻编排 skill（拆解清单 / manifest 映射表 / 素材替换清单 / 批量参数化 / 原片对照 5 项验收）；R-2 image 轨 `sourceRect: {x,y,w,h}` 百分比子区域裁切（容器裁切实现，不用 background-position——CSR 写法护栏约束）；R-3 素材供给走现有生图/生视频工具链（零开发）。方案正本 = `plans/REQ-036-爆款复刻-需求转化计划-20261031.md`（D-R1 独立 skill / D-R2 百分比 / D-R3 会话内循环，预拍板建议已附）。
+- **当前落地状态**：**未开始（方案已落档 2026-10-31）**。R-1 可在桌面验收窗口内开工（skill 层不触 src/**）；R-2 等当前验收窗口结束（渲染层改动）。
+- **验收标准**：R-1 = 参考视频→拆解→manifest→出片→换素材再出一版全流程一次跑通 + 原片对照 5 项 PASS；R-2 = 精灵图 3 子区域 3 轨同片正确 + 越界拒收 + 单测/反向变异；整体 = 15s 复刻样片出片。
+- **资料库来源**：—（本仓自立条目，2026-10-31）。｜ **图证**：`assets/library-2026-10-13/`——1 个样例 mp4（`635845001-a524f02a-2d18-42ca-a2c4-d3dc09503546.mp4`，「How Salt Made History」100 秒纪录片）+ 7 张参考截图（`c74673d4…` / `7c8c157e…` / `bf19f0ac…` / `799f1ff9…` / `0b00115c…` / `7e5054a2…` / `cb6b4107…`，资料库附件原名，已拉取入库）。
 
 ---
 
@@ -1216,6 +1230,7 @@
   2. **REQ-011 lora**：附件 prompt-sample.txt / skills.zip 已解读（lora 触发词 + IR 分段组合模板），需先确认后端/模型侧是否支持对应 lora。
   3. **REQ-033 agent toolbar**（2026-10-13 入账，P0/已排期）：右栏聊天上方三入口（新建对话 / 项目消耗 / 历史对话）；「新建对话带项目上下文」与 REQ-022 产物同源（需 `storyboard.md` 与画布信息的注入通道）。
   4. **REQ-034 OpenMontage 学习**（2026-10-13 入账，P0/已排期）：学习型需求——先调研 OpenMontage 能力边界与 Remotion / HyperFrames 接入成本，再定与现有 H3 视频链路的边界。
+  5. **REQ-036 爆款复刻**（2026-10-31 入账，P1/方案已落档）：R-1 复刻编排 skill 验收窗内可开工，R-2 image 轨 sprite 裁切等验收窗口结束；D-R1~R3 预拍板建议见方案 §五。
 - **拍板闸（每条都写了不拍板卡住什么）**：
   1. **REQ-018 withtxt 错字路线**（建议 A：重跑优先于 image_fix）——与 REQ-019 判据细化同批走（同一组描述串）；
   2. **REQ-023 音色资产设计口径**（@引用形态、TTS 接线）——卡 REQ-026 微信视频；

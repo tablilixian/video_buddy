@@ -37,7 +37,8 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // B3（2026-11-02）：+verify_teardown（拆解回核），36 → 37。
 // 批四（2026-11-02）：+teardown_store（拆解成果跨项目落库），37 → 38。
 // 复刻提效批二/三（2026-11-02）：+image_crop（拼贴裁切）、+write_note（过程便签），38 → 40。
-const EXPECTED_TOOL_COUNT = 40
+// REQ-036 复刻客户端能力批（2026-11-03）：+media_probe（媒体探针），40 → 41。
+const EXPECTED_TOOL_COUNT = 41
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -64,6 +65,8 @@ const EXPECTED_TOOL_NAMES = [
   'list_shots',
   'look_card',
   'music_generation',
+  // REQ-036 C3（2026-11-03）：媒体探针（时长/分辨率/fps/音轨/容器/响度统一入口）。
+  'media_probe',
   // S5（2026-10-28）：节拍分析 / 卡点吸附（CV-040 收口）。
   'analyze_beats',
   'snap_cuts_to_beats',

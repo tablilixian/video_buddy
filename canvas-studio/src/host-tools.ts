@@ -73,6 +73,7 @@ import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { defineAudioTools, generateMusicWithVariants } from './host-tools-audio.js'
 import { defineArtifactTools } from './host-tools-artifact.js'
+import { defineRemakeTools } from './host-tools-remake.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment } from './audio-cut.js'
@@ -4429,6 +4430,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
       },
     }),
+    // 2026-11-03：REQ-036 复刻客户端能力批（media_probe / evidence_grid / download_video）
+    // 外置到 host-tools-remake.ts（行数棘轮，host-tools-artifact 同款先例）。
+    ...defineRemakeTools({ registry, resolveProjectId }),
     defineTool({
       name: 'inspect_image',
       description:

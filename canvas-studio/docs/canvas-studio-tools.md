@@ -110,7 +110,7 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
-### C2. 本地图像处理（6 个，不调后端）
+### C2. 本地媒体 / 复刻工具（7 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -120,6 +120,7 @@
 | `verify_teardown` | **拆解回核**（REQ-036 复刻提效批三，B3）：ffmpeg 低帧率抽帧（2fps、16×16 均色）实测参考视频的画面切换点，与拆解表段起点 ±tolerance 秒贪心匹配。三态：matched（报实测切换时刻与偏差，>0.3s 提示校准起点）/ unmatched（窗口内无切换，边界可疑）/ extraSwitches（实测有切换但表里没有，疑似漏段/漏镜）。算法纯函数层在 `src/teardown-verify.ts`（与 IO 分离可单测）。纪律：拆解表落定后、进映射前必须过一遍，unmatched 不进映射 —— 甜品会话 v2 拆解自标 verified 但归段错误整片返工的教训 |
 | `teardown_store` | **拆解落库**（REQ-036 复刻提效批四，C4 后半）：把回核通过的拆解表按参考视频**指纹**（sha1(文件名\|字节数) 前 12 位，同文件跨项目指纹不变）存进宿主级跨项目目录 `dshHomePath('canvas-studio')/teardowns/`。三动作 `save` / `load` / `list`；实现层 `src/teardown-store.ts`（root 可注入可单测）。治「换会话 / 换 project dir 知识蒸发」：甜品会话 v1 的拆解/拟合结论随项目目录蒸发，v2 全部重拆还拆错。复用不等于盲用：取回后仍要 verify_teardown 对版。配套：`render_composition` 新增 `timingSegments`（Q2 成片时序回核 + Q3 元素覆盖核对，双闸只警告不阻断） |
 | `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect` / **`theme`** / **`recipe`**）→ 返回合法 JSON。`theme` 四选一（cold-tech / ink-press / warm-ember / neon-data）展开成底色 + 背景层 + 强调色 + 动效基线建议（**manifest 只存颜色值、不存 themeId**）。`recipe` 三选一（explainer-cards 零素材 / product-walkthrough 需 1 张产品图 / story-arc 需 2 张场景图）→ **接管 tracks 骨架**：按段出占位卡 + 给时间轴 + 给可直接填 §07 的素材清单。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对。只产 JSON，不落盘/不渲染/不动画布 |
+| `media_probe` | **媒体探针**（REQ-036 C3，第 39 号工具）：本地媒体文件一条命令摸清**时长（秒）/ 分辨率 / fps / 音轨数 / 容器 / 综合响度（LUFS）**。实现：`ffmpeg -i` stderr 解析（`src/media-probe.ts` 纯函数层，与 CV-188 同源口径 —— 随包分发只有 ffmpeg 没有 ffprobe，不引入 ffprobe 依赖）+ ebur128 复用 `probeLoudnessLufs`（同一份实现不复制）。响度只在有音轨时测，失败不阻塞（`audioLoudnessLufs: null` + 原因）。用途：① 拆解表头部真值（别拿声明时长当真值，H3 实测请求 5s 出 5.167s）；② **响度对齐**（成片 vs 参考片差值 >2 LUFS 调 BGM/旁白音量重渲）——替代临场拼 ffmpeg 命令 |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 
@@ -743,6 +744,22 @@ skill 要求「拆解回核后落便签给用户过目」，但当时 38 个工�
 
 **纪律**（写进总纲 skill）：每个阶段收尾 = `write_note` 落便签 + 回复里 1–3 行可见文本；
 confirm 模式落完停下等过目，auto 模式落完直接继续（**便签都不省**）。
+
+### C12. `media_probe`（REQ-036 C3，第 39 号工具）
+
+**用途**：本地媒体文件（视频/音频）的元数据 + 响度**统一探针** —— 时长（秒）/ 分辨率 /
+fps / 音轨数 / 容器 / 综合响度（LUFS）一次返回。
+
+**背景**：拆解表头部需要时长/fps/音轨，响度对齐需要参考片 LUFS —— 此前散装在
+`ffmpeg -i` 与 ebur128 的临场拼命令里，没有统一入口（SKILL §4 靠临场拼命令）。
+
+**实现**：`ffmpeg -i` stderr 解析（`src/media-probe.ts`，解析纯函数用固定真机样本单测）
++ 响度复用 `probeLoudnessLufs`（ebur128）。**刻意不依赖 ffprobe**：随包分发只有
+ffmpeg 单二进制，ffprobe 在打包产物里不存在（CV-188 同款口径）。响度只在有音轨时
+测量；无声/失败不阻塞探针，`audioLoudnessLufs: null` 并附原因。
+
+**响度对齐用法**（SKILL §4 口径）：参考片 media_probe 记 LUFS → 成片渲完再探一次 →
+差值 >2 LUFS 调 BGM/旁白音量重渲。
 
 
 ### 标准图生视频（3 步）

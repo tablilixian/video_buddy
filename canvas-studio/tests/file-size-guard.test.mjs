@@ -57,16 +57,27 @@ const GENERATED_DIRS = new Set(['src/contracts/generated'])
 export const FILE_WHITELIST = {
   // CV-384（2026-10-31）：批 1 删 .csNode will-change 净 0（注释等行改写）；
   // 批 3 世界层 will-change → translate3d（提升通道改走 3D 变换），注释换规则行 +3。
-  'src/client/styles.ts': 10734,
+  // 订阅与积分（2026-11-02）：订阅页全屏样式（.csBill* 约 250 行）+ 用户卡三行
+  // +266，10734 → 11000 显式登记。消化路径：`.csBill*` 段与既有「按域拆 CSS」计划
+  // 同批外提，不在本次新立拆分批。
+  'src/client/styles.ts': 11000,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   'src/host-tools.ts': 4435,
-  'src/generate.ts': 3582,
+  // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
+  // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
+  'src/generate.ts': 3619,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
   // 阶段 2 按域拆分时随 routes 段消化。
-  'src/routes.ts': 3531,
+  // 订阅与积分（2026-11-02）：/canvas-studio/billing 前缀三分派 +105（含 sendBillingFailure），
+  // 3531 → 3636。消化路径同上：按域拆路由时随 billing 段外提。
+  // +1（3637）：前缀尾段归一化拆成两次 replace（`/^\/+$/` 会把 `/checkout` 留成原样
+  // 导致写操作全部落到 404，是 billing-routes.test.mjs 抓出的真实缺陷），单行拆两行。
+  'src/routes.ts': 3637,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
-  'src/client/StudioFrame.tsx': 3168,
+  // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
+  // +65，3168 → 3233。消化路径：随既有「显示外提 → 抽 hooks」第二阶段一起外提。
+  'src/client/StudioFrame.tsx': 3233,
   'src/client/index.ts': 2983,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
@@ -98,7 +109,9 @@ export const FILE_WHITELIST = {
   // CV-393（2026-11-02）：`outline` 镂空字 fx 折算分支（+11 净行：FxStyle.textFill 字段
   // + outline case），1436 → 1447 显式登记。
   'src/remotion/timing.ts': 1447,
-  'src/client/api.ts': 1268,
+  // 订阅与积分（2026-11-02）：三个计费请求封装（快照/checkout/portal）+ 错误信封
+  // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
+  'src/client/api.ts': 1339,
 }
 
 /**
@@ -106,10 +119,13 @@ export const FILE_WHITELIST = {
  * 实测回填于 2026-10-28（PR-0）。拆分推进时逐段下调；达标（≤600）后删除条目。
  */
 export const FUNC_WHITELIST = {
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 10717, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
-  'src/routes.ts#registerStudioRoutes': { lines: 2868, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（显式登记，2026-10-29）' },
+  // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 10983, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
+  // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
+  'src/routes.ts#registerStudioRoutes': { lines: 2964, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2764, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行' },
+  // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2818, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行' },
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   'src/host-tools.ts#createStudioTools': { lines: 2483, note: '阶段 1 目录化（先搬 inspect 打样）' },
@@ -118,7 +134,8 @@ export const FUNC_WHITELIST = {
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。
   'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1371, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
   'src/client/project-store.ts#createProjectStore': { lines: 990, note: 'P1：按域切 store 切片' },
-  'src/errors/catalog.ts#SPECS': { lines: 990, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
+  // 订阅与积分（2026-11-02）：CS-BILL-001（G1 余额闸）+19（990 → 1009）。表不拆，本条只钉不涨。
+  'src/errors/catalog.ts#SPECS': { lines: 1009, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
   // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。
   'src/client/canvas/CanvasNode.tsx#CanvasNodeInner': { lines: 827, note: 'P1：节点态 / 预览 / 手势' },
   'src/client/ModelSettingsPanel.tsx#ModelSettingsPanel': { lines: 674, note: 'P1' },

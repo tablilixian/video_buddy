@@ -13,6 +13,12 @@ import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../q
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import type { StudioStorageInfo } from '../storage-info.js'
 import type { AccountCreditsView } from '../contracts/account.js'
+import type {
+  BillingCheckoutRequest,
+  BillingCheckoutSession,
+  BillingPortalSession,
+  BillingSnapshot,
+} from '../contracts/billing.js'
 import { throwError } from '../error-system.js'
 import type { CompositionManifest } from '../remotion/manifest.js'
 import type {
@@ -26,6 +32,11 @@ export class StudioApiError extends Error {
     message: string,
     readonly status: number,
     readonly code?: string,
+    /**
+     * 429 的 `Retry-After`（秒）。只有计费类请求会用到：按钮要按服务端要求倒计时，
+     * 而不是自己猜一个退避值。非 429 时为 `undefined`。
+     */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message)
     this.name = 'StudioApiError'
@@ -67,12 +78,23 @@ async function readJson<T>(response: Response): Promise<T> {
     throw new StudioApiError(requestFailedText(response.status), response.status)
   }
   // 空值护栏：`JSON.parse('null')` / 标量响应体不是对象，直接取属性会 TypeError。
-  const record = (value !== null && typeof value === 'object' ? value : {}) as { error?: unknown; code?: unknown }
+  const record = (value !== null && typeof value === 'object' ? value : {}) as {
+    error?: unknown
+    code?: unknown
+    retryAfterSeconds?: unknown
+  }
   if (!response.ok) {
+    // Retry-After 优先取响应头（标准位置），其次响应体（本插件路由会带一份）。
+    const headerSeconds = Number(response.headers.get('Retry-After'))
+    const bodySeconds = Number(record.retryAfterSeconds)
+    const retryAfter = Number.isFinite(headerSeconds) && headerSeconds > 0
+      ? headerSeconds
+      : (Number.isFinite(bodySeconds) && bodySeconds > 0 ? bodySeconds : undefined)
     throw new StudioApiError(
       typeof record.error === 'string' ? record.error : requestFailedText(response.status),
       response.status,
       typeof record.code === 'string' ? record.code : undefined,
+      retryAfter,
     )
   }
   return value as T
@@ -394,6 +416,56 @@ export async function fetchStudioAccountCredits(
 ): Promise<AccountCreditsView> {
   const suffix = force ? '?refresh=1' : ''
   return readJson<AccountCreditsView>(await fetch(`/canvas-studio/account/credits${suffix}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * 计费快照（订阅 + 钱包 + 商品目录 + 待支付）。
+ *
+ * **HTTP 200 不代表成功**：Host 在读失败时照样 200，把错误放进 `snapshot.error`
+ * （上游文档的约定）。所以调用方要判 `snapshot.error`，不能只看 `res.ok`。
+ */
+export async function fetchStudioBilling(
+  force = false,
+  signal?: AbortSignal,
+): Promise<BillingSnapshot> {
+  const suffix = force ? '?refresh=1' : ''
+  return readJson<BillingSnapshot>(await fetch(`/canvas-studio/billing${suffix}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * 创建 Checkout。`idempotencyKey` **必须按购买意图复用**（同一意图重试换键会让
+ * 积分包重复下单），所以键由调用方（`billing-store`）持有并传入，不在这里生成。
+ */
+export async function createStudioBillingCheckout(
+  request: BillingCheckoutRequest,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<BillingCheckoutSession> {
+  return readJson<BillingCheckoutSession>(await fetch('/canvas-studio/billing/checkout', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'content-type': 'application/json',
+      // 只发 kind + product_code：金额由服务端按已发布商品版本决定。
+      'idempotency-key': idempotencyKey,
+    },
+    body: JSON.stringify({ kind: request.kind, product_code: request.product_code }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 创建 Stripe Customer Portal Session（无订阅时 Host 回 409 `portal_unavailable`）。 */
+export async function createStudioBillingPortalSession(
+  signal?: AbortSignal,
+): Promise<BillingPortalSession> {
+  return readJson<BillingPortalSession>(await fetch('/canvas-studio/billing/portal-sessions', {
+    method: 'POST',
     cache: 'no-store',
     ...(signal === undefined ? {} : { signal }),
   }))

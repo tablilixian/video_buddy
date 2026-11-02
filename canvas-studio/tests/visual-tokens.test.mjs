@@ -1424,15 +1424,17 @@ test('REQ-030 守卫：左栏重排（拍板 ①A ②A ③A ④C）——骨架�
   assert.match(STUDIO_FRAME_SRC, /<CreditsCard/, 'StudioFrame 必须挂 CreditsCard（卡体已抽出，不再内联 JSX）')
   assert.match(STUDIO_FRAME_SRC, /creditsState\.view/, '余额卡必须吃 Host 视图（creditsState.view），不得平行再存一份')
   assert.match(CREDITS_CARD_SRC, /csCreditsUpgrade/, 'CreditsCard 必须渲染「升级套餐」')
+  // 2026-11-02 口径反转：订阅/积分包已接通，按钮从「长期 disabled 占位」变成真实入口。
+  // 反向守卫保留 —— 再置灰（或干脆不挂 onClick）就等于把已做好的入口藏起来。
   assert.match(
     CREDITS_CARD_SRC,
-    /csCreditsUpgrade" disabled/,
-    '升级套餐必须 disabled（占位口径：商业化后端未接入）',
+    /csCreditsUpgrade" onClick=\{onOpenBilling\}/,
+    '升级套餐必须接 onOpenBilling（打开订阅与积分全屏页）',
   )
   assert.doesNotMatch(
     CREDITS_CARD_SRC,
-    /csCreditsUpgrade[\s\S]{0,80}onClick/,
-    '升级套餐不得接 onClick（接了就是假语义：没有可跳的购买页）',
+    /csCreditsUpgrade" disabled/,
+    '升级套餐不得再 disabled（商业化后端已接入，占位口径结束）',
   )
   assert.doesNotMatch(CREDITS_CARD_SRC, /1,000/, '余额卡不得再出现假分母（后端只给可用/冻结，没有总额度）')
   assert.match(CREDITS_CARD_SRC, /available_balance/, '主数字必须是服务端 available_balance（不得自算）')

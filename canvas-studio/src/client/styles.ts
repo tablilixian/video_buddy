@@ -1395,7 +1395,7 @@ const STUDIO_STYLES = `
   margin-left: auto;
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
-  /* 等宽数字：刷新后位数变化时整行不抖（4 位小数 + 千分位）。 */
+  /* 等宽数字：刷新后位数变化时整行不抖（整数 + 千分位，2026-11-02 起统一整数展示）。 */
   font-variant-numeric: tabular-nums;
 }
 
@@ -1412,8 +1412,8 @@ const STUDIO_STYLES = `
   color: var(--cs-warn, var(--dsw-alias-label-secondary));
 }
 
-/* 升级套餐：accent 渐变实底（与 hero 发送钮同一配方，文字色走对比令牌 ——
-   不写白色字面量）。长期 disabled（商业化后端未接入），打八五折示弱化。 */
+/* 升级套餐：accent 渐变实底（与 hero 发送钮同一配方，文字色走对比令牌）。
+   2026-11-02 起是真实入口（打开订阅与积分页），不再是 disabled 占位。 */
 .csCreditsUpgrade {
   font: inherit;
   display: grid;
@@ -10722,6 +10722,272 @@ button.csNodeHeadAlert:hover {
 .csAudioRefPopLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .csAudioRefPopHint { font-size: 10.5px; color: #6b737f; padding: 4px 9px 5px; }
 .csAudioRefPopEmpty { font-size: 12px; color: #6b737f; text-align: center; padding: 22px 9px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   订阅与积分全屏页（方案 20261102 / P3）
+   ───────────────────────────────────────────────────────────────────────────
+   形态照抄资产库全屏页（.csLibOverlay）：position:fixed + inset:0 + z-index:80，
+   盖住三栏但不卸载它们（关掉页面回到原状态）。层级比资产库/技能广场略高，
+   因为它是从余额卡/用户菜单打开的，必须在那些浮层之上。
+   ═══════════════════════════════════════════════════════════════════════════ */
+.csBillOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csBillBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.csBillTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.csBillStamp {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csBillBarActions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.csBillBody {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 18px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1040px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.csBillBtn {
+  font: inherit;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csBillBtn:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csBillBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.csBillBtnGhost {
+  background: transparent;
+}
+/* 行内小按钮（横幅里的「刷新状态」「知道了」）：不撑高横幅。 */
+.csBillBtnInline {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.csBillBtnPrimary {
+  width: 100%;
+  border: 0;
+  background: linear-gradient(180deg, var(--cs-accent-strong, var(--cs-accent)), var(--cs-accent, var(--dsw-alias-label-primary)));
+  color: var(--cs-accent-contrast, #fff);
+  font-weight: 600;
+}
+
+/* 横幅：一条只表达一件事，优先级在组件里排好（不做堆叠滚动）。 */
+.csBillNotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csBillNoticeWarn {
+  border-color: color-mix(in srgb, var(--cs-warn, #d08700) 45%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+.csBillNoticePending {
+  border-color: color-mix(in srgb, var(--cs-accent, #6d5efc) 45%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+.csBillPendingActions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* 钱包：只有「可用」与「冻结」，**没有分母**（后端不给总额度）。 */
+.csBillWallet {
+  display: flex;
+  gap: 12px;
+}
+.csBillWalletItem {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csBillWalletLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csBillWalletValue {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.csBillSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.csBillSectionTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csBillGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.csBillCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csBillCardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.csBillCardName {
+  font-size: 14px;
+  font-weight: 600;
+}
+.csBillPrice {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.csBillPriceUnit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csBillFacts {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csBillSubCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csBillSubCardEmpty {
+  border-style: dashed;
+}
+.csBillSubMain {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.csBillSubName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.csBillPill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+.csBillPillActive {
+  border-color: color-mix(in srgb, var(--cs-accent, #6d5efc) 55%, transparent);
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+}
+
+.csBillHint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csBillFoot {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 用户卡：积分与订阅两行的真实值（2026-11-02 接真数据）。 */
+.csUserCredits {
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+.csUserPlan {
+  color: var(--dsw-alias-label-primary);
+}
+.csUserSubtle {
+  color: var(--dsw-alias-label-tertiary);
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

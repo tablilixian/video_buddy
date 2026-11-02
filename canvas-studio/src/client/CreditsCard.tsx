@@ -28,6 +28,8 @@ export interface CreditsCardProps {
   failure: string | null
   onRefresh(): void
   onSignIn(): void
+  /** 打开订阅与积分全屏页（2026-11-02 商业化接入后不再是置灰占位）。 */
+  onOpenBilling(): void
 }
 
 function CreditGlyph(): ReactElement {
@@ -38,10 +40,15 @@ function CreditGlyph(): ReactElement {
   )
 }
 
-/** 「升级套餐」：长期 disabled（商业化后端未接入），不变。 */
-function UpgradeButton(): ReactElement {
+/**
+ * 「升级套餐」：打开订阅与积分全屏页。
+ *
+ * 2026-11-02 之前它是长期 `disabled` 占位（注释写着「商业化后端未接入」）；现在
+ * 计费链路已通，按钮变成真实入口 —— 与用户菜单里的「订阅」指向同一个页面。
+ */
+function UpgradeButton({ onOpenBilling }: { onOpenBilling(): void }): ReactElement {
   return (
-    <button type="button" className="csCreditsUpgrade" disabled title="即将上线">
+    <button type="button" className="csCreditsUpgrade" onClick={onOpenBilling} title="查看订阅套餐与积分包">
       升级套餐
     </button>
   )
@@ -56,7 +63,7 @@ function clockOf(iso: string | null): string | null {
 }
 
 export function CreditsCard({
-  view, signedIn, localMode, loading, failure, onRefresh, onSignIn,
+  view, signedIn, localMode, loading, failure, onRefresh, onSignIn, onOpenBilling,
 }: CreditsCardProps): ReactElement | null {
   // 未配置账号体系 = 本地模式：没有登录、也就没有余额，整卡隐藏。
   if (localMode) return null
@@ -74,7 +81,7 @@ export function CreditsCard({
           <span>Credits</span>
           <span className="csCreditsVal">登录后查看</span>
         </button>
-        <UpgradeButton />
+        <UpgradeButton onOpenBilling={onOpenBilling} />
       </div>
     )
   }
@@ -126,7 +133,7 @@ export function CreditsCard({
               : frozenLine)}
         </p>
       )}
-      <UpgradeButton />
+      <UpgradeButton onOpenBilling={onOpenBilling} />
     </div>
   )
 }

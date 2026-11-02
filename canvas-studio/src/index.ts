@@ -29,6 +29,7 @@ import { setDramaAuthRequired } from './auth-session.js'
 // 管理面（方案 P1/P2/P4，CV-355/356/357）：设备身份 + 账号编排 + 模型网关。
 import { DeviceRegistry } from './device-registry.js'
 import { installAccountState, markCreditsStale } from './account-state.js'
+import { installBillingState } from './billing-state.js'
 import type { CatalogModel } from './drama-management.js'
 import { setGenerationSettledHook } from './generate-queue.js'
 import {
@@ -263,8 +264,7 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   }
 
   installAccountState({
-    enabled: () => source().businessApiBase.trim() !== '' && source().supabaseUrl.trim() !== '',
-    businessApiBase: () => source().businessApiBase,
+    enabled: () => source().businessApiBase.trim() !== '' && source().supabaseUrl.trim() !== '',    businessApiBase: () => source().businessApiBase,
     device: deviceRegistry,
     log: ctx.logger,
     // 凭据发布与目录 reconcile 都不抛给编排层：失败只进日志（不阻塞登录闭环）。
@@ -287,6 +287,15 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
         ctx.logger.info(`[canvas-studio] 模型网关已${models.length === 0 ? '清空' : '更新'}：${result.models} 个模型（热生效）`)
       }
     },
+  })
+
+  // 订阅与积分（方案 20261102 P2）：同一套启用闸与设备三元组；token 由
+  // billing-state 自己从 auth-session 取（不在这里传，避免多存一份会过期的副本）。
+  installBillingState({
+    enabled: () => source().businessApiBase.trim() !== '' && source().supabaseUrl.trim() !== '',
+    businessApiBase: () => source().businessApiBase,
+    device: deviceRegistry,
+    log: ctx.logger,
   })
 
   // 生成一结束就把余额标记陈旧（CV-358）：Host 不知道后端何时结清，但至少能保证

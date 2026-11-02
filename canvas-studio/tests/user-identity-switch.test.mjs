@@ -84,9 +84,9 @@ test('假身份常量已删除、中性文案常量到位（brand-copy）', () =
   for (const [key, value] of [['signedOut', '未登录'], ['local', '本地模式'], ['localHint', '未配置账号体系'], ['greet', '创作者']]) {
     assert.match(BRAND_COPY, new RegExp(`${key}: '${value}'`), `ACCOUNT_COPY.${key} 必须是「${value}」`)
   }
-  // 2026-10-15 拍板：计费后端未接入前，积分占位**保留**但必须是具名常量（一处处换）。
-  assert.match(BRAND_COPY, /export const CREDITS_PLACEHOLDER = 2600/,
-    '积分占位必须收敛成 CREDITS_PLACEHOLDER（接通计费后端后一处替换）')
+  // 2026-11-02：计费链路已接通 ⇒ 假余额常量必须消失，且不得以任何名字回来。
+  assert.doesNotMatch(BRAND_COPY, /CREDITS_PLACEHOLDER/,
+    '计费已接入，用户菜单/余额卡都读真实余额；再引入写死的余额常量即回退到「假数据」时代')
 })
 
 test('用户卡：三态各有来源，未登录不渲染面板、未配置态不显示任何 UID', () => {
@@ -102,8 +102,13 @@ test('用户卡：三态各有来源，未登录不渲染面板、未配置态�
     + '而且那条面板此前正是拿假身份填头部的')
   assert.match(USER_CARD, /signedIn \? `UID：\$\{auth!\.user!\.userId\}` : ACCOUNT_COPY\.localHint/,
     'UID 行只准两个来源：会话 UID（已登录）/ 未配置说明 —— 不得有第三个（假 UID）')
-  assert.match(USER_CARD, /✦ \{CREDITS_PLACEHOLDER\}/,
-    '积分行必须走占位常量（别把 2600 又写回 JSX）')
+  // 2026-11-02：积分行改读真实余额，展示统一走 formatCredits（整数 + 截断）。
+  assert.match(USER_CARD, /✦ \{creditsText\}/,
+    '积分行必须渲染 creditsText（来自 credits-store 的真实余额，未登录显示「登录后查看」）')
+  assert.match(USER_CARD, /formatCredits\(/,
+    '积分必须走全项目唯一的 formatCredits（整数展示口径不能被绕过）')
+  assert.doesNotMatch(USER_CARD, /\b2600\b/,
+    '用户卡不得再出现写死的余额数字')
 })
 
 test('首屏问候：称呼只有两个来源（会话真名 / 中性称呼）', () => {

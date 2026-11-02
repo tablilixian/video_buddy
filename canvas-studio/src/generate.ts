@@ -79,6 +79,9 @@ import type { DramaVideoJobRecord } from './video-jobs.js'
 import { extractLastFrame } from './video-frames.js'
 // P2 登录态接线：Drama 请求的 Bearer 头单点 + 鉴权开关（见 auth-session.ts）。
 import { dramaAuthHeaders, getAuthSession, isDramaAuthRequired } from './auth-session.js'
+// G1 余额门禁（方案 20261102 §7）：只读 Host 侧已缓存的余额视图，零额外网络。
+import { creditsView } from './account-state.js'
+import { formatCredits } from './account-format.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
 // 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
@@ -399,6 +402,38 @@ function requireDramaAuth(): void {
 }
 
 /**
+ * G1 余额预检（方案 `订阅与积分接入方案-20261102.md` §7）。
+ *
+ * **只拦「确定读到余额 ≤ 0」**，其余一律放行（fail-open）：
+ *
+ * | 情形 | 行为 | 理由 |
+ * | --- | --- | --- |
+ * | 本地模式（未配置账号体系） | 放行 | 没有账号就没有钱包，门禁无从判起 |
+ * | `balance === null`（从未读到 / 未登录 / 管理面关闭 / 网络失败） | 放行 | 把网络抖动变成「不能生成」是负优化；`CS-AUTH-001` 已单独拦未登录 |
+ * | `available_balance` 非有限值（NaN/Infinity） | 放行 | 服务端字段异常时不该由用户承担 |
+ * | `available_balance <= 0` | **抛 CS-BILL-001** | 余额见底后继续白跑生成，是唯一要拦的真问题 |
+ *
+ * 位置选在 `dramaPost`（消耗型生成请求的**唯一**出口）而不在 `requireDramaAuth`
+ * 里：那个函数也被上传路径复用，而「上传参考图」本身不花积分，不该因为余额为 0
+ * 而被拦。轮询（`dramaJobRequest`）同样不设闸 —— 它是已付费任务的后续查询。
+ *
+ * 不做**预扣 / 冻结**：G2（精确计费）需要后端给单价与 freeze/settle 接口，
+ * 实测 `/v1/credits/pricing` 等全部 404，故本轮只能做到「见底即停」。
+ */
+function requireCreditsForGeneration(): void {
+  if (!isDramaAuthRequired()) return
+  const balance = creditsView().balance
+  if (balance === null) return
+  const available = balance.available_balance
+  if (!Number.isFinite(available) || available > 0) return
+  throwError('CS-BILL-001', {
+    balance: formatCredits(available),
+    frozen: formatCredits(balance.frozen_balance),
+    currency: balance.currency,
+  })
+}
+
+/**
  * Drama 异步任务端点请求（`GET /api/v1/jobs/{id}` / `.../result` / `POST .../cancel`）。
  *
  * 与生成请求（`dramaPost`）刻意不同：短超时、**不占生成队列槽位**（轮询与提交
@@ -646,6 +681,8 @@ async function dramaPost(
 ): Promise<Response> {
   // P2 鉴权闸：未登录先拦（零网络、零副作用），客户端弹登录窗后由 agent 重试。
   requireDramaAuth()
+  // G1 余额闸：只在「确定读到余额见底」时拦（fail-open，见函数注释）。
+  requireCreditsForGeneration()
   // 探针前置：宕机时在这里就抛中文错误，不进入生成请求的长超时。
   await ensureDramaReachable(signal)
   const dispatcher = longRequestDispatcher()

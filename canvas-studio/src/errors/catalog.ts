@@ -422,6 +422,25 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '客户端会自动续期登录态并重推；续期完成后请**原样重试**本工具调用。若登录窗口已弹出，请提示用户完成登录后再重试。',
   },
 
+  // ── BILL 订阅与积分（方案 `订阅与积分接入方案-20261102.md` §7 G1 门禁）──
+  //
+  // 只用于「**确定**读到余额 ≤ 0」这一种情况。读不到（`balance === null`：未登录、
+  // 管理面关掉、网络失败）一律 fail-open 放行 —— 门禁的目标是拦住「余额见底还在
+  // 一直消耗」，不是把网络抖动变成「生成不了」。
+  {
+    code: 'CS-BILL-001',
+    module: 'BILL',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    // 重试必然复发（余额不会自己变多），要用户去做「购买」这个配置类动作。
+    uiKind: 'config',
+    userMessage: '积分不足：当前可用 {balance} 积分，本次生成未发起。',
+    devMessage: 'billing gate blocked: available={balance} frozen={frozen} currency={currency} source=account-state',
+    recoveryHint: '提示用户打开「订阅与积分」页购买套餐或积分包；到账后请**原样重试**本工具调用。不要建议用户反复重试，余额不变则必然再次失败。',
+  },
+
   // ── 阶段二迁移（generate.ts / host-tools / providers / compose / projects / client 等）──
   // 通用三码：覆盖大量「单句用户可懂校验」与「仅开发者可见」错误，避免无限膨胀。
   {

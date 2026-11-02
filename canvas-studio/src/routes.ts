@@ -35,6 +35,9 @@ import { setAuthSession, clearAuthSession } from './auth-session.js'
 // 管理面编排（方案 P2/CV-356）：会话推送触发 auth/sync + 目录拉取（fire-and-forget）。
 // 余额（CV-358）：会话推送后预取，读路径见 `GET /canvas-studio/account/credits`。
 import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView } from './account-state.js'
+// 订阅与积分（方案 20261102）：Host 编排 + 协议错误类型（按 status/code 直出）。
+import { ApiError } from './drama-management.js'
+import { refreshBilling, billingView, createBillingCheckout, createBillingPortalSession, resetBilling } from './billing-state.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
 import { activeResumeJobCount } from './video-jobs.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
@@ -271,6 +274,13 @@ const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 const ROUTE_STORAGE_INFO = '/canvas-studio/storage-info'
 // CV-358：管理面余额只读面（左栏余额卡的数据来源）。只读 ⇒ requestAllowed。
 const ROUTE_ACCOUNT_CREDITS = '/canvas-studio/account/credits'
+/**
+ * 订阅与积分（方案 `订阅与积分接入方案-20261102.md`）。
+ *
+ * 前缀对齐本插件既有路由（上游文档写的是 `/business/v1/billing`，语义与载荷一致，
+ * 只换前缀）：`''` 读快照 / `/checkout` 建单 / `/portal-sessions` 开 Portal。
+ */
+const ROUTE_BILLING = '/canvas-studio/billing'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 /**
  * CV-331：用户上传 skill 面（prefix + 内部分派，与 storyboard / auth 同模式 ——
@@ -708,6 +718,28 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       code: err.code,
     })
   }
+  /**
+   * 计费写动作的失败出站（checkout / portal）。
+   *
+   * 与 `sendRouteFailure` 刻意分开：上游的 `ApiError` 已经带着**准确的** status 与
+   * code（409 pending / 429 + Retry-After / 503），走 `sendRouteFailure` 会被统一
+   * 压成 500 + CS-UNC 码，UI 就再也分不出「已有待支付订单」和「服务挂了」。
+   *
+   * 返回 false 表示「不是 ApiError」，交回调用方走兜底。
+   */
+  const sendBillingFailure = (res: ServerResponse, cause: unknown): boolean => {
+    if (!(cause instanceof ApiError)) return false
+    if (res.destroyed) return true
+    // status 0 = 网络层失败（上游没回话），对渲染层是 502 而非 500。
+    const status = cause.status > 0 ? cause.status : 502
+    sendJson(res, status, {
+      error: cause.message,
+      code: cause.code,
+      status: cause.status,
+      ...(cause.retryAfterSeconds === null ? {} : { retryAfterSeconds: cause.retryAfterSeconds }),
+    })
+    return true
+  }
   const routes = [
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECTS, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort())) {
@@ -1100,6 +1132,78 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         // refreshCredits 自身不抛；这是 HTTP 面的最后一道兜底。
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分读取失败，请稍后重试。')
       }
+    }}),
+
+    // ── 订阅与积分（P1/P2）：读快照 + 建 Checkout + 开 Customer Portal ──
+    //
+    // 三条纪律：
+    // 1. GET 永远 200（失败进 `error` 且保留旧值）—— 上游文档就是这么约定的，
+    //    客户端要能区分「读不到」与「没有订阅」。
+    // 2. 两个 POST 是写动作：先过 `mutationAllowed`（同源），失败按上游 status/code
+    //    原样回，让 UI 能对 409 的 pending/expired、429 的 Retry-After 分别处置。
+    // 3. 响应体形状用本插件既有约定 `{ error: string, code, status }`（不是上游那种
+    //    嵌套信封）：客户端 `readJson` 只认这一种，两套形状会让 code 丢掉。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_BILLING, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
+      // 两端斜杠都要去：`/canvas-studio/billing/checkout` → `checkout`，而裸前缀 → `''`。
+      // 只写 `replace(/^\/+$/, '')` 会得到 `/checkout`（前缀只在前端匹配到），
+      // 于是所有写动作都落进「未知动作」404 —— 这条被 billing-routes 用例钉住。
+      const tail = requestUrl.pathname.slice(ROUTE_BILLING.length).replace(/^\/+/, '').replace(/\/+$/, '')
+      if (tail === '') {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, { error: 'billing snapshot is read-only' })
+          return
+        }
+        const force = requestUrl.searchParams.get('refresh') === '1'
+        try {
+          await refreshBilling(force)
+          if (!res.destroyed) sendJson(res, 200, billingView())
+        } catch (cause) {
+          // refreshBilling 自身不抛；这是 HTTP 面的最后一道兜底。
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '订阅信息读取失败，请稍后重试。')
+        }
+        return
+      }
+      if (tail === 'checkout' || tail === 'portal-sessions') {
+        if (!mutationAllowed(req, expectedPort())) {
+          sendJson(res, 403, { error: 'canvas-studio billing changes require a local same-origin request' })
+          return
+        }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: `billing ${tail} only supports POST` })
+          return
+        }
+        try {
+          if (tail === 'checkout') {
+            const controller = new AbortController()
+            req.once('aborted', () => controller.abort())
+            const body = await readJson(req, controller.signal) as { kind?: unknown; product_code?: unknown }
+            // 幂等键只认请求头（单一入口）：漏带就是 400，不在 body 里再开一个口子。
+            const key = req.headers['idempotency-key']
+            const created = await createBillingCheckout(
+              {
+                kind: body?.kind as 'plan' | 'credit_pack',
+                product_code: typeof body?.product_code === 'string' ? body.product_code : '',
+              },
+              typeof key === 'string' ? key : '',
+            )
+            if (!res.destroyed) sendJson(res, 201, created)
+            return
+          }
+          const portal = await createBillingPortalSession()
+          if (!res.destroyed) sendJson(res, 201, portal)
+        } catch (cause) {
+          if (!res.destroyed && !sendBillingFailure(res, cause)) {
+            sendRouteFailure(res, cause, 500, '订阅操作失败，请稍后重试。')
+          }
+        }
+        return
+      }
+      sendJson(res, 404, { error: 'unknown billing action' })
     }}),
 
     // P3: asset serving. The Host writes generated media into each project's
@@ -3463,6 +3567,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           if (body.event === 'SIGNED_OUT') {
             clearAuthSession()
             notifyAuthCleared()
+            // 订阅/积分快照必须一起清：留着就是「登出后还显示上一个账号的套餐」。
+            resetBilling()
             sendJson(res, 200, { ok: true })
             return
           }

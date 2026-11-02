@@ -106,13 +106,13 @@ export const ACCOUNT_COPY = {
 } as const
 
 /**
- * 积分余额占位（计费后端未接入）。
+ * 积分余额占位：**已删除（2026-11-02）**。
  *
- * 2026-10-15 拍板**暂时保留**这个假数：与左栏 `.csCredits` 的 `0 / 1,000` 同一
- * 处置口径 —— 都是「挂 `待接入` 角标的展示占位」，不参与任何计算。计费后端接通后
- * 两处一起换成真实余额（届时本常量删除）。
+ * 此前这里有一个「假余额」常量，是计费后端未接入时的展示占位。计费链路接通后，
+ * 用户菜单与左栏余额卡都改读真实余额（`credits-store` 的 `available_balance`，
+ * 经 `formatCredits` 整数展示）。**不要再引入任何写死的余额** ——
+ * `tests/user-identity-switch.test.mjs` 会把它扫回来。
  */
-export const CREDITS_PLACEHOLDER = 2600
 
 /** 加载态（loading）文案。 */
 export const LOADING_COPY = {

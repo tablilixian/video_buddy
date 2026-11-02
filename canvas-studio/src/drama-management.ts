@@ -8,6 +8,13 @@
  * 接口约束见方案 `docs/plans/DramaServer-管理面接口接入方案.md` §0.3
  * （Bearer 头、429 Retry-After、403 禁用、401 等 client 重推、sync 幂等 + 全量设备信息）。
  */
+import type {
+  BillingCheckoutRequest,
+  BillingCheckoutSession,
+  BillingOverviewResponse,
+  BillingPortalSession,
+  CheckoutConflictReason,
+} from './contracts/billing.js'
 
 /** 服务端错误信封（api(10).md §6）。 */
 export interface ApiErrorBody {
@@ -150,14 +157,73 @@ export class DramaClient {
     return this.#request<CreditBalance>(token, '/v1/credits/balance')
   }
 
+  /**
+   * 计费总览（`GET /v1/billing/overview`）：订阅 + 钱包 + 商品目录 + 待支付。
+   *
+   * **不要在 Host 侧假设字段一定存在**：实测 `pending_checkout` 是 omitempty，
+   * 且 `credits` 在读不到钱包时会是 `null`。这里只做「形状没坏到不能用」的校验，
+   * 具体降级交给 `billing-state.ts`。
+   */
+  async billingOverview(token: string): Promise<BillingOverviewResponse> {
+    const body = await this.#request<BillingOverviewResponse>(token, '/v1/billing/overview')
+    if (body === null || typeof body !== 'object') {
+      throw new ApiError('invalid_response', '计费总览响应不是对象。', 502, null)
+    }
+    // 目录字段按数组兜底：服务端给 null 时不能让 Host 侧 `for...of` 直接 TypeError。
+    return {
+      ...body,
+      plans: Array.isArray(body.plans) ? body.plans : [],
+      credit_packs: Array.isArray(body.credit_packs) ? body.credit_packs : [],
+    }
+  }
+
+  /**
+   * 创建 Checkout（`POST /v1/billing/checkout-sessions`，上游 201）。
+   *
+   * `Idempotency-Key` 由调用方提供并**按购买意图复用**（方案 §5.3）：网络重试换
+   * 键会让积分包重复下单，服务端的唯一键是 `(user_id, provider, idempotency_key)`。
+   */
+  async createBillingCheckout(
+    token: string,
+    request: BillingCheckoutRequest,
+    idempotencyKey: string,
+  ): Promise<BillingCheckoutSession> {
+    const body = await this.#request<BillingCheckoutSession>(token, '/v1/billing/checkout-sessions', {
+      method: 'POST',
+      // 请求体只允许 kind + product_code：多带金额字段会被服务端 400 拒收。
+      body: { kind: request.kind, product_code: request.product_code },
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
+    const url = assertTrustedUrl(body?.checkout_url, ['checkout.stripe.com'], 'checkout_url')
+    if (typeof body?.order_id !== 'string' || typeof body?.order_no !== 'string') {
+      throw new ApiError('invalid_response', 'Checkout 响应缺少 order_id / order_no。', 502, null)
+    }
+    // 只把校验过的 URL 交出去：渲染层拿到的任何 URL 都会被 window.open 交给系统浏览器。
+    return { ...body, checkout_url: url }
+  }
+
+  /**
+   * 打开 Stripe Customer Portal（`POST /v1/billing/portal-sessions`，上游 201）。
+   *
+   * 无订阅 / manual 订阅 / 无 Stripe Customer 映射时上游返回 `409 portal_unavailable`
+   * —— 那是**正常业务分支**，不是故障，由调用方分派文案。
+   */
+  async createBillingPortalSession(token: string): Promise<BillingPortalSession> {
+    const body = await this.#request<BillingPortalSession>(token, '/v1/billing/portal-sessions', {
+      method: 'POST',
+    })
+    return { portal_url: assertTrustedUrl(body?.portal_url, ['billing.stripe.com'], 'portal_url') }
+  }
+
   async #request<T>(
     token: string,
     path: string,
-    options: { method?: string; body?: unknown } = {},
+    options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
   ): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
+      ...options.headers,
     }
     let body: string | undefined
     if (options.body !== undefined) {
@@ -195,4 +261,73 @@ export async function parseApiError(response: Response): Promise<ApiError> {
 /** 本地没有可用会话时 Host 自己抛的错误，形状与 ApiError 一致。 */
 export function unauthenticated(message: string): ApiError {
   return new ApiError('unauthenticated', message, 401, null)
+}
+
+// ── 计费相关的协议层纯函数（方案 P1/§0.3）───────────────────────────────────
+//
+// 三个函数刻意放在协议层而不是 UI 层：它们都是「把服务端的松散事实翻译成有限
+// 集合」，翻译规则一旦散落到组件里，两处结论迟早不一致（本项目已多次踩过）。
+// 全部无副作用，可单测。
+
+/**
+ * 校验 Host 将要交给渲染层的 URL。
+ *
+ * 为什么要这一道：`checkout_url` / `portal_url` 最终会走 `window.open` →
+ * `shell.openExternal`，把服务端返回的任意字符串交出去等于让远端决定本机打开什么。
+ * **只比对 hostname 全等**（`endsWith` 会被 `checkout.stripe.com.evil.com` 绕过）。
+ */
+export function assertTrustedUrl(value: unknown, hosts: string[], field: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new ApiError('invalid_response', `响应缺少 ${field}。`, 502, null)
+  }
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new ApiError('invalid_response', `${field} 不是合法 URL。`, 502, null)
+  }
+  if (parsed.protocol !== 'https:' || !hosts.includes(parsed.hostname)) {
+    throw new ApiError('invalid_response', `${field} 指向不可信地址（${parsed.hostname}）。`, 502, null)
+  }
+  return value
+}
+
+/**
+ * 幂等键合法性（上游：1–200 字节、只允许可打印 ASCII 33–126）。
+ *
+ * Host 侧先校验一次的意义：非法键会被上游以 `400 invalid_argument` 打回，用户
+ * 看到的是「商品信息已更新」这种误导文案；本地拦下能给出准确原因。
+ */
+export function isValidIdempotencyKey(value: unknown): value is string {
+  return typeof value === 'string' && /^[\x21-\x7e]{1,200}$/.test(value)
+}
+
+/**
+ * 把 checkout 的 409 归一化成有限原因集合。
+ *
+ * **实测约束**：上游所有 409 的 `code` 都是 `conflict`，真实原因只在 `message`
+ * 里（如 `idempotency key conflict`）。所以这里只能按 message 关键词分类 ——
+ * 但分类结果稳定、可测，UI 与幂等键策略都只认这个枚举，不再各自 `includes()`。
+ *
+ * `expired` 是**终态三连**的合并（`checkout expired` / `checkout failed` /
+ * `checkout already complete`）：三者处置相同（换新键 + 刷新 overview），
+ * 差异只在文案，由 UI 按 `error.message` 原样展示给开发者排查。
+ */
+export function classifyCheckoutConflict(message: string): CheckoutConflictReason {
+  const text = message.toLowerCase()
+  if (text.includes('idempotency key conflict')) return 'idem_mismatch'
+  if (text.includes('already pending')) return 'pending'
+  if (text.includes('checkout expired') || text.includes('checkout failed') || text.includes('already complete')) {
+    return 'expired'
+  }
+  if (text.includes('already active') || text.includes('subscription active') || text.includes('already subscribed')) {
+    return 'subscribed'
+  }
+  if (
+    text.includes('not purchasable') || text.includes('not configured') || text.includes('invalid price')
+    || text.includes('invalid currency') || text.includes('product inactive')
+  ) {
+    return 'not_purchasable'
+  }
+  return 'unknown'
 }

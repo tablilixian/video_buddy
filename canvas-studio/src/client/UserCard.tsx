@@ -3,8 +3,10 @@
  *
  * 诚实边界（拍板四项之一）：主题与设置接**真实功能**（ctx.theme / 现有
  * SettingsModal —— 用户卡恰是 CV-059「设置入口 = 左下角」的插件内落点）；
- * 积分、订阅、记忆管理、教程、更新日志为 **reserved 入口**（挂「待接入」
- * 角标，不伪造已生效）；「接入飞书/微信」照抄竞品「未接入」badge 语义。
+ * 积分与订阅已于 2026-11-02 接真实数据（`creditsAvailable` / `subscriptionLabel`
+ * 来自 `credits-store` 与 `billing-store`，点行打开订阅页）；记忆管理、教程、
+ * 更新日志仍是 **reserved 入口**（挂「待接入」角标，不伪造已生效）；「接入飞书/微信」
+ * 照抄竞品「未接入」badge 语义。
  * 假数据**已全部删除**（P1 登录闭环 2026-10-15）：本组件的三态各有明确来源 ——
  * `signed-in` 取真用户（昵称 / 邮箱 / UID 全来自会话）；`signed-out` 用户条整体换成
  * 「登录 / 注册」按钮（onOpenLogin，不渲染面板）；`auth === undefined`（未配置 Supabase）
@@ -16,7 +18,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { ACCOUNT_COPY, CREDITS_PLACEHOLDER } from '../brand-copy.js'
+import { ACCOUNT_COPY } from '../brand-copy.js'
+// 积分展示与左栏余额卡共用同一个格式化函数（整数 + 截断，2026-11-02 统一口径）。
+import { formatCredits } from '../account-format.js'
 import { signOutAuth, type AuthState } from './auth/auth-store.js'
 
 export interface UserCardProps {
@@ -28,6 +32,15 @@ export interface UserCardProps {
   auth?: AuthState | undefined
   /** 打开登录弹窗（未登录态点「登录」按钮）。 */
   onOpenLogin?(): void
+  /**
+   * 可用积分（已登录且读到余额时）；`null` = 读到失败/从未读到，显示破折号，
+   * 不显示假数字。未登录时由组件自己显示「登录后查看」。
+   */
+  creditsAvailable?: number | null | undefined
+  /** 订阅摘要（如「Plus · 生效中」）；`null` = 未订阅。undefined = 还没读到。 */
+  subscriptionLabel?: string | null | undefined
+  /** 打开订阅与积分全屏页（积分行 / 订阅行的真实入口）。 */
+  onOpenBilling?(): void
 }
 
 /** 主题 id → 中文标签（与 SettingsModal 同规则）。 */
@@ -90,6 +103,19 @@ export function GuestAvatar(props: { size?: number }): ReactElement {
 export function UserCard(props: UserCardProps): ReactElement {
   const { onOpenSettings, theme, auth, onOpenLogin } = props
   const signedIn = auth?.status === 'signed-in' && auth.user !== null
+  // 计费两行（2026-11-02 接真数据）：
+  //   creditsText —— 已登录且读到余额才显示数字；读到失败显示破折号（**不是 0**，
+  //                  0 与「没读到」是两件事，混起来会让用户以为钱没了）；
+  //   subscriptionText —— 有订阅「套餐名 · 状态」，没有就「未订阅」。
+  const canOpenBilling = signedIn && props.onOpenBilling !== undefined
+  const creditsText = !signedIn
+    ? '登录后查看'
+    : (props.creditsAvailable === undefined || props.creditsAvailable === null
+      ? '—'
+      : formatCredits(props.creditsAvailable))
+  const subscriptionText = !signedIn
+    ? '登录后查看'
+    : (props.subscriptionLabel === undefined ? '—' : (props.subscriptionLabel ?? '未订阅'))
   const signedOut = auth !== undefined && !signedIn
   // 三态，各自有明确的身份来源（**没有第四种"假身份态"**）：
   //   signedIn  → 真用户：昵称 / 邮箱 / UID 全部来自会话；
@@ -217,18 +243,31 @@ export function UserCard(props: UserCardProps): ReactElement {
               {signedIn ? (auth!.user!.email ?? '—') : <span className="csUserBadge">未配置</span>}
             </span>
           </div>
-          <div className="csUserRow">
+          {/* 积分余额：已登录读真实余额（整数展示，与左栏余额卡同一个 formatCredits），
+              未登录显示「登录后查看」；点整行进订阅页。 */}
+          <button
+            type="button"
+            className="csUserRow csUserEntry"
+            {...(canOpenBilling && props.onOpenBilling !== undefined ? { onClick: props.onOpenBilling } : { disabled: true })}
+            title={signedIn ? '查看订阅与积分' : '登录后查看积分'}
+          >
             <span className="csUserRowLabel">积分余额</span>
             <span className="csUserValue">
-              ✦ {CREDITS_PLACEHOLDER}
-              <span className="csReserved">待接入</span>
+              <span className="csUserCredits">✦ {creditsText}</span>
+              {canOpenBilling && <span className="csUserChevron">›</span>}
             </span>
-          </div>
-          <button type="button" className="csUserRow csUserEntry" disabled title="订阅体系尚未接入">
+          </button>
+          {/* 订阅：有订阅显示「套餐名 · 状态」，无订阅显示「未订阅」（不是「待接入」）。 */}
+          <button
+            type="button"
+            className="csUserRow csUserEntry"
+            {...(canOpenBilling && props.onOpenBilling !== undefined ? { onClick: props.onOpenBilling } : { disabled: true })}
+            title={signedIn ? '查看订阅套餐' : '登录后查看订阅'}
+          >
             <span className="csUserRowLabel">订阅</span>
             <span className="csUserValue">
-              <span className="csReserved">待接入</span>
-              <span className="csUserChevron">›</span>
+              <span className={subscriptionText === '未订阅' ? 'csUserSubtle' : 'csUserPlan'}>{subscriptionText}</span>
+              {canOpenBilling && <span className="csUserChevron">›</span>}
             </span>
           </button>
           {theme !== undefined && themeSnap !== null && (

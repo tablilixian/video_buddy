@@ -248,7 +248,18 @@ import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
 // CV-358：左栏余额卡（管理面 `/v1/credits/balance` 的真实数据）。
 import { CreditsCard } from './CreditsCard.js'
-import { getCreditsState, installCreditsVisibilityRefresh, refreshCredits, resetCredits, subscribeCredits, type CreditsState } from './credits-store.js'
+import { getCreditsState, refreshCredits, resetCredits, subscribeCredits, type CreditsState } from './credits-store.js'
+// 订阅与积分（方案 20261102）：状态机在 billing-store，页面只读。
+import { BillingPage } from './BillingPage.js'
+import { statusLabel } from './billing-copy.js'
+import {
+  clearBillingActionError, getBillingState, installBillingCreditsBridge, openPortal,
+  refreshBilling, resetBillingStore, startCheckout, stopBillingPolling, subscribeBilling,
+  type BillingState,
+} from './billing-store.js'
+// 「回到应用」统一信号（focus + visibility，1s 去重）：Electron 里 visibility 不触发，
+// 付款回来只靠 focus —— 这是「付了钱看不到到账」的根因修复。
+import { onAppFocus } from './refresh-signal.js'
 // P1 登录闭环：登录弹窗 + 登录态 store（见 client/auth/）。
 import { LoginModal } from './auth/LoginModal.js'
 import { getAuthState, initAuthStore, installAuthVisibilityPush, requireSignIn, setLoginPromptHandler, subscribeAuth, type AuthState } from './auth/auth-store.js'
@@ -615,8 +626,30 @@ export function StudioFrame(props: StudioFrameProps) {
   // 三个触发源：卡片挂载 / 登录态变化 / client/index.ts 的「一次生成彻底结束」。
   const [creditsState, setCreditsState] = useState<CreditsState>(getCreditsState)
   useEffect(() => subscribeCredits(() => { setCreditsState(getCreditsState()) }), [])
-  // 页面切回来对一次；TTL 由 Host 判 —— 30s 内回来就是一个零请求的空转。
-  useEffect(() => { installCreditsVisibilityRefresh() }, [])
+  // 订阅与积分：同构（模块级单例 + subscribe）。`billingOpen` 只控渲染，状态常驻 ——
+  // 用户菜单要显示订阅摘要，页面没打开也得有数据。
+  const [billingOpen, setBillingOpen] = useState(false)
+  const [billingState, setBillingState] = useState<BillingState>(getBillingState)
+  useEffect(() => subscribeBilling(() => { setBillingState(getBillingState()) }), [])
+  // 回到应用刷一次余额 + 订阅（focus + visibility，1s 去重）。取代旧的
+  // `installCreditsVisibilityRefresh` —— 那条只监听 visibilitychange，付款回来不触发。
+  useEffect(() => onAppFocus(() => {
+    void refreshCredits(false)
+    void refreshBilling(false)
+  }), [])
+  // 支付/管理订阅完成后让余额层强刷（到账与扣费都可能在同一次变化里）。
+  useEffect(() => { installBillingCreditsBridge(() => refreshCredits(true)) }, [])
+  // 订阅页开关：打开即强刷（用户点进来通常刚支付完或刚被扣费）。
+  const openBilling = (): void => {
+    setBillingOpen(true)
+    void refreshBilling(true)
+  }
+  // 用户菜单的订阅摘要：undefined = 还没读到（显示破折号）、null = 未订阅。
+  const billingSubscriptionLabel: string | null | undefined = billingState.view === null
+    ? undefined
+    : (billingState.view.subscription === null
+      ? null
+      : `${billingState.view.subscription.plan_name} · ${statusLabel(billingState.view.subscription)}`)
   // 清晰度继承（2026-10-27）：设置页的图片/视频默认档 —— 节点输入卡的 chip 要显示
   // **真实生效值**（「跟随项目 1080P」/「跟随默认 720P」），就必须拿到这一层。
   // 首帧是 `loading`，读到 `ready` 才写：否则把 undefined 当成「用户没配」，
@@ -651,8 +684,17 @@ export function StudioFrame(props: StudioFrameProps) {
   // 都在 TTL 里，谁先到谁生效），登出清内存视图 —— 不清就是下一个登录者看到
   // 上一个人的余额。
   useEffect(() => {
-    if (auth.status === 'signed-in') void refreshCredits(false)
-    else if (auth.status === 'signed-out') resetCredits()
+    if (auth.status === 'signed-in') {
+      void refreshCredits(false)
+      // 订阅摘要要在用户菜单里常显（不需要打开订阅页就有值）。
+      void refreshBilling(false)
+      return
+    }
+    if (auth.status === 'signed-out') {
+      resetCredits()
+      // 订阅/积分快照必须一起清：不清就是下一个登录者看到上一个账号的套餐。
+      resetBillingStore()
+    }
   }, [auth.status])
   useEffect(() => {
     const scope = settingsScope.get<CanvasStudioConfig>('canvas-studio')
@@ -2461,6 +2503,7 @@ export function StudioFrame(props: StudioFrameProps) {
               failure={creditsState.failure}
               onRefresh={() => { void refreshCredits(true) }}
               onSignIn={() => { setLoginOpen(true) }}
+              onOpenBilling={openBilling}
             />
             {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
                 固定在侧栏底部不随项目列表滚动）。 */}
@@ -2469,6 +2512,9 @@ export function StudioFrame(props: StudioFrameProps) {
               theme={theme}
               auth={auth.status === 'unconfigured' ? undefined : auth}
               onOpenLogin={() => { setLoginOpen(true) }}
+              creditsAvailable={creditsState.view?.balance?.available_balance ?? null}
+              subscriptionLabel={billingSubscriptionLabel}
+              onOpenBilling={openBilling}
             />
           </>
         )}
@@ -2959,6 +3005,25 @@ export function StudioFrame(props: StudioFrameProps) {
           uploadLibraryMedia={uploadLibraryMedia}
           insertLibChip={insertLibChip}
           {...(projectId === null ? { onStashAsset: handleStashLibraryAsset } : {})}
+        />
+      )}
+      {/* 订阅与积分全屏页（方案 20261102）：与资产库/技能广场同一层，盖住三栏。
+          两个入口都指向这里（左栏「升级套餐」+ 用户菜单的积分/订阅行）。
+          关闭时停 pending 轮询 —— 页面不在屏幕上还打接口没有意义。 */}
+      {billingOpen && (
+        <BillingPage
+          state={billingState}
+          signedIn={auth.status === 'signed-in'}
+          localMode={auth.status === 'unconfigured'}
+          onClose={() => {
+            setBillingOpen(false)
+            stopBillingPolling()
+          }}
+          onSignIn={() => { setLoginOpen(true) }}
+          onRefresh={() => { void refreshBilling(true) }}
+          onBuy={(kind, code) => { void startCheckout(kind, code) }}
+          onPortal={() => { void openPortal() }}
+          onDismissError={clearBillingActionError}
         />
       )}
       {libImportNodeId !== null && projectId !== null && (

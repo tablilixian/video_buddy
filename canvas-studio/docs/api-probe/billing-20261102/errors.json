@@ -1,0 +1,26 @@
+{
+  "404_not_found": {
+    "error": {
+      "code": "not_found",
+      "message": "billing resource not found"
+    }
+  },
+  "400_missing_idem": {
+    "error": {
+      "code": "invalid_argument",
+      "message": "Idempotency-Key is required"
+    }
+  },
+  "409_idem_conflict": {
+    "error": {
+      "code": "conflict",
+      "message": "idempotency key conflict"
+    }
+  },
+  "409_portal_unavailable": {
+    "error": {
+      "code": "portal_unavailable",
+      "message": "subscription management is unavailable"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "entries": [
+    {
+      "id": 16945,
+      "entry_type": "release",
+      "amount": 0.0,
+      "lot_id": "68c12ea2-4c8a-44a1-8f8d-2fd2b737dd91",
+      "hold_id": "4c58d964-7c62-4048-8982-74919220f913",
+      "llm_request_id": "3f11d700-ac36-4c8d-94c4-6f80ecc80c52",
+      "lot_balance_after": 223.6111,
+      "metadata": {
+        "reason": "unused",
+        "released_amount": 9.7023
+      },
+      "created_at": "2026-11-02T08:19:32.252132+08:00"
+    },
+    {
+      "id": 16944,
+      "entry_type": "commit",
+      "amount": -0.2721,
+      "lot_id": "68c12ea2-4c8a-44a1-8f8d-2fd2b737dd91",
+      "hold_id": "4c58d964-7c62-4048-8982-74919220f913",
+      "llm_request_id": "3f11d700-ac36-4c8d-94c4-6f80ecc80c52",
+      "lot_balance_after": 223.6111,
+      "metadata": {
+        "committed_amount": 0.2721
+      },
+      "created_at": "2026-11-02T08:19:32.252132+08:00"
+    },
+    {
+      "id": 16943,
+      "entry_type": "hold",
+      "amount": 0.0,
+      "lot_id": "68c12ea2-4c8a-44a1-8f8d-2fd2b737dd91",
+      "hold_id": "4c58d964-7c62-4048-8982-74919220f913",
+      "llm_request_id": "3f11d700-ac36-4c8d-94c4-6f80ecc80c52",
+      "lot_balance_after": 223.8832,
+      "metadata": {
+        "candidate_count": 2,
+        "estimated_tokens": 234175,
+        "expires_at": "2026-11-02T02:19:14Z",
+        "frozen_amount": 9.9744,
+        "max_output_tokens": 32768,
+        "model_code": "deepseek-flash",
+        "provider_code": "opencode-go"
+      },
+      "created_at": "2026-11-02T08:19:14.684581+08:00"
+    }
+  ],
+  "next_cursor": "16896"
+}

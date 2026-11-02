@@ -1,13 +1,14 @@
 /** Real Windows smoke for the official minimal pwsh stack over the Desktop ACL relay. */
 
-import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, win32 } from 'node:path'
+import { release, version as osVersion } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
+import { ENCODING_PREAMBLE, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSandbox from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -22,6 +23,9 @@ import { adaptWindowsAclTerminalSpawn } from '../lib/windows-subprocess.js'
 
 const WORKER_FLAG = '--worker'
 const EXECUTION_POLICY = 'PSEXECUTIONPOLICYPREFERENCE'
+/** Raw bytes retained from the most recent real PTY, bounded so a chatty shell cannot grow it without limit. */
+const REAL_PTY_RAW_MAX = 8_000
+let realPtyRaw = ''
 
 function deadline(promise, timeoutMs, label) {
   return new Promise((resolve, reject) => {
@@ -123,6 +127,7 @@ function owner(ctx, rawId, cwd) {
 }
 
 async function scenario(inputs) {
+  realPtyRaw = ''
   const context = new Context()
   let callNumber = 0
   try {
@@ -148,8 +153,8 @@ async function scenario(inputs) {
     })
 
     class SmokeDesktopSubprocess extends LocalSubprocessRuntime {
-      spawnTerminal(spec) {
-        return super.spawnTerminal(adaptWindowsAclTerminalSpawn(spec, {
+      async spawnTerminal(spec) {
+        const terminal = await super.spawnTerminal(adaptWindowsAclTerminalSpawn(spec, {
           platform: 'win32',
           electron: true,
           execPath: inputs.electron,
@@ -157,6 +162,17 @@ async function scenario(inputs) {
           trampoline: inputs.trampoline,
           env: process.env,
         }))
+        // The tool error carries none of the shell's output, and a startup
+        // failure closes the session before anything is published. Retain the
+        // real bytes so a readiness timeout can still say what the relay
+        // delivered. The session subscribes in its constructor after this
+        // await settles, so both listeners attach within one microtask drain
+        // and neither loses data.
+        terminal.output.on('data', chunk => {
+          const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+          realPtyRaw = `${realPtyRaw}${text}`.slice(-REAL_PTY_RAW_MAX)
+        })
+        return terminal
       }
     }
 
@@ -186,7 +202,14 @@ async function scenario(inputs) {
     })
 
     const first = await execute('$global:DshDesktopRelayState = 41; Write-Output ([int]$global:DshDesktopRelayState + 1)')
-    expect(!first.isError && toolText(first).trim() === '42', `${inputs.label}: first persistent command failed: ${JSON.stringify(first)}`)
+    if (first.isError || toolText(first).trim() !== '42') {
+      // A startup timeout publishes no output of its own. Capture what the real
+      // session retained while the context is still alive: an empty scrollback
+      // means the shell never produced anything, a scrollback without `dsh> `
+      // means the setup line never ran, and one with it means only the prompt
+      // marker or tail failed to match.
+      throw new Error(`${inputs.label}: first persistent command failed: ${JSON.stringify(first)}\n${sessionEvidence(context, agent)}`)
+    }
 
     const second = await execute('Write-Output ("中文 special=&|<>^ value=" + ([int]$global:DshDesktopRelayState * 2))')
     expect(
@@ -222,6 +245,179 @@ async function scenario(inputs) {
   }
 }
 
+/** Failure text for any thrown diagnostic value. */
+function detail(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function delay(ms) {
+  return new Promise(resolve => { setTimeout(resolve, ms) })
+}
+
+function textFile(path) {
+  try {
+    return readFileSync(path, 'utf8').trim()
+  } catch (error) {
+    // An unreadable file is itself evidence; report it instead of aborting.
+    return `unreadable (${detail(error)})`
+  }
+}
+
+function packageVersion(path) {
+  const manifest = textFile(path)
+  if (!manifest.startsWith('{')) return manifest
+  try {
+    return String(JSON.parse(manifest).version)
+  } catch (error) {
+    return `unreadable (${detail(error)})`
+  }
+}
+
+/**
+ * What the failing session still retained. Readiness evidence is invisible in
+ * the tool error, so the scrollback separates the three failure shapes: no
+ * output at all, output without the controlled prompt, or the prompt itself.
+ */
+function sessionEvidence(context, agent) {
+  let snapshots
+  try {
+    snapshots = context.terminals.list(agent)
+  } catch (error) {
+    return `terminal sessions: unreadable (${detail(error)})`
+  }
+  if (snapshots.length === 0) return 'terminal sessions: none (the startup failure cleaned the session up before publication)'
+  return snapshots.map(snapshot => {
+    try {
+      const page = context.terminals.read(agent, snapshot.sessionId, { offset: 0, count: 40 })
+      return `terminal session status=${snapshot.status.kind} lines=${page.totalLines} sawControlledPrompt=${page.text.includes('dsh> ')} scrollback=${JSON.stringify(page.text.slice(-600))}`
+    } catch (error) {
+      return `terminal session status=${snapshot.status.kind} unreadable (${detail(error)})`
+    }
+  }).join('\n')
+}
+
+/** Host, shell, and node-pty facts that a Windows runner log never carries. */
+function hostFacts(inputs) {
+  const lines = [
+    `host: ${process.platform} ${release()} (${osVersion()}) ${process.arch} node=${process.version}`,
+    `shell: ${inputs.shellPath}`,
+  ]
+  try {
+    const probe = spawnSync(inputs.shellPath, ['-NoLogo', '-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      windowsHide: true,
+    })
+    const failure = probe.error != null ? detail(probe.error) : `exit ${probe.status}`
+    lines.push(`shellVersion: ${(probe.stdout ?? '').trim() || `unavailable (${failure})`}`)
+  } catch (error) {
+    lines.push(`shellVersion: unavailable (${detail(error)})`)
+  }
+  lines.push(`electron: ${textFile(join(inputs.packageRoot, 'node_modules', 'electron', 'dist', 'version'))}`)
+  lines.push(`node-pty: ${packageVersion(join(inputs.packageRoot, 'node_modules', 'node-pty', 'package.json'))}`)
+  return lines.join('\n')
+}
+
+/**
+ * Reproduce the prompt render on a bare node-pty with the same shell, console
+ * size, environment, and bundled console host, deliberately without the ACL
+ * relay. The raw bytes separate the failure shapes the readiness path cannot
+ * report: no output, a setup line the shell never ran, an OSC `133;D;` marker
+ * that never arrived, or a prompt tail the sanitizer cannot match — the system
+ * console host replays it as a newline, `dsh>`, and a cursor-forward escape
+ * instead of the printable `dsh> ` (upstream bundled-console-host note).
+ */
+async function probeRawPrompt(inputs) {
+  let nodePty
+  try {
+    nodePty = await import('node-pty')
+  } catch (error) {
+    return `raw probe: node-pty unavailable (${detail(error)})`
+  }
+  const pty = nodePty.default ?? nodePty
+  const env = {
+    ...process.env,
+    TERM: 'dumb',
+    NO_COLOR: '1',
+    PAGER: 'cat',
+    GIT_PAGER: 'cat',
+    DSH_SHELL: '1',
+  }
+  let shell
+  try {
+    shell = pty.spawn(inputs.shellPath, ['-NoLogo', '-NoProfile'], {
+      name: 'dumb',
+      cols: 160,
+      rows: 40,
+      cwd: inputs.packageRoot,
+      env,
+      ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
+    })
+  } catch (error) {
+    return `raw probe: spawn failed (${detail(error)})`
+  }
+  let raw = ''
+  let exitCode
+  const exited = new Promise(resolve => {
+    shell.onExit(event => { exitCode = event.exitCode; resolve(event.exitCode) })
+  })
+  shell.onData(chunk => { raw += chunk })
+  try {
+    shell.write(`${ENCODING_PREAMBLE}${TerminalBash.PWSH_PROMPT_SETUP}\r`)
+    await Promise.race([exited, delay(4_000)])
+    if (exitCode === undefined) {
+      // A second prompt after real output exercises the console host replay path.
+      shell.write('Write-Output ("probe-" + 7)\r')
+      await Promise.race([exited, delay(2_500)])
+    }
+  } finally {
+    try {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/pid', String(shell.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+      } else {
+        shell.kill()
+      }
+    } catch (error) {
+      // The probe is disposable; a failed cleanup must not hide its evidence.
+      raw += `\nprobe cleanup failed: ${detail(error)}`
+    }
+  }
+  const markerIndex = raw.lastIndexOf('\x1b]133;D;')
+  return `raw probe (bare node-pty, no ACL relay): ${JSON.stringify({
+    bytes: raw.length,
+    exitCode: exitCode ?? 'still-running',
+    sawOscPromptMarker: raw.includes('\x1b]133;D;'),
+    sawControlledPrompt: raw.includes('dsh> '),
+    sawKnownMalformedReplay: raw.includes('\ndsh>\x1b[1C'),
+    afterLastMarker: markerIndex < 0 ? null : raw.slice(markerIndex, markerIndex + 160),
+    outputTail: raw.slice(-500),
+  })}`
+}
+
+/** The real session's raw bytes: the only evidence the ACL relay path leaves behind. */
+function realPtyEvidence() {
+  const markerIndex = realPtyRaw.lastIndexOf('\x1b]133;D;')
+  return `real session raw${realPtyRaw.length >= REAL_PTY_RAW_MAX ? ` (last ${REAL_PTY_RAW_MAX} of the stream)` : ''}: ${JSON.stringify({
+    bytes: realPtyRaw.length,
+    sawOscPromptMarker: realPtyRaw.includes('\x1b]133;D;'),
+    sawControlledPrompt: realPtyRaw.includes('dsh> '),
+    sawKnownMalformedReplay: realPtyRaw.includes('\ndsh>\x1b[1C'),
+    afterLastMarker: markerIndex < 0 ? null : realPtyRaw.slice(markerIndex, markerIndex + 160),
+    outputTail: realPtyRaw.slice(-500),
+  })}`
+}
+
+/** Evidence appended to a scenario failure; it travels on stderr into the annotation. */
+async function failureEvidence(inputs) {
+  let probe
+  try {
+    probe = await probeRawPrompt(inputs)
+  } catch (error) {
+    probe = `raw probe: unavailable (${error instanceof Error ? error.stack ?? error.message : String(error)})`
+  }
+  return `${realPtyEvidence()}\n${hostFacts(inputs)}\n${probe}`
+}
+
 async function worker() {
   for (const key of Object.keys(process.env)) {
     if (key.toUpperCase() === EXECUTION_POLICY) delete process.env[key]
@@ -245,7 +441,13 @@ async function worker() {
 
   const results = []
   for (const path of paths) {
-    results.push(await scenario({ packageRoot, electron, trampoline, runner, ...path }))
+    const inputs = { packageRoot, electron, trampoline, runner, ...path }
+    try {
+      results.push(await scenario(inputs))
+    } catch (error) {
+      const stack = error instanceof Error ? error.stack ?? error.message : String(error)
+      throw new Error(`${stack}\n--- diagnostics ---\n${await failureEvidence(inputs)}`)
+    }
   }
   await new Promise(resolve => { process.stdout.write(`${JSON.stringify({ ok: true, results })}\n`, resolve) })
 }

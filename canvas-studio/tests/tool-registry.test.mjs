@@ -34,7 +34,8 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
 /** 实测 33 = `host-tools.ts` 32 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
 // CV-394（2026-11-02）：+image_matting（纯色底抠透明底），35 → 36。
-const EXPECTED_TOOL_COUNT = 36
+// B3（2026-11-02）：+verify_teardown（拆解回核），36 → 37。
+const EXPECTED_TOOL_COUNT = 37
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -67,6 +68,8 @@ const EXPECTED_TOOL_NAMES = [
   'scaffold_manifest',
   'submit_keyframes_for_approval',
   'subtitle_burn',
+  // B3（REQ-036 复刻提效批三）：拆解回核（参考视频实测切换点 ↔ 拆解表边界机器比对）。
+  'verify_teardown',
   'tts_narration',
   'tts_voiceover',
   'upload_image',

@@ -178,6 +178,10 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   recipe: '枚举（explainer-cards / product-walkthrough / story-arc），未知值由 execute 显式拒收',
   // —— CV-361 render_composition ——
   manifestPath: '绝对路径（manifest JSON 文件），内容由 JSON.parse + validateManifest + 尾部完整性校验拒收，比通用占位尺子更准',
+  // —— B3 verify_teardown（拆解回核）——
+  videoPath: '绝对路径（参考视频文件），存在性/可读性由 ffmpeg 抽帧实测，无文本占位形态（与 filePath 同判）',
+  segments: '结构化拆解段数组（{label,startSec,endSec}），逐项类型由 execute 校验、起止合法性由 verifyTeardown 拒收',
+  tolerance: '数值（边界匹配窗口秒，>0），非法取值回落缺省 1.0',
   // —— 布尔 / 数值：不存在文本占位形态 ——
   includeRetired: '布尔开关',
   autoFixText: '布尔开关',

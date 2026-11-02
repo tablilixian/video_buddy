@@ -94,6 +94,8 @@ import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-gu
 import { throwError } from './error-system.js'
 // CV-394：纯色底抠透明底（内置 ffmpeg colorkey）—— 生图不吐 alpha 的缺口工具。
 import { alphaDestPath, runImageMatting } from './image-matting.js'
+// B3：拆解回核 —— 拆解表边界 vs 参考视频真实切换点的机器比对（自评 verified 不算证据）。
+import { verifyTeardown, type TeardownSegment } from './teardown-verify.js'
 import { assertLookBudget, chargeLookBudget, lookBudgetApplies } from './look-budget.js'
 import './errors/catalog.js'
 
@@ -4275,6 +4277,90 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             '产物质量自查：把产物叠在任何深色卡上目视边缘 —— 有底色残留就提高 similarity（0.35–0.5），产品被误伤就降低。',
           ].join('\n'),
         }
+      },
+    }),
+    defineTool({
+      name: 'verify_teardown',
+      description:
+        '拆解回核（爆款复刻）：用 ffmpeg 低帧率抽帧实测参考视频的画面切换点，与拆解表的段起点做机器比对。'
+        + '每个表边界三态：matched（报实测切换时刻与偏差）/ unmatched（窗口内无切换 —— 边界可疑）/ extraSwitches（实测有切换但表里没有 —— 漏段/漏镜候选）。'
+        + '纪律：拆解表落定后、进映射前**必须过一遍本工具**；有 unmatched 或 extraSwitches 就先改表再核，**不要带着可疑拆解进 render_composition**（自评 verified 不算证据 —— 甜品会话 v2 拆解归段错误整片返工的教训）。',
+      parameters: {
+        videoPath: { type: 'string' as const, description: '参考视频的绝对路径（已落盘的本地文件；画布上传的视频节点产物路径即可）' },
+        segments: {
+          type: 'array' as const,
+          description: '拆解表段落（与你的拆解表一一对应，0.1s 精度）：[{label, startSec, endSec}]，至少 2 段；首段是开场不核入点',
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              label: { type: 'string' as const, description: '段名/镜序说明（结果回读定位用）' },
+              startSec: { type: 'number' as const, description: '起始秒' },
+              endSec: { type: 'number' as const, description: '结束秒' },
+            },
+          },
+        },
+        tolerance: { type: 'number' as const, description: '可选：匹配窗口（秒），缺省 1.0；拆解表精度高可收紧到 0.5' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '逐边界核对结论 + 修正指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args) {
+        const a = args as { videoPath?: unknown; segments?: unknown; tolerance?: unknown }
+        const videoPath = typeof a.videoPath === 'string' ? a.videoPath.trim() : ''
+        if (videoPath === '' || !videoPath.startsWith(sep)) {
+          throwError('CS-USER-ERR', { message: '缺少 videoPath 或不是绝对路径 —— 参考视频要先落盘（画布上传产物路径即可）。' })
+        }
+        const segments: TeardownSegment[] = []
+        if (Array.isArray(a.segments)) {
+          for (const raw of a.segments) {
+            if (typeof raw !== 'object' || raw === null) continue
+            const r = raw as Record<string, unknown>
+            const label = typeof r.label === 'string' ? r.label : `段${segments.length + 1}`
+            const startSec = typeof r.startSec === 'number' && Number.isFinite(r.startSec) ? r.startSec : Number.NaN
+            const endSec = typeof r.endSec === 'number' && Number.isFinite(r.endSec) ? r.endSec : Number.NaN
+            segments.push({ label, startSec, endSec })
+          }
+        }
+        if (segments.length < 2) {
+          throwError('CS-USER-ERR', { message: 'segments 至少要 2 段（[{label,startSec,endSec}]）—— 少于 2 段没有可核的边界。' })
+        }
+        const tolerance = typeof a.tolerance === 'number' && Number.isFinite(a.tolerance) && a.tolerance > 0
+          ? a.tolerance
+          : undefined
+        let result
+        try {
+          result = await verifyTeardown({ videoPath, segments, ...(tolerance !== undefined ? { toleranceSec: tolerance } : {}) })
+        } catch (error) {
+          throwError('CS-USER-ERR', { message: error instanceof Error ? error.message : String(error), detail: 'verify_teardown failed' })
+        }
+        const lines = result.boundaries.map((b) => {
+          if (b.status === 'matched') {
+            const delta = b.deltaSec ?? 0
+            const drift = Math.abs(delta) <= 0.3 ? '' : ` ⚠️偏差${delta > 0 ? '+' : ''}${delta.toFixed(2)}s`
+            return `  ✅ ${b.label}：表 ${b.tableSec.toFixed(1)}s ↔ 实测 ${b.measuredSec?.toFixed(1)}s${drift}`
+          }
+          return `  ❌ ${b.label}：表 ${b.tableSec.toFixed(1)}s —— ±${(tolerance ?? 1).toFixed(1)}s 内没找到画面切换，边界可疑`
+        })
+        const extras = result.extraSwitches.length > 0
+          ? [`  ➕ 实测有切换但表里没有：${result.extraSwitches.map((s) => s.timeSec.toFixed(1)).join('s、')}s —— 疑似漏段/漏镜`]
+          : []
+        const head = result.ok
+          ? `✅ 回核通过：${result.boundaries.length} 处边界全部对上（抽样 ${result.sampleFps}fps、${result.frameCount} 帧）。拆解表可以进映射。`
+          : `❌ 回核未过：${result.boundaries.filter((b) => b.status === 'unmatched').length} 处边界可疑、${result.extraSwitches.length} 处表外切换。`
+        const next = result.ok
+          ? (result.boundaries.some((b) => Math.abs(b.deltaSec ?? 0) > 0.3)
+            ? '建议：把偏差 >0.3s 的段起点按实测时刻校准后再进映射（时序闸口径 ±0.3s）。'
+            : '直接进映射。')
+          : '先修拆解表（对照实测切换时刻改 startSec / 补漏段），修完重新 verify_teardown —— unmatched 的拆解不要进映射。'
+        return { text: [head, ...lines, ...extras, next].join('\n') }
       },
     }),
     defineTool({

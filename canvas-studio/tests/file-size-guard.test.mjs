@@ -64,7 +64,9 @@ export const FILE_WHITELIST = {
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
-  'src/host-tools.ts': 4486,
+  // B3 拆解回核（2026-11-02）：+verify_teardown 工具定义 +86（4486 → 4572）显式登记
+  // —— 核心算法在 teardown-verify.ts（新文件），这里只是工具壳。
+  'src/host-tools.ts': 4572,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3619,
@@ -134,7 +136,8 @@ export const FUNC_WHITELIST = {
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
-  'src/host-tools.ts#createStudioTools': { lines: 2512, note: '阶段 1 目录化（先搬 inspect 打样）' },
+  // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
+  'src/host-tools.ts#createStudioTools': { lines: 2596, note: '阶段 1 目录化（先搬 inspect 打样）' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

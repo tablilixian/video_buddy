@@ -15,6 +15,12 @@ import { throwError } from './error-system.js'
 import { renderTextResult } from './tool-result-text.js'
 import { probeMedia } from './media-probe.js'
 import { generateEvidenceGrid, type SamplingPass } from './evidence-grid.js'
+import { downloadVideo, SITE_LABELS } from './video-download.js'
+import { saveLocalAssetBytes } from './generate.js'
+import { newAssetId } from './config.js'
+import { deriveNodePlacement } from './canvas-placement.js'
+import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
+import type { StudioCanvasNode } from './contracts/canvas.js'
 
 export interface RemakeToolsDeps {
   registry: ProjectRegistry
@@ -22,8 +28,9 @@ export interface RemakeToolsDeps {
 }
 
 /** 复刻链路工具（`media_probe` / `evidence_grid` / `download_video`）。 */
-export function defineRemakeTools(_deps: RemakeToolsDeps): ReturnType<typeof defineTool>[] {
-  // download_video（C1）会消费 registry / resolveProjectId 落画布素材区；先收下依赖。
+export function defineRemakeTools(deps: RemakeToolsDeps): ReturnType<typeof defineTool>[] {
+  // download_video 用 registry / resolveProjectId 落画布素材区与视频节点。
+  const { registry, resolveProjectId } = deps
   return [
     defineTool({
       // 第 39 号工具（REQ-036 C3；编号紧接 teardown_store=38，REQ 文档写作 38/39/40
@@ -156,6 +163,87 @@ export function defineRemakeTools(_deps: RemakeToolsDeps): ReturnType<typeof def
           cuts,
           `结构化清单（每格 时间戳/页/行/列/台词）：${result.dir}/${result.manifestFile}`,
           '下一步：对照网格填拆解表（六列，见 viral-remake SKILL §1）；密集段（红框聚集处）用 passes 传该区间 + interval 0.1–0.3 二次采样；拆完先 verify_teardown 回核再进映射。',
+        ].join('\n') }
+      },
+    }),
+    defineTool({
+      // 第 41 号工具（REQ-036 C1）。
+      name: 'download_video',
+      description:
+        '视频页链接 → 参考视频落盘（爆款复刻前置步）：支持**抖音 / B站 / YouTube**（v1 白名单，其他站点明确报错）。'
+        + '产物落**画布素材区**（项目资产 + 画布视频节点，与 upload_image 落盘形态一致），返回的 assetPath 可直接喂 media_probe / evidence_grid / verify_teardown / inspect_image 抽帧链路。'
+        + '\n\n**什么时候用**：用户发来一条链接说「复刻这条 / 拆解这条」—— 先下载落盘再进拆解，不要让用户自己去导出文件。'
+        + '\n\n⚠️ 边界（如实转述给用户）：① 不支持登录态/会员内容（需登录的视频直接报错，让用户自备文件）；② 不做直播流与合集批量；③ 单条视频默认 120s 下载超时。'
+        + '\n\n版权提示：仅用于用户自备参考素材的拆解复刻，复刻产出默认替换原素材。'
+        + '\n\n首次调用会按需下载 yt-dlp 组件（带版本与 sha256 校验，约 30MB 一次），之后复用。',
+      parameters: {
+        url: { type: 'string' as const, required: true, description: '视频页链接（http/https；抖音含 v.douyin.com 短链、B站含 b23.tv 短链）' },
+        expectedDurationSec: { type: 'number' as const, description: '可选：期望时长（秒），下载后校验（防错下成图集/短预告/合集）；偏差超过 max(2s, 20%) 报错' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '产物路径 / 实测参数 + 拆解下一步指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { url?: unknown; expectedDurationSec?: unknown }
+        if (typeof a.url !== 'string' || a.url.trim() === '') {
+          throwError('CS-USER-ERR', { message: 'url 不能为空：传视频页 http/https 链接。' })
+        }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const result = await downloadVideo(
+          {
+            url: a.url,
+            ...(typeof a.expectedDurationSec === 'number' && Number.isFinite(a.expectedDurationSec)
+              ? { expectedDurationSec: a.expectedDurationSec }
+              : {}),
+            signal: exec.signal,
+          },
+          {
+            saveAsset: (name, bytes) => saveLocalAssetBytes(registry, projectId, name, bytes),
+            assetsDir: () => registry.assetsDir(projectId),
+            appendNode: async (payload) => {
+              const existing = (await registry.readCanvas(projectId)).nodes
+              const size = payload.width !== undefined && payload.height !== undefined && payload.width > 0 && payload.height > 0
+                ? frameSizeOf({ width: payload.width, height: payload.height })
+                : { ...DEFAULT_NODE_SIZE }
+              const placement = deriveNodePlacement(existing, [], size.width, size.height)
+              const node: StudioCanvasNode = {
+                id: newAssetId(),
+                kind: 'video',
+                title: payload.title,
+                url: payload.url,
+                ...(payload.duration !== undefined && payload.duration > 0 ? { duration: payload.duration } : {}),
+                ...(payload.width !== undefined ? { mediaWidth: payload.width } : {}),
+                ...(payload.height !== undefined ? { mediaHeight: payload.height } : {}),
+                x: placement.x,
+                y: placement.y,
+                width: size.width,
+                height: size.height,
+                createdAt: Date.now(),
+                toolName: payload.toolName,
+                origin: 'agent',
+                sourceIds: [],
+                operationType: 'import',
+                generationPrompt: JSON.stringify({ sourceSite: payload.sourceSite }),
+              }
+              await registry.appendCanvasNode(projectId, node)
+              return node.id
+            },
+          },
+        )
+        const size = result.width !== undefined && result.height !== undefined ? ` · ${result.width}×${result.height}` : ''
+        const audio = result.hasAudio ? '含音轨' : '无音轨'
+        return { text: [
+          `✅ 已从${SITE_LABELS[result.source]}下载参考视频（${result.durationSec.toFixed(1)}s${size} · ${audio}）：`,
+          `  画布节点 id=${result.nodeId}（用户在画布上可见，可 @ref 引用）`,
+          `  资产路径：${result.assetPath}`,
+          `下一步：media_probe 探时长/响度 → evidence_grid 出证据网格开始拆解（viral-remake SKILL §1）。`,
         ].join('\n') }
       },
     }),

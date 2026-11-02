@@ -198,6 +198,9 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   cellPx: '数值（单格边长 px），越界由 clampInt 钳制（120–960）',
   transcriptPath: '绝对路径（ASR 词级转写 JSON），内容由 parseTranscript 形状校验拒收（segments/words 缺项即报错），无文本占位形态',
   markCuts: '布尔开关（切点红框标记，缺省 true）',
+  // —— REQ-036 C1 download_video（视频下载）——
+  url: '视频页链接（http/https），协议与站点白名单由 classifyVideoUrl 显式拒收（可读文案）；下载失败有分类错误文案',
+  expectedDurationSec: '数值（期望时长秒，可选），用于下载后产物校验（容差 max(2s, 20%)），非法值忽略',
   // —— 复刻提效批四：render_composition 的拆解双闸入参 ——
   timingSegments: '结构化拆解段数组（{label,startSec,endSec,elements?}），形状由 parseTimingSegments 显式拒收（startSec<endSec 逐段校验），elements 非法项过滤',
   // —— 布尔 / 数值：不存在文本占位形态 ——

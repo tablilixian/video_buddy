@@ -110,7 +110,7 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
-### C2. 本地媒体 / 复刻工具（8 个，不调后端）
+### C2. 本地媒体 / 复刻工具（9 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -121,6 +121,7 @@
 | `teardown_store` | **拆解落库**（REQ-036 复刻提效批四，C4 后半）：把回核通过的拆解表按参考视频**指纹**（sha1(文件名\|字节数) 前 12 位，同文件跨项目指纹不变）存进宿主级跨项目目录 `dshHomePath('canvas-studio')/teardowns/`。三动作 `save` / `load` / `list`；实现层 `src/teardown-store.ts`（root 可注入可单测）。治「换会话 / 换 project dir 知识蒸发」：甜品会话 v1 的拆解/拟合结论随项目目录蒸发，v2 全部重拆还拆错。复用不等于盲用：取回后仍要 verify_teardown 对版。配套：`render_composition` 新增 `timingSegments`（Q2 成片时序回核 + Q3 元素覆盖核对，双闸只警告不阻断） |
 | `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect` / **`theme`** / **`recipe`**）→ 返回合法 JSON。`theme` 四选一（cold-tech / ink-press / warm-ember / neon-data）展开成底色 + 背景层 + 强调色 + 动效基线建议（**manifest 只存颜色值、不存 themeId**）。`recipe` 三选一（explainer-cards 零素材 / product-walkthrough 需 1 张产品图 / story-arc 需 2 张场景图）→ **接管 tracks 骨架**：按段出占位卡 + 给时间轴 + 给可直接填 §07 的素材清单。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对。只产 JSON，不落盘/不渲染/不动画布 |
 | `evidence_grid` | **证据网格**（REQ-036 C2，第 40 号工具）：参考视频**一次调用**产出「时间标注网格图 + 结构化清单 + 实测画面切换点」。`select` 自适应采样保**实测帧 PTS**（fps 滤镜会重写 pts 故弃用），ffmpeg 滤镜链拼网格（`tile` + `drawtext` 烧时间戳/词标签 + `drawbox` 切点红框），`-vsync 0` 防 image2 CFR 复制首页。宽窄两级采样：缺省整片概览 1s/格，密集段二次调用传 `passes` + interval 0.1–0.3。`transcriptPath`（ASR 词级转写，可选）提供时每格叠加台词词标签（词用【】+ 前 8 字上下文），不传即纯时间戳网格 —— 与后台 ASR 上线互不等待。切点检测**复用 teardown-verify 同一函数**（不许复制实现）；产物落跨项目证据目录（`dshHomePath('canvas-studio')/evidence/<指纹>/`，teardown_store 同源指纹）。随包新增全量 Noto Sans SC TTF（drawtext 需实体字体，woff2 不适用）。实现层 `src/evidence-grid.ts`（纯函数与 IO 分离） |
+| `download_video` | **视频页链接落盘**（REQ-036 C1，第 41 号工具）：抖音 / B站 / YouTube（v1 白名单）链接 → yt-dlp 下载 → 探测 → **画布素材区**（项目资产 + 画布视频节点，`saveLocalAssetBytes` 唯一入口）。yt-dlp 二进制**运行时按需下载**到 `dshHomePath('canvas-studio')/bin/yt-dlp/<版本>/`（版本钉死 + sha256 校验，不进安装包），缓存命中也过 checksum；下载失败给手动放置路径指引。`expectedDurationSec?` 产物校验（容差 max(2s, 20%)，防错下成图集/预告）。边界：不带登录态（会员内容报错）、不做直播/合集。实现层 `src/video-download.ts`（白名单/错误分类/argv 纯函数 + IO 分离，ytDlpPath 可注入桩测） |
 | `media_probe` | **媒体探针**（REQ-036 C3，第 39 号工具）：本地媒体文件一条命令摸清**时长（秒）/ 分辨率 / fps / 音轨数 / 容器 / 综合响度（LUFS）**。实现：`ffmpeg -i` stderr 解析（`src/media-probe.ts` 纯函数层，与 CV-188 同源口径 —— 随包分发只有 ffmpeg 没有 ffprobe，不引入 ffprobe 依赖）+ ebur128 复用 `probeLoudnessLufs`（同一份实现不复制）。响度只在有音轨时测，失败不阻塞（`audioLoudnessLufs: null` + 原因）。用途：① 拆解表头部真值（别拿声明时长当真值，H3 实测请求 5s 出 5.167s）；② **响度对齐**（成片 vs 参考片差值 >2 LUFS 调 BGM/旁白音量重渲）——替代临场拼 ffmpeg 命令 |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
@@ -788,6 +789,24 @@ timestampSec/page/row/col/label + cutPoints），`write_note` 落拆解便签时
 **边界**：切点检测与 `verify_teardown` 同一份函数（口径一致、不复制实现）；本工具
 是拆解**证据**、verify_teardown 是表填完后的**回核**，互不替代。单网格 ≤48 格自动
 分页，总量 ≤480 格（超出显式报错要收紧区间/加大 interval）。
+
+### C14. `download_video`（REQ-036 C1，第 41 号工具）
+
+**用途**：用户发链接说「复刻这条」的第一步 —— 抖音 / B站 / YouTube（v1 白名单，
+其他站点明确报错）视频页 → yt-dlp 下载 → 探测 → 画布素材区（项目资产 + 画布视频
+节点），`assetPath` 直接喂 media_probe / evidence_grid / verify_teardown。
+
+**yt-dlp 分发**：**运行时按需下载**到 `dshHomePath('canvas-studio')/bin/yt-dlp/<版本>/`
+（版本钉死 2026.10.26 + 官方 SHA2-256SUMS 校验，缓存命中也复检）；**不进安装包**
+（体积 + 合规）。下载失败给手动放置路径指引（URL + 目标路径 + 期望 sha256）。
+
+**错误分类**（可读文案，Agent 直接转述）：链接无效 / 站点不支持 / 视频需登录（v1
+不带 cookie）/ 下载超时（默认 120s）/ 产物校验失败（`expectedDurationSec` 容差
+max(2s, 20%)）/ 网络 / 不可用。
+
+**版权提示**（工具描述内注明）：仅用于用户自备参考素材的拆解复刻，复刻产出默认替换原素材。
+
+**真机验收项**（CI 不可测）：下载一条 B站公开视频 → `assetPath` 可被抽帧链路直接消费。
 
 
 ### 标准图生视频（3 步）

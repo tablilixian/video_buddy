@@ -114,6 +114,7 @@
 | 工具名 | 用途 |
 |--------|------|
 | `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
+| `image_matting` | **纯色底抠透明底**（CV-394，REQ-036 复刻复盘批，内置 ffmpeg colorkey）：把白底/纯色底的产品图、logo、精灵图转成**真 alpha PNG**（产物 `<原名>-alpha.png` 落同目录，image 轨直接引用）。参数：`filePath`（源图绝对路径）+ `key`（white/black/green/magenta/#RRGGBB，缺省 white）+ `similarity`（抠取宽度 0–1，缺省 0.28）+ `blend`（边缘羽化 0–1，缺省 0.12）。标准链路：生图提示词固定「纯白背景」→ 本工具 → inspect_image `mode:"profile"` 核对 colorType=6。背景：生图模型不吐 alpha、伪透明拼贴在成片留棋盘格残边（甜品复刻会话实测）；边界 = 只抠**单一底色**，毛发级软边等后端 matting 端点 |
 | `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect` / **`theme`** / **`recipe`**）→ 返回合法 JSON。`theme` 四选一（cold-tech / ink-press / warm-ember / neon-data）展开成底色 + 背景层 + 强调色 + 动效基线建议（**manifest 只存颜色值、不存 themeId**）。`recipe` 三选一（explainer-cards 零素材 / product-walkthrough 需 1 张产品图 / story-arc 需 2 张场景图）→ **接管 tracks 骨架**：按段出占位卡 + 给时间轴 + 给可直接填 §07 的素材清单。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对。只产 JSON，不落盘/不渲染/不动画布 |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）

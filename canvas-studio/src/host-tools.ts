@@ -92,6 +92,8 @@ import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
 import { throwError } from './error-system.js'
+// CV-394：纯色底抠透明底（内置 ffmpeg colorkey）—— 生图不吐 alpha 的缺口工具。
+import { alphaDestPath, runImageMatting } from './image-matting.js'
 import { assertLookBudget, chargeLookBudget, lookBudgetApplies } from './look-budget.js'
 import './errors/catalog.js'
 
@@ -4171,6 +4173,55 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             ]),
             '下一步：① 改 `text` 文案；② 往 `tracks` 追加你的轨（每轨需要唯一 id、startFrame、durationInFrames）；',
             `③ **任何改动末尾轨时长的操作都要同步 meta.durationInFrames**（当前 ${total}，必须始终 = 最大结束帧），否则会被尾部完整性校验拒收。`,
+          ].join('\n'),
+        }
+      },
+    }),
+    defineTool({
+      name: 'image_matting',
+      description:
+        '纯色底图抠透明底（alpha PNG，内置 ffmpeg colorkey）。把「白底/纯色底的产品图、logo、精灵图」转成真透明素材，供 render_composition 的 image 轨直接引用 —— 解决生图模型不吐 alpha 的缺口（甜品复刻会话实测：伪透明拼贴会在成片留棋盘格残边）。'
+        + '用法：生图时提示词固定「纯白背景」（或绿底绿幕）→ 本工具抠掉底色 → 产物 `<原名>-alpha.png` 落同目录，image 轨 src 直接引用。'
+        + '边界：抠的是**单一底色**（相似度阈值），毛发/透明玻璃等软边题材质量一般；复杂底用外部工具处理后 upload_image。key 色支持 white/black/green/magenta/#RRGGBB。',
+      parameters: {
+        filePath: { type: 'string' as const, description: '源图绝对路径（png/jpg/webp；纯色底）' },
+        key: { type: 'string' as const, description: '要抠掉的底色：white / black / green / magenta / #RRGGBB（生图白底场景缺省 white 可不传）' },
+        similarity: { type: 'number' as const, description: '可选：抠取宽度 0–1（与底色多近算命中），缺省 0.28；底色不纯（压缩噪点）提到 0.35–0.5，边缘误伤就降' },
+        blend: { type: 'number' as const, description: '可选：边缘羽化 0–1，缺省 0.12' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '抠图产物路径 + 复查与调参指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      execute: async ({ filePath, key, similarity, blend }: { filePath?: string; key?: string; similarity?: number; blend?: number }) => {
+        if (typeof filePath !== 'string' || filePath.trim() === '') {
+          throwError('CS-USER-ERR', { message: 'filePath 不能为空：传源图的绝对路径（画布资产或项目资产目录内）', detail: 'empty filePath' })
+        }
+        const srcPath = filePath
+        const destPath = alphaDestPath(srcPath)
+        let result
+        try {
+          result = await runImageMatting({
+            srcPath,
+            destPath,
+            key: typeof key === 'string' && key.trim() !== '' ? key : 'white',
+            similarity: typeof similarity === 'number' ? similarity : undefined,
+            blend: typeof blend === 'number' ? blend : undefined,
+          })
+        } catch (error) {
+          throwError('CS-USER-ERR', { message: error instanceof Error ? error.message : String(error), detail: 'image_matting failed' })
+        }
+        return {
+          text: [
+            `抠图完成：${result.destPath}（${(result.bytes / 1024).toFixed(0)} KB，key=${result.key} similarity=${result.similarity} blend=${result.blend}）`,
+            '下一步：image 轨 src 直接引用产物 PNG；建议用 inspect_image mode:"profile" 核对 colorType=6（RGBA，带 alpha）。',
+            '产物质量自查：把产物叠在任何深色卡上目视边缘 —— 有底色残留就提高 similarity（0.35–0.5），产品被误伤就降低。',
           ].join('\n'),
         }
       },

@@ -94,3 +94,15 @@ test('CV-391：SKILL.md 编排定位在位（决策型：指到总纲与 manifes
   assert.ok(SKILL_MD.includes('manifest-contract.md'), 'SKILL.md 缺 manifest 契约指针')
   assert.ok(SKILL_MD.includes('复刻结构，不复刻素材本身'), 'SKILL.md 缺「复刻结构不复刻素材」核心立场句')
 })
+
+test('CV-395：甜品复刻复盘——动效拆解与独立轨铁律在位（防退化成静态轮播）', () => {
+  assert.ok(SKILL_MD.includes('元素与动效'), '拆解表缺第 6 列「元素与动效」（只拆版式不拆运动 = 静态轮播复刻）')
+  assert.ok(SKILL_MD.includes('独立轨'), 'SKILL.md 缺「每个会动的元素 = 一条独立轨」铁律')
+  assert.ok(SKILL_MD.includes('禁止把整帧画面烤成静态图') || MAPPING_MD.includes('禁止把整帧画面烤成静态图'),
+    '缺「禁止整帧烤图」边界句（甜品会话 v1-v7 的实际翻车点）')
+  assert.ok(MAPPING_MD.includes('`backOut`') && MAPPING_MD.includes('`spring`'),
+    '缓动速查缺 backOut/spring（用户纠偏「跳起来的曲线感」= 引擎现成档位）')
+  assert.ok(MAPPING_MD.includes('image_matting'), '映射分册缺透明素材路径（伪透明拼贴 = 棋盘格残边）')
+  assert.ok(MAPPING_MD.includes("'outline'"), '映射分册缺镂空描边大字（fx:outline，品牌站复刻常态）')
+  assert.ok(SKILL_MD.includes('不要读组件源码'), 'SKILL.md 缺「查契约不读源码」纪律（甜品会话两次 grep 源码复发）')
+})

@@ -152,6 +152,8 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const textFx: React.CSSProperties = {
     ...(anim.fx.textShadow !== undefined ? { textShadow: anim.fx.textShadow } : {}),
     ...(anim.fx.textStroke !== undefined ? { WebkitTextStroke: anim.fx.textStroke } : {}),
+    // CV-393：`outline` 镂空字 —— 填充覆写为透明，只剩描边（必须在 color 解析之后展开）。
+    ...(anim.fx.textFill !== undefined ? { color: anim.fx.textFill } : {}),
   }
   // CV-334：整卡的位置 / 缩放 / 旋转走 `layerTransform`（铺满层上的位移＝把内容移出画布中心）。
   // 缺省参数下它是恒等串 ⇒ 老写法渲染结果不变。

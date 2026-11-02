@@ -397,7 +397,7 @@ export interface DrawMotion {
  * （值域 `fade|slide|zoom|dissolve`），同名同层会同时污染类型、`KNOWN_TRACK_KEYS`
  * 与工具描述。折算在 `resolveAnimatedStyle`（唯一接线点），组件只负责贴样式。
  */
-export type TrackFx = 'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade'
+export type TrackFx = 'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline'
 
 export interface VideoClipTrack extends BaseTrack {
   type: 'video'
@@ -715,7 +715,7 @@ const ANIMATE_EASINGS = new Set<string>([
   'spring',
 ])
 /** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。 */
-const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade'])
+const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline'])
 /** 二期 A1：公转方向白名单。 */
 const ORBIT_DIRECTIONS = new Set(['cw', 'ccw'])
 /** 二期 B1：音频可视化形态白名单。 */
@@ -1425,7 +1425,7 @@ export function validateManifest(input: unknown): ManifestValidation {
       if (conflict !== null) errors.push(`${at}(${String(id)}) ${conflict}`)
     }
     if (track.fx !== undefined && (typeof track.fx !== 'string' || !TRACK_FX.has(track.fx))) {
-      errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade`)
+      errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade / outline`)
     }
 
     // 会话效率优化 2026-10-26：`box` 区域声明（video/image/textCard/shape 生效）。

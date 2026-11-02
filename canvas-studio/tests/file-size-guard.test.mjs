@@ -58,7 +58,8 @@ export const FILE_WHITELIST = {
   // CV-384（2026-10-31）：批 1 删 .csNode will-change 净 0（注释等行改写）；
   // 批 3 世界层 will-change → translate3d（提升通道改走 3D 变换），注释换规则行 +3。
   'src/client/styles.ts': 10734,
-  'src/host-tools.ts': 4401,
+  // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
+  'src/host-tools.ts': 4435,
   'src/generate.ts': 3582,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
   // 阶段 2 按域拆分时随 routes 段消化。
@@ -94,7 +95,9 @@ export const FILE_WHITELIST = {
   // 三个求值分支 + 注释），1340 → 1384 显式登记。
   // A1 audioViz 分频段（同日，#06 收口）：bandWaveformBars/Smoothed + smoothedBars
   // 泛型抽取，+52 净行。1384 → 1436 显式登记。
-  'src/remotion/timing.ts': 1436,
+  // CV-393（2026-11-02）：`outline` 镂空字 fx 折算分支（+11 净行：FxStyle.textFill 字段
+  // + outline case），1436 → 1447 显式登记。
+  'src/remotion/timing.ts': 1447,
   'src/client/api.ts': 1268,
 }
 
@@ -108,7 +111,8 @@ export const FUNC_WHITELIST = {
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2764, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行' },
   'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
-  'src/host-tools.ts#createStudioTools': { lines: 2436, note: '阶段 1 目录化（先搬 inspect 打样）' },
+  // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
+  'src/host-tools.ts#createStudioTools': { lines: 2483, note: '阶段 1 目录化（先搬 inspect 打样）' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

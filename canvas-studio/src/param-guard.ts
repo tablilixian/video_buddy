@@ -246,6 +246,10 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   limit: '数值（返回条数上限），越界由 execute 钳制',
   tags: '短词数组（标签）—— 合法值天然就是一个词，整篇级尺子会误伤；错标签只影响检索',
   aliases: '短词数组（别名/别称）—— 同 tags：合法值就是短词，错值只影响检索，不贯穿下游',
+  // —— CV-394（REQ-036 复刻复盘批）image_matting ——
+  key: '枚举字符串（white/black/green/magenta/#RRGGBB），非法值由 normalizeKeyColor 拒收；不指向别处产物，无占位形态',
+  similarity: '数值（抠取宽度 0–1），越界由 clampUnit 钳制',
+  blend: '数值（边缘羽化 0–1），越界由 clampUnit 钳制',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

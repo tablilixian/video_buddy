@@ -991,6 +991,8 @@ export interface FxStyle {
   textShadow?: string
   /** `-webkit-text-stroke` 的值（描边字）。 */
   textStroke?: string
+  /** 文字填充色覆写（`outline` 镂空字 ⇒ transparent，消费方只在 TextCard 展开）。 */
+  textFill?: string
   boxShadow?: string
   maskImage?: string
 }
@@ -1013,6 +1015,15 @@ export function fxStyles(fx: TrackFx | undefined): FxStyle {
       return {
         textStroke: '1.5px rgba(8,12,20,0.9)',
         textShadow: '0 2px 6px rgba(0,0,0,0.65)',
+      }
+    case 'outline':
+      // CV-393：镂空描边字（品牌站大字常态：填充透明 + 粗描边）。
+      // 描边色固定奶油白 —— `currentColor` 会随填充一起变透明，故给具体色值；
+      // 需要别的描边色时用 textCard 的 accentColor 场景外自绘（已知边界，契约里写明）。
+      return {
+        textStroke: '6px rgba(240,243,247,0.96)',
+        textFill: 'transparent',
+        textShadow: '0 4px 14px rgba(0,0,0,0.35)',
       }
     case 'shadow':
       return {

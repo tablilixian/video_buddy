@@ -33,7 +33,8 @@ import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
 /** 实测 33 = `host-tools.ts` 32 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 35
+// CV-394（2026-11-02）：+image_matting（纯色底抠透明底），35 → 36。
+const EXPECTED_TOOL_COUNT = 36
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -49,6 +50,8 @@ const EXPECTED_TOOL_NAMES = [
   'image_fix',
   'image_generate',
   'image_generate_withtxt',
+  // CV-394（REQ-036 复刻复盘批）：纯色底抠透明底（内置 ffmpeg colorkey）。
+  'image_matting',
   'inspect_image',
   'layout_table',
   'list_library_assets',

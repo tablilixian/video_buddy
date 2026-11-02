@@ -2047,3 +2047,32 @@
 - **文档四处同步**：`code-driven-explainer/references/manifest-contract.md`（image 节 sourceRect 行）/ `viral-remake/references/remake-mapping.md` §2 image 行 / `viral-remake/SKILL.md` §2 速记 / bench README（进度行 + §五坑表）。
 - **验收出口（桌面）**：真机渲一条含 `sourceRect` 多格精灵图的 manifest（四格与目视对照）；老 manifest（无 sourceRect）渲染逐帧不变。
 - **涉及文件**：`src/remotion/sprite.ts`（新）/ `src/remotion/manifest.ts`（+11）/ `src/remotion/components/ImageClip.tsx`（65→106 行）/ `tests/sprite-rect.test.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）/ `scripts/capability-bench/compositions/11-sprite-rect.tsx`（新）+ `specs.mjs` + `compositions/entry.tsx` / 文档四处。
+
+#### CV-393 · textCard `fx:'outline'` 镂空描边字（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+
+- **需求**：REQ-036 复刻复盘批 —— 甜品复刻会话实测：品牌站大字常态是镂空描边（填充透明 + 粗描边），引擎无现成档位。
+- **语义**：`textCard.fx: 'outline'` = 填充透明（`textFill: 'transparent'`）+ 奶油白 6px 粗描边（`textStroke: '6px rgba(240,243,247,0.96)'`）+ 阴影。描边色 v1 固定 —— `currentColor` 会随填充一起变透明，故给具体色值；要别的描边色走 accentColor 场景外自绘（已知边界，契约写明）。
+- **实现**：① `manifest.ts`：`TrackFx` 与 `TRACK_FX` 白名单加 `'outline'`，校验报错文案同步（+3 净行）；② `timing.ts`：`FxStyle` 增 `textFill` 字段 + `fxStyles` outline case（+11 净行，棘轮 1436→1447 显式登记）；③ `TextCard.tsx`：`textFx` 在 color 解析之后展开 `textFill`（顺序关键，覆写填充）。
+- **验证**：`tests/fx-outline.test.mjs` 契约单测（validateManifest 白名单放行/未知值拒收点名 + fxStyles 折算精确断言）；tsc/build 绿；全量 smoke **2517·2517** 0 新增红。
+- **文档同步**：`viral-remake/references/remake-mapping.md` §2 新增镂空描边大字行 / `SKILL.md` §2 速记。
+- **验收出口（桌面）**：真机渲一条 `fx:'outline'` textCard，目视镂空描边与阴影；老 manifest（无 outline）逐帧不变。
+- **涉及文件**：`src/remotion/manifest.ts` / `src/remotion/timing.ts` / `src/remotion/components/TextCard.tsx` / `tests/fx-outline.test.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）。
+
+#### CV-394 · `image_matting` 纯色底抠透明底工具（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+
+- **需求**：REQ-036 复刻复盘批 —— 生图模型（Krea2/Qwen）不吐 alpha，提示词「透明背景」只得白底/纯色底；agent 手搓伪透明拼贴在成片留棋盘格残边。
+- **语义**：内置 ffmpeg `colorkey` 滤镜把单一底色转真 alpha：`key`（white/black/green/magenta/#RRGGBB，缺省 white）+ `similarity`（抠取宽度 0–1，缺省 0.28，底色不纯提 0.35–0.5）+ `blend`（边缘羽化 0–1，缺省 0.12）。产物 `<原名>-alpha.png` 落源图同目录，image 轨直引；标准链路 = 生图提示词固定「纯白背景」→ 本工具 → `inspect_image mode:"profile"` 核 colorType=6。边界 = 只抠单一底色，毛发/透明玻璃等软边题材质量一般。
+- **实现**：新纯函数模块 `src/image-matting.ts`（127 行）：`normalizeKeyColor`（别名/hex 归一化）/ `clampUnit` / `buildMattingArgs`（key 先归一化再插值，similarity/blend 钳制数值 —— 无注入面）/ `runImageMatting`（执行器可注入，同 compose 测试先例；源文件校验 + 产物大小回读）/ `alphaDestPath`。`host-tools.ts` 注册 `image_matting`（第 36 号工具，+47 净行棘轮 createStudioTools 2436→2483、文件 4401→4435 显式登记）；`param-guard.ts` 豁免 key/similarity/blend 3 参；`tool-presentation.ts` A 档「抠透明底」。
+- **验证**：`tests/image-matting.test.mjs`（key 归一化/钳制/参数构造/假执行器注入/源文件校验 + **真 ffmpeg E2E**：lavfi 白底红方块 → colorkey → decodePng 断言 colorType=6 + 角落 alpha=0 + 中心不透明 —— 真透明非假 PNG 壳）；`tests/tool-registry.test.mjs` 35→36；定向 21·21；tsc/build 绿；全量 smoke **2517·2517** 0 新增红。
+- **文档同步**：`docs/canvas-studio-tools.md` C 表 / `canvas-studio-creation/references/toolchain.md` image_matting 行 / `viral-remake` SKILL + 映射分册（透明素材链路）。
+- **验收出口（桌面）**：真机对一张白底产品图跑 `image_matting`，产物叠深色卡目视无白边，image 轨引用出片无棋盘格残边。
+- **涉及文件**：`src/image-matting.ts`（新）/ `src/host-tools.ts`（+51）/ `src/param-guard.ts` / `src/tool-presentation.ts` / `tests/image-matting.test.mjs`（新）/ `tests/tool-registry.test.mjs` / `tests/file-size-guard.test.mjs`（棘轮登记）/ 文档三处。
+
+#### CV-395 · viral-remake 动效拆解复盘：元素列 + 独立轨铁律 + 缓动速查（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+
+- **需求**：REQ-036 复刻复盘批 —— 甜品复刻会话 v1-v7 实测翻车点：只拆版式不拆运动，复刻退化成静态卡轮播（PPT 感）；缓动全缺省 linear 没有生命感。
+- **语义**：① 拆解表五列 → **六列**，新增「元素与动效」列（逐元素回答：什么在动 / 怎么动（方向·幅度）/ 什么曲线 / 和谁联动）；② **铁律：画面上每个会动的元素 = 一条独立轨**（禁整帧烤图 fade 轮播；烘焙底图只允许用于参考片确实完全静止的版式底，其上仍拆可动元素）；③ **缓动速查 §3.5**：弹跳 backOut / 柔滑 spring / 快出缓停 easeOutCubic~Expo / 离场 easeIn / 往复 easeInOut / linear 仅机械运动（人物/产品/标题禁用），每条 animate 显式选档；④ 透明素材与镂空字链路入映射表（CV-393/CV-394 消费端）。
+- **实现**：纯 skill 文档批 —— `SKILL.md` §1 拆解表六列 + §2 速记（独立轨铁律 / image_matting / fx:'outline' / 缓动速查 / 契约指针不读源码纪律）；`references/remake-mapping.md` §1 模板与规则 / §2 映射表两新行 / §2.5 硬边界 / §3.5 缓动速查表。
+- **验证**：`tests/viral-remake-skill.test.mjs` 新增守卫（元素与动效列 / 独立轨 / 禁整帧烤图 / backOut+spring / image_matting / fx:'outline' / 不读源码纪律 7 断言）；全量 smoke **2517·2517** 0 新增红。
+- **验收出口（桌面）**：用更新后 skill 复刻一条含元素运动的参考片，产出 manifest 元素级拆轨 + 显式缓动，成片无静态轮播感。
+- **涉及文件**：`skills/viral-remake/SKILL.md` / `skills/viral-remake/references/remake-mapping.md` / `tests/viral-remake-skill.test.mjs`（+12）。

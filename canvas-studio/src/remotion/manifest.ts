@@ -431,6 +431,13 @@ export interface ImageClipTrack extends BaseTrack {
    * kenburns 仍可叠加）。缺省不写 = 整图，老 manifest 逐帧不变。
    */
   sourceRect?: SpriteRect
+  /**
+   * 素材含 alpha 通道（宿主在渲染前探测 PNG colorType 4/6 / WebP alpha 位后写入，
+   * 非模型输入）。为 true 时 ImageClip 不给媒体层垫底色 —— 甜品复刻会话实测：
+   * 硬编码 `#05080f` 垫底会让透明产品图带一块深底，逼模型改走白底方图路径。
+   * 缺省（老 manifest）＝垫底，逐帧不变。
+   */
+  hasAlpha?: boolean
   caption?: string
 }
 

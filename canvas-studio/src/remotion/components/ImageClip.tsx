@@ -43,12 +43,16 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   const layerH = box === undefined ? canvasH : (canvasH * box.h) / 100
   // OPT-8（2026-10-26）：兜底底色只跟**媒体层**走（与 VideoClip 同修）——
   // 挂铺满容器会让 z 序更高的图片轨把整幅画布涂成深底、盖掉下方内容轨。
+  // 透明素材（宿主探测 alpha 通道后写入 `hasAlpha`）不垫底 —— 垫底会让透明
+  // 产品图带一块深色方底（甜品复刻会话实测的「白底方图逼出来」根因）；
+  // 无该字段的老 manifest 行为逐帧不变。
+  const backingColor = track.hasAlpha === true ? undefined : '#05080f'
   const layerStyle: React.CSSProperties = box === undefined
-    ? { transform: anim.layerTransform, transformOrigin: 'center', backgroundColor: '#05080f' }
+    ? { transform: anim.layerTransform, transformOrigin: 'center', ...(backingColor !== undefined ? { backgroundColor: backingColor } : {}) }
     : {
         position: 'absolute',
         overflow: 'hidden',
-        backgroundColor: '#05080f',
+        ...(backingColor !== undefined ? { backgroundColor: backingColor } : {}),
         ...boxStyle({ x: box.x, y: box.y, w: box.w, h: box.h }, anim.shapeTransform),
       }
   return (

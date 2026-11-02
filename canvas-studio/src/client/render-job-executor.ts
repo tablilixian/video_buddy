@@ -22,7 +22,7 @@ import {
   type PendingStudioRenderJob,
   type StudioRenderReport,
 } from './api.js'
-import type { RenderedManifest, RenderMetrics } from './remotion-render.js'
+import type { RenderedManifest, RenderMetrics, SpotRenderResult } from './remotion-render.js'
 
 /** 一次工单执行的结果（三个终态，恰好覆盖宿主侧的三种结算）。 */
 export type RenderJobExecution = 'committed' | 'aborted' | 'failed'
@@ -32,6 +32,8 @@ export interface RenderJobTransport {
   reportProgress(jobId: string, progress: number): Promise<void>
   uploadSample(jobId: string, frame: number, png: Uint8Array): Promise<string | null>
   commit(jobId: string, bytes: Uint8Array, warnings: readonly string[], report: StudioRenderReport): Promise<void>
+  /** V1：spot-check 结算 —— 无成片字节，只结算已回写的静帧。 */
+  commitSpot(jobId: string, warnings: readonly string[]): Promise<void>
   cancel(jobId: string, failed: boolean, reason?: string): Promise<void>
 }
 
@@ -39,6 +41,7 @@ export const defaultRenderTransport: RenderJobTransport = {
   reportProgress: (jobId, progress) => reportStudioRenderProgress(jobId, progress),
   uploadSample: (jobId, frame, png) => uploadStudioRenderSample(jobId, frame, png),
   commit: (jobId, bytes, warnings, report) => commitStudioRenderJob(jobId, bytes, warnings, report),
+  commitSpot: (jobId, warnings) => commitStudioRenderJob(jobId, new Uint8Array(), warnings, undefined, undefined, true),
   cancel: (jobId, failed, reason) => cancelStudioRenderJob(jobId, failed, reason),
 }
 
@@ -66,6 +69,19 @@ export interface ExecuteRenderJobOptions {
       onProgress: (progress: number) => void
     },
   ) => Promise<RenderedManifest>
+  /**
+   * V1：spot-check 渲染实现注入（测试用）。缺省动态 import `./remotion-render.js`
+   * 的 `renderSpotFramesOnWeb`（每帧 renderStillOnWeb，不启动编码器）。
+   */
+  renderSpot?: (
+    manifest: CompositionManifest,
+    frames: readonly number[],
+    options: {
+      signal: AbortSignal
+      quality: PendingStudioRenderJob['quality']
+      onProgress: (progress: number) => void
+    },
+  ) => Promise<SpotRenderResult>
 }
 
 /**
@@ -77,6 +93,47 @@ export interface ExecuteRenderJobOptions {
 export async function executeRenderJob(options: ExecuteRenderJobOptions): Promise<RenderJobExecution> {
   const { job, signal } = options
   const transport = options.transport ?? defaultRenderTransport
+  // V1：spot-check 分支 —— 只渲指定帧（每帧 renderStillOnWeb），静帧逐张回写后按
+  // spot 结算。与整片渲染共用进度节流与失败撤单语义。
+  const spotFrames = Array.isArray(job.spotFrames) ? job.spotFrames : []
+  if (spotFrames.length > 0) {
+    const renderSpot = options.renderSpot ?? (async (manifest, frames, renderOptions) => {
+      const mod = await import('./remotion-render.js')
+      return await mod.renderSpotFramesOnWeb(manifest, frames, {
+        signal: renderOptions.signal,
+        quality: renderOptions.quality,
+        onProgress: renderOptions.onProgress,
+      })
+    })
+    let lastSpotStep = -1
+    try {
+      const rendered = await renderSpot(job.manifest, spotFrames, {
+        signal,
+        quality: job.quality,
+        onProgress: (progress) => {
+          if (!Number.isFinite(progress)) return
+          const clamped = Math.min(1, Math.max(0, progress))
+          options.onProgress?.(clamped)
+          const step = Math.floor(clamped * PROGRESS_STEPS)
+          if (step === lastSpotStep) return
+          lastSpotStep = step
+          void transport.reportProgress(job.jobId, clamped).catch(() => {})
+        },
+      })
+      if (signal.aborted) return 'aborted'
+      for (const sample of rendered.samples) {
+        if (signal.aborted) return 'aborted'
+        await transport.uploadSample(job.jobId, sample.frame, sample.png).catch(() => null)
+      }
+      await transport.commitSpot(job.jobId, rendered.warnings)
+      return 'committed'
+    } catch (cause) {
+      if (signal.aborted) return 'aborted'
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      void transport.cancel(job.jobId, true, reason).catch(() => {})
+      return 'failed'
+    }
+  }
   const render = options.render ?? (async (manifest, renderOptions) => {
     const mod = await import('./remotion-render.js')
     return await mod.renderManifestOnWebWithRetry(manifest, {

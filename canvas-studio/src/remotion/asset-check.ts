@@ -43,6 +43,42 @@ export interface AssetCheck {
    * （白丢 1.48× 细节）；`image` 轨是生成图、分辨率通常远高于成片，探它是纯开销。
    */
   realSizes: Record<string, { width: number; height: number }>
+  /**
+   * `image` 轨 `src` → 素材是否带 alpha 通道（PNG colorType 4/6；WebP VP8X alpha 位）。
+   * 调用方据此给 image 轨写 `hasAlpha: true`，渲染组件跳过媒体层垫底色。
+   * 探不出的格式不出现（⇒ 按不透明处理，与老行为一致）。
+   */
+  alphaSources: Record<string, boolean>
+}
+
+/**
+ * 探测一张**本地图片**是否带 alpha 通道（同步、只读文件头，零 ffmpeg 开销）。
+ *
+ * 只认两种真带 alpha 的常见格式：
+ * - PNG：IHDR 的 colorType 4（灰度+α）/ 6（RGBA）—— 与 `inspect-image.ts` 的判据同源；
+ * - WebP：`VP8X` 扩展头的 alpha 标志位（RIFF 第 4 字节块 ID 后，flags 字节 0x10 位）。
+ *
+ * 其它格式（JPEG / AVIF / HEIC …）一律返回 false —— 宁可垫底，不可误判：
+ * 误判「有 alpha」只会少一层几乎看不见的垫底；漏判则回到「透明图带深底」的老病。
+ */
+export function detectImageAlpha(path: string): boolean {
+  try {
+    const buf = readFileSync(path)
+    // PNG：\x89PNG\r\n\x1a\n 魔数 + IHDR（colorType 在固定偏移 25）。
+    if (buf.length >= 26 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+      const colorType = buf[25]
+      return colorType === 4 || colorType === 6
+    }
+    // WebP：RIFF....WEBP，VP8X 帧头第 4 字节的 0x10 位 = alpha。
+    if (buf.length >= 21 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') {
+      const chunkId = buf.toString('latin1', 12, 16)
+      if (chunkId === 'VP8X') return ((buf[20] ?? 0) & 0x10) !== 0
+      return false
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 /** 探真值的并发上限（ffprobe 是 IO；4 路足以把 10 段素材压到 ~0.5s）。 */
@@ -139,6 +175,7 @@ export async function checkManifestAssets(
   const missing: string[] = []
   const realDurations: Record<string, number> = {}
   const realSizes: Record<string, { width: number; height: number }> = {}
+  const alphaSources: Record<string, boolean> = {}
   // 三期 W5-4：先按 `src` 去重 —— 同一段素材被两条轨引用时，原来会 ffprobe 两次。
   const videoSources = new Map<string, string>()
   for (const track of manifest.tracks) {
@@ -157,6 +194,8 @@ export async function checkManifestAssets(
       continue
     }
     if (track.type === 'video' && !videoSources.has(src)) videoSources.set(src, local)
+    // alpha 探测只读文件头（≤33 字节），不做缓存 —— 与 ffprobe 的毫秒级开销不在一个量级。
+    if (track.type === 'image' && alphaSources[src] === undefined) alphaSources[src] = detectImageAlpha(local)
   }
 
   const cache = readProbeCache(assetsDir)
@@ -221,5 +260,5 @@ export async function checkManifestAssets(
   }
   if (dirty) writeProbeCache(assetsDir, cache)
 
-  return { missing, realDurations, realSizes }
+  return { missing, realDurations, realSizes, alphaSources }
 }

@@ -13,11 +13,11 @@
  * - `meta.lint: "off"` 可整体关闭（刻意的写法不被噪声淹没）。
  */
 
-import type { CompositionManifest, CompositionTrack, ShapeTrack } from './manifest.js'
+import type { CompositionManifest, CompositionTrack, ShapeTrack, TextCardTrack } from './manifest.js'
 import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
 
 export interface MotionLintIssue {
-  /** `ML-01` … `ML-12`。 */
+  /** `ML-01` … `ML-13`。 */
   code: string
   /** 回执主文案（说清「哪里」+「为什么不好」）。 */
   message: string
@@ -382,6 +382,57 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
           hint: '建议按语义断句（每句 ≤ 20 字），否则字号会被压到很小。',
         })
         break
+      }
+    }
+  }
+
+  // ML-13：两张文本卡时空双重叠 ⇒ 叠字（甜品复刻会话实测：「热带金」与「微乐甜品」
+  // 压在同一块画面上，谁也读不清）。判据刻意收窄，避免误伤正常的标题+副标题堆叠：
+  // ① 两张卡都写了显式 `box`（无 box = 铺满卡，版式意图不明确，不判）；
+  // ② 时间重叠 ≥ 短轨时长的 60%；
+  // ③ 空间重叠面积 ≥ 较小卡面积的 35%。
+  // 只产 warning：真要刻意叠字（描边压底）时 `meta.lint: "off"` 可整体关闭。
+  {
+    const cards = tracks.filter((track): track is TextCardTrack => track.type === 'textCard' && track.box !== undefined)
+    for (let i = 0; i < cards.length; i += 1) {
+      for (let j = i + 1; j < cards.length; j += 1) {
+        const a = cards[i]
+        const b = cards[j]
+        if (a === undefined || b === undefined) continue
+        const overlapStart = Math.max(a.startFrame, b.startFrame)
+        const overlapEnd = Math.min(a.startFrame + a.durationInFrames, b.startFrame + b.durationInFrames)
+        const timeOverlap = overlapEnd - overlapStart
+        const shorter = Math.min(a.durationInFrames, b.durationInFrames)
+        if (shorter <= 0 || timeOverlap < shorter * 0.6) continue
+        const area = (track: TextCardTrack): number => {
+          const box = track.box
+          if (box === undefined) return 0
+          return Math.max(0, numeric(box.w) ?? 0) * Math.max(0, numeric(box.h) ?? 0)
+        }
+        const inter = (): number => {
+          const ba = a.box
+          const bb = b.box
+          if (ba === undefined || bb === undefined) return 0
+          // box 的 x/y 是**中心**语义 —— 先折算成边缘再求交。
+          const ax0 = (numeric(ba.x) ?? 0) - (numeric(ba.w) ?? 0) / 2
+          const ax1 = (numeric(ba.x) ?? 0) + (numeric(ba.w) ?? 0) / 2
+          const ay0 = (numeric(ba.y) ?? 0) - (numeric(ba.h) ?? 0) / 2
+          const ay1 = (numeric(ba.y) ?? 0) + (numeric(ba.h) ?? 0) / 2
+          const bx0 = (numeric(bb.x) ?? 0) - (numeric(bb.w) ?? 0) / 2
+          const bx1 = (numeric(bb.x) ?? 0) + (numeric(bb.w) ?? 0) / 2
+          const by0 = (numeric(bb.y) ?? 0) - (numeric(bb.h) ?? 0) / 2
+          const by1 = (numeric(bb.y) ?? 0) + (numeric(bb.h) ?? 0) / 2
+          return Math.max(0, Math.min(ax1, bx1) - Math.max(ax0, bx0))
+            * Math.max(0, Math.min(ay1, by1) - Math.max(ay0, by0))
+        }
+        const minArea = Math.min(area(a), area(b))
+        if (minArea <= 0 || inter() < minArea * 0.35) continue
+        push({
+          code: 'ML-13',
+          at: `${a.id} × ${b.id}`,
+          message: `文本卡「${a.id}」与「${b.id}」时间与空间双重叠（重叠 ≥ ${Math.round((inter() / minArea) * 100)}%）`,
+          hint: '文字会互相压字；建议错开 box 位置或时间，或把两段文案合并成一张卡的多行排版。',
+        })
       }
     }
   }

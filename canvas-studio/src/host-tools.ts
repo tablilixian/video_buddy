@@ -179,12 +179,13 @@ const resultSchema = {
             type: 'object' as const,
             additionalProperties: false,
             properties: {
-              code: { type: 'string' as const, description: '编排体检编号（ML-01 … ML-12）' },
+              code: { type: 'string' as const, description: '编排体检编号（ML-01 … ML-13）' },
               at: { type: 'string' as const, description: '定位（轨 id / 轨道序号 / 帧号）' },
             },
           },
           description: '编排体检回执（与 warnings 里的文案同源；此处只留可计数的编号与定位）',
         },
+        loudnessLufs: { type: 'number' as const, description: '成片综合响度（LUFS，BS.1770）。无声片缺省。复刻场景用它和参考片对齐观感（差 3dB 以上听感明显不同）' },
       },
       description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数。用于判断「这条片花了多久、质量档是否生效」',
     },
@@ -206,6 +207,7 @@ const resultSchema = {
       description: '工单生命周期：谁认领、有没有出首帧、是否改派过。失败时它决定「该改画面还是该查执行器」',
     },
     probe: { type: 'boolean' as const, description: '本次为探针渲染（未落画布节点、未抽帧、跳过体检）' },
+    spot: { type: 'boolean' as const, description: '本次为 spot-check（只渲指定帧的静帧，无成片 URL；用 frames[] 看画面）。改一处验证一处时用它，别整片重渲' },
   },
 }
 
@@ -280,10 +282,11 @@ interface CutAudioToolResult {
 
 /** `compose_video` 返回给模型的结构（由 `renderComposeResult` 消费）。 */
 interface ComposeToolResult {
-  url: string
-  width: number
-  height: number
-  duration: number
+  /** spot-check 模式缺省（只产静帧，无成片 URL）。 */
+  url?: string
+  width?: number
+  height?: number
+  duration?: number
   /** 探针渲染不落节点 ⇒ 这里可能缺省（REQ-035 F-05）。 */
   nodeId?: string
   clipCount: number
@@ -312,6 +315,8 @@ interface ComposeToolResult {
     animationWindows?: { id: string; start: number; end: number; kinds: string[] }[]
     /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位；详细文案在 `warnings` 里）。 */
     lint?: { code: string; at: string }[]
+    /** Q1 响度闸：成片综合响度（LUFS）。无声片缺省。 */
+    loudnessLufs?: number
   }
   /** REQ-035 F-01：工单生命周期（谁认领、有没有出首帧、是否改派过）。 */
   job?: {
@@ -329,6 +334,8 @@ interface ComposeToolResult {
   }
   /** REQ-035 F-05：本次是探针渲染（未落画布节点、未抽帧、跳过体检）。 */
   probe?: boolean
+  /** V1：本次是 spot-check（只渲指定帧静帧，无成片 URL；画面看 frames[]）。 */
+  spot?: boolean
 }
 
 /** 校验用：取 schema 已声明的属性名。 */
@@ -688,6 +695,21 @@ function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): s
 
 /** CV-108：成片合成结果——补上「纳入 / 跳过」片段数，让「哪些镜进了成片」可核对。 */
 function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
+  const v0 = value as { spot?: boolean }
+  // V1：spot-check 结果没有成片 URL，走专用文案（不进「已生成产物」模板）。
+  if (v0.spot === true) {
+    const v = value as Pick<ComposeToolResult, 'frames' | 'warnings' | 'report' | 'job'>
+    const lines = ['spot-check 完成（只渲指定帧，未编码成片）：']
+    const spotFrames = [...(v.frames ?? [])].sort((a, b) => a.frame - b.frame)
+    if (spotFrames.length > 0) {
+      lines.push(`静帧 ${spotFrames.length} 张（**具备读图能力时**先看图再汇报；看不了就说明"未做画面自检"）：`)
+      for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
+    }
+    for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
+    if (v.report !== undefined) lines.push(formatRenderReport(v.report))
+    if (v.job !== undefined) lines.push(formatRenderJobDiagnostics(v.job))
+    return [{ type: 'text', text: lines.join('\n') }]
+  }
   const blocks = renderResult(args, value)
   const v = value as {
     clipCount?: number
@@ -3383,10 +3405,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           type: 'boolean' as const,
           description: '可选：**探针渲染（调试用）**。为 true 时不落画布节点、不抽帧、跳过编排体检，只在返回里给 url 与工单诊断。反复调参 / 验链路时用它 —— 否则每次试错都会把画布上的成片节点覆盖成试错产物（REQ-035 F-05）。',
         },
+        spotFrames: {
+          type: 'array' as const,
+          items: { type: 'integer' as const },
+          description: '可选：**spot-check（快验）**—— 传 1–8 个绝对帧号，只渲这些帧的静帧返回（frames[]），**不编码成片、不落画布节点**。改一处验证一处的正确姿势：调完 manifest 只看目标帧，比整片重渲快一个量级（复刻会话实测：验证循环里绝大多数渲染只为看几个画面）。帧号会被钳到片长内并去重排序',
+        },
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown; probe?: unknown }
+        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown; probe?: unknown; spotFrames?: unknown }
         const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
         assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
         const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -3492,7 +3519,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               + nearMissAssetHint(registry.assetsDir(projectId), pre.missing),
           })
         }
-        const reconciled = reconcileManifestVideoDurations(source, pre.realDurations, source.meta.fps)
+        // 透明素材标记：宿主探到 alpha 通道的 image 轨写 `hasAlpha: true`，渲染组件
+        // 据此跳过媒体层垫底色（甜品复刻复盘：硬编码 `#05080f` 是「透明图带深底」根因）。
+        // 只在有 alpha 时改写 —— 无 alpha 的轨保持原样，老 manifest 逐帧不变。
+        const alphaMarkedTracks = source.tracks.map((track) => {
+          if (track.type !== 'image' || pre.alphaSources[track.src] !== true) return track
+          if (track.hasAlpha === true) return track
+          return { ...track, hasAlpha: true }
+        })
+        const reconciled = reconcileManifestVideoDurations(
+          { ...source, tracks: alphaMarkedTracks } as CompositionManifest,
+          pre.realDurations,
+          source.meta.fps,
+        )
         const renderManifest: CompositionManifest = { ...source, tracks: reconciled.tracks }
         // 2.5) **校正后复校**（2026-10-16 补）：上面的校验跑在**校正前**的排布上，而
         //      `reconcileManifestVideoDurations` 会按 ffprobe 真值改写 video 轨的
@@ -3520,6 +3559,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // REQ-035 F-05：探针渲染 —— 不落节点 / 不抽帧 / 跳过体检。
         // 2026-10-24 事故里 6 次成功全写同一个画布节点，最后把成片节点覆盖成 10 帧黑屏。
         const probe = a.probe === true
+        // V1：spot-check —— 只渲指定帧静帧。入参宽容（非法数组降级为不启用），
+        // 真正的收口在 `normalizeSpotFrames`（钳帧号 / 去重 / 上限 8）。
+        if (a.spotFrames !== undefined && !Array.isArray(a.spotFrames)) {
+          throwError('CS-USER-ERR', { message: 'spotFrames 必须是帧号数组（如 [30, 120, 360]）。' })
+        }
+        const spot = Array.isArray(a.spotFrames) && a.spotFrames.length > 0
         const job = await runRenderJob({
           projectId,
           manifest: renderManifest,
@@ -3528,11 +3573,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(quality !== undefined ? { quality } : {}),
           // CV-373：探针贯通到客户端 —— 诊断渲跳过预览闸门，不再弹「帧 3/9」打断用户。
           ...(probe ? { probe } : {}),
+          ...(spot ? { spotFrames: a.spotFrames as number[] } : {}),
           realDurations: pre.realDurations,
-          sampleFrames: probe ? [] : pickSampleFrames(renderManifest),
+          sampleFrames: probe || spot ? [] : pickSampleFrames(renderManifest),
         })
-        // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针不落。
-        const composedNode = probe
+        // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针 / spot-check 不落。
+        const composedNode = probe || spot
           ? null
           : await appendComposedVideoNode(registry, projectId, {
             url: job.url,
@@ -3550,9 +3596,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const risk = scoreSlideshowRisk(renderManifest)
         // 三期 W1-3：取一次体检结果，既给报告里的计数，也让「置顶提醒」有统一来源。
         // F-05：探针渲染跳过体检 —— 调试期的画面本来就不完整，体检只会生产噪声。
-        const lintIssues = probe ? [] : lintMotion(renderManifest)
+        // spot-check 同理：它验证的是目标帧画面，体检说的是全片编排。
+        const lintIssues = probe || spot ? [] : lintMotion(renderManifest)
         // OPT-15：动画窗口表 —— QC 抽帧号对窗口用，防止把动画中段当布局 bug 排查。
-        const animationWindows = probe ? [] : collectAnimationWindows(renderManifest)
+        const animationWindows = probe || spot ? [] : collectAnimationWindows(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
         const warnings = [
           ...validation.warnings,
@@ -3572,10 +3619,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ? warnings.filter((w) => !w.startsWith('[编排体检'))
           : collapseLintWarnings(warnings)
         const payload: ComposeToolResult = {
-          url: job.url,
-          width: job.width ?? COMPOSED_FALLBACK.width,
-          height: job.height ?? COMPOSED_FALLBACK.height,
-          duration: job.duration,
+          // spot-check 无成片：这三个字段缺省（渲染文案走 spot 专用分支）。
+          ...(job.spot === true ? {} : {
+            url: job.url,
+            width: job.width ?? COMPOSED_FALLBACK.width,
+            height: job.height ?? COMPOSED_FALLBACK.height,
+            duration: job.duration,
+          }),
           ...(composedNode === null ? {} : { nodeId: composedNode.id }),
           clipCount: source.tracks.length,
           skippedCount: 0,
@@ -3583,6 +3633,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // F-01：工单生命周期 —— 成功也要回，才能解释"这次为什么快/慢、走的是哪条路"。
           job: jobDiagnosticsPayload(job.job),
           ...(probe ? { probe: true } : {}),
+          ...(job.spot === true ? { spot: true } : {}),
           ...(effectiveWarnings.length > 0 ? { warnings: effectiveWarnings } : {}),
           ...(job.frames.length > 0
             ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }

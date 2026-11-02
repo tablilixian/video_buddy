@@ -17,7 +17,7 @@
  */
 import { newAssetId } from '../config.js'
 import { makeCanvasError } from '../error-system.js'
-import { probeMediaInfo } from '../ffmpeg-run.js'
+import { probeLoudnessLufs, probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
 import { recordTransientAsset } from '../asset-gc.js'
 import { resolveAssetPathIn } from '../asset-path.js'
@@ -87,6 +87,12 @@ export interface PendingRenderJob {
   /** 三期 W6-1：建议抽帧位置（绝对帧号）。 */
   sampleFrames: number[]
   /**
+   * V1（复刻提效）：spot-check 模式的目标帧（绝对帧号，非空 = 本单**只渲静帧不编码成片**）。
+   * 客户端据此走 `renderSpotFramesOnWeb`（renderStillOnWeb 单帧渲染），把
+   * 「改一个细节验证一次」的成本从整片 450 帧降到 N 张静帧。
+   */
+  spotFrames: number[]
+  /**
    * 本单的**绝对截止时刻**（宿主时钟毫秒）。
    *
    * 给页面一个自己能判的终线：宿主超时只是"宿主不再等"，页面并不知道，
@@ -116,6 +122,11 @@ export interface RenderJobReport {
   sampledFrames: number
   /** OPT-11：音频平台保证 —— 由 manifest 确定性推导（非探测）。`audibleSources=0` ⇒ 成片必然无声。 */
   audio?: ManifestAudioSummary
+  /**
+   * Q1 响度闸：成片综合响度（ITU-R BS.1770 integrated LUFS）。无声片 / 探测失败不出此字段。
+   * 复刻场景里响度直接决定观感对齐（甜品复刻会话实测：-15.3 vs 原片 -11.4，无人发现）。
+   */
+  loudnessLufs?: number
 }
 
 /**
@@ -190,11 +201,11 @@ function renderHostUnavailableReason(now: number): string {
 
 /** `runRenderJob` 结算产物（宿主已落盘并探测真值）。 */
 export interface RenderJobOutcome {
-  /** 同源资产 URL（`/canvas-studio/assets/<projectId>/<file>`）。 */
+  /** 同源资产 URL（`/canvas-studio/assets/<projectId>/<file>`）。spot-check 单为 `''`（无成片）。 */
   url: string
-  /** 落盘文件名（`assetFile`）。 */
+  /** 落盘文件名（`assetFile`）。spot-check 单为 `''`。 */
   assetFile: string
-  /** 成片真值时长（秒）；未探到为 `0`。 */
+  /** 成片真值时长（秒）；未探到为 `0`。spot-check 单为 `0`。 */
   duration: number
   width?: number
   height?: number
@@ -208,6 +219,8 @@ export interface RenderJobOutcome {
   report: RenderJobReport
   /** REQ-035 F-01：工单生命周期快照（成功也回，便于对比"这次为什么快/慢"）。 */
   job: RenderJobDiagnostics
+  /** V1：本次为 spot-check（只产静帧，无成片 URL，不落画布节点）。 */
+  spot?: boolean
 }
 
 /** 建单参数。 */
@@ -229,6 +242,11 @@ export interface RunRenderJobOptions {
   sampleFrames?: number[]
   /** O-06：强制指定执行者（测试 / 排障用；缺省按 RenderHost 是否就绪自动选）。 */
   executor?: RenderExecutor
+  /**
+   * V1（复刻提效）：spot-check 目标帧（1–8 个绝对帧号）。非空 ⇒ 本单只渲静帧不编码成片，
+   * 超时按目标帧数（而非片长帧数）计。与 `probe` 语义正交（spot 天然不落节点）。
+   */
+  spotFrames?: number[]
   /** O-06：等隐藏窗口自报就绪的上限（缺省 `RENDER_HOST_WARMUP_MS` = 8s）。只影响冷启首单。 */
   hostWarmupMs?: number
   /** O-06：心跳判失联阈值（缺省 `RENDER_HOST_STALE_MS`）。测试注入短值。 */
@@ -246,12 +264,14 @@ export interface RunRenderJobOptions {
 
 /** 客户端回写内容。 */
 export interface CommitRenderInput {
-  /** 客户端渲染出的 mp4 字节。 */
+  /** 客户端渲染出的 mp4 字节。spot-check 单（`spot:true`）传空数组。 */
   bytes: Uint8Array
   /** 客户端上报的渲染期告警。 */
   warnings?: readonly string[]
   /** 三期 W6-2：客户端渲染报告（缺省用宿主侧兜底值）。 */
   report?: Partial<RenderJobReport>
+  /** V1：spot-check 结算 —— 无成片字节，只结算已回写的静帧抽帧。 */
+  spot?: boolean
 }
 
 /** 回写响应（也作为路由 200 体）。 */
@@ -277,6 +297,8 @@ interface ActiveRenderJob {
   realDurations: Record<string, number>
   /** 三期 W6-1：建议抽帧位置。 */
   sampleFrames: number[]
+  /** V1：spot-check 目标帧（空数组 = 正常成片渲染）。 */
+  spotFrames: number[]
   /** 三期 W6-1：已回写的抽帧。 */
   samples: RenderSampleResult[]
   /** O-06：这张单归谁渲（建单时定）。 */
@@ -360,6 +382,7 @@ export function claimRenderJobFor(
       probe: job.probe,
       realDurations: job.realDurations,
       sampleFrames: job.sampleFrames,
+      spotFrames: job.spotFrames,
       deadlineAt: job.deadlineAt,
     }
   }
@@ -377,6 +400,7 @@ export function claimRenderJobFor(
         probe: takeover.probe,
         realDurations: takeover.realDurations,
         sampleFrames: takeover.sampleFrames,
+        spotFrames: takeover.spotFrames,
         deadlineAt: takeover.deadlineAt,
       }
     }
@@ -821,6 +845,26 @@ export function renderHostJobCount(): number {
 }
 
 /**
+ * V1：spot-check 目标帧收口（纯函数，可单测）。
+ *
+ * 规则：只收有限整数、逐个钳到 `[0, durationInFrames-1]`、去重升序、上限 8 张
+ * （与抽帧上限同口径）。非法输入一律丢弃而不是拒收 —— spot-check 是效率工具，
+ * 坏参数降级成「少验证几帧」比整单失败更合理。
+ */
+export function normalizeSpotFrames(raw: unknown, durationInFrames: number): number[] {
+  if (!Array.isArray(raw)) return []
+  const max = Math.max(0, Math.floor(durationInFrames) - 1)
+  const seen = new Set<number>()
+  for (const value of raw) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue
+    const frame = Math.min(max, Math.max(0, Math.round(value)))
+    seen.add(frame)
+    if (seen.size >= 8) break
+  }
+  return [...seen].sort((a, b) => a - b)
+}
+
+/**
  * 建单并等待客户端结算。
  *
  * 结算三条路：`commitRenderJob`（成功）/ `cancelRenderJob`（失败或撤单）/ 超时（本函数）。
@@ -830,8 +874,10 @@ export function renderHostJobCount(): number {
 export async function runRenderJob(options: RunRenderJobOptions): Promise<RenderJobOutcome> {
   const { projectId, manifest } = options
   const fps = options.fps ?? manifest.meta.fps
+  // V1：spot-check 目标帧收口；超时按「实际要渲的帧数」计（spot 只渲 N 帧，不编码整片）。
+  const spotFrames = normalizeSpotFrames(options.spotFrames, manifest.meta.durationInFrames)
   // 二期 1b（D-04）：超时按片长自适应；REQ-034 O-06 改按帧数。
-  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(manifest.meta.durationInFrames)
+  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames)
   const { signal } = options
   if (signal?.aborted === true) {
     throw makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' })
@@ -871,6 +917,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       probe: options.probe === true,
       realDurations: options.realDurations ?? {},
       sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
+      spotFrames,
       samples: [],
       executor,
       lastProgressAt: Date.now(),
@@ -994,6 +1041,47 @@ export async function commitRenderJob(
       detail: `unknown jobId ${jobId}`,
     })
   }
+  // V1：spot-check 结算 —— 成片字节必为空，静帧已由 `/remotion/sample` 逐张落盘进
+  // `job.samples`。这里只结算工单并把抽帧原样带回（不落画布节点由调用方决定）。
+  if (job.spotFrames.length > 0 || input.spot === true) {
+    if (input.bytes.length > 0) {
+      throw makeCanvasError('CS-USER-ERR', {
+        message: 'spot-check 工单不接收成片字节（它只渲静帧）。请确认客户端与宿主版本一致。',
+        detail: 'spot job received non-empty bytes',
+      })
+    }
+    const spotDiagnostics = diagnosticsOf(job, 'ok')
+    job.settled = true
+    settleAndForget(job, 'succeeded')
+    const spotFrames = [...job.samples].sort((a, b) => a.frame - b.frame)
+    const spotReport: RenderJobReport = {
+      quality: job.quality,
+      frames: spotFrames.length,
+      totalMs: input.report?.totalMs ?? 0,
+      prepareMs: input.report?.prepareMs ?? 0,
+      renderMs: input.report?.renderMs ?? 0,
+      msPerFrame: input.report?.msPerFrame ?? 0,
+      encodeDoneAtMs: 0,
+      bytes: 0,
+      bitrateKbps: 0,
+      width: job.manifest.meta.width,
+      height: job.manifest.meta.height,
+      sampledFrames: spotFrames.length,
+      audio: summarizeManifestAudio(job.manifest),
+    }
+    job.resolve({
+      url: '',
+      assetFile: '',
+      duration: 0,
+      warnings: [...(input.warnings ?? [])],
+      quality: job.quality,
+      frames: spotFrames,
+      report: spotReport,
+      job: spotDiagnostics,
+      spot: true,
+    })
+    return { ok: true, url: '', assetFile: '', duration: 0 }
+  }
   if (input.bytes.length === 0) {
     throw makeCanvasError('CS-USER-ERR', { message: '渲染产物为空，请重试。', detail: 'empty render bytes' })
   }
@@ -1001,6 +1089,24 @@ export async function commitRenderJob(
   const info = await probeMediaInfo(resolveAssetPathIn(registry.assetsDir(job.projectId), saved.assetFile))
   const warnings = [...(input.warnings ?? [])]
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
+
+  // Q1 响度闸：有声成片测一次综合响度（完整解码音轨，15s 片亚秒级）。
+  // 出常见区间只告警不阻断 —— 响度是观感参数不是错误；但值**永远**进 report，
+  // 复刻场景的 agent 拿它和参考片对齐（甜品复刻会话实测：-15.3 vs -11.4 无人发现）。
+  const audioSummary = summarizeManifestAudio(job.manifest)
+  let loudnessLufs: number | undefined
+  if (audioSummary.audibleSources > 0) {
+    const lufs = await probeLoudnessLufs(resolveAssetPathIn(registry.assetsDir(job.projectId), saved.assetFile))
+    if (lufs !== undefined) {
+      loudnessLufs = lufs
+      if (lufs < -20 || lufs > -9) {
+        warnings.push(
+          `成片响度 ${lufs.toFixed(1)} LUFS 在常见目标区间（-20 ~ -9，短视频平台基准 -14）之外。`
+          + '复刻 / 对标场景请与参考片对齐（差 3dB 以上观感明显不同），可用音频工具提/降一档后重渲。',
+        )
+      }
+    }
+  }
 
   // F-01：结算前取一次快照（结算会把它从工单表摘掉）。
   const diagnostics = diagnosticsOf(job, 'ok')
@@ -1024,7 +1130,8 @@ export async function commitRenderJob(
     sampledFrames: frames.length,
     // OPT-11：音频平台保证随报告回传 —— agent 拿 `audibleSources=0` 就不必再做
     // ffprobe 采电平之类的自行验证（真机实证的重复成本）。
-    audio: summarizeManifestAudio(job.manifest),
+    audio: audioSummary,
+    ...(loudnessLufs !== undefined ? { loudnessLufs } : {}),
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,

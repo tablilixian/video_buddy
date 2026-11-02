@@ -230,6 +230,9 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   aspect: '枚举字符串（16:9 / 9:16 / 1:1），非法值回落 16:9',
   // REQ-035（F-05）：探针渲染开关 —— 不落画布节点 / 不抽帧 / 跳过体检。
   probe: '布尔开关（探针渲染：不落画布节点、不抽帧、跳过编排体检）',
+  // 复刻提效批（V1）：spot-check 目标帧 —— 纯数字数组（绝对帧号），没有文本占位形态；
+  // 非法数组在 execute 里显式拒收，帧号由 normalizeSpotFrames 钳制 / 去重 / 上限 8。
+  spotFrames: '数值数组（绝对帧号，1–8 个），非法数组由 execute 拒收、帧号由 normalizeSpotFrames 钳到片长内',
   // —— P1-1（2026-10-26）tts_narration ——
   // 这是**对象数组**容器，不是字符串：通用尺子（「整篇只是占位词」）对 `[{...}]` 无从下手。
   // 真正的拦截点前移到 `narration.ts` 的 `requireText`：逐段拒收空串与占位串（

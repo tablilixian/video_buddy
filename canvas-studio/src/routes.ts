@@ -3258,9 +3258,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
         const warnings = asRenderWarnings(requestUrl.searchParams.get('warnings'))
         const report = asRenderReport(requestUrl.searchParams.get('metrics'))
+        // V1：spot-check 结算标记 —— 空字节 + spot=1，工单按「只产静帧」结算。
+        const spot = requestUrl.searchParams.get('spot') === '1'
         const bytes = await readRawBody(req, controller.signal, MAX_RENDER_BODY_BYTES)
         const result = await commitRenderJob(registry, jobId, {
           bytes,
+          ...(spot ? { spot: true } : {}),
           ...(warnings.length > 0 ? { warnings } : {}),
           ...(report !== undefined ? { report } : {}),
         })

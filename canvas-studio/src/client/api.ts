@@ -1100,6 +1100,11 @@ export interface PendingStudioRenderJob {
   /** 三期 W6-1：宿主建议的抽帧位置。 */
   sampleFrames?: number[]
   /**
+   * V1（复刻提效）：spot-check 目标帧（非空 = 本单只渲静帧不编码成片）。
+   * 执行器据此走 `renderSpotFramesOnWeb`（renderStillOnWeb 单帧渲染）。
+   */
+  spotFrames?: number[]
+  /**
    * 本单的绝对截止时刻（宿主时钟毫秒）。
    *
    * 页面据此**自己** abort：宿主超时只是"不再等"，并不会通知页面；一次挂住的渲染
@@ -1183,10 +1188,12 @@ export async function commitStudioRenderJob(
   warnings: readonly string[] = [],
   report?: StudioRenderReport,
   signal?: AbortSignal,
+  spot?: boolean,
 ): Promise<void> {
   const query = new URLSearchParams({ jobId })
   if (warnings.length > 0) query.set('warnings', JSON.stringify([...warnings]))
   if (report !== undefined && Object.keys(report).length > 0) query.set('metrics', JSON.stringify(report))
+  if (spot === true) query.set('spot', '1')
   await readJson<{ ok: boolean }>(await fetch(`/canvas-studio/remotion/commit?${query.toString()}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream' },

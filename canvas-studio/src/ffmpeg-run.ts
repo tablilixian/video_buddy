@@ -303,3 +303,44 @@ export async function probeMediaDuration(
 ): Promise<number> {
   return (await probeMediaInfo(path, ffmpegPath, signal)).duration
 }
+
+/**
+ * 从 `ffmpeg -af ebur128` 的 stderr 解析综合响度 `I:  -15.3 LUFS`（解析纯函数，可单测）。
+ * ebur128 汇总表里 `I:` 行出现多次（实时行 + Summary 行），取**最后一次**（Summary 是真值）。
+ */
+export function parseEbur128IntegratedLufs(stderr: string): number | undefined {
+  const matches = [...stderr.matchAll(/^\s*I:\s+(-?\d+(?:\.\d+)?)\s+LUFS\s*$/gmu)]
+  const last = matches[matches.length - 1]
+  if (last === undefined) return undefined
+  const value = Number(last[1])
+  return Number.isFinite(value) ? value : undefined
+}
+
+/**
+ * 探测一个**本地媒体文件**的综合响度（ITU-R BS.1770 integrated LUFS）。
+ *
+ * Q1 响度闸的数据源：复刻 / 广告片场景里响度直接决定观感对齐（甜品复刻会话实测：
+ * 成片 -15.3 LUFS vs 原片 -11.4，无人发现）。**绝不抛错**：无声 / ffmpeg 不可用 /
+ * 解析失败一律返回 `undefined`，由调用方按「未测得」跳过。
+ *
+ * 成本：完整解码一遍音轨（15s 片 ≈ 亚秒级），只在有音轨的成片上调用。
+ */
+export async function probeLoudnessLufs(
+  path: string,
+  ffmpegPath?: string,
+  signal?: AbortSignal,
+): Promise<number | undefined> {
+  try {
+    const resolved = resolveFfmpegPath(ffmpegPath)
+    // `-vn` 跳过视频解码（只解码音轨）；无音轨时 ffmpeg 报错退出 ⇒ catch 返回 undefined。
+    const probe = await runFfmpeg(
+      resolved,
+      ['-i', path, '-vn', '-af', 'ebur128=peak=none', '-f', 'null', '-'],
+      FFMPEG_TIMEOUT_MS,
+      signal,
+    )
+    return parseEbur128IntegratedLufs(probe.stderr)
+  } catch {
+    return undefined
+  }
+}

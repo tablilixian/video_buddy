@@ -24,6 +24,7 @@
 import {
   canRenderMediaOnWeb,
   renderMediaOnWeb,
+  renderStillOnWeb,
   type CanRenderIssue,
   type CanRenderMediaOnWebResult,
   type FrameRange,
@@ -308,6 +309,96 @@ export async function renderManifestOnWeb(
     sampledFrames: samples.length,
   }
   return { bytes, warnings, samples, metrics }
+}
+
+// ───────────────── V1（复刻提效）：spot-check —— 只渲指定帧，不编码成片 ─────────────────
+
+/** spot-check 渲染结果（静帧 + 告警 + 计量；无成片字节）。 */
+export interface SpotRenderResult {
+  samples: RenderSample[]
+  warnings: string[]
+  metrics: RenderMetrics
+}
+
+/**
+ * 只渲染 `frames` 里的若干帧（每帧走 `renderStillOnWeb` 单帧渲染，不启动编码器）。
+ *
+ * 为什么存在：复刻 / 调版会话的验证循环是「改一个细节 → 验证一次」，整片 450 帧
+ * 编码是这条循环里最贵的一步（甜品复刻会话 46 次渲染里绝大多数只为看几个画面）。
+ * spot-check 把单次验证成本从整片降到 N 张静帧。
+ *
+ * 每帧独立渲染：字体注入一次、能力判定一次、逐帧 `renderStillOnWeb`（互不共享
+ * 渲染状态，帧号大也不受前面帧的影响）。
+ */
+export async function renderSpotFramesOnWeb(
+  manifest: CompositionManifest,
+  frames: readonly number[],
+  options: RenderManifestOnWebOptions = {},
+): Promise<SpotRenderResult> {
+  if (frames.length === 0) throw new WebRenderError('spot-check 目标帧为空，请传 1–8 个帧号。')
+  const { width, height, fps, durationInFrames } = manifest.meta
+  const quality: RenderQuality = options.quality ?? manifest.meta.quality ?? 'standard'
+  const preset = QUALITY_PRESETS[quality] ?? QUALITY_PRESETS.standard
+  const startedAt = Date.now()
+  // 与整片渲染同一顺序：字体面先就绪（否则拍到回退字体的帧），再判能力。
+  const fontWarnings = await applyManifestFonts(manifest)
+  const capability: CanRenderMediaOnWebResult = await canRenderMediaOnWeb({ container: 'mp4', videoCodec: 'h264', width, height })
+  if (!capability.canRender) {
+    const detail = capability.issues.map((issue: CanRenderIssue) => issue.message).join('；')
+    throw new WebRenderError(`当前渲染环境不支持该成片${detail.length > 0 ? `（${detail}）` : ''}，请降低分辨率后重试。`)
+  }
+  const warnings = [
+    ...fontWarnings,
+    ...capability.issues
+      .filter((issue: CanRenderIssue) => issue.severity === 'warning')
+      .map((issue: CanRenderIssue) => issue.message),
+  ]
+  const { signal } = options
+  const samples: RenderSample[] = []
+  const total = frames.length
+  const composition = {
+    id: 'studio-composition',
+    component: StudioComposition,
+    width,
+    height,
+    fps,
+    durationInFrames: Math.max(1, Math.round(durationInFrames)),
+    defaultProps: { manifest },
+    calculateMetadata: null,
+  } as const
+  let frameIndex = 0
+  for (const frame of frames) {
+    if (signal?.aborted === true) throw new WebRenderError('渲染已取消。')
+    const still = await renderStillOnWeb({
+      composition,
+      inputProps: { manifest },
+      frame,
+      licenseKey: options.licenseKey ?? DEFAULT_REMOTION_LICENSE_KEY,
+      scale: preset.scale,
+      ...(signal === undefined ? {} : { signal }),
+    })
+    const blob = await still.blob({ format: 'png' })
+    const png = new Uint8Array(await blob.arrayBuffer())
+    if (png.length > 0) samples.push({ frame, png })
+    frameIndex += 1
+    options.onProgress?.(frameIndex / total)
+  }
+  const totalMs = Date.now() - startedAt
+  const metrics: RenderMetrics = {
+    quality,
+    frames: total,
+    totalMs,
+    prepareMs: 0,
+    renderMs: totalMs,
+    msPerFrame: Math.round((totalMs / total) * 100) / 100,
+    encodeDoneAtMs: 0,
+    bytes: 0,
+    bitrateKbps: 0,
+    width: Math.max(1, Math.round(width * preset.scale)),
+    height: Math.max(1, Math.round(height * preset.scale)),
+    sampledFrames: samples.length,
+  }
+  return { samples, warnings, metrics }
 }
 
 // ───────────────── 二期 D2：失败分类 + 有界重试（红线：重试前必须中断上一次） ─────────────────

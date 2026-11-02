@@ -820,7 +820,11 @@ describe('published package surface', () => {
     )
 
     expect(windowsJob).not.toContain('- run: yarn check')
-    expect(windowsJob).toContain('- run: yarn workspace dsh-plugin-desktop check:win-package')
+    // The Windows gate is wrapped in a named step that tees its output to a log
+    // file for failure annotations, so match the command rather than `- run: `.
+    expect(windowsJob).toContain('yarn workspace dsh-plugin-desktop check:win-package')
+    expect(windowsJob).toContain('- name: Package gate')
+    expect(windowsJob).toContain('- name: Annotate package gate failure')
     expect(windowsJob).toContain('run: yarn workspace dsh-plugin-desktop dist:win')
     expect(windowsJob).toContain('run: yarn workspace dsh-plugin-desktop dist:win-portable')
     expect(windowsJob).toContain('DSH_PACKAGE_CHECK_ALREADY_RAN: \'1\'')

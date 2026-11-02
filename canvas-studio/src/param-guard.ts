@@ -169,7 +169,7 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   points: '百分比坐标串（"x,y;x,y"，x/y 中心语义），非法项跳过、越界由 execute 夹回并标记',
   // 2026-10-25：layout_table（项目级布局坐标表，工作台不参与渲染）。
   // `name` 已在「散文串」表里（同名参数跨工具共用一条分类），这里不重复登记，否则三表打架。
-  action: '枚举（read / write / clear），取值不合规由 execute 拒收',
+  action: '枚举（按工具定义取值域，schema 校验）：layout_table = read / write / clear；teardown_store = save / load / list',
   rect: '数值矩形（画布百分比中心语义），w/h ≤ 0 或越出画布由 normalizeLayoutTable 拒收',
   note: '自由文本备注（说明这块是什么 / 量自哪张图），不指向别处产出的对象',
   // 2026-10-25：scaffold_manifest 的视觉主题（展开成颜色值，manifest 不存 themeId）。
@@ -182,6 +182,8 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   videoPath: '绝对路径（参考视频文件），存在性/可读性由 ffmpeg 抽帧实测，无文本占位形态（与 filePath 同判）',
   segments: '结构化拆解段数组（{label,startSec,endSec}），逐项类型由 execute 校验、起止合法性由 verifyTeardown 拒收',
   tolerance: '数值（边界匹配窗口秒，>0），非法取值回落缺省 1.0',
+  // —— 复刻提效批四：render_composition 的拆解双闸入参 ——
+  timingSegments: '结构化拆解段数组（{label,startSec,endSec,elements?}），形状由 parseTimingSegments 显式拒收（startSec<endSec 逐段校验），elements 非法项过滤',
   // —— 布尔 / 数值：不存在文本占位形态 ——
   includeRetired: '布尔开关',
   autoFixText: '布尔开关',

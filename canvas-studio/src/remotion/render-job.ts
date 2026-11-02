@@ -21,6 +21,15 @@ import { probeLoudnessLufs, probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
 import { recordTransientAsset } from '../asset-gc.js'
 import { resolveAssetPathIn } from '../asset-path.js'
+import type { TeardownSegment } from '../teardown-verify.js'
+import { verifyTeardown } from '../teardown-verify.js'
+import {
+  TIMING_CHECK_SAMPLE_FPS,
+  TIMING_CHECK_TOLERANCE_SEC,
+  summarizeTimingCheck,
+  timingCheckWarnings,
+  type TimingCheckSummary,
+} from '../timing-segments.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
@@ -127,6 +136,11 @@ export interface RenderJobReport {
    * 复刻场景里响度直接决定观感对齐（甜品复刻会话实测：-15.3 vs 原片 -11.4，无人发现）。
    */
   loudnessLufs?: number
+  /**
+   * Q2 时序闸（复刻提效批四）：调用方传了 `timingSegments` 时，渲完实测成片切换点
+   * 与拆解段起点的逐边界比对结论（漂移超窗报 warnings，细节看这里逐段校准）。
+   */
+  timingCheck?: TimingCheckSummary
 }
 
 /**
@@ -247,6 +261,12 @@ export interface RunRenderJobOptions {
    * 超时按目标帧数（而非片长帧数）计。与 `probe` 语义正交（spot 天然不落节点）。
    */
   spotFrames?: number[]
+  /**
+   * Q2 时序闸（复刻提效批四）：拆解段数组（viral-remake 拆解表）。渲完用
+   * `verifyTeardown` 实测成片切换点并逐边界比对（4fps + 0.45s 窗），结论进
+   * `report.timingCheck`、漂移进 warnings。spot 单无成片，自然跳过。
+   */
+  timingSegments?: readonly TeardownSegment[]
   /** O-06：等隐藏窗口自报就绪的上限（缺省 `RENDER_HOST_WARMUP_MS` = 8s）。只影响冷启首单。 */
   hostWarmupMs?: number
   /** O-06：心跳判失联阈值（缺省 `RENDER_HOST_STALE_MS`）。测试注入短值。 */
@@ -299,6 +319,8 @@ interface ActiveRenderJob {
   sampleFrames: number[]
   /** V1：spot-check 目标帧（空数组 = 正常成片渲染）。 */
   spotFrames: number[]
+  /** Q2 时序闸：调用方的拆解段数组（空数组 = 未启用）。 */
+  timingSegments: readonly TeardownSegment[]
   /** 三期 W6-1：已回写的抽帧。 */
   samples: RenderSampleResult[]
   /** O-06：这张单归谁渲（建单时定）。 */
@@ -918,6 +940,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       realDurations: options.realDurations ?? {},
       sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
       spotFrames,
+      timingSegments: options.timingSegments ?? [],
       samples: [],
       executor,
       lastProgressAt: Date.now(),
@@ -1108,6 +1131,25 @@ export async function commitRenderJob(
     }
   }
 
+  // Q2 时序闸（复刻提效批四）：调用方传了拆解段数组时，渲完用 B3 同一算法实测
+  // **成片**的画面切换点并与拆解表逐边界比对 —— 段落漂移 >~0.3s 报警（v2 全程
+  // 漂移 0.5-1s 无人发现）。回核失败（ffmpeg 异常等）只降级为告警，不吞渲染成果。
+  let timingCheck: TimingCheckSummary | undefined
+  if (job.timingSegments.length >= 2) {
+    try {
+      const verified = await verifyTeardown({
+        videoPath: resolveAssetPathIn(registry.assetsDir(job.projectId), saved.assetFile),
+        segments: job.timingSegments,
+        sampleFps: TIMING_CHECK_SAMPLE_FPS,
+        toleranceSec: TIMING_CHECK_TOLERANCE_SEC,
+      })
+      timingCheck = summarizeTimingCheck(verified)
+      warnings.push(...timingCheckWarnings(timingCheck))
+    } catch (cause) {
+      warnings.push(`[时序回核] 未执行：${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+
   // F-01：结算前取一次快照（结算会把它从工单表摘掉）。
   const diagnostics = diagnosticsOf(job, 'ok')
   job.settled = true
@@ -1132,6 +1174,7 @@ export async function commitRenderJob(
     // ffprobe 采电平之类的自行验证（真机实证的重复成本）。
     audio: audioSummary,
     ...(loudnessLufs !== undefined ? { loudnessLufs } : {}),
+    ...(timingCheck !== undefined ? { timingCheck } : {}),
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,

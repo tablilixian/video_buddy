@@ -100,6 +100,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   extract_last_frame: { tier: 'B', title: '抽取末帧', icon: '帧' },
   cut_audio: { tier: 'B', title: '音频裁切', icon: '切' },
   qc_shot: { tier: 'B', title: '镜头质检', icon: '检' },
+  // 复刻提效批四（C4 后半）：拆解成果跨项目落库 —— 治「换会话知识蒸发」。
+  teardown_store: { tier: 'B', title: '拆解落库', icon: '存' },
   image2vl: { tier: 'B', title: '画面分析', icon: '析' },
   video2vl: { tier: 'B', title: '视频理解', icon: '析' },
   subtitle_burn: { tier: 'B', title: '字幕（暂未开放）', icon: '字' },

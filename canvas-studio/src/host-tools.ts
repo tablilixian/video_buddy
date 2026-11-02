@@ -96,6 +96,10 @@ import { throwError } from './error-system.js'
 import { alphaDestPath, runImageMatting } from './image-matting.js'
 // B3：拆解回核 —— 拆解表边界 vs 参考视频真实切换点的机器比对（自评 verified 不算证据）。
 import { verifyTeardown, type TeardownSegment } from './teardown-verify.js'
+// 复刻提效批四：Q2/Q3 双闸（render_composition 的 timingSegments 入参解析 + 覆盖核对）
+// 与 C4 拆解成果跨项目落库（teardown_store 工具）。
+import { parseTimingSegments, checkElementCoverage, coverageWarningText } from './timing-segments.js'
+import { saveTeardown, loadTeardown, listTeardowns } from './teardown-store.js'
 import { assertLookBudget, chargeLookBudget, lookBudgetApplies } from './look-budget.js'
 import './errors/catalog.js'
 
@@ -3412,10 +3416,24 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           items: { type: 'integer' as const },
           description: '可选：**spot-check（快验）**—— 传 1–8 个绝对帧号，只渲这些帧的静帧返回（frames[]），**不编码成片、不落画布节点**。改一处验证一处的正确姿势：调完 manifest 只看目标帧，比整片重渲快一个量级（复刻会话实测：验证循环里绝大多数渲染只为看几个画面）。帧号会被钳到片长内并去重排序',
         },
+        timingSegments: {
+          type: 'array' as const,
+          description: '可选：**复刻时序/覆盖双闸** —— 传拆解段数组 [{label, startSec, endSec, elements?}]（elements = 该段「元素与动效」列逐元素一条；素材内部运动不单列）。渲完后宿主自动：① 实测成片画面切换点与拆解段比对，漂移超 ±0.3s 报警（细节在 report.timingCheck 逐段）；② 数每段时间窗内的动画轨，少于 elements 数报警（有元素没落地）。与 verify_teardown 配套：表先回核，片渲完再回核',
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              label: { type: 'string' as const, description: '段名/镜序（与拆解表一致，结果定位用）' },
+              startSec: { type: 'number' as const, description: '起始秒（0.1s 精度）' },
+              endSec: { type: 'number' as const, description: '结束秒' },
+              elements: { type: 'array' as const, items: { type: 'string' as const }, description: '可选：该段动效元素清单（每个会动的元素一条）' },
+            },
+          },
+        },
       },
       output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
-        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown; probe?: unknown; spotFrames?: unknown }
+        const a = args as { manifest?: unknown; manifestPath?: unknown; projectId?: unknown; quality?: unknown; probe?: unknown; spotFrames?: unknown; timingSegments?: unknown }
         const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
         assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
         const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -3567,6 +3585,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           throwError('CS-USER-ERR', { message: 'spotFrames 必须是帧号数组（如 [30, 120, 360]）。' })
         }
         const spot = Array.isArray(a.spotFrames) && a.spotFrames.length > 0
+        // Q2/Q3（复刻提效批四）：拆解段双闸 —— 入参解析（形状非法显式拒收，零副作用）
+        // + Q3 元素覆盖核对（纯函数；probe 跳过 —— 诊断渲不刷纪律告警）。
+        // Q2 时序回核在 commitRenderJob（成片落盘后跑 verifyTeardown），见 render-job.ts。
+        const timingSegments = parseTimingSegments(a.timingSegments)
+        const coverageWarnings = timingSegments !== undefined && !probe
+          ? checkElementCoverage(renderManifest, timingSegments, renderManifest.meta.fps).map((issue) => coverageWarningText(issue))
+          : []
         const job = await runRenderJob({
           projectId,
           manifest: renderManifest,
@@ -3576,6 +3601,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // CV-373：探针贯通到客户端 —— 诊断渲跳过预览闸门，不再弹「帧 3/9」打断用户。
           ...(probe ? { probe } : {}),
           ...(spot ? { spotFrames: a.spotFrames as number[] } : {}),
+          ...(timingSegments !== undefined ? { timingSegments } : {}),
           realDurations: pre.realDurations,
           sampleFrames: probe || spot ? [] : pickSampleFrames(renderManifest),
         })
@@ -3612,6 +3638,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // 放在 reconciled 之后：判的是**真正要渲染的**那份排布。
           ...checkManifestResolution(renderManifest, pre.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
+          ...coverageWarnings,
           ...job.warnings,
         ]
         // F-05：探针渲染跳过体检 —— `validateManifest` 末尾会把体检文案并进 warnings，
@@ -4361,6 +4388,99 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             : '直接进映射。')
           : '先修拆解表（对照实测切换时刻改 startSec / 补漏段），修完重新 verify_teardown —— unmatched 的拆解不要进映射。'
         return { text: [head, ...lines, ...extras, next].join('\n') }
+      },
+    }),
+    defineTool({
+      name: 'teardown_store',
+      description:
+        '**拆解成果跨项目落库**（治「换会话 / 换 project dir 知识蒸发」）：把爆款拆解表按参考视频指纹（文件名+字节数）存进宿主级目录，同一支参考片在任何新会话都能取回。'
+        + '甜品复刻实测：v1 拆对的段落 v2 全部重拆还拆错 —— 根因就是拆解产物只活在当时的 project dir 里。'
+        + '三个动作：`save`（拆解表 verify_teardown **回核通过后**落库；同参考片重复 save 覆盖旧档）；`load`（**拆解前先查** —— 同参考片已有拆解直接取回核对复用，禁止整表重拆）；`list`（列最近库存）。'
+        + '复用不等于盲用：取回的拆解仍要过 verify_teardown 回核对版（参考片可能换版），对得上再进映射。',
+      parameters: {
+        action: { type: 'string' as const, required: true, enum: ['save', 'load', 'list'], description: 'save = 落库（需 videoPath + segments）；load = 取回（需 videoPath）；list = 列最近 20 条' },
+        videoPath: { type: 'string' as const, description: 'save / load 必传：参考视频绝对路径。指纹 = 文件名+字节数，同一份文件在任何项目目录指纹一致；重编码 = 新条目' },
+        segments: {
+          type: 'array' as const,
+          description: 'save 必传：拆解段 [{label, startSec, endSec}]（与 verify_teardown 同构，≥2 段）',
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              label: { type: 'string' as const, description: '段名/镜序说明' },
+              startSec: { type: 'number' as const, description: '起始秒' },
+              endSec: { type: 'number' as const, description: '结束秒' },
+            },
+          },
+        },
+        note: { type: 'string' as const, description: 'save 可选：一句话沉淀（参考片响度实测 / 缓动拟合结论 / 精灵图做法），load 时随拆解一起取回' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '落库 / 取回结果 + 下一步指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args) {
+        const a = args as { action?: unknown; videoPath?: unknown; segments?: unknown; note?: unknown }
+        const action = a.action === 'save' || a.action === 'load' || a.action === 'list' ? a.action : null
+        if (action === null) {
+          throwError('CS-USER-ERR', { message: 'action 只允许 save / load / list。' })
+        }
+        if (action === 'list') {
+          const entries = await listTeardowns()
+          if (entries.length === 0) {
+            return { text: '拆解库为空 —— 第一支拆完回核通过的参考片 save 之后这里就有了。' }
+          }
+          const lines = entries.map((e) =>
+            `  ${e.key} · ${e.videoName} · ${e.savedAt.slice(0, 10)} · ${e.segmentCount} 段${e.note !== undefined ? ` · ${e.note}` : ''}`)
+          return { text: `拆解库 ${entries.length} 条（同参考片先 load 再拆，禁止重拆）：\n${lines.join('\n')}` }
+        }
+        const videoPath = typeof a.videoPath === 'string' ? a.videoPath.trim() : ''
+        if (videoPath === '' || !videoPath.startsWith(sep)) {
+          throwError('CS-USER-ERR', { message: 'save / load 都需要 videoPath（参考视频的绝对路径）。' })
+        }
+        if (action === 'load') {
+          const hit = await loadTeardown(videoPath)
+          if (!hit.found) {
+            return {
+              text: `库里没有这条参考片的拆解（key=${hit.key}${hit.corrupt === true ? '，旧档损坏' : ''}）。按 §1 正常拆解，落表回核通过后 save 入库。`,
+            }
+          }
+          const segLines = (hit.segments ?? []).map((s) => `  ${s.startSec.toFixed(1)}–${s.endSec.toFixed(1)}s ${s.label}`)
+          return {
+            text: [
+              `✅ 命中库存（${hit.savedAt?.slice(0, 10) ?? '?'} 存，${hit.segments?.length ?? 0} 段${hit.note !== undefined ? ` · ${hit.note}` : ''}）：`,
+              ...segLines,
+              '先核对与本次参考片是否同一版（verify_teardown 回核），对得上就复用，不要整表重拆。',
+            ].join('\n'),
+          }
+        }
+        // save
+        const segments: TeardownSegment[] = []
+        if (Array.isArray(a.segments)) {
+          for (const raw of a.segments) {
+            if (typeof raw !== 'object' || raw === null) continue
+            const r = raw as Record<string, unknown>
+            const label = typeof r.label === 'string' && r.label.trim() !== '' ? r.label.trim() : `段${segments.length + 1}`
+            const startSec = typeof r.startSec === 'number' && Number.isFinite(r.startSec) ? r.startSec : Number.NaN
+            const endSec = typeof r.endSec === 'number' && Number.isFinite(r.endSec) ? r.endSec : Number.NaN
+            segments.push({ label, startSec, endSec })
+          }
+        }
+        const saved = await saveTeardown({
+          videoPath,
+          segments,
+          ...(typeof a.note === 'string' && a.note.trim() !== '' ? { note: a.note } : {}),
+        })
+        return {
+          text: `✅ 已${saved.updated ? `更新（覆盖 ${saved.priorSavedAt?.slice(0, 10) ?? '?'} 旧档）` : '入库'} key=${saved.key}`
+            + `（${saved.segments.length} 段，来源 ${saved.videoName}）。以后任何会话 / 项目里 load 同一支视频即可取回 —— 先核对再复用。`,
+        }
       },
     }),
     defineTool({

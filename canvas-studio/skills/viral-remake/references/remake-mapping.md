@@ -30,6 +30,13 @@
 - 「素材需求」列即总纲 §07 素材清单的来源：`generated`（生图/生视频）/
   `user`（用户提供）/ `library`（素材库）；placeholder 也要登记，不漏项；
   **需要透明底的条目标注「白底 → image_matting」**。
+- **落库**：回核通过的拆解表 `teardown_store`（`action:"save"` + videoPath +
+  segments）按参考片指纹入库 —— 跨会话/跨项目复用；`load` 取回后仍要回核对版
+  （参考片可能换版），对得上再进映射。备注（`note`）顺手写参考片响度实测等结论。
+- **拆解段的结构化形态**：进渲染时把每段以 `[{label, startSec, endSec,
+  elements:[…动效元素]}]` 传给 `render_composition` 的 `timingSegments`
+  （elements = 「元素与动效」列逐元素一条，素材内部运动不单列）—— 宿主渲完自动
+  做时序回核（Q2）与元素覆盖核对（Q3），选档参考 §3.7。
 
 ## 2. 内容类型 → 轨道映射
 
@@ -112,6 +119,36 @@ manifest 片段（image 轨）：
 
 变体：菜单切换联动 → 每段产品各自一条轨、同 startFrame 跳升；多产品逐个入场 →
 错峰 2–3 帧起步（除非拆解表写明「逐个入场」，否则保持同帧同时感）。
+
+### 3.7 动效选型表（按元素类型直接查，别现场发明）
+
+拆解表「元素与动效」列的描述关键词 → 动效档 auto 匹配（命中即选；preset 细参
+§3.5 缓动速查 / §3.6 跳升配方）：
+
+| 元素类型 | 拆解表描述关键词 | 选档 |
+|---|---|---|
+| 产品/主体 | 跳、跃入、从底部上来 | §3.6 跳升 preset（easeOutCubic，15 帧左右） |
+| 产品/卡片 | 弹一下、Q 弹 | `backOut`（过冲回稳） |
+| 标题/文案 | 淡入、浮现 | textCard `anim: fadeUp` |
+| 品牌大字 | 镂空、描边字 | `fx: 'outline'`（或 §3.7 末的 fill+outline 双轨叠放） |
+| 卡片/面板 | 滑入、推入、飞入 | `animate` 位移 + `easeOutCubic`/`easeOutQuart` |
+| 装饰（星/光/线） | 漂浮、环绕、缓慢 | `orbit`；往复呼吸用 `easeInOutCubic` |
+| 数字/数据 | 长出、逐根、增长 | chart `bars`（线条生长用 shape `draw`） |
+| 底栏/角标 | 贴合、轻弹 | `animate` + `spring` |
+| 离场 | 淡出、消失 | `easeIn` 系 exit |
+
+display 组合排版两招（品牌站常态）：
+
+- **fill+outline 双轨叠放**：同文案同 box 两条 textCard，下层普通填充、上层
+  `fx: 'outline'`——z 序 = 轨道声明顺序（先声明的在底）。镂空字要压在深底上时
+  这招比单 outline 多一层保险。
+- **文字穿产品前后**：产品轨声明在中间，前层文字轨与后层文字轨各一条（同文案或
+  分行文案），「被产品挡住的部分」用后层轨表达——层序全靠声明顺序，不要用
+  translateZ（引擎无真 3D）。
+
+中文粗 display：textCard 的 title / dataCard 数值缺省就按 700 粗体渲染（随包
+Noto Sans SC，断网一致）——够用的前提下不要再引系统字体（非 macOS 机器会静默
+fallback）。
 
 ## 4. 时长与节奏 → manifest 骨架
 

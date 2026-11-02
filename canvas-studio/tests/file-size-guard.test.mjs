@@ -66,7 +66,9 @@ export const FILE_WHITELIST = {
   // +51（4435 → 4486）显式登记。
   // B3 拆解回核（2026-11-02）：+verify_teardown 工具定义 +86（4486 → 4572）显式登记
   // —— 核心算法在 teardown-verify.ts（新文件），这里只是工具壳。
-  'src/host-tools.ts': 4572,
+  // 批四（2026-11-02）：+teardown_store 工具（壳，核心在 teardown-store.ts）+ render_composition
+  // 的 timingSegments 双闸接线，+120（4572 → 4692）显式登记。
+  'src/host-tools.ts': 4692,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3619,
@@ -97,6 +99,11 @@ export const FILE_WHITELIST = {
   // 2157 → 2168 显式登记。
   // 复刻提效批（2026-11-02）：image 轨 hasAlpha 字段 + 注释，+7（2168 → 2175）。
   'src/remotion/manifest.ts': 2175,
+  // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
+  // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
+  // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
+  // 消化路径：随「渲染工单桥拆分」批外提结算段（commit/cancel 各自成模块）。
+  'src/remotion/render-job.ts': 1236,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
@@ -137,7 +144,7 @@ export const FUNC_WHITELIST = {
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2596, note: '阶段 1 目录化（先搬 inspect 打样）' },
+  'src/host-tools.ts#createStudioTools': { lines: 2712, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

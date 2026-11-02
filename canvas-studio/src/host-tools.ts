@@ -4120,6 +4120,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '`exit.durationInFrames` 不能超过所在轨道时长。这里一次算对，且返回前已跑过 `validateManifest`（不会给出非法 JSON）。'
         + '用法：传 `title` + `durationSeconds`（可选 `fps` / `aspect`）→ 拿到 JSON → 替换文案、往 `tracks` 里追加轨道。'
         + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
+        + '时机字段提示（REQ-036 C4）：animate / draw / colorShift 的 `startFrame` 可改用 `anchor`（锚 caption 轨的句/词窗口），'
+        + '批量换文案时时机自动跟对不漂移 —— 字段语义见 manifest-contract.md §anchor；与 startFrame 互斥，同时写会被校验拒收。'
         + '本工具只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, required: true, description: '片名（写进 meta.title 与片头卡文案）' },

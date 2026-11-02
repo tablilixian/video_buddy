@@ -438,6 +438,38 @@
 - **与 `startFrame` 互斥**（同时写 = 报错）；**只能引用数组里更靠前的轨**（天然无环）；
 - 宿主解析后会回一行「顺序衔接已解析：…」，照那行核对即可，不要再自己手算。
 
+### 相对锚定 `anchor`（REQ-036 C4 · 治「换文案时机漂移」，2026-11-03）
+
+`animate` / `draw` / `colorShift` 的 `startFrame`（轨内相对帧）可以改用 `anchor` —— 把事件的
+时机**挂在 caption 轨的句/词窗口上**。变体替换文案后词数变化 → 能量谷重排，绝对帧字段必然
+漂移（SKILL §5 自曝的「批量裂变」根因）；锚定字段在组合期按当版词级 timing 重新解析，
+**换几遍文案时机自动跟对**。
+
+```jsonc
+// 形态一：锚句内的某个词（词级）
+"animate": [{ "from": {"opacity":0}, "to": {"opacity":1},
+              "anchor": { "ref": "cap-1", "phrase": 2, "word": 5, "from": "start", "offsetFrames": 0 } }]
+
+// 形态二：锚整句窗口（句级，无需词索引）
+"animate": [{ "from": {"opacity":0}, "to": {"opacity":1},
+              "anchor": { "ref": "cap-1", "phrase": 2, "from": "end", "offsetFrames": 3 } }]
+```
+
+| 字段 | 缺省 | 说明 |
+| --- | --- | --- |
+| `ref` | 必填 | 目标 caption 轨 id（**该轨必须带 `src` 旁白**，否则无词级 timing 可锚） |
+| `phrase` | 必填 | 句索引，0 起（caption 轨 `text` 按句末标点 `。！？!?；;…` 与换行分句） |
+| `word` | 整句窗口 | 词索引，0 起 = 该句内第几个**口播字**（标点不占索引） |
+| `from` | `start` | 锚窗口 `start`（起点）/ `end`（终点） |
+| `offsetFrames` | 0 | 相对偏移（帧，可负） |
+
+- **与 `startFrame` 互斥**（同时写 = 校验报错）；
+- **fail-fast**：`ref` 轨不存在 / 被锚轨无 `src` / `phrase`·`word` 越界 → 渲染体检**硬失败**
+  （错误信息含轨道 id 与索引），绝不静默回退 0 帧 —— 锚错帧的成片比报错贵得多；
+- 解析在**客户端组合期**完成：caption 词级 timing（显式 `words` 优先，缺省能量谷推导）
+  先算，anchor 后解析成绝对帧再减轨道起点，渲染器只见数字 `startFrame`；
+- 批量裂变纪律：换文案只换 `text` / `words` / `src`，**锚定事件不用重算**。
+
 ### 退场 `exit`（治「硬消失」）
 
 ```jsonc

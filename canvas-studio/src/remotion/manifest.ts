@@ -28,6 +28,7 @@ import { formatMotionLint, lintMotion } from './motion-lint.js'
 import type { SpriteRect } from './sprite.js'
 import { validateSpriteRect } from './sprite.js'
 import { countSpokenChars } from './word-timing.js'
+import { collectAnchorIssues, KNOWN_ANCHOR_KEYS } from './anchor.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
@@ -806,13 +807,15 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
-const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing', 'spring'])
+// REQ-036 C4（CV-400）：相对锚定 —— animate / draw / colorShift 的 startFrame 可改用
+// anchor（锚 caption 轨句/词窗口），二者互斥（校验在 collectAnchorIssues，单一实现）。
+const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing', 'spring', 'anchor'])
 const KNOWN_ORBIT_KEYS = new Set(['center', 'radius', 'startAngle', 'periodInFrames', 'direction'])
 const KNOWN_ORBIT_CENTER_KEYS = new Set(['x', 'y'])
-const KNOWN_DRAW_KEYS = new Set(['to', 'startFrame', 'durationInFrames', 'easing'])
+const KNOWN_DRAW_KEYS = new Set(['to', 'startFrame', 'durationInFrames', 'easing', 'anchor'])
 const KNOWN_EXIT_KEYS = new Set(['to', 'durationInFrames', 'easing', 'gapFrames'])
 const KNOWN_START_AFTER_KEYS = new Set(['trackId', 'gapFrames'])
-const KNOWN_COLOR_SHIFT_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing'])
+const KNOWN_COLOR_SHIFT_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing', 'anchor'])
 const KNOWN_LOOK_KEYS = new Set(['contrast', 'saturation', 'brightness', 'temperature', 'vignette', 'grain'])
 const KNOWN_TEXT_ANIM_OPTIONS_KEYS = new Set(['wordDelayFrames', 'offsetY', 'blur'])
 const KNOWN_SPRING_KEYS = new Set(['stiffness', 'damping', 'mass'])
@@ -876,7 +879,10 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
         warnUnknownKeys(track.orbit, KNOWN_ORBIT_KEYS, `${at}.orbit`, found)
         warnUnknownKeys(track.orbit.center, KNOWN_ORBIT_CENTER_KEYS, `${at}.orbit.center`, found)
       }
-      if (isRecord(track.draw)) warnUnknownKeys(track.draw, KNOWN_DRAW_KEYS, `${at}.draw`, found)
+      if (isRecord(track.draw)) {
+        warnUnknownKeys(track.draw, KNOWN_DRAW_KEYS, `${at}.draw`, found)
+        if (isRecord(track.draw.anchor)) warnUnknownKeys(track.draw.anchor, KNOWN_ANCHOR_KEYS, `${at}.draw.anchor`, found)
+      }
       // 三期：新增字段的子对象同扫（否则 `exit:{target:{…}}` 会被静默忽略）。
       if (isRecord(track.exit)) warnUnknownKeys(track.exit, KNOWN_EXIT_KEYS, `${at}.exit`, found)
       if (isRecord(track.exit) && isRecord(track.exit.to)) {
@@ -887,6 +893,7 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
       }
       if (isRecord(track.colorShift)) {
         warnUnknownKeys(track.colorShift, KNOWN_COLOR_SHIFT_KEYS, `${at}.colorShift`, found)
+        if (isRecord(track.colorShift.anchor)) warnUnknownKeys(track.colorShift.anchor, KNOWN_ANCHOR_KEYS, `${at}.colorShift.anchor`, found)
       }
       if (isRecord(track.animOptions)) {
         warnUnknownKeys(track.animOptions, KNOWN_TEXT_ANIM_OPTIONS_KEYS, `${at}.animOptions`, found)
@@ -933,6 +940,7 @@ function warnAnimateKeys(value: unknown, at: string, sink: string[]): void {
     warnUnknownKeys(item.from, KNOWN_VISUAL_STATE_KEYS, `${label}.from`, sink)
     warnUnknownKeys(item.to, KNOWN_VISUAL_STATE_KEYS, `${label}.to`, sink)
     if (isRecord(item.spring)) warnUnknownKeys(item.spring, KNOWN_SPRING_KEYS, `${label}.spring`, sink)
+    if (isRecord(item.anchor)) warnUnknownKeys(item.anchor, KNOWN_ANCHOR_KEYS, `${label}.anchor`, sink)
   }
 }
 
@@ -1853,6 +1861,10 @@ export function validateManifest(input: unknown): ManifestValidation {
       }
     }
   }
+
+  // REQ-036 C4（CV-400）：锚字段 fail-fast 校验（与客户端组合期同一份实现 ——
+  // ref 轨不存在 / 被锚轨无 src / phrase·word 越界 / 与 startFrame 互斥，全在这里硬失败）。
+  errors.push(...collectAnchorIssues(input.tracks))
 
   // CV-334：契约外字段扫描（**只告警、永不阻断**）。放在最后 —— 它不依赖上面的结论，
   // 且当上面已经报错时这些告警不再是重点，但仍随结果回传，便于模型一次看清全部偏差。

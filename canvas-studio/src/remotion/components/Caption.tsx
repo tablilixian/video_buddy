@@ -11,75 +11,19 @@
  * 再放进 `audio.voiceOver`（校验层会告警双重播放）。
  * 确定性：解码与折行都是确定性输入；无随机、无时钟。
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from 'remotion'
+import React, { useMemo } from 'react'
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { Audio } from '@remotion/media'
 import type { CaptionTrack } from '../manifest.js'
 import { isSpokenChar, wordTimingFromEnvelope, type WordTimingWindow } from '../word-timing.js'
+import { useEnvelope } from './audio-envelope.js'
 import { useFontFamilyStack } from './font-context.js'
-
-const DECODE_TIMEOUT_MS = 10_000
 
 const DEFAULT_COLOR = '#ffffff'
 const DEFAULT_ACTIVE_COLOR = '#5ad2ff'
 const DEFAULT_DIM_COLOR = 'rgba(232,238,252,0.28)'
 
-/** 浏览器侧 RMS 包络（10ms 分桶，原始幅值 —— 推导函数内部按峰值归一）。 */
-function envelopeFromPcm(data: Float32Array, sampleRate: number): number[] {
-  const bucketLen = Math.max(1, Math.floor(sampleRate * 0.01))
-  const out: number[] = []
-  for (let i = 0; i < data.length; i += bucketLen) {
-    let sum = 0
-    let count = 0
-    for (let k = i; k < Math.min(data.length, i + bucketLen); k += 1) {
-      const s = data[k] ?? 0
-      sum += s * s
-      count += 1
-    }
-    out.push(count === 0 ? 0 : Math.sqrt(sum / count))
-  }
-  return out
-}
-
-function useEnvelope(src: string): number[] | null {
-  const [envelope, setEnvelope] = useState<number[] | null>(null)
-  const [handle] = useState(() => delayRender('caption：解码音频包络'))
-  const released = useRef(false)
-  const release = () => {
-    if (released.current) return
-    released.current = true
-    continueRender(handle)
-  }
-  useEffect(() => {
-    let cancelled = false
-    const guard = setTimeout(release, DECODE_TIMEOUT_MS)
-    const run = async (): Promise<void> => {
-      try {
-        const AudioCtor = (globalThis as unknown as { AudioContext?: typeof AudioContext }).AudioContext
-        if (AudioCtor === undefined) return
-        const res = await fetch(src)
-        if (!res.ok) return
-        const ctx = new AudioCtor()
-        const audio = await ctx.decodeAudioData(await res.arrayBuffer())
-        if (cancelled) return
-        setEnvelope(envelopeFromPcm(audio.getChannelData(0), audio.sampleRate))
-        await ctx.close()
-      } catch {
-        // 静默降级：解码不可用 ⇒ 全句均匀（见 windows 兜底）
-      } finally {
-        clearTimeout(guard)
-        release()
-      }
-    }
-    void run()
-    return () => {
-      cancelled = true
-      clearTimeout(guard)
-      release()
-    }
-  }, [src])
-  return envelope
-}
+/** 浏览器侧 RMS 包络与 useEnvelope 已抽到 `audio-envelope.ts`（C4 锚定解析共用同一份实现）。 */
 
 /** 逐字渲染样式：折行后每字的状态色与动效（纯帧函数）。 */
 function charStyle(state: 'done' | 'active' | 'todo', prog: number, activeColor: string, dimColor: string, doneColor: string): React.CSSProperties {

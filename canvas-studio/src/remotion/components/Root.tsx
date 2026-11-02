@@ -16,8 +16,17 @@ import type React from 'react'
 import { AbsoluteFill, Composition, Sequence, continueRender, delayRender, useCurrentFrame } from 'remotion'
 import { fontFamilyStack, resolveFonts } from '../fonts.js'
 import { chartDataFromTimeline } from '../chart-data.js'
-import type { CompositionManifest, CompositionTrack } from '../manifest.js'
+import {
+  anchorRefsOf,
+  applyAnchorResolution,
+  envelopeWordWindows,
+  explicitWordWindows,
+  groupWordsByPhrase,
+  type PhraseTiming,
+} from '../anchor.js'
+import type { CompositionManifest, CompositionTrack, CaptionTrack } from '../manifest.js'
 import { duckWindowsFromSubtitles, lookStyles, trackTransitionWindows, transitionOverride } from '../timing.js'
+import { useEnvelope } from './audio-envelope.js'
 import { AudioTrack } from './AudioTrack.js'
 import { AudioViz } from './AudioViz.js'
 import { Caption } from './Caption.js'
@@ -145,8 +154,7 @@ function usePrefetchMedia(manifest: CompositionManifest): void {
   }, [key, handle])
 }
 
-const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManifest }> = ({ track, manifest }) => {
-  switch (track.type) {
+const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManifest }> = ({ track, manifest }) => {  switch (track.type) {
     case 'video':
       return <VideoClip track={track} />
     case 'image':
@@ -167,9 +175,69 @@ const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManife
   }
 }
 
-export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({ manifest }) => {
+/**
+ * REQ-036 C4（CV-400）：**组合期锚定解析**（hook）。
+ *
+ * manifest 无锚字段时零开销原样返回（逐像素同路）；有锚字段时：被锚 caption 轨的
+ * 词级 timing 先算（显式 `words` 同步可得；能量谷要等音频解码 —— `useEnvelope` 内部
+ * delayRender 闸住首帧拍摄），就绪后经 `applyAnchorResolution` 把锚字段折算成数值
+ * startFrame（绝对帧 − 轨道起点，animate/draw/colorShift 都是轨内相对帧口径）。
+ *
+ * 与 Caption 组件会各自解码同一份音频（2× 短 TTS 解码）—— 换取「解析逻辑不进
+ * 组件树」（Caption 不知道 anchor 的存在，渲染顺序零改动）。
+ */
+function useAnchorResolution(manifest: CompositionManifest): { resolved: CompositionManifest | null; errors: string[] } {
+  const refs = anchorRefsOf(manifest.tracks)
+  // hooks 稳定性：同一 manifest 的 ref 集合渲染间恒定（models 锚哪些轨是静态声明）。
+  const needsEnvelope: CaptionTrack[] = []
+  for (const ref of refs) {
+    const track = manifest.tracks.find((t) => t.id === ref)
+    if (track !== undefined && track.type === 'caption' && !Array.isArray(track.words)) {
+      needsEnvelope.push(track)
+    }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- needsEnvelope 随 manifest 派生，长度渲染间稳定
+  const envelopes: Array<number[] | null> = needsEnvelope.map((track) => useEnvelope(track.src))
+  if (refs.length === 0) return { resolved: manifest, errors: [] }
+
+  const timings = new Map<string, readonly PhraseTiming[]>()
+  for (const ref of refs) {
+    const track = manifest.tracks.find((t) => t.id === ref)
+    if (track === undefined || track.type !== 'caption') continue
+    const explicit = explicitWordWindows(track.words, track.text, track.startFrame)
+    if (explicit !== null) {
+      timings.set(ref, groupWordsByPhrase(track.text, explicit))
+      continue
+    }
+    const envelopeIndex = needsEnvelope.indexOf(track)
+    const envelope = envelopeIndex >= 0 ? envelopes[envelopeIndex] ?? null : null
+    if (envelope === null) return { resolved: null, errors: [] } // 解码未就绪（delayRender 闸着）或解码失败
+    const derived = envelopeWordWindows(envelope, track.text, manifest.meta.fps, track.startFrame)
+    if (derived === null) {
+      return { resolved: null, errors: [`anchor 无法解析：轨「${ref}」没有可用的词级 timing（无显式 words 且包络推导失败）。`] }
+    }
+    timings.set(ref, groupWordsByPhrase(track.text, derived))
+  }
+  const { tracks, errors } = applyAnchorResolution(manifest as unknown as Parameters<typeof applyAnchorResolution>[0], timings)
+  if (errors.length > 0) return { resolved: null, errors }
+  return { resolved: { ...manifest, tracks: tracks as CompositionTrack[] }, errors: [] }
+}
+
+export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({ manifest: inputManifest }) => {
   const frame = useCurrentFrame()
-  usePrefetchMedia(manifest)
+  usePrefetchMedia(inputManifest)
+  const { resolved, errors: anchorErrors } = useAnchorResolution(inputManifest)
+  // fail-fast（REQ §4.3）：ref 轨不存在 / 越界 / 无 src —— 渲染体检硬失败，不静默回退 0 帧
+  //（锚错帧的成片 = 时机全错但「渲染成功」，比报错贵得多）。
+  if (anchorErrors.length > 0) {
+    throw new Error(`锚定（anchor）解析失败：${anchorErrors.join('；')}`)
+  }
+  // 词级 timing 就绪前不进入正式渲染（useEnvelope 的 delayRender 闸住首帧拍摄，
+  // 这里只是渲染占位 —— 与预取闸同语义，不产出任何帧）。
+  if (resolved === null) {
+    return <AbsoluteFill style={{ backgroundColor: inputManifest.meta.backgroundColor ?? '#000' }} />
+  }
+  const manifest = resolved
   const hasNativeAudio = manifest.tracks.some((track) => track.type === 'video')
   // R1：字体族在这里解析一次，经 context 下发给所有文本节点（缺省＝随包中文字体）。
   const fontStack = fontFamilyStack(resolveFonts(manifest).defaultFamily)

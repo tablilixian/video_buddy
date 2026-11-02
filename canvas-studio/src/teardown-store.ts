@@ -64,6 +64,15 @@ function teardownDir(root: string): string {
   return join(root, 'teardowns')
 }
 
+/**
+ * 参考视频指纹（teardown_store 与 evidence_grid 共用的唯一实现，不许复制）：
+ * sha1(文件名 | 字节数) 前 12 位 —— 同一份文件拷到任何项目目录指纹不变；
+ * 重编码 / 换码率算新条目（拆解随素材版本走，语义正确）。
+ */
+export async function teardownFingerprintOf(videoPath: string): Promise<{ key: string; videoName: string; videoBytes: number }> {
+  return fingerprintOf(videoPath)
+}
+
 /** 指纹与基础信息：videoPath 必须是已落盘的普通文件（CS-USER-ERR 显式拒收）。 */
 async function fingerprintOf(videoPath: string): Promise<{ key: string; videoName: string; videoBytes: number }> {
   let statResult: Awaited<ReturnType<typeof stat>>

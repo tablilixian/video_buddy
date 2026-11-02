@@ -170,7 +170,7 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   topN: '数值（主色数量 1-16），越界由 execute 钳制',
   // REQ-035（F-06）：grid 模式的行列数与 bbox 的扫描区。都不指向别处产出的对象。
   cols: '数值（亮度网格列数 4-96），越界由 execute 钳制',
-  rows: '数值（亮度网格行数 4-96），越界由 execute 钳制',
+  rows: '数值（行数）：inspect_image 亮度网格 4-96 由 execute 钳制；evidence_grid 网格行数 1-12 由 clampInt 钳制',
   region: '数值矩形（画布百分比中心语义），越界由 execute clamp 到图内',
   // 2026-10-25：sample 模式的逐点取色坐标串（"30,40;50,60"）。越界点由 execute 夹回并标记。
   points: '百分比坐标串（"x,y;x,y"，x/y 中心语义），非法项跳过、越界由 execute 夹回并标记',
@@ -192,6 +192,12 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   videoPath: '绝对路径（参考视频文件），存在性/可读性由 ffmpeg 抽帧实测，无文本占位形态（与 filePath 同判）',
   segments: '结构化拆解段数组（{label,startSec,endSec}），逐项类型由 execute 校验、起止合法性由 verifyTeardown 拒收',
   tolerance: '数值（边界匹配窗口秒，>0），非法取值回落缺省 1.0',
+  // —— REQ-036 C2 evidence_grid（证据网格）——
+  passes: '结构化采样计划数组（{start,end,interval}，秒），逐项形状由 passCellTimes 显式拒收（start<end、interval>0）',
+  columns: '数值（网格列数），越界由 clampInt 钳制（1–12）',
+  cellPx: '数值（单格边长 px），越界由 clampInt 钳制（120–960）',
+  transcriptPath: '绝对路径（ASR 词级转写 JSON），内容由 parseTranscript 形状校验拒收（segments/words 缺项即报错），无文本占位形态',
+  markCuts: '布尔开关（切点红框标记，缺省 true）',
   // —— 复刻提效批四：render_composition 的拆解双闸入参 ——
   timingSegments: '结构化拆解段数组（{label,startSec,endSec,elements?}），形状由 parseTimingSegments 显式拒收（startSec<endSec 逐段校验），elements 非法项过滤',
   // —— 布尔 / 数值：不存在文本占位形态 ——

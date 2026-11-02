@@ -9,6 +9,7 @@ REQ-034（代码驱动合成 / Remotion 路线 B-CSR）的中文兜底字体。*
 |---|---|
 | `noto-sans-sc-400.woff2` | 常规字重子集（0.95MB，4374 字形） |
 | `noto-sans-sc-700.woff2` | 粗体字重子集（0.98MB，4374 字形） |
+| `noto-sans-sc-regular.ttf` | **全量** Regular TTF（10MB，ffmpeg `drawtext` 专用，REQ-036 C2 证据网格）：woff2 子集不被 ffmpeg 识别（无解压支持），drawtext 需要实体字体文件。运行期由 `src/evidence-grid.ts` 按包根解析路径，不参与客户端 `@font-face`。来源同下（`.cache/font-source/` 的同一份源 TTF 原样拷贝，不子集化） |
 | `OFL.txt` | SIL Open Font License 1.1 全文（源字体随附原文，OFL 要求随分发保留） |
 
 族名 = **`Noto Sans SC`**（与 `src/remotion/fonts.ts` 的 `BUNDLED_FONT_FAMILY` 必须逐字一致，

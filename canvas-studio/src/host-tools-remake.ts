@@ -14,6 +14,7 @@ import type { ProjectRegistry } from './projects.js'
 import { throwError } from './error-system.js'
 import { renderTextResult } from './tool-result-text.js'
 import { probeMedia } from './media-probe.js'
+import { generateEvidenceGrid, type SamplingPass } from './evidence-grid.js'
 
 export interface RemakeToolsDeps {
   registry: ProjectRegistry
@@ -70,6 +71,92 @@ export function defineRemakeTools(_deps: RemakeToolsDeps): ReturnType<typeof def
           lines.push('本片无音轨 —— 拆解只看画面节奏，不需要响度对齐。')
         }
         return { text: lines.join('\n') }
+      },
+    }),
+    defineTool({
+      // 第 40 号工具（REQ-036 C2）。
+      name: 'evidence_grid',
+      description:
+        '证据网格（爆款复刻拆解首选）：**一次调用**产出参考视频的「时间标注网格图 + 结构化清单 + 实测画面切换点」。'
+        + '每格烧录实测时间戳；可选叠加该时刻的台词词标签（传 ASR 词级转写 JSON，没有就只出时间戳 —— 能力立即可用）；切点所在格自动红框标记。'
+        + '\n\n**为什么必须用它而不是 inspect_image 逐帧轮询**：逐帧轮询几十次调用才拼出一段的画面变化，而且画面与口播对不上；本工具一次拿到「哪一秒画面长什么样 + 画面切换点」，拆解表直接对着网格填。'
+        + '\n\n**宽窄两级采样**（与 hypit 同思路）：缺省 = 整片概览 1s/格；看到密集段（红框聚集处）→ 第二次调用传 passes 只采那一小段、interval 0.1–0.3s/格。'
+        + '\n\n产物落在跨项目证据目录（teardown_store 同源指纹），路径与结构化清单在返回里，用 write_note 落拆解便签时把页图路径带上。'
+        + '\n\n⚠️ 与 `verify_teardown` 的分工：本工具是**拆解证据**（看画面填表）；verify_teardown 是**回核校验**（表填完后机器比对边界）。两者切点口径同源，但一个不替代另一个。'
+        + '\n\n版权提示：仅用于用户自备参考素材的拆解复刻，复刻产出默认替换原素材。',
+      parameters: {
+        videoPath: { type: 'string' as const, required: true, description: '参考视频绝对路径（已落盘的本地文件）' },
+        passes: {
+          type: 'array' as const,
+          description: '可选：采样计划数组 [{start, end, interval}]（秒）。省略 = 整片概览 1s/格；密集段二次调用只传该区间 + interval 0.1–0.3',
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              start: { type: 'number' as const, description: '起始秒（含）' },
+              end: { type: 'number' as const, description: '结束秒（含，超出片长自动截断）' },
+              interval: { type: 'number' as const, description: '采样间隔秒（0.1–0.3 = 密集档，1 = 概览档）' },
+            },
+          },
+        },
+        columns: { type: 'number' as const, description: '可选：网格列数，缺省 4' },
+        rows: { type: 'number' as const, description: '可选：网格行数，缺省 3' },
+        cellPx: { type: 'number' as const, description: '可选：单格边长 px，缺省 480；要看清细节可到 720' },
+        transcriptPath: { type: 'string' as const, description: '可选：ASR 词级转写 JSON 绝对路径（后台转写服务产物 schema）；提供时每格下方叠加该时刻的台词词标签（词用【】标记 + 前 8 字上下文）' },
+        markCuts: { type: 'boolean' as const, description: '可选：切点所在格红框标记，缺省 true（与 verify_teardown 同一份检测函数）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '页图路径清单 + 实测切点 + 结构化清单位置 + 拆解指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as {
+          videoPath?: unknown; passes?: unknown; columns?: unknown; rows?: unknown
+          cellPx?: unknown; transcriptPath?: unknown; markCuts?: unknown
+        }
+        const videoPath = typeof a.videoPath === 'string' ? a.videoPath.trim() : ''
+        if (videoPath === '' || !videoPath.startsWith(sep)) {
+          throwError('CS-USER-ERR', { message: '缺少 videoPath 或不是绝对路径 —— 参考视频要先落盘（画布上传产物路径即可）。' })
+        }
+        const passes: SamplingPass[] = []
+        if (Array.isArray(a.passes)) {
+          for (const raw of a.passes) {
+            if (typeof raw !== 'object' || raw === null) continue
+            const r = raw as Record<string, unknown>
+            if (typeof r.start !== 'number' || typeof r.end !== 'number' || typeof r.interval !== 'number') continue
+            passes.push({ start: r.start, end: r.end, interval: r.interval })
+          }
+        }
+        const result = await generateEvidenceGrid({
+          videoPath,
+          ...(passes.length > 0 ? { passes } : {}),
+          ...(typeof a.columns === 'number' ? { columns: a.columns } : {}),
+          ...(typeof a.rows === 'number' ? { rows: a.rows } : {}),
+          ...(typeof a.cellPx === 'number' ? { cellPx: a.cellPx } : {}),
+          ...(typeof a.transcriptPath === 'string' && a.transcriptPath.trim() !== '' ? { transcriptPath: a.transcriptPath.trim() } : {}),
+          ...(typeof a.markCuts === 'boolean' ? { markCuts: a.markCuts } : {}),
+          signal: exec.signal,
+        })
+        const pageLines = result.pages.map((p, i) => {
+          const file = result.files[i] ?? ''
+          return `  第 ${p.page + 1} 页（${p.fromSec.toFixed(1)}–${p.toSec.toFixed(1)}s，${p.cellCount} 格）：${result.dir}/${file}`
+        })
+        const cuts = result.cutPoints.length > 0
+          ? `实测画面切换点（${result.cutPoints.length} 处）：${result.cutPoints.map((c) => `${c.toFixed(2)}s`).join('、')}`
+          : '未检出明显画面切换点（长镜头/缓变画面 —— 段落边界按内容节奏划分，回核时 tolerance 收紧）。'
+        return { text: [
+          `✅ 证据网格 ${result.cellCount} 格 · ${result.pages.length} 页（指纹 key=${result.key}${result.transcriptUsed ? ' · 含台词标注' : ''}）：`,
+          ...pageLines,
+          cuts,
+          `结构化清单（每格 时间戳/页/行/列/台词）：${result.dir}/${result.manifestFile}`,
+          '下一步：对照网格填拆解表（六列，见 viral-remake SKILL §1）；密集段（红框聚集处）用 passes 传该区间 + interval 0.1–0.3 二次采样；拆完先 verify_teardown 回核再进映射。',
+        ].join('\n') }
       },
     }),
   ]

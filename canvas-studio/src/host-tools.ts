@@ -33,7 +33,7 @@ import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normaliz
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
 // （读法 `touchedStoryboard` 同处，见 tool-result-text.ts）。
-import { storyboardTouchedNote } from './tool-result-text.js'
+import { renderTextResult, storyboardTouchedNote } from './tool-result-text.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -72,6 +72,7 @@ import { assertH3IrPrompt, prepareH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { defineAudioTools, generateMusicWithVariants } from './host-tools-audio.js'
+import { defineArtifactTools } from './host-tools-artifact.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment } from './audio-cut.js'
@@ -92,8 +93,6 @@ import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
 import { throwError } from './error-system.js'
-// CV-394：纯色底抠透明底（内置 ffmpeg colorkey）—— 生图不吐 alpha 的缺口工具。
-import { alphaDestPath, runImageMatting } from './image-matting.js'
 // B3：拆解回核 —— 拆解表边界 vs 参考视频真实切换点的机器比对（自评 verified 不算证据）。
 import { verifyTeardown, type TeardownSegment } from './teardown-verify.js'
 // 复刻提效批四：Q2/Q3 双闸（render_composition 的 timingSegments 入参解析 + 覆盖核对）
@@ -1084,12 +1083,6 @@ function renderLibraryCreated(_args: unknown, value: unknown): ContentBlock[] {
       + `以后引用它用 \`${v.refHandle}\`：${v.note}\n`
       + '跨项目可用（资产库是全局的）；用户也能在资产库界面里改名 / 试听 / 删除。',
   }]
-}
-
-/** 把文本结果渲染成模型可读的文本块。 */
-function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
-  const v = value as { text: string }
-  return [{ type: 'text', text: v.text }]
 }
 
 /**
@@ -4257,55 +4250,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
       },
     }),
-    defineTool({
-      name: 'image_matting',
-      description:
-        '纯色底图抠透明底（alpha PNG，内置 ffmpeg colorkey）。把「白底/纯色底的产品图、logo、精灵图」转成真透明素材，供 render_composition 的 image 轨直接引用 —— 解决生图模型不吐 alpha 的缺口（甜品复刻会话实测：伪透明拼贴会在成片留棋盘格残边）。'
-        + '用法：生图时提示词固定「纯白背景」（或绿底绿幕）→ 本工具抠掉底色 → 产物 `<原名>-alpha.png` 落同目录，image 轨 src 直接引用。'
-        + '边界：抠的是**单一底色**（相似度阈值），毛发/透明玻璃等软边题材质量一般；复杂底用外部工具处理后 upload_image。key 色支持 white/black/green/magenta/#RRGGBB。',
-      parameters: {
-        filePath: { type: 'string' as const, description: '源图绝对路径（png/jpg/webp；纯色底）' },
-        key: { type: 'string' as const, description: '要抠掉的底色：white / black / green / magenta / #RRGGBB（生图白底场景缺省 white 可不传）' },
-        similarity: { type: 'number' as const, description: '可选：抠取宽度 0–1（与底色多近算命中），缺省 0.28；底色不纯（压缩噪点）提到 0.35–0.5，边缘误伤就降' },
-        blend: { type: 'number' as const, description: '可选：边缘羽化 0–1，缺省 0.12' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            text: { type: 'string' as const, description: '抠图产物路径 + 复查与调参指引' },
-          },
-        },
-        render: renderTextResult,
-      },
-      execute: async ({ filePath, key, similarity, blend }: { filePath?: string; key?: string; similarity?: number; blend?: number }) => {
-        if (typeof filePath !== 'string' || filePath.trim() === '') {
-          throwError('CS-USER-ERR', { message: 'filePath 不能为空：传源图的绝对路径（画布资产或项目资产目录内）', detail: 'empty filePath' })
-        }
-        const srcPath = filePath
-        const destPath = alphaDestPath(srcPath)
-        let result
-        try {
-          result = await runImageMatting({
-            srcPath,
-            destPath,
-            key: typeof key === 'string' && key.trim() !== '' ? key : 'white',
-            similarity: typeof similarity === 'number' ? similarity : undefined,
-            blend: typeof blend === 'number' ? blend : undefined,
-          })
-        } catch (error) {
-          throwError('CS-USER-ERR', { message: error instanceof Error ? error.message : String(error), detail: 'image_matting failed' })
-        }
-        return {
-          text: [
-            `抠图完成：${result.destPath}（${(result.bytes / 1024).toFixed(0)} KB，key=${result.key} similarity=${result.similarity} blend=${result.blend}）`,
-            '下一步：image 轨 src 直接引用产物 PNG；建议用 inspect_image mode:"profile" 核对 colorType=6（RGBA，带 alpha）。',
-            '产物质量自查：把产物叠在任何深色卡上目视边缘 —— 有底色残留就提高 similarity（0.35–0.5），产品被误伤就降低。',
-          ].join('\n'),
-        }
-      },
-    }),
+    // 2026-11-02：素材加工与便签类工具外置到 host-tools-artifact.ts（行数 / 函数跨度双棘轮）。
+    ...defineArtifactTools({ registry, resolveProjectId }),
     defineTool({
       name: 'verify_teardown',
       description:

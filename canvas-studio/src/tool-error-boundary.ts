@@ -28,6 +28,7 @@ import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
+import { assertKnownToolParams, type ToolShapeForParams } from './tool-unknown-params.js'
 import './errors/catalog.js'
 
 /** 结构化错误在工具结果 `error.info` 里的 `name`（客户端据此认出码来自本系统）。 */
@@ -93,6 +94,10 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
   const wrapped: Record<string, unknown> = withPlaceholderParamRule({ ...source }) as Record<string, unknown>
   wrapped.execute = async (args: unknown, exec: unknown): Promise<unknown> => {
     try {
+      // 复刻提效批二：**未知参数先报**（字段名错了，后面的占位/必填检查只会给出
+      // 更误导的结论 ——「缺 manifestPath」其实是因为它写成了 manifestPATH）。
+      // 文案里直接给合法字段清单 + 最小可用调用 + 纠错猜测 = 省掉「读源码定契约」。
+      assertKnownToolParams(source as ToolShapeForParams, args)
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)

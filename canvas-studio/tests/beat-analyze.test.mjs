@@ -124,6 +124,27 @@ test('parseEnvelopeStdout / parseLufs / parseSilenceRanges：ffmpeg 输出解析
   ].join('\n')
   assert.equal(parseLufs(stderr), -14.5)
   assert.equal(parseLufs('no summary'), undefined)
+  // 2026-11-02 甜品复刻真机实测形态：ebur128 每 100ms 往 stderr 打一行进度，**首行是
+  // 前 400ms 无门控块时的 `I: -70.0`**。解析器若「取第一个 I: 匹配」就恒读 -70（该片
+  // 真值 -11.4，在 Summary 段、第 152 个匹配处）。这条 fixture 就是那个形态：进度行在
+  // 前、Summary 在后，两者都带 `I: ... LUFS`。
+  const withProgress = [
+    '[Parsed_ebur128_0 @ 0x7f] t: 0.0998  M: -70.0 S:-120.7     I: -70.0 LUFS  LRA:  0.0 LU',
+    '[Parsed_ebur128_0 @ 0x7f] t: 0.1996  M: -22.4 S: -19.1     I: -22.4 LUFS  LRA:  0.0 LU',
+    '[Parsed_ebur128_0 @ 0x7f] t: 9.5000  M: -12.0 S: -10.8     I: -11.4 LUFS  LRA:  3.9 LU',
+    '[Parsed_ebur128_0 @ 0x7f] Summary:',
+    '',
+    '  Integrated loudness:',
+    '    I:         -11.4 LUFS',
+    '    Threshold: -21.4 LUFS',
+  ].join('\n')
+  assert.equal(parseLufs(withProgress), -11.4, '必须读 Summary 真值，不能被进度行首行 -70 骗到')
+  // 只有进度行、没有 Summary（ffmpeg 中途被杀 / -nostats）⇒ 「未测得」，不拿进度值冒充。
+  assert.equal(
+    parseLufs('[Parsed_ebur128_0 @ 0x0] t: 0.1  M: -70.0 S: -120.7  I: -70.0 LUFS  LRA: 0.0 LU'),
+    undefined,
+    '无 Summary 段 ⇒ undefined，不猜',
+  )
   const silenceStderr = ['[silencedetect @ 0x0] silence_start: 2.41', '[silencedetect @ 0x0] silence_end: 2.6 | silence_duration: 0.19'].join('\n')
   assert.deepEqual(parseSilenceRanges(silenceStderr), [{ start: 2.41, end: 2.6 }])
 })

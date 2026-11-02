@@ -337,7 +337,7 @@ export function heuristicLyrics(
 
 // ────────────────────────────── ffmpeg IO（Host 侧） ──────────────────────────────
 
-import { runFfmpeg, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
+import { parseEbur128IntegratedLufs, runFfmpeg, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -362,13 +362,22 @@ export function parseEnvelopeStdout(stdout: string): LoudnessPoint[] {
   return points
 }
 
-/** 从 ebur128 stderr 的 Summary 解析 Integrated loudness（LUFS）；无 Summary 返回 undefined。 */
-export function parseLufs(stderr: string): number | undefined {
-  const match = /I:\s+(-?\d+(?:\.\d+)?)\s+LUFS/u.exec(stderr)
-  if (match === null) return undefined
-  const value = Number(match[1])
-  return Number.isFinite(value) ? value : undefined
-}
+/**
+ * 从 ebur128 stderr 解析 Integrated loudness（LUFS）；无 Summary 返回 undefined。
+ *
+ * **收口到 `ffmpeg-run.ts` 的 `parseEbur128IntegratedLufs`（唯一实现）**，此处只留别名。
+ *
+ * 为什么改（2026-11-02 甜品复刻真机实测）：本文件原先是「取第一个 `I:` 匹配」，
+ * 而 ebur128 每 100ms 往 stderr 打一行**进度**（`... t: 0.1  M: -70.0 S: -120.7
+ * I: -70.0 LUFS  LRA: 0.0 LU`），首行是前 400ms 无门控块时的 `I: -70.0`。于是
+ * 无论音频多响，这里恒读 **-70 LUFS**（实测该片真值 -11.4，出现在第 152 个匹配、
+ * 也就是 Summary 段）。同期 `ffmpeg-run.ts` 里已经有同一事实的正确实现（行锚
+ * `^\s*I:` 只认 Summary 行 + 取最后一次），两份实现分叉即分叉 —— 收成一份。
+ *
+ * 影响面：`06_sound.bgm.lufs` 回填、拆解表「参考片响度」列。成片侧 Q1 响度闸走
+ * `probeLoudnessLufs`，本来就用正确版本，未受影响。
+ */
+export const parseLufs = parseEbur128IntegratedLufs
 
 /** 从 silencedetect stderr 解析静音区间（与探针口径一致：时间戳是判据）。 */
 export function parseSilenceRanges(stderr: string): Array<{ start: number; end: number | null }> {

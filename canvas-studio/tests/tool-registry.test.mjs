@@ -36,7 +36,8 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // CV-394（2026-11-02）：+image_matting（纯色底抠透明底），35 → 36。
 // B3（2026-11-02）：+verify_teardown（拆解回核），36 → 37。
 // 批四（2026-11-02）：+teardown_store（拆解成果跨项目落库），37 → 38。
-const EXPECTED_TOOL_COUNT = 38
+// 复刻提效批二/三（2026-11-02）：+image_crop（拼贴裁切）、+write_note（过程便签），38 → 40。
+const EXPECTED_TOOL_COUNT = 40
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -49,6 +50,8 @@ const EXPECTED_TOOL_NAMES = [
   'cut_audio',
   'extract_last_frame',
   'image2vl',
+  // 复刻提效批二：拼贴/精灵图裁切（把「模型自写 52 次 PIL 脚本」收回平台）。
+  'image_crop',
   'image_fix',
   'image_generate',
   'image_generate_withtxt',
@@ -81,6 +84,8 @@ const EXPECTED_TOOL_NAMES = [
   'video_generate',
   'video_rerender',
   'write_script',
+  // 复刻提效批三：过程便签（拆解检查点 / 阶段收尾，kind=sticky，可被 list_references 读回）。
+  'write_note',
   'write_storyboard',
 ]
 

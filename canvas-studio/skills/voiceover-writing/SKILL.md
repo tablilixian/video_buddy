@@ -122,6 +122,9 @@ description: 配音生成提示词规范（canvas-studio 的 tts_voiceover / tts
   （`/canvas-studio/assets/...` 或本地绝对路径）——写 `@ref` 或节点 id 会被校验直接拒收。
 - **改词 / 重配**：重新调用 `tts_voiceover` 传 `replaces=<旧音频节点 id>` 原地
   重写（保留节点与血缘），不要堆新卡。
+- **改词不动音色**：`replaces` 重配时只改 `text`，`instruct_prompt` 逐字抄上一版；
+  想调音高/语速走 `pitchSemitones` / `speed`（§六），**别重写 instruct_prompt** ——
+  每重写一次就重新抽一次音色（后端基频极差 45%，已是「换了一个人」）。
 - **逐字正确优先于文采**：配音是念给人听的成品，text 里的每个字都会被念出来。
 
 ## 六、超出音域怎么办（`speed` / `pitchSemitones`，O-09）

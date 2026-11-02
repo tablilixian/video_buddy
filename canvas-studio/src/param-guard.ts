@@ -105,12 +105,19 @@ const HANDLE_PARAMS: readonly string[] = [
   'scriptId',
   'replaces',
   'sourceNodeIds',
+  // 复刻提效批三：write_note 的血缘来源（画布节点 id 数组，同上）。
+  'sourceIds',
   'shotRefs',
   // REQ-022（创意先行）：生成图回写故事板的语义引用（shot 语义 id / look）
   'storyboardRef',
   // P1-2（2026-10-26）：add_to_library 的源画布节点 —— 与 clipIds / bgmNodeId 同类，
   // 合法值只能来自画布上真实存在的节点（模型爱写 `node_1` 这类占位）。
   'nodeId',
+  // 复刻提效批二：image_crop 的源图（项目内绝对路径 / 画布资产 URL —— 同样只能来自
+  // 「别处产出的真实对象」，模型会写 `/path/to/sheet.png` 这类占位路径）。
+  'source',
+  // 复刻提效批二：write_note 的锚点节点（便签落在哪个节点右侧，只能填真实节点 id）。
+  'anchorNodeId',
 ]
 
 /**
@@ -171,6 +178,9 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // `name` 已在「散文串」表里（同名参数跨工具共用一条分类），这里不重复登记，否则三表打架。
   action: '枚举（按工具定义取值域，schema 校验）：layout_table = read / write / clear；teardown_store = save / load / list',
   rect: '数值矩形（画布百分比中心语义），w/h ≤ 0 或越出画布由 normalizeLayoutTable 拒收',
+  // 复刻提效批二：image_crop 的网格定位（rows/cols/row/col 全数值，非文本，不存在
+  // 占位串形态；越界由 gridToRect 显式拒收并给范围）。
+  grid: '数值网格（rows/cols/row/col，从 1 起），非法/越界由 gridToRect 显式拒收',
   note: '自由文本备注（说明这块是什么 / 量自哪张图），不指向别处产出的对象',
   // 2026-10-25：scaffold_manifest 的视觉主题（展开成颜色值，manifest 不存 themeId）。
   theme: '枚举（cold-tech / ink-press / warm-ember / neon-data），未知值回落缺省并在返回文本里明示',

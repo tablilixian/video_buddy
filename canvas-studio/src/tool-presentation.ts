@@ -63,6 +63,10 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   inspect_image: { tier: 'A', title: '图像检测', icon: '析' },
   // CV-394（REQ-036 复刻复盘批）：纯色底抠透明底 —— 生图不吐 alpha 的缺口工具。
   image_matting: { tier: 'A', title: '抠透明底', icon: '抠' },
+  // 复刻提效批二：拼贴裁切 —— 产出独立素材（可直接进生图/抠图/上传）。
+  image_crop: { tier: 'A', title: '裁切素材', icon: '裁' },
+  // 复刻提效批三：过程便签 —— 拆解表 / 映射草案落成画布卡，用户可见可改。
+  write_note: { tier: 'A', title: '写便签', icon: '签' },
   // B3（REQ-036 复刻提效批三）：拆解回核 —— 参考视频实测切换点 ↔ 拆解表边界机器比对。
   verify_teardown: { tier: 'A', title: '拆解回核', icon: '核' },
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },

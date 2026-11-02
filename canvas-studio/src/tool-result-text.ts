@@ -11,6 +11,8 @@
  * 判定与渲染分家后才可单测。
  */
 
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+
 /** 嵌套深度上限：真实形状是 2 层，留出余量但挡住畸形数据里的自引用。 */
 const MAX_DEPTH = 4
 
@@ -81,4 +83,16 @@ export function stripToolErrorPrefix(text: string): string {
   return text.startsWith(TOOL_ERROR_TEXT_PREFIX)
     ? text.slice(TOOL_ERROR_TEXT_PREFIX.length)
     : text
+}
+
+/**
+ * 把 `{ text }` 结果渲染成模型可读的文本块 —— 工具 `output.render` 的通用实现。
+ *
+ * 2026-11-02：从 `host-tools.ts` 的私有函数提到本模块，因为工具定义已按棘轮
+ * （文件行数 / 函数跨度）拆成 `host-tools.ts` + `host-tools-audio.ts` +
+ * `host-tools-artifact.ts` 三处，三处都要用同一份渲染（复制一份就是两份实现）。
+ */
+export function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as { text: string }
+  return [{ type: 'text', text: v.text }]
 }

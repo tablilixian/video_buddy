@@ -44,9 +44,10 @@
     "build": "node scripts/clean.mjs && tsdown && tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.remotion.json",
     "verify:loader": "node scripts/verify-client-loader.mjs",
+    "gen:manifest-fields": "node scripts/gen-manifest-fields.mjs",
     "probe:surface": "tsdown -c scripts/probe/tsdown.probe.config.ts && cp scripts/probe/surface-probe.html /tmp/cs-surface-probe/ && node scripts/probe/drive.mjs",
     "test:smoke": "node scripts/run-smoke.mjs",
-    "check": "yarn run typecheck && yarn run build && yarn run verify:loader && yarn run test:smoke",
+    "check": "yarn run typecheck && node scripts/gen-manifest-fields.mjs --check && yarn run build && yarn run verify:loader && yarn run test:smoke",
     "dev:install": "node scripts/dev-install.mjs",
     "test:smoke:raw": "node --test \"tests/*.test.mjs\""
   },

@@ -13,9 +13,10 @@
  *   `similarity`（抠取宽度）与 `blend`（边缘羽化）都钳制在 0–1，与 colorkey 滤镜语义一致。
  * - 输出固定 PNG（alpha 只有 PNG/WEBP 承载；产物给 image 轨引用，PNG 通用性最好）。
  */
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { throwError } from './error-system.js'
 import { resolveFfmpegPath, runFfmpeg } from './ffmpeg-run.js'
+import { decodePng } from './inspect-image.js'
 
 /** ffmpeg 超时（与 audio-cut 同量级；单图抠图秒级完成，5 分钟是宽裕上限）。 */
 export const MATTING_TIMEOUT_MS = 5 * 60 * 1000
@@ -118,6 +119,140 @@ export async function runImageMatting(
     key,
     similarity: clampUnit(o.similarity, 0.28),
     blend: clampUnit(o.blend, 0.12),
+  }
+}
+
+/**
+ * 抠图产物的**数值自检**（2026-11-02 复刻真机复盘新增）。
+ *
+ * ## 为什么必须要这一层
+ *
+ * 上一版把质量自查写成「把产物叠在深色卡上**目视**边缘」—— 而本项目的创作模型
+ * （deepseek-flash）**没有图像输入**，读图会直接报 `model does not declare image
+ * input`。于是那句指引永远无法执行，模型只能拿着「抠图完成」四个字往下走。
+ * 甜品复刻会话的实际后果：它用「四角 alpha=255 ⇒ 白底没被 key 掉」判本工具失败，
+ * 弃用产物改用自写 alpha 蒙版 —— 而那几张产品图是**圆角白卡**，圆角外侧本来就该
+ * 不透明，判据本身是错的。等于 CV-394 这条验收从来没真正做过。
+ *
+ * ## 判据（都只看数字，不看图）
+ *
+ * - `alphaPct` —— 全透明像素占比。接近 0 = 底色没被 key 掉（key 色或 similarity 不对）；
+ *   接近 100 = 整张被吃掉（产品被误伤，similarity 太高）。
+ * - `keyResiduePct` —— **不透明像素里**仍与 key 色接近的比例 = 残留底色。这是「抠干净
+ *   没有」的正解；四角 alpha 不是（圆角卡的角本来就不透明）。
+ * - `corners` —— 四角 alpha，只作为**辅助线索**：全 255 且 keyResidue 高 ⇒ 底也没抠；
+ *   全 0 ⇒ 透明区太大。
+ * - `colorType` —— 6 = RGBA，确实带 alpha 通道。
+ */
+export interface MattingAudit {
+  width: number
+  height: number
+  /** PNG colorType（6 = RGBA）。 */
+  colorType: number
+  /** 全透明像素占比（%）。 */
+  alphaPct: number
+  /** 不透明像素里与 key 色接近的比例（%）= 残留底色。 */
+  keyResiduePct: number
+  /** 四角 alpha（左上、右上、左下、右下）。 */
+  corners: [number, number, number, number]
+}
+
+/** 与 key 色的容差（每通道）：低于这个差就认为是「同一种底色」。 */
+const KEY_RESIDUE_TOLERANCE = 28
+
+/**
+ * key 色 → [r,g,b]。**必须走 `normalizeKeyColor`**（别名 white/green 也是合法入参，
+ * 只认 `#RRGGBB` 会让「残留底色」永远算成 0 —— 自检就成了永远通过的摆设）。
+ */
+function rgbOfKey(key: string): [number, number, number] | null {
+  const normalized = normalizeKeyColor(key)
+  if (normalized === null) return null
+  const body = normalized.replace(/^0x/u, '')
+  return [parseInt(body.slice(0, 2), 16), parseInt(body.slice(2, 4), 16), parseInt(body.slice(4, 6), 16)]
+}
+
+/**
+ * 审计一张抠图产物。**绝不抛错**：解不开（非 PNG / 数据损坏）返回 `null`，
+ * 由调用方把「自检不可用」如实写进结果，而不是让抠图主流程失败。
+ */
+export function auditMattingPng(bytes: Uint8Array, key: string): MattingAudit | null {
+  try {
+    const decoded = decodePng(bytes)
+    const keyRgb = rgbOfKey(key)
+    const { width, height, rgba } = decoded
+    const total = width * height
+    if (total === 0) return null
+    let transparent = 0
+    let opaque = 0
+    let residue = 0
+    for (let i = 0; i < rgba.length; i += 4) {
+      const alpha = rgba[i + 3] ?? 255
+      if (alpha < 16) {
+        transparent += 1
+        continue
+      }
+      opaque += 1
+      if (keyRgb === null) continue
+      const dr = Math.abs((rgba[i] ?? 0) - keyRgb[0])
+      const dg = Math.abs((rgba[i + 1] ?? 0) - keyRgb[1])
+      const db = Math.abs((rgba[i + 2] ?? 0) - keyRgb[2])
+      if (dr <= KEY_RESIDUE_TOLERANCE && dg <= KEY_RESIDUE_TOLERANCE && db <= KEY_RESIDUE_TOLERANCE) {
+        residue += 1
+      }
+    }
+    const cornerAt = (x: number, y: number): number => rgba[(y * width + x) * 4 + 3] ?? 255
+    return {
+      width,
+      height,
+      colorType: decoded.colorType,
+      alphaPct: (transparent / total) * 100,
+      keyResiduePct: opaque === 0 ? 0 : (residue / opaque) * 100,
+      corners: [cornerAt(0, 0), cornerAt(width - 1, 0), cornerAt(0, height - 1), cornerAt(width - 1, height - 1)],
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 审计磁盘上的抠图产物（`auditMattingPng` 的读盘薄封装）。
+ * 读盘失败 / 非 PNG 一律返回 `null`，不抛。
+ */
+export function auditMattingFile(destPath: string, key: string): MattingAudit | null {
+  try {
+    return auditMattingPng(readFileSync(destPath), key)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 把审计结果翻译成「通过 / 可疑 + 该怎么调」的一句话结论。
+ *
+ * 判据只有三条，且都能给出**可执行的下一步**（不提「目视」—— 模型看不见图）。
+ */
+export function auditVerdict(audit: MattingAudit): { ok: boolean; note: string } {
+  if (audit.alphaPct < 2) {
+    return {
+      ok: false,
+      note: `底色基本没被抠掉（透明率 ${audit.alphaPct.toFixed(1)}%）⇒ key 色选错或 similarity 太小；确认底色确实是 white/black/green，或把 similarity 提到 0.35–0.5 重抠`,
+    }
+  }
+  if (audit.alphaPct > 96) {
+    return {
+      ok: false,
+      note: `几乎整张都被抠掉了（透明率 ${audit.alphaPct.toFixed(1)}%）⇒ 主体与底色太接近，similarity 调小（0.12–0.2）重抠，或改用外部工具处理`,
+    }
+  }
+  if (audit.keyResiduePct > 8) {
+    return {
+      ok: false,
+      note: `不透明区还残留 ${audit.keyResiduePct.toFixed(1)}% 的底色（四角 alpha ${audit.corners.join('/')}）⇒ 提高 similarity（0.35–0.5）或加大 blend 重抠`,
+    }
+  }
+  return {
+    ok: true,
+    note: `抠图干净：透明率 ${audit.alphaPct.toFixed(1)}%、不透明区残留底色 ${audit.keyResiduePct.toFixed(1)}%（阈值 8%）`,
   }
 }
 

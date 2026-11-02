@@ -44,9 +44,13 @@ function agentCwdOf(context: unknown): string | undefined {
  * @returns 空串表示无项目绑定（调用方跳过注入）。
  */
 export function workflowModeSectionText(mode: StudioWorkflowMode, projectsFilePath: string): string {
+  // 2026-11-02 复刻真机复盘：两种模式下**便签都不能省**。上一轮 auto 会话里，
+  // 模型想「落便签给用户过目」却发现没有写便签的工具，纠结 6 轮（11 分钟）后
+  // 自我说服跳过 —— 结果是用户全程看不到中间成果。现在 write_note 有了，模式差异
+  // 只剩「落完是否停」，不再是「落不落」。
   const modeLine = mode === 'auto'
-    ? '- 当前执行模式：auto（放手跑）——除关键帧确认等保留闸口外连续推进；ask_user_choice 不提问、不等待，可自行决定的细节不要打断用户。'
-    : '- 当前执行模式：confirm（逐步确认）——在阶段闸口（需求澄清、故事板落地、关键帧确认等）先用 ask_user_choice 征求用户确认再推进；不要假设可以连续执行到成片。'
+    ? '- 当前执行模式：auto（放手跑）——除关键帧确认等保留闸口外连续推进；ask_user_choice 不提问、不等待，可自行决定的细节不要打断用户。**但阶段成果的便签不能省**：拆解表 / 映射草案 / 关键假设一律用 `write_note` 落成画布便签，落完**直接继续**（不等确认）。便签是用户事后复核的唯一凭据，不要用「我以为你会问」省掉它。'
+    : '- 当前执行模式：confirm（逐步确认）——在阶段闸口（需求澄清、故事板落地、关键帧确认等）先用 ask_user_choice 征求用户确认再推进；不要假设可以连续执行到成片。**阶段成果先 `write_note` 落成画布便签，再停下等用户过目**（便签 + 一句「下一步做什么」就是最好的确认请求，比纯文字提问更可核对）。'
   return `## Canvas Studio 执行模式（本会话绑定的项目）
 
 ${modeLine}

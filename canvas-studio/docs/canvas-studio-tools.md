@@ -82,7 +82,7 @@
 | `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
-### C. 画布 / 流程管控（11 个，不调后端）
+### C. 画布 / 流程管控（12 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -91,6 +91,7 @@
 | `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
+| `write_note` | **过程便签**（REQ-036 复刻提效批三）：把中间成果落成画布 `sticky` 卡（拆解表 / 映射草案 / 素材清单 / 待定项），参数 `title`（≤20 字）+ `text` + `anchorNodeId?`（锚到哪个节点右侧）+ `sourceIds?`（血缘）。`list_references` 的 `notes` 会把它读回来（下一阶段不必重新推理）。**与 `write_script` 的区别**：后者是成片文案（受故事板落地闸、被 compose 当 scriptId 消费），本工具不参与渲染、不受任何闸约束 |
 | `layout_table` | **项目级布局坐标表**（shotcraft 本地化 P0-a，2026-10-25）：`layout.json` 存命名矩形（画布百分比、x/y 中心语义），一次量清「表盘区 / 左栏 / 字幕带 / 安全边」全片复用。`action`: read / write / clear。**工作台不是渲染输入** —— 返回可粘的 `box` 片段，须展开进 manifest |
 | `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON 不落画布**；落画布由用户在「拍摄定稿」覆盖层点「确认落地」 |
 | `adopt_canvas_as_storyboard` | **老项目迁移**（故事板强约束 L4，2026-10-25）：从画布上已有的分镜卡反推 §04 骨架（scene·shot 号 / 时长 / 运镜 / 视觉 / 声音 / 英文 prompt），用项目预置补 `meta`，落 `storyboard.json` 并返回**剩余阻断项**。只还原卡上真有的事实（§02 视觉规范 / §05 角色 / §03 旁白原文拿不到）；**不落画布**，不覆盖已落地项目 |
@@ -109,11 +110,12 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
-### C2. 本地图像检测（1 个，不调后端）
+### C2. 本地图像处理（6 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
 | `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
+| `image_crop` | **拼贴/精灵图裁切**（REQ-036 复刻提效批二）：从整图裁出子图落为**项目资产**（返回 `assetFile` + 绝对路径 + 资产 URL）。`grid`（rows/cols/row/col，**从 1 起**，拼贴首选）与 `rect`（x/y 是**左上角**像素 + w/h）二选一；越界**显式报错**并给源尺寸与最大可用宽高（ffmpeg 的 crop 会静默收进画面，产物「成功」但内容是错的）。返回自带**自证数字**：尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图 —— 模型看不见图也能判断裁对没有。治「拼贴图每格都要独立素材」：上一轮模型自写 52 次 PIL 脚本（占 28% 模型时间）且产物无血缘 |
 | `image_matting` | **纯色底抠透明底**（CV-394，REQ-036 复刻复盘批，内置 ffmpeg colorkey）：把白底/纯色底的产品图、logo、精灵图转成**真 alpha PNG**（产物 `<原名>-alpha.png` 落同目录，image 轨直接引用）。参数：`filePath`（源图绝对路径）+ `key`（white/black/green/magenta/#RRGGBB，缺省 white）+ `similarity`（抠取宽度 0–1，缺省 0.28）+ `blend`（边缘羽化 0–1，缺省 0.12）。标准链路：生图提示词固定「纯白背景」→ 本工具 → inspect_image `mode:"profile"` 核对 colorType=6。背景：生图模型不吐 alpha、伪透明拼贴在成片留棋盘格残边（甜品复刻会话实测）；边界 = 只抠**单一底色**，毛发级软边等后端 matting 端点 |
 | `verify_teardown` | **拆解回核**（REQ-036 复刻提效批三，B3）：ffmpeg 低帧率抽帧（2fps、16×16 均色）实测参考视频的画面切换点，与拆解表段起点 ±tolerance 秒贪心匹配。三态：matched（报实测切换时刻与偏差，>0.3s 提示校准起点）/ unmatched（窗口内无切换，边界可疑）/ extraSwitches（实测有切换但表里没有，疑似漏段/漏镜）。算法纯函数层在 `src/teardown-verify.ts`（与 IO 分离可单测）。纪律：拆解表落定后、进映射前必须过一遍，unmatched 不进映射 —— 甜品会话 v2 拆解自标 verified 但归段错误整片返工的教训 |
 | `teardown_store` | **拆解落库**（REQ-036 复刻提效批四，C4 后半）：把回核通过的拆解表按参考视频**指纹**（sha1(文件名\|字节数) 前 12 位，同文件跨项目指纹不变）存进宿主级跨项目目录 `dshHomePath('canvas-studio')/teardowns/`。三动作 `save` / `load` / `list`；实现层 `src/teardown-store.ts`（root 可注入可单测）。治「换会话 / 换 project dir 知识蒸发」：甜品会话 v1 的拆解/拟合结论随项目目录蒸发，v2 全部重拆还拆错。复用不等于盲用：取回后仍要 verify_teardown 对版。配套：`render_composition` 新增 `timingSegments`（Q2 成片时序回核 + Q3 元素覆盖核对，双闸只警告不阻断） |
@@ -691,6 +693,57 @@ export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResult
 ---
 
 ## 跨工具串联：完整流程
+
+### C10. `image_crop`（REQ-036 复刻提效批二）
+
+**用途**：把一张图里的子区域裁成**独立素材**并登记为项目资产。
+
+**为什么需要**：复刻素材常是拼贴（1280×480 六格），而下游每一条都要独立文件 ——
+生图参考、抠图、上传、单独引用。此前没有裁切工具，模型只能写 PIL/numpy 脚本：
+上一轮真机实测 **52 次**、占全会话模型时间 28.2%，末端用 `shutil.copy` 手搓文件名
+塞 assets（无节点、无血缘、GC 看不见）。
+
+**参数**
+
+| 参数 | 说明 |
+|---|---|
+| `source` | 项目资产目录内**绝对路径**，或画布资产 URL（`/canvas-studio/assets/...`）。跨项目一律拒 |
+| `grid` | `{rows, cols, row, col}`，均分取格，row/col **从 1 起**。拼贴/精灵图首选 |
+| `rect` | `{x, y, w, h}`，像素；x/y 是**左上角**（⚠️ 不是 `inspect_image.region` 的画布百分比中心语义） |
+
+`grid` 与 `rect` **必须给且只给一个**。均分余数归最后一格（1280 分 3 列 = 426/426/428），
+保证多格拼接覆盖整图不留缝。
+
+**返回（自证）**：产物尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图（字符越靠后越亮）。
+判读：四边接近 `#ffffff` = 白底产品区；某边明显偏暗 = 边界切到相邻内容，改 `row/col`
+或 `rect` 重裁。模型没有图像输入，**这组数字就是「裁对没裁对」的唯一证据**。
+
+**与 `sourceRect` 的分工**：同图多格**同屏引用**（一图多轨各取子区域）→ 轨上加
+`sourceRect`；某一格要**独立当素材** → 先 `image_crop`。
+
+**实现**：`src/image-crop.ts`（`gridToRect` / `rectWithin` / `summarizeCrop` 纯函数 +
+`runImageCrop` 可注入 ffmpeg 与探针）。产物经 `saveLocalAssetBytes` 落资产（历史表 + 保护名单），
+中间文件 `crop-tmp-*.png` 由 `finally` 删除。
+
+### C11. `write_note`（REQ-036 复刻提效批三）
+
+**用途**：把中间成果落成画布便签（`kind='sticky'`），用户可见可改，agent 也能读回。
+
+**为什么需要**：上一轮复刻会话跑 173 步、**可见文本 0 块** —— 用户看不到任何中间成果。
+skill 要求「拆解回核后落便签给用户过目」，但当时 38 个工具里**没有能写文本节点的**
+（唯一 `write_script` 是「成片文案」语义且被故事板落地闸锁着，auto 模式下
+`ask_user_choice` 又不提问）。模型搜了 `appendTextNode|createTextNode|noteNode` 未果，
+纠结 6 轮、11 分钟后自我说服跳过。
+
+**参数**：`title`（短标题）、`text`（正文）、`anchorNodeId?`（锚到该节点右侧，不传则落画布最下方）、
+`sourceIds?`（血缘箭头）。
+
+**读回通道**：`list_references` 的 `notes` 段会返回画布上所有 `text`/`sticky`/`prompt` 节点
+（含本工具、`write_script`、分镜表），所以下一阶段不用重新推理上一轮结论。
+
+**纪律**（写进总纲 skill）：每个阶段收尾 = `write_note` 落便签 + 回复里 1–3 行可见文本；
+confirm 模式落完停下等过目，auto 模式落完直接继续（**便签都不省**）。
+
 
 ### 标准图生视频（3 步）
 

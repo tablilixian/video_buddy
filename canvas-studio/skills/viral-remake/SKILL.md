@@ -30,6 +30,9 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
 
 - 用 `inspect_image` 读抽帧画面结构：0.5–1s 一帧起步，切镜密集再加密；转场类型看
   相邻两帧的变化形态。
+- **同参考片已有拆解成果先读再拆**：会话/画布里已有本片的拆解便签或拆解表 → 核对
+  后复用，禁止整表重拆——重拆不但烧时间，还会拆出与上一轮不一致的归段（甜品会话
+  v2 实测教训：v1 拆对了的段落 v2 拆错）。
 - **「元素与动效」列是本表的灵魂**（甜品复刻会话实测教训：只拆版式不拆运动，复刻
   会退化成静态卡轮播）：逐元素回答「**什么在动 / 怎么动（方向·幅度）/ 什么曲线
   （弹跳？渐入？）/ 和谁联动**（如：底部菜单切换 → 商品与标题背景同步换）」。
@@ -49,8 +52,10 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
   产品 / 装饰球星 / 底栏，各自成轨，各配 `animate`（+ `easing`）或 `orbit`。
 - 实拍段/产品演示 → `video` 轨；静帧/产品图 → `image` 轨（`fit: cover/contain/
   kenburns`，kenburns 推近是白嫖节奏感的第一手段）；一张精灵图切多格 → 每格一条
-  轨加 `sourceRect` 百分比子区域；**需要透明底** → 生图提示词固定「纯白背景」→
-  `image_matting` 抠成 alpha PNG（伪透明拼贴会留棋盘格残边）。
+  轨加 `sourceRect` 百分比子区域；**产品/主体要融进场景（透明底）→ 四步工序缺一
+  不可**：生图提示词固定「纯白背景」→ `image_matting` → `inspect_image` 核
+  colorType=6 → alpha PNG 直引进 image 轨（平台已按 hasAlpha 免深底垫底，详见分册
+  §2；伪透明拼贴会留棋盘格残边，实拍照抠不干净就回炉重绘）。
 - 口播/歌词逐字 → `caption` 轨（词级卡拉OK，`src` 挂该句旁白，`tts_voiceover`
   逐句出）；句级字幕条/标题 → `textCard`（`anim` 四种入场动效）；**镂空描边大字**
   （品牌站常态）→ `fx: 'outline'`。
@@ -59,7 +64,8 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
 - 节奏装饰（几何/光效/线条）→ `shape` 轨（9 种形状 × orbit/draw/fx）。
 - **缓动速查**：弹跳/跃入 → `backOut`；柔性滑动 → `spring`；快出缓停 →
   `easeOutCubic`/`easeOutQuart`；淡入 → `easeIn`。**缺省 linear 没有生命感**，
-  每条 animate 都要显式选档（全表在映射分册 §3.5）。
+  每条 animate 都要显式选档（全表在映射分册 §3.5）。**产品跳升/弹入直接套分册
+  §3.6 的实测 preset**（曲线+幅度+时长现成，别现场重推参数）。
 - 转场 11 式全表在映射分册 §3；参考片的转场名对不上就选**视觉最接近**的一式，
   别硬凑名字。
 - 引擎能力与字段疑问查 `code-driven-explainer/references/manifest-contract.md`
@@ -71,6 +77,9 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
   `code-driven-explainer/references/manifest-contract.md`；长片必须走 `manifestPath`。
 - **先 draft 档（480p）出对照版**，对照过了再 standard/high 出正片——复刻片要改
   几轮是常态，别在高清档上烧时间。
+- **改一处先 spot-check 再整片**：`render_composition` 带 `spotFrames:[帧号…]`
+  （≤8 个）只渲关键帧静帧、秒级回图，核对版式/文字/产品呈现后再整片渲——别把整片
+  渲染当「看一眼」的工具（甜品会话 46 次整片渲，大多只为确认几个画面）。
 - 工单队列并发 1：一次只渲一条；修正 = 改 manifest 重渲，不抽卡。
 - 渲染窗口一扇窗只渲一单（连渲稳定性由宿主保证），批量时逐条排队即可。
 
@@ -87,6 +96,10 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
 | 整体观感 | 风格不跑偏（色调/密度/动效强度） |
 
 偏差项按拆解表镜序定位到对应轨道改字段，不要整体重做。
+
+有声片加第六项**响度对齐**：渲染报告 `report.loudnessLufs` 与参考片实测值差
+≤2dB（参考片响度 ebur128 测一次，记进拆解表；复刻会话实测原片 −11.4 / 复刻
+−15.3，差 4dB 没人发现就是缺了这一项）。
 
 ## 5. 批量换装（爆款裂变）
 

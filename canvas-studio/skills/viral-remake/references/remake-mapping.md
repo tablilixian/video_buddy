@@ -41,7 +41,7 @@
 | 「每镜多长」结构数据 | `chart` | `source: 'timeline'` | 从 video 轨真值推导，零手填；与内联数据互斥 |
 | 节奏装饰（几何/光效/线条） | `shape` | `rect / circle / line / gradient / path / arrow / triangle / star / polygon` | 配 `orbit` / `draw` / `fx`（glow/stroke/shadow/blur/maskFade） |
 | 镂空描边大字（品牌站常态） | `textCard` | `fx: 'outline'` | 填充透明 + 奶油白粗描边（描边色 v1 固定；需要别的色 → 自绘素材或后端增强） |
-| 透明底素材 | `image` | 产物 `<原名>-alpha.png` | 生图提示词固定「纯白背景」→ `image_matting`（key 缺省 white）→ inspect_image 核对 colorType=6；**禁止**伪透明拼贴（棋盘格残边） |
+| 透明底素材 | `image` | 产物 `<原名>-alpha.png` | **四步工序（拆解表含产品元素时缺步不许渲）**：① 生图提示词固定「纯白背景，主体居中占画面 60% 以上」→ ② `image_matting`（key 缺省 white）→ ③ `inspect_image` 核对 colorType=6 → ④ alpha PNG 直引 image 轨——引擎按 hasAlpha 跳过深底垫底，透明底真正融入场景。**禁止**伪透明拼贴（棋盘格残边）；实拍照白底抠不干净 → 回到 ① 换 AI 重绘再抠，不要拿 colorkey 啃复杂照片 |
 | BGM 情绪可视化 | `audioViz` | `mode: bars / mirror / line`、`bandSplit` | 参考片有强节拍感时加；`bandSplit` 六频段分色 |
 
 ### 2.5 硬边界：每个会动的元素 = 一条独立轨
@@ -86,6 +86,28 @@
 | 缓入（淡出、渐隐先行） | `easeIn` / `easeInCubic` | 元素离场 |
 | 往复 | `easeInOutCubic` / `easeInOutExpo` | 来回移动、呼吸缩放 |
 | 匀速机械感 | `linear` | 仅传送带/扫描线类机械运动；**人物/产品/标题禁用** |
+
+### 3.6 产品跳升 preset（实测配方，直接套用）
+
+参考片最常见的产品主动画：产品从画面底部跳升到画面中央。甜品复刻会话对原片
+45 步逐帧实测拟合出的参数，**直接套用，不要现场重推**：
+
+| 参数 | 值 |
+|---|---|
+| 位移 | `from.y ≈ 85–95`（0–100 垂直中心口径，起于画面底部）→ `to.y: 50` 居中落位 |
+| 时长 | 12–18 帧（0.4–0.6s）；快节奏卡点取 12，常规段落取 15–18 |
+| 缓动 | `easeOutCubic` —— 前 3 帧完成约 63% 位移的「快起长尾」，与原片手感一致 |
+| 落位 | 到位即静止；拆解表写明「跳一下」才换 `backOut` |
+| 联动 | 与背景换色轨、标题入场轨**同一 `startFrame` + 同 easing 家族**同时发生 |
+
+manifest 片段（image 轨）：
+
+```json
+"animate": { "from": { "y": 90 }, "to": { "y": 50 }, "startFrame": 0, "durationInFrames": 15, "easing": "easeOutCubic" }
+```
+
+变体：菜单切换联动 → 每段产品各自一条轨、同 startFrame 跳升；多产品逐个入场 →
+错峰 2–3 帧起步（除非拆解表写明「逐个入场」，否则保持同帧同时感）。
 
 ## 4. 时长与节奏 → manifest 骨架
 

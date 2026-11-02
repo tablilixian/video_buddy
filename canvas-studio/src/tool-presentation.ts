@@ -69,6 +69,10 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   write_note: { tier: 'A', title: '写便签', icon: '签' },
   // B3（REQ-036 复刻提效批三）：拆解回核 —— 参考视频实测切换点 ↔ 拆解表边界机器比对。
   verify_teardown: { tier: 'A', title: '拆解回核', icon: '核' },
+  // REQ-036 复刻客户端能力批（2026-11-03）：探针 / 网格 / 下载三件套。
+  media_probe: { tier: 'A', title: '媒体探针', icon: '探' },
+  evidence_grid: { tier: 'A', title: '证据网格', icon: '证' },
+  download_video: { tier: 'A', title: '视频下载', icon: '载' },
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
   // 故事板强约束 L4（2026-10-25）：老项目迁移，从画布已有分镜卡反推故事板骨架。
   adopt_canvas_as_storyboard: { tier: 'A', title: '反推故事板', icon: '溯' },

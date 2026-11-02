@@ -42,8 +42,11 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SKILLS_DIR = join(ROOT, 'skills')
 
-/** 本仓真实注册的工具表来源。占位工具已逐个转真或下线，故一并从源码取。 */
-const TOOL_SOURCES = ['host-tools.ts', 'skills/placeholder-tools.ts']
+/** 本仓真实注册的工具表来源。占位工具已逐个转真或下线，故一并从源码取。
+ *  2026-11-02 复刻提效批把工具外置到 host-tools-artifact.ts（image_crop/write_note/image_matting），
+ *  2026-11-03 复刻客户端能力批外置到 host-tools-remake.ts（media_probe/evidence_grid/download_video）
+ *  —— 外置后 host-tools.ts 源文本里不再有这些名字，本表必须跟着注册面走（上批遗留修正）。 */
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {

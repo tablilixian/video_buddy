@@ -26,6 +26,8 @@ import {
 } from '../anchor.js'
 import type { CompositionManifest, CompositionTrack, CaptionTrack } from '../manifest.js'
 import { duckWindowsFromSubtitles, lookStyles, trackTransitionWindows, transitionOverride } from '../timing.js'
+import { throwError } from '../../error-system.js'
+import '../../errors/catalog.js'
 import { useEnvelope } from './audio-envelope.js'
 import { AudioTrack } from './AudioTrack.js'
 import { AudioViz } from './AudioViz.js'
@@ -230,7 +232,7 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
   // fail-fast（REQ §4.3）：ref 轨不存在 / 越界 / 无 src —— 渲染体检硬失败，不静默回退 0 帧
   //（锚错帧的成片 = 时机全错但「渲染成功」，比报错贵得多）。
   if (anchorErrors.length > 0) {
-    throw new Error(`锚定（anchor）解析失败：${anchorErrors.join('；')}`)
+    throwError('CS-USER-ERR', { message: `锚定（anchor）解析失败：${anchorErrors.join('；')}`, detail: 'anchor resolution failed' })
   }
   // 词级 timing 就绪前不进入正式渲染（useEnvelope 的 delayRender 闸住首帧拍摄，
   // 这里只是渲染占位 —— 与预取闸同语义，不产出任何帧）。

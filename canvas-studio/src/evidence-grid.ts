@@ -27,10 +27,12 @@
  * 前者直接单测，后者走真 ffmpeg E2E。
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+// AR-03：JSON 状态档一律原子写（裸 writeFile 中断会留半截 JSON）。
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import {
   colorDistances,
   extractFrameColors,
@@ -526,10 +528,10 @@ export async function generateEvidenceGrid(options: EvidenceGridOptions): Promis
     if (hit !== null) cell.label = labelOfWord(hit)
   }
   const manifestFile = 'evidence-grid.json'
-  await writeFile(
+  await writeFileAtomic(
     join(dir, manifestFile),
     `${JSON.stringify({ key, videoPath, cutPoints, columns, rows, cellPx, pages, cells }, null, 2)}\n`,
-    'utf8',
+    { mode: 0o600, dirMode: 0o700 },
   )
 
   return {

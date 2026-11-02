@@ -29,6 +29,8 @@
  * `resolveAnchor` 只吃这个结构 —— 纯函数，Host tsconfig 可测。
  */
 import { isSpokenChar, wordTimingFromEnvelope, type WordTimingWindow } from './word-timing.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /** manifest 事件（animate / draw / colorShift）上的可选锚字段。 */
 export interface TrackAnchor {
@@ -154,9 +156,10 @@ export function resolveAnchor(
   const at = options.at ?? 'anchor'
   const phrase = phraseTimings[anchor.phrase]
   if (phrase === undefined) {
-    throw new Error(
-      `${at} 的 anchor 越界：ref「${anchor.ref}」共 ${phraseTimings.length} 句，phrase=${anchor.phrase} 不存在（句索引 0 起）。`,
-    )
+    throwError('CS-USER-ERR', {
+      message: `${at} 的 anchor 越界：ref「${anchor.ref}」共 ${phraseTimings.length} 句，phrase=${anchor.phrase} 不存在（句索引 0 起）。`,
+      detail: 'anchor phrase out of range',
+    })
   }
   let start: number
   let end: number
@@ -164,16 +167,20 @@ export function resolveAnchor(
     const first = phrase.words[0]
     const last = phrase.words[phrase.words.length - 1]
     if (first === undefined || last === undefined) {
-      throw new Error(`${at} 的 anchor 越界：ref「${anchor.ref}」phrase=${anchor.phrase} 没有可锚的词窗口。`)
+      throwError('CS-USER-ERR', {
+        message: `${at} 的 anchor 越界：ref「${anchor.ref}」phrase=${anchor.phrase} 没有可锚的词窗口。`,
+        detail: 'anchor phrase has no word windows',
+      })
     }
     start = first.start
     end = last.end
   } else {
     const word = phrase.words[anchor.word]
     if (word === undefined) {
-      throw new Error(
-        `${at} 的 anchor 越界：ref「${anchor.ref}」phrase=${anchor.phrase} 共 ${phrase.words.length} 个口播字，word=${anchor.word} 不存在（词索引 0 起）。`,
-      )
+      throwError('CS-USER-ERR', {
+        message: `${at} 的 anchor 越界：ref「${anchor.ref}」phrase=${anchor.phrase} 共 ${phrase.words.length} 个口播字，word=${anchor.word} 不存在（词索引 0 起）。`,
+        detail: 'anchor word out of range',
+      })
     }
     start = word.start
     end = word.end

@@ -378,6 +378,16 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  {
+    name: 'brand-format-director',
+    title: '品牌宣传编排',
+    summary: '品牌宣传体裁的 L2 编排壳：素材现实定向 + 链路路由，分派给下游品牌 executor。',
+    category: 'format',
+    icon: 'compass',
+    hue: 330,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',

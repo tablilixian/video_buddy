@@ -86,7 +86,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | teardown_store | **拆解落库**（REQ-036 复刻提效批四，C4 后半）：把回核通过的拆解表按参考视频指纹（文件名+字节数）存进宿主级跨项目目录 —— 换会话 / 换 project dir 不再蒸发（甜品会话实测：v1 拆对的段落 v2 全部重拆还拆错）。三动作：`save`（回核通过后落库）/ `load`（**拆解前先查**，命中即核对复用、禁止整表重拆）/ `list`。复用不等于盲用：取回后仍要 verify_teardown 对版 | action（save/load/list）、videoPath（save/load 必传，绝对路径）、segments?（save 必传，≥2 段）、note?（一句话沉淀，load 时随拆解取回） |
 | media_probe | **媒体探针**（REQ-036 C3，CV-397）：一条命令摸清本地媒体真实参数——时长（秒）/ 分辨率 / fps / 音轨数 / 容器 / **综合响度 LUFS**。拆解表头部真值与响度对齐的硬数据都从这来（请求 5s 实测 5.167s 一类声明值偏差，先探再填）；复刻片响度对齐 = 参考片渲前探一次、成片渲后对 `report.loudnessLufs`，差 >2 LUFS 调音量重渲。**不要临场拼 ffmpeg 命令——本工具是唯一入口** | videoPath（媒体文件绝对路径，音频同样可探） |
 | evidence_grid | **证据网格**（REQ-036 C2，CV-398）：一次调用产出参考视频「时间标注网格图 + 结构化清单 + 实测画面切换点」，每格烧录实测时间戳、切点所在格红框标记。**拆解首选——替代 inspect_image 逐帧轮询**：缺省整片 1s/格概览，红框密集段二次调用传 `passes` 密采（interval 0.1–0.3s/格）。与 verify_teardown 分工：本工具是**拆解证据**（看切点填表），verify_teardown 是**回核校验**（表填完后机器比对边界） | videoPath（参考视频绝对路径）、passes?（[{start,end,interval}] 秒）、columns?（网格列数，缺省 4）、transcriptPath?（ASR 词级转写 JSON 绝对路径，提供时每格叠台词词标签） |
-| download_video | **参考视频落盘**（REQ-036 C1，CV-399）：抖音 / B站 / YouTube 白名单链接 → yt-dlp 下载，产物落画布素材区（画布视频节点 + assetPath），assetPath 直接喂 media_probe / evidence_grid / verify_teardown 抽帧链路。用户发链接说「复刻这条 / 拆解这条」**先调它落盘再进拆解**，不要让用户自己导出文件。边界（如实转告）：登录态 / 会员内容 / 直播流 / 白名单外站点不支持，让用户自备文件；首次调用按需下载 yt-dlp 组件（版本钉死 + sha256 复检，约 30MB 一次，之后复用） | url（视频页链接，含抖音/B站短链）、expectedDurationSec?（期望时长校验，防错下成图集 / 短预告 / 合集） |
+| download_video | **参考视频落盘**（REQ-036 C1，CV-399；CV-405 起产物自动标参考）：抖音 / B站 / YouTube 白名单链接 → yt-dlp 下载，产物落画布素材区（画布视频节点 + assetPath）并**自动标为参考素材**（`referenceRole:"source"`，素材托盘可见、可直接引用），assetPath 直接喂 media_probe / evidence_grid / verify_teardown 抽帧链路。用户发链接说「复刻这条 / 拆解这条」**先调它落盘再进拆解**，不要让用户自己导出文件。边界（如实转告）：登录态 / 会员内容 / 直播流 / 白名单外站点不支持，让用户自备文件；首次调用按需下载 yt-dlp 组件（版本钉死 + sha256 复检，约 30MB 一次，之后复用） | url（视频页链接，含抖音/B站短链）、expectedDurationSec?（期望时长校验，防错下成图集 / 短预告 / 合集） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
 | look_card | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入；**不调后端**（样张由 image_generate 出）；`Look · ` 前缀自动补、**同名整体覆盖** | name（短名，如「雨夜霓虹」）、lockedPrompt（5 行 `色彩：`…`节奏：`）、referenceFilename?（锚点：`@ref[节点标题]` / 节点 id / 文件名；缺省=纯文字注入，不占参考位）、negativePrompt? |
@@ -157,3 +157,11 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 **IR 预检的模式按「图片数量」判，不按素材角色（CV-156）**：本地预检只看数量 —— 1 图 = 首帧 I2VA（即 `<Picture 1>`）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `<Picture N>`，位次 = `filenames` 顺序）；带 `audioRefs` 一律 Ref2VA。而 `h3-prompt-writing` 是按**素材角色**判模式，**两者必须一致**。**最典型的错位**：想「风格参考 + 首帧」于是写 Ref2VA 六段式，却只传了 2 图 → 工具解成 FL2VA → 预检报一串「段名混用 / 缺段 / 对齐行不符」（全是派生症状）。**正解是拆两步**（互斥约束使然）：先用风格参考出关键帧（`image_generate`），再把该关键帧**单图**走 I2VA。预检报错文案会直接点出这层真因，照它给的出路改即可。
 
 供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；视频画幅只有 16:9（横屏）/ 9:16（竖屏）两档，两家都只收这两个（方形 1:1 仅图片类工具可用，视频工具传 1:1 会被参数校验拒绝）；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。
+
+## 参考素材登记（REQ-037/CV-405，用户回看自己参考的唯一账面）
+
+**为什么**：用户上传 / 发链接给的参考素材，过去只在对话里存在——画布落了也看不见（静默落卡）、故事板不登记，用户想回看时「没地方看」（2026-11-03 实测立项）。三条口径：
+
+1. **凡用户提供的参考素材，一律登记进故事板 §07**：`write_storyboard` 的 `assets` 段写 `{"name":"<素材名>","type":"image|video|audio|text","status":"ready","ref":{"kind":"canvasNode","id":"<画布节点id>"},"source":"user"}`。链接下载（`download_video`）与上传附件的画布节点都已就位，登记只是写一条引用；**口述的文字参考先落便签节点（`write_note`）再引用**。漏登 = 用户在故事板找不到自己给的素材。
+2. **节点已标参考身份的直接引用**：`download_video` 产物与上传图片自动带 `isReference`，`list_references` / 素材托盘能查到节点 id，不要凭记忆手写 id。
+3. **§07 是引用不是副本**：不要把素材内容抄进 §07，也不要为登记重传文件；素材本身永远以画布节点为唯一事实源。

@@ -3689,7 +3689,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","facesVisible"? true,"backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词。**`facesVisible:false` 只给微距 / 背影 / 空镜**：它会让 `qc_shot` 跳过外貌核对，不要拿它掩盖「该露脸却没露脸」）'
         + '\n- characters：[{"id":"C1","label":"ROLE A","name":"苏婉","tags":["女","26岁"],"profile":{"temperament":"…","face":"…","costume":"…"},"palette":{"base":"…","accent":"…"},"appearsIn":["S1"],"gen":{"lockedPrompt":"英文冻结主体段","negativePrompt":"…"}}]（profile 人读；gen 机读、要落画布，**lockedPrompt 必填**）'
         + '\n- sound：{"bgm":{"bpm":52,"lufs":-16,"sidechain":"1.5–3kHz 避让人声"},"sfx":["雨声床"]}'
-        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending|waived","ref":{"kind":"canvasNode|file","id":"…"},"neededBy":["S1-Sh1"],"source":"generated|user|library|stock"}]}（**只存引用不存副本**。`neededBy` = 这条素材服务哪些 shot，空表示全片通用；`source` = 去哪儿拿。**`status:"pending"` 会阻断落地** —— 先备齐再动手；确实不要了就标 `"waived"`，那是唯一的「放弃」写法）'
+        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending|waived","ref":{"kind":"canvasNode|file","id":"…"},"neededBy":["S1-Sh1"],"source":"generated|user|library|stock"}]}（**只存引用不存副本**。`neededBy` = 这条素材服务哪些 shot，空表示全片通用；`source` = 去哪儿拿。**`status:"pending"` 会阻断落地** —— 先备齐再动手；确实不要了就标 `"waived"`，那是唯一的「放弃」写法。**用户提供的参考素材必须登记**（REQ-037/CV-405）：用户上传 / 链接下载（download_video 产物）的素材一律写一条 `source:"user"`、`ref:{kind:"canvasNode",id:<节点id>}`、`status:"ready"`——这是用户在故事板里回看自己参考的唯一位置，漏登 = 用户找不到自己给的素材；口述的文字参考先落便签节点再引用）'
         + '\n- constraints：{"constraints":["每个 shot prompt 只保留一个 camera motion 动词"]}'
         + '\n\n语义 ID（S1 / S1-Sh1 / C1 / V1）**一次铸造、永不复用**；改了内容不要改已有 ID，只增不重排。',
       parameters: {
@@ -3702,7 +3702,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         characters: { type: 'string' as const, description: '可选 JSON：角色设定数组（人读 profile 与机读 gen 分离）' },
         sound: { type: 'string' as const, description: '可选 JSON：声音设计（BGM 参数 + 音效点）' },
         facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
-        assets: { type: 'string' as const, description: '可选 JSON：素材采购单（只存引用）。**`status:"pending"` 会阻断落地**（先备齐再动手）；每条可写 `neededBy`（服务哪些 shot）与 `source`（generated/user/library/stock）；确实不要的标 `"waived"`' },
+        assets: { type: 'string' as const, description: '可选 JSON：素材采购单（只存引用）。**`status:"pending"` 会阻断落地**（先备齐再动手）；每条可写 `neededBy`（服务哪些 shot）与 `source`（generated/user/library/stock）；确实不要的标 `"waived"`。**用户上传 / 链接下载的参考素材必须以 `source:"user"` + 画布节点引用登记进来**（用户在故事板回看参考的唯一位置）' },
         constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
         awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容）。**confirm 模式**：阻断项清零后 Host 自动结束你的回合、把裁决权交给覆盖层；**auto 模式：阻断项清零后 Host 立即自动落地**（画布出现分镜卡、直接进产出阶段，此后不能再整体重写故事板）。有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
       },

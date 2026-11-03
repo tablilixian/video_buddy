@@ -171,7 +171,7 @@ export function defineRemakeTools(deps: RemakeToolsDeps): ReturnType<typeof defi
       name: 'download_video',
       description:
         '视频页链接 → 参考视频落盘（爆款复刻前置步）：支持**抖音 / B站 / YouTube**（v1 白名单，其他站点明确报错）。'
-        + '产物落**画布素材区**（项目资产 + 画布视频节点，与 upload_image 落盘形态一致），返回的 assetPath 可直接喂 media_probe / evidence_grid / verify_teardown / inspect_image 抽帧链路。'
+        + '产物落**画布素材区**（项目资产 + 画布视频节点，与 upload_image 落盘形态一致）并**自动标为参考素材**（素材托盘可见、可直接登记进故事板 §07），返回的 assetPath 可直接喂 media_probe / evidence_grid / verify_teardown / inspect_image 抽帧链路。'
         + '\n\n**什么时候用**：用户发来一条链接说「复刻这条 / 拆解这条」—— 先下载落盘再进拆解，不要让用户自己去导出文件。'
         + '\n\n⚠️ 边界（如实转述给用户）：① 不支持登录态/会员内容（需登录的视频直接报错，让用户自备文件）；② 不做直播流与合集批量；③ 单条视频默认 120s 下载超时。'
         + '\n\n版权提示：仅用于用户自备参考素材的拆解复刻，复刻产出默认替换原素材。'
@@ -230,6 +230,10 @@ export function defineRemakeTools(deps: RemakeToolsDeps): ReturnType<typeof defi
                 origin: 'agent',
                 sourceIds: [],
                 operationType: 'import',
+                // REQ-037/CV-405：链接下载的参考视频默认就是「参考素材」——
+                // 不标身份就进不了素材托盘与 §07 引用链，用户回看无处可寻（立项痛点）。
+                isReference: true,
+                referenceRole: 'source',
                 generationPrompt: JSON.stringify({ sourceSite: payload.sourceSite }),
               }
               await registry.appendCanvasNode(projectId, node)
@@ -241,7 +245,7 @@ export function defineRemakeTools(deps: RemakeToolsDeps): ReturnType<typeof defi
         const audio = result.hasAudio ? '含音轨' : '无音轨'
         return { text: [
           `✅ 已从${SITE_LABELS[result.source]}下载参考视频（${result.durationSec.toFixed(1)}s${size} · ${audio}）：`,
-          `  画布节点 id=${result.nodeId}（用户在画布上可见，可 @ref 引用）`,
+          `  画布节点 id=${result.nodeId}（已标为参考素材，素材托盘与 @ref 可见可用）`,
           `  资产路径：${result.assetPath}`,
           `下一步：media_probe 探时长/响度 → evidence_grid 出证据网格开始拆解（viral-remake SKILL §1）。`,
         ].join('\n') }

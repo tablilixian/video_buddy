@@ -318,10 +318,10 @@ export interface StudioCanvasNode {
    * 视频路由可从 toolName（video_generate / video_composite）直接读。
    */
   routeModel?: string
-  /** 是否为可复用参考图（参考托盘与 list_references 的来源）。 */
+  /** 是否为可复用参考素材（参考托盘与 list_references 的来源；REQ-037 起不限图片）。 */
   isReference?: boolean
-  /** 参考图角色：决定 agent 选用哪个生成工具与强度（Runway 式分类）。 */
-  referenceRole?: 'image' | 'character' | 'style' | 'frame'
+  /** 参考素材角色：决定 agent 选用哪个生成工具与强度（Runway 式分类；`source` = 用户提供的源参考，REQ-037/CV-405）。 */
+  referenceRole?: 'image' | 'character' | 'style' | 'frame' | 'source'
   /** 参考强度 0–1（对应 Runway 参考强度滑块；1=强保真）。 */
   referenceStrength?: number
   /**

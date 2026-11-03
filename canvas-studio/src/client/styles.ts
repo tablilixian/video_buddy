@@ -5119,6 +5119,45 @@ button.csNodeHeadAlert:hover {
   max-height: 12em;
   overflow-y: auto;
 }
+/* REQ-037/CV-407：项目内「待落画布」条（附件暂存 → 点击落卡）。 */
+.csPendingLanding {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 12px 6px;
+  padding: 6px 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csPendingLandingLabel {
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.csPendingLandingChip {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-fill-l1, rgba(127, 127, 127, 0.15));
+}
+.csPendingLandingButton {
+  margin-left: auto;
+  padding: 3px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+.csPendingLandingButton:hover {
+  border-color: var(--dsw-alias-label-primary);
+}
 .csReferenceList {
   display: flex;
   flex-direction: column;

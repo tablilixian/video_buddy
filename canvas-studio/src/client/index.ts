@@ -71,7 +71,7 @@ import { ToolCallRow } from './ToolCallRow.js'
 import { TOOLVIEW_KEYS } from '../tool-presentation.js'
 // CV-261：首页暂存的文件侧（File 登记表 + 取出/回收）。展示事实在 store 的
 // `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
-import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from './lobby-stash.js'
+import { dismissLobbyStashItem, LOBBY_LAND_STASH_EVENT, releaseLobbyStash, stashLobbyFiles, takeLobbyStashFiles } from './lobby-stash.js'
 import { classifyFile, type MediaKind } from '../media-extension.js'
 import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -620,16 +620,42 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   const divertAttachments = async (
     files: readonly File[],
     text: string,
-    signal?: AbortSignal,
+    _signal?: AbortSignal,
   ): Promise<string | undefined> => {
     if (files.length === 0) return undefined
     const projectId = resolveActiveProjectId()
     if (projectId === null) return undefined
-    const { tokens } = await landStudioFiles(projectId, files, signal)
-    if (tokens.length === 0) return text.trim() === '' ? undefined : text
-    const tokenText = tokens.join(' ')
-    return text.trim() === '' ? tokenText : `${text}\n${tokenText}`
+    // REQ-037/CV-407（2026-11-03 拍板，反转 2026-09-05「附件自动标参考落卡」）：
+    // 项目内附件**发送时不再自动落卡**——登记进暂存（复用 lobbyStash 机制，文件本体
+    // 留在 lobby-stash 的模块级表），用户点「待落画布」条的「落进画布」才落
+    // （走 landLobbyStash，与首页暂存同一落卡链路）。正文追加占位说明：agent 必须
+    // 知道「附件存在但未落卡」，产线要用时先提醒用户点击，不要假装可用。
+    const result = stashLobbyFiles(files, storeInstance.actions)
+    const notes: string[] = []
+    if (result.accepted > 0) {
+      notes.push(
+        `（${String(result.accepted)} 个附件已暂存、尚未落画布：${result.acceptedNames.join('、')}。`
+        + '需要用作生成素材时，先提醒用户点画布上方「待落画布」条里的「落进画布」；'
+        + '落卡后用 list_references 可查到节点 id。）',
+      )
+    }
+    if (result.unknown.length > 0) {
+      notes.push(`（${String(result.unknown.length)} 个附件未收——类型不支持：${result.unknown.join('、')}）`)
+    }
+    if (result.oversized.length > 0) {
+      notes.push(`（${String(result.oversized.length)} 个附件未收——超过限额：${result.oversized.join('、')}）`)
+    }
+    if (notes.length === 0) return text.trim() === '' ? undefined : text
+    const noteText = notes.join('\n')
+    return text.trim() === '' ? noteText : `${text}\n${noteText}`
   }
+  // REQ-037/CV-407：「落进画布」按钮（StudioFrame 待落画布条）→ 消费暂存。
+  // 与 lobby-stash 其它跨树事件同一套 window 约定（组件树与本文件没有可传递
+  // props 的路径）；landLobbyStash 自带「失败件留在清单」语义，落成即从条上消失。
+  window.addEventListener(LOBBY_LAND_STASH_EVENT, () => {
+    const projectId = storeInstance.getSnapshot().selectedProjectId
+    if (projectId !== null) void landLobbyStash(projectId)
+  })
   /**
    * CV-261：首页暂存素材 → 落画布。返回要追加进正文的 `@ref` 串（无暂存 / 全失败 = 空串）。
    *

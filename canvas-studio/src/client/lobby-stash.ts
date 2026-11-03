@@ -57,6 +57,8 @@ const newStashId = (): string =>
 export interface LobbyStashResult {
   /** 真正登记进暂存的条目数（0 表示这一批一件都没收）。 */
   accepted: number
+  /** 真正登记进暂存的文件名（顺序同文件批；REQ-037/CV-407 占位说明要用）。 */
+  acceptedNames: readonly string[]
   /** 扩展名不在四类白名单内（与 `classifyFile` 同一判据）。 */
   unknown: readonly string[]
   /** 在白名单内但超过该类限额（已带上「哪一类、上限多少」）。 */
@@ -76,6 +78,7 @@ export function stashLobbyFiles(
 ): LobbyStashResult {
   const unknown: string[] = []
   const oversized: string[] = []
+  const acceptedNames: string[] = []
   const accepted: LobbyStashItem[] = []
   for (const file of fileList) {
     const kind = classifyFile(file.name)
@@ -89,6 +92,7 @@ export function stashLobbyFiles(
     }
     const id = newStashId()
     files.set(id, file)
+    acceptedNames.push(file.name)
     accepted.push({
       id,
       kind,
@@ -99,7 +103,7 @@ export function stashLobbyFiles(
     })
   }
   if (accepted.length > 0) actions.stashLobbyFiles(accepted)
-  return { accepted: accepted.length, unknown, oversized }
+  return { accepted: accepted.length, acceptedNames, unknown, oversized }
 }
 
 /** 摘掉一条暂存：丢掉文件句柄 + 落 store（预览 URL 由 `releaseLobbyStash` 统一回收）。 */
@@ -174,6 +178,13 @@ export const LOBBY_STASH_FILES_EVENT = 'cs-lobby-stash-files'
 
 /** 「资产库」来源项选中 → StudioFrame 打开资产库浮层。 */
 export const LOBBY_OPEN_LIBRARY_EVENT = 'cs-lobby-open-library'
+
+/**
+ * REQ-037/CV-407：「落进画布」按钮（项目内待落画布条）→ index.ts 消费暂存
+ * （`landLobbyStash`，落卡 + @ref 回执）。组件树与 index.ts 没有可传递 props 的
+ * 路径，沿用本模块的 window 自定义事件约定。
+ */
+export const LOBBY_LAND_STASH_EVENT = 'cs-lobby-land-stash'
 
 /** 人类可读的限额（MB / KB；超限文案用）。 */
 function formatLimit(kind: MediaKind): string {

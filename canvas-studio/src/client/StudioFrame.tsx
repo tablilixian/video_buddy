@@ -36,6 +36,8 @@ import { ImageZoomModal } from './canvas/ImageZoomModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu, CanvasEdgeCreateMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
+// REQ-037/CV-407：项目内「待落画布」条的落卡事件（index.ts 侧消费暂存）。
+import { LOBBY_LAND_STASH_EVENT } from './lobby-stash.js'
 import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo, resolveStudioRefs } from './api.js'
 import type { ResolveRefItem } from '../contracts/reference.js'
 import { classifyFile, MEDIA_KIND_LABEL, type MediaKind } from '../media-extension.js'
@@ -431,6 +433,9 @@ export function StudioFrame(props: StudioFrameProps) {
     getRenderPreviewSnapshot,
   )
   const projects = useStudio(store => store.projects)
+  // REQ-037/CV-407：暂存清单（项目内复用首页 lobbyStash 机制——附件发送时只暂存
+  // 不落卡，「落进画布」按钮消费它；首页态的展示与消费在 LobbyStashBar）。
+  const pendingStash = useStudio(store => store.lobbyStash)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
   const groups = useStudio(store => store.groups)
   const selectedProjectId = useStudio(store => store.selectedProjectId)
@@ -2720,6 +2725,30 @@ export function StudioFrame(props: StudioFrameProps) {
               })
             }}
           />
+        )}
+        {/* REQ-037/CV-407（2026-11-03 拍板）：项目内「待落画布」条 —— 附件发送时
+            不再自动落卡（反转 09-05 拍板），暂存在 lobbyStash 里等用户点击落卡。
+            首页态由 LobbyStashBar 覆盖，这里只管项目内；暂存为空不渲染。
+            「落进画布」走 LOBBY_LAND_STASH_EVENT → index.ts 的 landLobbyStash
+            （失败件自动留在条上，落成即消失）。 */}
+        {mode === 'work' && projectId !== null && pendingStash.length > 0 && (
+          <div className="csPendingLanding" role="status">
+            <span className="csPendingLandingLabel">
+              待落画布（{pendingStash.length}）——附件尚未进入画布，AI 暂时用不了：
+            </span>
+            {pendingStash.map(item => (
+              <span key={item.id} className="csPendingLandingChip" title={item.name}>
+                {item.name}
+              </span>
+            ))}
+            <button
+              type="button"
+              className="csPendingLandingButton"
+              onClick={() => { window.dispatchEvent(new Event(LOBBY_LAND_STASH_EVENT)) }}
+            >
+              落进画布
+            </button>
+          </div>
         )}
         {canvasBody}
         {/* REQ-022：拍摄定稿覆盖层 —— **压在中栏画布上方**，不是压住整个 App。

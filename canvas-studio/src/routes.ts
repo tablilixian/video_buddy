@@ -203,6 +203,18 @@ async function storyboardMediaResolver(
 }
 
 /**
+ * REQ-037/CV-408：当前项目画布节点 id 集合（§07 引用失效对账用）。
+ * 画布读失败 → `undefined`（渲染层降级为不对账，不阻断整个文档）。
+ */
+async function storyboardCanvasNodeIds(
+  registry: ProjectRegistry,
+  projectId: string,
+): Promise<ReadonlySet<string> | undefined> {
+  const document = await registry.readCanvas(projectId).catch(() => null)
+  return document === null ? undefined : new Set(document.nodes.map((node) => node.id))
+}
+
+/**
  * CV-296：故事板渲染的用户原始创意 —— 画布 BRIEF 节点（CV-023 创意捕获）的全文。
  * 原话是「一切开始的地方」，故事板阶段画布被覆盖层挡住，这里把它接出来展示。
  * 画布读失败 / 没有创意节点 → `undefined`（渲染层不渲染该块），不抛错。
@@ -2142,6 +2154,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
                 // 创意先行：把 refImage / lookRef / §07 引用解析成缩略图 URL。
                 // 画布读失败降级为不渲染图（纯文本渲染），不阻断整个文档。
                 mediaUrl: await storyboardMediaResolver(registry, projectId),
+                // REQ-037/CV-408：§07 canvasNode 引用失效对账（画布读失败降级为不对账）。
+                canvasNodeIds: await storyboardCanvasNodeIds(registry, projectId),
                 // CV-296：用户原始创意（画布 BRIEF 节点全文）展示进 §00；读失败同上降级。
                 sourceIdea: await storyboardSourceIdea(registry, projectId),
                 // 阶段五：跟随宿主浅色 / 深色。

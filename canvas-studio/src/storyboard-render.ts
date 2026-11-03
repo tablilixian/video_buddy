@@ -462,18 +462,21 @@ function renderSound(sections: StoryboardSections, ctx: DiffContext): string {
   </div>`
 }
 
-function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
+function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl, canvasNodeIds?: ReadonlySet<string>): string {
   const assets = sections['07_assets']
   if (assets.length === 0) return emptySection('还没有素材清单。')
   return `<table class="plain"><thead><tr><th style="width:40%">素材</th><th style="width:78px">类型</th><th style="width:84px">状态</th><th>引用</th></tr></thead><tbody>${
     assets.map((asset: StoryboardAsset) => {
       const url = media === undefined ? undefined : media(asset.ref)
+      // REQ-037/CV-408：画布节点引用失效对账 —— 账面（§07）还在、实物（节点）没了
+      // 就地标红，不要让用户对着一条永远打不开的引用猜。
+      const stale = asset.ref.kind === 'canvasNode' && canvasNodeIds !== undefined && !canvasNodeIds.has(asset.ref.id)
       const thumb = url === undefined ? '' : `<img class="asset-thumb" src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" />`
       return `<tr>
       <td>${marked(ctx, `07 素材.${asset.name}`, orDash(asset.name))}${thumb === '' ? '' : `<div>${thumb}</div>`}</td>
       <td>${marked(ctx, `07 素材.${asset.name}.类型`, escapeHtml(asset.type))}</td>
       <td>${marked(ctx, `07 素材.${asset.name}.状态`, `<span class="pill ${asset.status === 'ready' ? 'ok' : 'todo'}">${asset.status === 'ready' ? '已就绪' : '待上传'}</span>`)}</td>
-      <td>${marked(ctx, `07 素材.${asset.name}.引用`, `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>`)}</td>
+      <td>${marked(ctx, `07 素材.${asset.name}.引用`, `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>${stale ? ' <span class="pill stale">引用失效：画布节点已删除</span>' : ''}`)}</td>
     </tr>`
     }).join('')
   }</tbody></table>`
@@ -511,6 +514,12 @@ export interface StoryboardRenderOptions {
    * 由路由侧读画布后提供解析函数。
    */
   readonly mediaUrl?: ((ref: StoryboardAssetRef) => string | undefined) | undefined
+  /**
+   * 当前项目画布节点 id 集合（路由侧读画布提供；省略 = 不做失效对账）。
+   * REQ-037/CV-408：§07 的 `canvasNode` 引用若指向已不存在的节点，渲染层就地
+   * 标红「引用失效」——素材登记（§07）必须能暴露「账面还在、实物没了」的漂移。
+   */
+  readonly canvasNodeIds?: ReadonlySet<string> | undefined
   /**
    * 用户原始创意（首条真人消息全文，路由侧从画布 BRIEF 节点读出；省略/空 = 不渲染）。
    * 它是**一切开始的地方**，但不是九节之一：不计入完成度、不参与对比模式、
@@ -607,6 +616,7 @@ table.plain td:first-child{color:var(--tx)}
 .pill{display:inline-block;font-size:11.5px;padding:1px 9px;border-radius:999px;white-space:nowrap;background:var(--card2);border:1px solid var(--line);color:var(--tx2)}
 .pill.ok{color:var(--green);background:rgba(143,191,127,.12);border-color:transparent}
 .pill.todo{color:#e0b25c;background:rgba(224,178,92,.1);border-color:transparent}
+.pill.stale{color:var(--red);background:var(--red-soft);border-color:transparent}
 .tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:10px}
 .token{background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);
 border-radius:12px;padding:9px 14px;font-size:13px}
@@ -907,7 +917,7 @@ ${filledCount === 0 ? `
     <p class="sub">声音不是「配个 BGM」，而是一份预算表：响度、侧链避让、音效点都要写清。</p>${renderSound(sections, ctx)}</section>
 
   <section class="sheet" id="s7"><div class="sec-eyebrow">07</div><h2>素材清单</h2>
-    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections, ctx, options.mediaUrl)}</section>
+    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections, ctx, options.mediaUrl, options.canvasNodeIds)}</section>
 
   <section class="sheet" id="s8"><div class="sec-eyebrow">08</div><h2>硬约束</h2>
     <p class="sub">可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。</p>${renderConstraints(sections, ctx)}</section>

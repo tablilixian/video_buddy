@@ -68,6 +68,7 @@ import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
 import { routeImageModel, ROUTE_SUMMARY } from './model-route.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
+import { DEFAULT_NODE_SIZE } from './canvas-aspect.js'
 import { assertH3IrPrompt, prepareH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
@@ -1912,6 +1913,55 @@ async function backfillUploadFilename(
 }
 
 /**
+ * REQ-037/CV-408（R3）：`upload_image` 收到**外部图片链接**时补一个画布图片节点。
+ *
+ * 立项痛点：用户发图片链接让 agent 参考——过去 `upload_image` 只把字节传后端拿
+ * filename，画布无痕，用户回看「没地方看」。本函数给外链落一个与上传附件同形态的
+ * 参考节点（`isReference` + `referenceRole:'image'`），素材托盘 / `list_references`
+ * / 故事板 §07 登记链路随即可用。
+ *
+ * 判据与去重：
+ * - 只处理 `http(s)://` 外链；本地路径与画布同源 URL 不在此列（产物 URL 本就有节点）。
+ * - 按「精确 URL 或 URL 末段」双口径查重——与 `backfillUploadFilename` 的匹配口径
+ *   一致，命中即跳过（产物 / 重复导入都不建新节点）。
+ * - filename 直接带上（刚传完 Drama，后端句柄现成），agent 省一步。
+ * - 节点尺寸用缺省框（媒体真实比例由客户端加载后自适应校正，同客户端导入路径）。
+ */
+async function ensureExternalImageNode(
+  registry: ProjectRegistry,
+  projectId: string,
+  imageUrl: string,
+  filename: string,
+): Promise<void> {
+  if (!/^https?:\/\//u.test(imageUrl)) return
+  const doc = await registry.readCanvas(projectId)
+  const file = imageUrl.split('/').pop() ?? ''
+  const exists = doc.nodes.some((node) => node.url === imageUrl
+    || (file !== '' && node.url !== undefined && node.url.split('/').pop() === file))
+  if (exists) return
+  const size = { width: DEFAULT_NODE_SIZE.width, height: DEFAULT_NODE_SIZE.height }
+  const placement = deriveNodePlacement(doc.nodes, [], size.width, size.height)
+  const node: StudioCanvasNode = {
+    id: newAssetId(),
+    kind: 'image',
+    title: file !== '' ? decodeURIComponent(file) : '外部参考图',
+    url: imageUrl,
+    filename,
+    isReference: true,
+    referenceRole: 'image',
+    x: placement.x,
+    y: placement.y,
+    width: size.width,
+    height: size.height,
+    createdAt: Date.now(),
+    origin: 'agent',
+    sourceIds: [],
+    operationType: 'import',
+  }
+  await registry.appendCanvasNode(projectId, node)
+}
+
+/**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  *
  * 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。工具总数不在此处
@@ -2405,6 +2455,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       name: 'upload_image',
       description:
         '将图片上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。'
+        + '\n\nREQ-037/CV-408：传外部图片链接（http/https）时会自动落一个参考图片节点（进素材托盘、可登记故事板 §07）；产物 URL 与重复导入会按 URL 去重，不建新节点。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         imageUrl: { type: 'string' as const, required: true, description: '图片 URL（通常是 image_generate 的产物 URL）' },
@@ -2425,6 +2476,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = await uploadImage(a.imageUrl, exec.signal, portOf(), registry, projectId)
         await backfillUploadFilename(registry, projectId, a.imageUrl, filename)
+        // REQ-037/CV-408：外部图片链接补画布参考节点（产物 URL 已有节点会按 URL 去重跳过），
+        // 否则「链接参考」在画布 / 素材托盘 / 故事板 §07 三处全部无痕。
+        await ensureExternalImageNode(registry, projectId, a.imageUrl, filename)
         return { filename }
       },
     }),

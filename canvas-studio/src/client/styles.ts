@@ -5091,6 +5091,34 @@ button.csNodeHeadAlert:hover {
   line-height: 1;
   color: var(--dsw-alias-label-secondary);
 }
+/* REQ-037/CV-406：素材托盘四分区 —— 分组标题 + 文本展开体（旧参考图托盘没有这两层）。 */
+.csReferenceGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.csReferenceGroupLabel {
+  padding: 2px 10px 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  user-select: none;
+}
+.csReferenceTextBody {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+  max-height: 3em;
+  overflow: hidden;
+}
+.csReferenceTextBody.is-open {
+  max-height: 12em;
+  overflow-y: auto;
+}
 .csReferenceList {
   display: flex;
   flex-direction: column;

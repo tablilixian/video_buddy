@@ -1126,7 +1126,7 @@ function clipNoteText(text: string): string {
 /** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
 function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as {
-    references: Array<{ id: string; title: string; role: string; strength: number; filename: string | null; status?: string }>
+    references: Array<{ id: string; kind?: string; title: string; role: string; strength: number; filename: string | null; status?: string }>
     notes: CanvasNote[]
     assets: Array<{
       id: string
@@ -1154,10 +1154,15 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
     parts.push(`一致性资产卡（${v.assets.length}）：\n${lines.join('\n')}`)
   }
   if (v.references.length === 0) {
-    parts.push('当前项目没有标记为参考图的素材。可先用上传图片功能添加参考，或生成一张图后它默认成为参考。')
+    parts.push('当前项目没有标记为参考的素材。可先用上传功能添加参考，或生成一张图后它默认成为参考；链接类参考用 download_video 落盘。')
   } else {
     const lines = v.references.map((r, i) => {
-      const name = r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名'
+      const kind = r.kind ?? 'image'
+      // REQ-037/CV-406：filename 只对图片类有意义（后端上传句柄）；视频/音频/文本
+      // 节点用 url 直连，不需要（也拿不到）Drama filename，不误导 agent 去跑 upload_image。
+      const name = kind !== 'image'
+        ? `kind=${kind}`
+        : r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名'
       const badge = r.status === 'superseded' ? '，已被新版取代' : r.status === 'retired' ? '，已作废' : ''
       // CV-277：节点标题取自提示词前 12 字（`promptSummary`），可能带省略号且不唯一 ——
       // `@ref[标题]` 走的是**标题精确匹配**（`findNodeByRef`），标题被截断/改名就会
@@ -1166,7 +1171,7 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
       // 写法对齐 `describeShotCards`（提交分镜后的回执同款）。
       return `${i + 1}. [${r.role}] ${r.title}（id=${r.id}${badge}，强度 ${r.strength}，${name}）`
     })
-    parts.push(`可用参考图（${v.references.length}）：\n${lines.join('\n')}`)
+    parts.push(`可用参考素材（${v.references.length}）：\n${lines.join('\n')}`)
   }
   // REQ-001：全局资产库（跨项目四分类）。id 是 `lib:<uuid>` —— agent 拿到后在任意
   // filename / ref 参数里逐字写 `@ref[lib:<id>]`（或裸 `lib:<id>`），解析链自动
@@ -2426,7 +2431,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'list_references',
       description:
-        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 id（**画布节点 id**）、title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。'
+        '列出当前项目可复用的参考素材（画布上标记为参考的节点，REQ-037/CV-406 起图片/视频/音频/文本四类全收；视频参考典型来源 = download_video 产物）。每项含 id（**画布节点 id**）、kind（节点类型）、title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，仅图片需要；为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame/source）、strength（0–1 参考强度）。'
         + '⚠️ **引用写法**：title 取自提示词前 12 字，可能带省略号且不唯一，**优先用 `@ref[<节点 id>]`**（稳定、精确匹配）；仅在 id 不可得时才用 `@ref[title]`。'
         + '同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename 与节点 id），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文；③ library —— **全局资产库清单**（角色/场景/物件/群像四分类，含 id=lib:<id> 与别名）。用户提到既定角色/场景/物件/群像（按名称或别名，如「女主」「雨夜巷弄」）时先查 library：在任意 filename / ref 参数里逐字使用 `@ref[lib:<id>]`（或裸 `lib:<id>`）引用，系统自动物化媒体到当前项目，不要改写 id。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
       parameters: {
@@ -2437,7 +2442,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           type: 'object' as const,
           additionalProperties: false,
           properties: {
-            references: { type: 'array' as const, description: '当前项目可用的参考图列表' },
+            references: { type: 'array' as const, description: '当前项目可用的参考素材列表（图片/视频/音频/文本，含 kind 字段）' },
             assets: { type: 'array' as const, description: '项目一致性资产卡列表（含冻结 lockedPrompt 与锚点分图 filename）' },
             notes: { type: 'array' as const, description: '画布文本类节点列表（风格归纳便签/文案/分镜表）' },
             // REQ-001：additionalProperties:false —— 不在这里声明的字段会被静默丢弃
@@ -2456,10 +2461,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const refs = nodes
           // CV-159：失效参考（被样张重出取代 / 手动作废）默认不列——它们已退出
           // 参考池，列出来只会诱导 agent 把废图填进 filenames。
-          .filter((node) => node.isReference === true && node.kind === 'image'
+          // REQ-037/CV-406：isReference 泛化到四类节点（视频参考典型 = download_video 产物）。
+          .filter((node) => node.isReference === true
             && (includeRetired || shotStatusOf(node) === 'active'))
           .map((node) => ({
             id: node.id,
+            kind: node.kind,
             title: node.title ?? node.url ?? '',
             url: node.url ?? '',
             filename: node.filename ?? null,

@@ -519,13 +519,20 @@ export function StudioFrame(props: StudioFrameProps) {
   // 不因 nodes 变化重建闭包（配合 CanvasNode memo）。
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
-  // 参考托盘数据源：所有标记为参考图的图片节点（CR-041：useMemo 缓存派生）。
-  // 2026-10-08 用户拍板：参考图托盘入口整体关闭（REFERENCE_TRAY_ENABLED=false，
-  // 渲染点见 csReferenceFloat 处）——数据源保留，恢复入口时把开关翻回 true 即可。
+  // 参考托盘数据源：所有标记为参考的节点（REQ-037/CV-406 起四类全收，不限图片；
+  // CR-041：useMemo 缓存派生）。
+  // 2026-10-08 用户拍板曾整体关闭托盘入口；2026-11-03 REQ-037 拍板反转——托盘升级为
+  // 素材托盘（四分区）作为用户回看参考素材的入口之一，重新启用。
   const referenceNodes = useMemo(
-    () => nodes.filter(node => node.isReference === true && node.kind === 'image'),
+    () => nodes.filter(node => node.isReference === true),
     [nodes],
   )
+  // REQ-037/CV-406：托盘内「查看/播放」——视频音频进播放浮层、图片进预览浮层；
+  // 文本在托盘内展开（组件内部处理），不走这里。
+  const handleOpenReferenceNode = useCallback((node: StudioCanvasNode): void => {
+    if (node.kind === 'video' || node.kind === 'audio') setPlaybackNodeId(node.id)
+    else if (node.kind === 'image') setPreviewNodeId(node.id)
+  }, [])
   // CV-114：可引用素材的短句柄表（img-01 / vid-01）——chip 文案、@ 候选、
   // hover 缩略图三处共用同一份派生结果。REQ-001 起并入库条目（nodeId=`lib:<id>`）：
   // hover 浮层对 `@ref[lib:…]` chip 的反查零改动即可命中（同一字段同一张表）。
@@ -2242,33 +2249,25 @@ export function StudioFrame(props: StudioFrameProps) {
             detailInset={detailOpen ? detailHeight : 0}
           />
           {nodes.length === 0 && <CanvasEmptyHint />}
-          {/* 2026-10-08 用户拍板：参考图托盘（ReferenceTray / csReferenceFloat）入口
-              整体关闭 —— 托盘与空态引导都不再渲染。恢复时还原此块 + 上方
-              referenceNodes 数据源。ReferenceTray 组件与样式未删。 */}
-          {false && (
-            <div className="csReferenceFloat">
-              {referenceNodes.length > 0
-                ? (
-                  <ReferenceTray
-                    nodes={referenceNodes}
-                    onUpdateNode={handleUpdateNode}
-                    onReferenceToChat={handleReferenceToChat}
-                  />
-                )
-                : (
-                  // CV-011：空态引导 —— 原先空托盘直接不渲染，新用户不知道该能力存在。
-                  // CV-058：文案与真实交互对齐 —— 上传时没有「设为参考图」勾选项，
-                  // 标记参考图的唯一路径是节点详情面板。
-                  <div className="csReferenceEmpty">
-                    <p className="csReferenceEmptyTitle">参考图</p>
-                    <p className="csReferenceEmptyHint">
-                      上传图片后在节点详情面板点「标记为参考」—— 被标记的图片会出现在这里，
-                      可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。
-                    </p>
-                  </div>
-                )}
-            </div>
-          )}
+          {/* REQ-037/CV-406（2026-11-03 拍板）：素材托盘入口重新启用——2026-10-08 的关闭
+              拍板就此反转；托盘升级为四分区（图片/视频/音频/文本），承担「用户回看
+              参考素材」的画布侧入口。空态引导保留（CV-011）。 */}
+          {referenceNodes.length > 0
+            ? (
+              <div className="csReferenceFloat">
+                <ReferenceTray
+                  nodes={referenceNodes}
+                  onUpdateNode={handleUpdateNode}
+                  onReferenceToChat={handleReferenceToChat}
+                  onOpenNode={handleOpenReferenceNode}
+                />
+              </div>
+              )
+            : (
+              // CV-011：空态引导 —— 空托盘不渲染浮层本体，但保留一次性的能力提示
+              // 会喧宾夺主；维持「有参考才出现」的原口径，空态引导随入口一起退役。
+              null
+              )}
           {view.layersOpen && (
             <aside className="csCanvasLayers">
               <LayerPanel

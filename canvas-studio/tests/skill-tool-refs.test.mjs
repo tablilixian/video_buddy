@@ -45,8 +45,12 @@ const SKILLS_DIR = join(ROOT, 'skills')
 /** 本仓真实注册的工具表来源。占位工具已逐个转真或下线，故一并从源码取。
  *  2026-11-02 复刻提效批把工具外置到 host-tools-artifact.ts（image_crop/write_note/image_matting），
  *  2026-11-03 复刻客户端能力批外置到 host-tools-remake.ts（media_probe/evidence_grid/download_video）
- *  —— 外置后 host-tools.ts 源文本里不再有这些名字，本表必须跟着注册面走（上批遗留修正）。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'skills/placeholder-tools.ts']
+ *  —— 外置后 host-tools.ts 源文本里不再有这些名字，本表必须跟着注册面走（上批遗留修正）。
+ *  2026-11-03 skill 覆盖审计（plans/skill-覆盖审计与修复清单-20261103.md CV-401）：补
+ *  host-tools-audio.ts —— analyze_beats/snap_cuts_to_beats 经 defineAudioTools 工厂展开注册
+ *  （host-tools.ts:3030 只剩展开调用），名字只在该文件源文本出现；漏列时门禁表 41 vs 真实 43，
+ *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。 */
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -420,5 +424,73 @@ test('零视频模型分流③：clarification.md §入口分流 第 6 条给出
   assert.ok(
     /科普|讲解|数据可视化/u.test(item),
     '第 6 条缺触发词（科普 / 讲解 / 数据可视化）—— 模型认不出自己正落在这条路上',
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// CV-404（2026-11-03）：**反向对账** —— 每个注册工具必须在 skills/** 交代 ≥1 次
+//
+// 缺口背景（plans/skill-覆盖审计与修复清单-20261103.md §二 D2）：既有门禁只有
+// 单向「skill 引用的工具必须真实注册」（防幽灵），没有反向「注册的工具必须在
+// skill 层有交代」。5 个新工具（REQ-036 批 3 件 + 音频批 2 件）静默漏掉、账本
+// 同时记「联动完成」，两道防线都没响 —— 本组断言即该根因的机器化：工具加了、
+// skill 没更，当场红。
+//
+// 口径：**词边界包含**（`(?<![A-Za-z0-9_])name(?![A-Za-z0-9_])`），**不复用**
+// `scanSnakeCaseTokens` —— 那个正则要求 ≥1 个下划线，看不见 video2vl / image2vl
+// 这类无下划线工具名（实测漏报）。扫描后缀 md/txt/yaml 与幽灵门禁同口径；
+// 占位工具 subtitle_burn 由 toolchain.md 的说明行交代，同样计入。
+//
+// 豁免通道：新增「有意不在 skill 层出现」的纯内部件工具时进 REVERSE_EXEMPT
+// 并写明理由（与 EXEMPT 同一条「放行通道可审计」纪律）；豁免词一旦进了 skill
+// 文本，自清洁断言会要求移除豁免。
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 反向豁免：**只登记「确属本仓工具、但有意不进 skill 层」的名字**，按理由分组。 */
+const REVERSE_EXEMPT = new Map(Object.entries({}))
+
+test('CV-404：注册面每个工具必须在 skills/ 出现 ≥1 次（工具加了 skill 没更 = 红）', () => {
+  const texts = collectFiles(SKILLS_DIR).map(f => ({
+    file: relative(ROOT, f),
+    text: readFileSync(f, 'utf8'),
+  }))
+  const exempt = new Set()
+  for (const words of REVERSE_EXEMPT.values()) for (const w of words) exempt.add(w)
+
+  const silent = []
+  for (const name of registeredToolNames()) {
+    if (exempt.has(name)) continue
+    const re = new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`, 'u')
+    const hits = texts.filter(t => re.test(t.text)).map(t => t.file)
+    if (hits.length === 0) silent.push(name)
+  }
+  assert.deepEqual(
+    silent, [],
+    '以下已注册工具在 skills/**（md/txt/yaml）零出现 —— 工具加了、skill 没更，'
+      + '模型按 skill 走永远路由不到它（2026-11-03 审计 D2 根因）。'
+      + '补 skill 文本；确属纯内部件时进 REVERSE_EXEMPT 并写明理由：\n' + silent.join('\n'),
+  )
+})
+
+test('CV-404：反向豁免必须指向真实注册工具，且工具进 skill 文本后豁免即过期', () => {
+  const tools = registeredToolNames()
+  const texts = collectFiles(SKILLS_DIR).map(f => readFileSync(f, 'utf8'))
+  const stale = []
+  const ghosts = []
+  for (const [reason, words] of REVERSE_EXEMPT) {
+    assert.ok(Array.isArray(words) && words.length > 0, `反向豁免组 ${reason} 为空`)
+    for (const w of words) {
+      if (!tools.has(w)) ghosts.push(`${w}（豁免组 ${reason}）`)
+      const re = new RegExp(`(?<![A-Za-z0-9_])${w}(?![A-Za-z0-9_])`, 'u')
+      if (texts.some(t => re.test(t))) stale.push(`${w}（豁免组 ${reason}）`)
+    }
+  }
+  assert.deepEqual(
+    ghosts, [],
+    '反向豁免登记了未注册的名字（它不可能是「有意不进 skill 的工具」）：\n' + ghosts.join('\n'),
+  )
+  assert.deepEqual(
+    stale, [],
+    '以下反向豁免工具已在 skills/ 真实出现，豁免已过期请移除：\n' + stale.join('\n'),
   )
 })

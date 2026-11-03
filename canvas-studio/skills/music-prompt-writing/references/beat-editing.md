@@ -1,8 +1,10 @@
 # 按拍剪辑（beat-editing）—— S5 分册 · 2026-10-28
 
-> 前提：节拍分析已产出 `beats.json`（`{bpm, beats: number[], confidence}`，落在音频
-> 节点上）。本文写「拿到 beats 之后，切点怎么吸附」的机器口径与容许误差。
-> **低置信禁用卡点**（confidence 低于阈值的曲子，beats.json 仅作参考信息，不吸附）。
+> 前提：节拍数据已由 `analyze_beats` 工具产出（`{bpm, beats: number[], confidence}`，
+> 写回音频节点的 **`beats` 字段**——是节点字段，不是叫 beats.json 的文件）。本文写
+> 「拿到 beats 之后，切点怎么吸附」的机器口径与容许误差；吸附动作本身调
+> `snap_cuts_to_beats`（先跑 analyze_beats，它读节点 beats），**不要自己算吸附**。
+> **低置信禁用卡点**（confidence < 0.5 的曲子，beats 仅作参考信息，工具会直接拒绝吸附）。
 
 ## 一、读 beats
 
@@ -35,6 +37,6 @@
 
 ## 五、失败判据
 
-- `beats.json` 缺失 / `confidence` 低 → 不卡点，向用户说明；
+- `beats` 字段缺失（没跑 `analyze_beats`）/ `confidence` 低 → 不卡点，向用户说明；
 - 吸附后总时长漂移 > 5% → 放弃吸附改回原时间轴（总时长稳定性优先）；
 - BPM 估测与用户认知差 > 5（用户说 120、测出 138）→ 以本地分析为准但提示用户复核。

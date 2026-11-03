@@ -1,6 +1,6 @@
 ---
 name: mv-production
-description: MV 制作流程（Canvas Studio）。用户给一首歌（或一段音乐）+ 一组素材/风格要求，要做音乐视频 / 卡点片 / 跟唱字幕片时加载：歌词分句 → 时间轴对齐 → 逐句画面 → 卡点切换 → 字幕跟唱的完整编排。只复用 canvas-studio 既有工具（music_generation / tts_voiceover / video_composite / compose_video / render_composition / cut_audio），不引入新工具；节拍数据来自 beats.json（低置信禁用卡点）。
+description: MV 制作流程（Canvas Studio）。用户给一首歌（或一段音乐）+ 一组素材/风格要求，要做音乐视频 / 卡点片 / 跟唱字幕片时加载：歌词分句 → 时间轴对齐 → 逐句画面 → 卡点切换 → 字幕跟唱的完整编排。只复用 canvas-studio 既有工具（music_generation / tts_voiceover / video_composite / compose_video / render_composition / cut_audio / analyze_beats / snap_cuts_to_beats）；节拍数据由 analyze_beats 产出到音频节点 beats 字段（低置信禁用卡点）。
 ---
 
 # MV 制作流程（音乐短视频）
@@ -29,18 +29,22 @@ description: MV 制作流程（Canvas Studio）。用户给一首歌（或一段
 1. **歌词分句**：把歌词拆成可唱行（每行 3–8 秒为宜；长句按逗号拆）。产出一张
    「行 → 起止秒」对照表（落便签节点，供用户核对）。
 2. **行首对时**：有人声轨时用 `tts_voiceover` 的逐句产物帧号口径；用原歌时按
-   `lyrics.json`（人工/agent 指定为精确）或节拍分析（estimated，UI 弱化显示）对行首。
+   `lyrics.json`（人工/agent 指定为精确）或 `analyze_beats` 传 `lyricsLines` 产出的
+   `lyricsTimeline`（estimated，UI 弱化显示）对行首。
 3. **每句一组画面**：一行 = 一个镜头（跟唱铁律：镜头切换对齐行首，误差 ≤0.1s）。
    分镜按行写 `write_storyboard`；每镜 `video_composite` 出片（`generateAudio=true`
    视素材而定，MV 原生声通常关闭，以歌为唯一声轨）。
 
 ## 3. 卡点切换（节拍吸附）
 
-- 有节拍数据（`beats.json`，confidence 达标）→ 按
-  `music-prompt-writing/references/beat-editing.md` 吸附：切点 = 最近拍点，容差
-  ±0.5 拍，超出不吸附；**吸附后重算每镜 durationInFrames 并对总时长重新对账**。
-- 无节拍数据 / 低置信 → 按歌曲段落估切点（前奏稀、副歌密），并明确告知用户
-  「未做精确卡点」。
+- **节拍数据不是现成的——先生产**（CV-403）：对音频节点调 `analyze_beats`（有歌词行就
+  一并传 `lyricsLines`，顺手产出歌词时间轴），BPM / 拍点 / confidence 写回音频节点
+  **`beats` 字段**（是节点字段，不是叫 beats.json 的文件）。
+- confidence ≥ 0.5 → 调 `snap_cuts_to_beats` 吸附（口径见
+  `music-prompt-writing/references/beat-editing.md`）：切点 = 最近拍点，容差
+  ±0.5 拍，超出不吸附；**按返回偏移重算每镜 durationInFrames 并对总时长重新对账**。
+- confidence < 0.5（低置信）→ 工具直接拒绝吸附，按歌曲段落估切点（前奏稀、副歌密），
+  并明确告知用户「未做精确卡点」。
 
 ## 4. 字幕跟唱
 

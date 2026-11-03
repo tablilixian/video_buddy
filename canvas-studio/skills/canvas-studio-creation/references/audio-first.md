@@ -19,8 +19,12 @@
 
 1. 需求澄清后**立即** `music_generation`（duration = 预计总时长 × 梯度系数）；
 2. 产物节点落画布 → **记下节点 id**（bgmNodeId）；
-3. 分镜时**按乐段结构写节奏**（前奏 N 秒起画面、副歌对应高潮镜——音乐长度已知，切镜有依据）；
-4. 合成时 `compose_video(bgmNodeId=…)`。
+3. **MV / 卡点片 → 紧接着对音频节点跑 `analyze_beats`**（有歌词行一并传 `lyricsLines`，
+   顺带产出歌词时间轴）：拍点与 confidence 落进节点 `beats` 字段；confidence ≥ 0.5
+   才允许卡点吸附（吸附口径见 `music-prompt-writing/references/beat-editing.md`）；
+4. 分镜时**按乐段结构写节奏**（前奏 N 秒起画面、副歌对应高潮镜——音乐长度已知，切镜有依据；
+   卡点片的切点吸附走 `snap_cuts_to_beats`）；
+5. 合成时 `compose_video(bgmNodeId=…)`。
 
 **失败判据**：分镜总时长与 BGM 时长差 > 容差 → 以**成片真值**为准（见路线 B 第 3 步的对齐纪律），不要重生成 BGM 除非结构性错误（风格不对 / 长度差 > 30%）。
 

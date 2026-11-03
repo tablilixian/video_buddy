@@ -469,6 +469,13 @@ export interface TextCardTrack extends BaseTrack {
   anim?: TextAnimPreset
   /** 三期 W4-2：文本动效参数。 */
   animOptions?: TextAnimOptions
+  /**
+   * P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」
+   * （如 `16%` / `¥3.2` / `45.1亿`）时，数值在前 45 帧从 0 缓出滚到目标值，前后缀原样
+   * 保留；含多个数字段或非数字（`12abc34` / 纯文案）的 v 静态显示（容错，不报错）。
+   * 缺省 false = 老行为（数值静态）。非 dataCard 变体写了只收 warning 不生效。
+   */
+  countUp?: boolean
 }
 
 export interface ShapeTrack extends BaseTrack {
@@ -588,8 +595,12 @@ export interface ChartTrack extends BaseTrack {
    *   该模式下再内联 labels/values/lineValues 会被拒收。
    */
   source?: 'timeline'
-  /** 图表形态：`bars` = 柱状图；`dual` = 柱状 + 折线双轴（`lineValues` 必填）。 */
-  variant: 'bars' | 'dual'
+  /**
+   * 图表形态（P2' 扩型，2026-11-03）：`bars` = 柱状图；`dual` = 柱状 + 折线双轴
+   * （`lineValues` 必填）；`line` = 独立折线图（主序列 `values` 直接画折线，左轴，
+   * 折线色用 `color`，30%→55% 从左往右揭示；不画柱子）。
+   */
+  variant: 'bars' | 'dual' | 'line'
   /** 类目标签（与 `values` 一一对应；上限 32 项）。 */
   labels: string[]
   /** 主序列（柱，左轴；非负、有限，至少一个 > 0）。 */
@@ -807,7 +818,7 @@ const KNOWN_BASE_TRACK_KEYS = new Set([
 const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
   image: new Set(['src', 'fit', 'caption']),
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp']),
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
@@ -1535,6 +1546,14 @@ export function validateManifest(input: unknown): ManifestValidation {
             }
           }
         }
+        // P2'（2026-11-03）：数位滚动 —— dataCard 专用能力，其他变体只告警不生效。
+        if (track.countUp !== undefined) {
+          if (typeof track.countUp !== 'boolean') {
+            errors.push(`${at}.countUp 必须是布尔值（true = dataCard 数值前 45 帧滚动）`)
+          } else if (track.countUp && track.variant !== 'dataCard') {
+            warnings.push(`${at} 是 variant:'${String(track.variant)}'，countUp 只在 variant:'dataCard' 下生效（已忽略）`)
+          }
+        }
         break
       }
       case 'shape': {
@@ -1646,8 +1665,8 @@ export function validateManifest(input: unknown): ManifestValidation {
       }
       case 'chart': {
         const variant = track.variant
-        if (variant !== 'bars' && variant !== 'dual') {
-          errors.push(`${at}.variant 只允许 bars / dual（当前：${String(variant)}）`)
+        if (variant !== 'bars' && variant !== 'dual' && variant !== 'line') {
+          errors.push(`${at}.variant 只允许 bars / dual / line（当前：${String(variant)}）`)
         }
         // A2（2026-10-31）：数据来源 —— 'timeline' 从 video 轨真值推导，与内联互斥。
         const timelineMode = track.source === 'timeline'
@@ -1681,8 +1700,8 @@ export function validateManifest(input: unknown): ManifestValidation {
             errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
           }
           if (track.lineValues !== undefined) {
-            if (variant === 'bars') {
-              warnings.push(`${at} 是 variant:'bars'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
+            if (variant === 'bars' || variant === 'line') {
+              warnings.push(`${at} 是 variant:'${String(variant)}'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
             } else {
               const lv = track.lineValues
               const lineOk =

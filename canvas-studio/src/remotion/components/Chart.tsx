@@ -1,10 +1,12 @@
 /**
- * 能力基准 #04 收口（2026-10-31）：**数据图表**轨 —— 柱状图 / 柱状+折线双轴图。
+ * 能力基准 #04 收口（2026-10-31）+ P2' 扩型（2026-11-03）：**数据图表**轨 —— 柱状 / 柱状+折线双轴 / 独立折线。
  *
  * 对标 bench `04-chart-map.tsx`（像素级同款视觉，参数为 bench 实测值）：
  * - 柱子错峰生长（每根延迟 8 帧、26 帧长完），高度严格 = 数值比例（数据保真）；
  * - 柱顶数值标签（长完后出现）+ 横向网格线 + 左右双轴刻度；
- * - `dual` 折线在柱子长完后从左往右 clip 揭示（SVG polyline，viewBox 0–100）。
+ * - `dual` 折线在柱子长完后从左往右 clip 揭示（SVG polyline，viewBox 0–100）；
+ * - `line`（P2'）：主序列 `values` 直接画折线（左轴、折线色用 `color`），同一揭示动画，
+ *   揭示波前扫过的点依次弹出数值标签；不画柱子。
  * 全部纯帧函数（确定性铁律）；布局百分比化 ⇒ 任意画幅/box 下等比成立。
  * 字号随画布宽缩放（bench 的 21px@1920 ≈ 画布宽的 1.1%）。
  */
@@ -140,8 +142,9 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
           </React.Fragment>
         ))}
 
-        {/* 柱：错峰生长，高度 = 数值比例（数据保真）；数值标签长完才出现 */}
-        {values.map((v, i) => {
+        {/* 柱：错峰生长，高度 = 数值比例（数据保真）；数值标签长完才出现。
+            P2'：variant:'line' 不画柱子 —— 主序列走下方折线分支，类目标签单独铺。 */}
+        {track.variant !== 'line' ? values.map((v, i) => {
           const grown = interpolate(frame, [i * stagger, i * stagger + grow], [0, 1], {
             extrapolateLeft: 'clamp',
             extrapolateRight: 'clamp',
@@ -198,7 +201,93 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
               </div>
             </React.Fragment>
           )
-        })}
+        }) : null}
+
+        {/* P2'：variant:'line' 的类目标签（无柱时单独铺一行，样式与柱状图一致） */}
+        {track.variant === 'line'
+          ? labels.map((l, i) => (
+            <div
+              key={`cat-${i}`}
+              style={{
+                position: 'absolute',
+                left: `${(i * slot).toFixed(3)}%`,
+                width: `${slot.toFixed(3)}%`,
+                top: '100%',
+                marginTop: axisFont * 0.6,
+                textAlign: 'center',
+                fontFamily,
+                fontSize: axisFont,
+                color: 'rgba(138,160,198,0.95)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {l}
+            </div>
+          ))
+          : null}
+
+        {/* P2'：独立折线 —— 主序列 values，左轴量纲，同一 30%→55% 揭示；
+            揭示波前扫过的点依次弹出数值标签（HTML 层，避开 viewBox 非等比拉伸） */}
+        {track.variant === 'line' && values.length > 0 ? (
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              clipPath: `inset(0 ${(1 - lineReveal) * 100}% 0 0)`,
+              display: 'block',
+            }}
+          >
+            <polyline
+              fill="none"
+              stroke={barColor}
+              strokeWidth={2.2}
+              vectorEffect="non-scaling-stroke"
+              points={values
+                .map(
+                  (v, i) =>
+                    `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(2)},${(100 - (v / barMax) * 100).toFixed(2)}`,
+                )
+                .join(' ')}
+            />
+            {values.map((v, i) => (
+              <circle
+                key={i}
+                cx={((i + 0.5) / Math.max(1, n)) * 100}
+                cy={100 - (v / barMax) * 100}
+                r={1.3}
+                fill={barColor}
+              />
+            ))}
+          </svg>
+        ) : null}
+        {track.variant === 'line'
+          ? values.map((v, i) =>
+            lineReveal >= (i + 0.5) / Math.max(1, n) ? (
+              <div
+                key={`val-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(3)}%`,
+                  top: `${((1 - v / barMax) * 100 - 7).toFixed(3)}%`,
+                  transform: 'translateX(-50%)',
+                  fontFamily,
+                  fontSize: valueFont,
+                  color: '#e8eefc',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {formatValue(v)}
+                {unit}
+              </div>
+            ) : null,
+          )
+          : null}
 
         {/* 折线（dual）：右轴量纲，clip inset 从左往右揭示 */}
         {lineValues ? (

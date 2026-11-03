@@ -201,6 +201,7 @@
 - `accentColor`?: string
 - `anim`?: TextAnimPreset — 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。
 - `animOptions`?: TextAnimOptions — 三期 W4-2：文本动效参数。
+- `countUp`?: boolean — P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」
 
 ## ShapeTrack (extends BaseTrack)
 
@@ -243,7 +244,7 @@
 
 - `type`: 'chart'
 - `source`?: 'timeline' — 数据来源（A2，2026-10-31）：
-- `variant`: 'bars' | 'dual' — 图表形态：`bars` = 柱状图；`dual` = 柱状 + 折线双轴（`lineValues` 必填）。
+- `variant`: 'bars' | 'dual' | 'line' — 图表形态（P2' 扩型，2026-11-03）：`bars` = 柱状图；`dual` = 柱状 + 折线双轴
 - `labels`: string[] — 类目标签（与 `values` 一一对应；上限 32 项）。
 - `values`: number[] — 主序列（柱，左轴；非负、有限，至少一个 > 0）。
 - `lineValues`?: number[] — `variant:'dual'` 专用：副序列（折线，右轴），长度必须与 `labels` 一致。

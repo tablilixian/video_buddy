@@ -355,7 +355,7 @@ bullets 放轴上方避免压线。要「变速旅行」效果得靠多段 x 关
 | 空心词点亮 outline-word-fill | textCard 缺描边空心字样式 + 瞬时填充帧 |
 | 渐变充能 gradient-word-sweep | 缺渐变填充 + 扫过波前 mask |
 | 点阵重组 chart-live(B) | 缺点群编排（数百点聚形拼数字），且成本必超标 |
-| 数位滚动 DigitRoll | 缺计数滚动组件（现只能多轨文本阶跃近似，见 F6 的近似法） |
+| 数位滚动 DigitRoll | ~~缺计数滚动组件~~ **2026-11-03 解锁**：`dataCard` + `countUp:true`（前缀/后缀保留、小数位对齐、45 帧缓出）；F6 的多轨阶跃近似法保留作兼容参考 |
 
 > **2026-11-03 解锁**：`满弧扫针 gauge-readout` 曾因"`animate` 缺 rotate"列在本表 —— 该判断已过时
 > （`animate.rotation` 插值本就全通），真正的缺口是旋转轴心，已由 `ShapeTrack.pivot`（transform-origin

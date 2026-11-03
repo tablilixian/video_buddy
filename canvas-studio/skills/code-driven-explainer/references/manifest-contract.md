@@ -216,6 +216,11 @@
 - `variant` 取 `subtitle` / `dataCard` / `title` / `bullets`。
 - `text`：字符串，或字符串数组（`bullets` 每行一条）。
 - `data`：仅 `dataCard` 用，键值对数组，如 `[{ "k": "全球老龄化", "v": "16%" }]`。
+- **`countUp`（P2' · 数位滚动，仅 `dataCard`）**：`true` 时 `data[].v` 里的数值在前 45 帧
+  从 0 缓出滚到目标值（easeOutCubic，端点精确收敛），前后缀（`%` / `¥` / `亿`）原样保留，
+  小数位与目标值对齐。**口径从严**：`v` 必须是「前后缀 + 恰好一段连续数字」（`16%` / `¥3.2` /
+  `45.1亿` 可滚；`12abc34` / 纯文案静态显示，不报错）。KPI 揭晓 / 增长冲击力的标准语言；
+  非 dataCard 变体写了只收 warning 不生效。
 - **`subtitle` 的 `durationInFrames` 是屏上时长**：相邻字幕卡必须**首尾相接**（每句延伸到下一句
   `startFrame`，末句到总帧），不留空白帧 —— 详见 `references/subtitle-timing.md`。
 - `subtitle` 缺省**硬切**（等价于写 `fadeFrames: 0`），避免句间接缝闪背景；`title` / `dataCard` /
@@ -355,20 +360,24 @@
   "lineValues": [8, 15.27, 23.27], "lineLabel": "累计", "lineUnit": "s" }
 ```
 
-数据驱动的柱状图 / 双轴图（纯 DOM/SVG，零依赖）。**数据由这里显式声明**（不要编假数；
+数据驱动的柱状图 / 双轴图 / 折线图（纯 DOM/SVG，零依赖）。**数据由这里显式声明**（不要编假数；
 柱高与 `values` 严格成比例，校验会查长度、非负、不全零）。动画是纯帧函数：柱子错峰生长、
 数值标签长完后出现、折线从左往右揭示 —— 同一 manifest 渲两次逐帧一致。
 
 | 字段 | 缺省 | 说明 |
 | --- | --- | --- |
 | `source` | 内联数据 | `'timeline'` = 从 manifest 的 video 轨真值推导（按时间线排序，值 = ffprobe 校正后的每镜时长秒数；`dual` 折线 = 累计时长，labels 自动 `镜1..n`，单位秒）。**与内联 labels/values/lineValues 互斥**；无 video 轨拒收 |
-| `variant` | 必填 | `bars` 柱状图 / `dual` 柱状+折线双轴 |
+| `variant` | 必填 | `bars` 柱状图 / `dual` 柱状+折线双轴 / `line` 独立折线图（P2'） |
 | `labels` | 必填 | 类目标签数组（1–32 项，与 `values` 一一对应） |
-| `values` | 必填 | 柱数据（非负有限数，至少一个 > 0） |
-| `lineValues` | 无 | `dual` 必填：折线数据（长度同 `labels`；右轴量纲独立） |
+| `values` | 必填 | 柱数据（非负有限数，至少一个 > 0）；`line` 时 = 折线数据 |
+| `lineValues` | 无 | `dual` 必填：折线数据（长度同 `labels`；右轴量纲独立）。`bars` / `line` 下写了只收 warning 不生效 |
 | `lineLabel` | 无 | 折线图例文案（`dual` 时显示在右上角） |
 | `unit` / `lineUnit` | 无 | 轴与数值标签的单位后缀（如 `s` / `%`） |
-| `color` / `lineColor` | 主题蓝 / 琥珀 | 柱色 / 折线色 |
+| `color` / `lineColor` | 主题蓝 / 琥珀 | 柱色 / 折线色；`line` 的折线与左轴用 `color` |
+
+**`line`（P2' · 独立折线）**：主序列 `values` 直接画折线（左轴、折线色 `color`），不画柱子；
+同一 30%→55% 从左往右揭示动画，揭示波前扫过的点**依次弹出数值标签**。适合趋势 / 增长 /
+时间序列叙事（占比仍用 dataCard，对比用 bars，双量纲用 dual）。
 
 用法要点：`box` 可用（内容轨）—— 半屏图表用 `{x:50,y:50,w:60,h:70}`；与 `textCard` 的
 `dataCard` 分工：`dataCard` 是 2–4 个大数字键值卡，`chart` 是 ≥3 项的完整图表；类别多时

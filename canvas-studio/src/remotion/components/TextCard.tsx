@@ -3,6 +3,7 @@ import type React from 'react'
 import { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
+import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
 import {
   colorShiftAt,
@@ -280,7 +281,10 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
               }}
             >
               <span style={{ fontSize: 34, color: '#9aa7b4' }}>{row.k}</span>
-              <span style={{ fontSize: 42, fontWeight: 700, color: accent }}>{row.v}</span>
+              <span style={{ fontSize: 42, fontWeight: 700, color: accent }}>
+                {/* P2'：countUp 时数值前 45 帧滚动；不可解析的 v 由纯函数原样返回（静态）。 */}
+                {track.countUp === true ? countUpTextAt(row.v, frame) : row.v}
+              </span>
             </div>
           ))}
         </div>

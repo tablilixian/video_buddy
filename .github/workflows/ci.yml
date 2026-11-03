@@ -84,6 +84,13 @@ jobs:
           key: yarn-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
       - if: needs.changes.outputs.product == 'true'
         run: yarn install --immutable
+      # canvas-studio 的媒体 E2E（证据网格 / 抠图 / 响度 / 视频下载）需要真
+      # ffmpeg；ubuntu runner 镜像不预装，开发态 ffmpeg-static 二进制又被
+      # enableScripts:false 跳过，PATH 也落空时 resolveFfmpegPath 直接抛
+      # CS-FFMPEG-001，smoke 会红在这些用例上。
+      - name: Install ffmpeg for canvas media smoke
+        if: needs.changes.outputs.product == 'true'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - if: needs.changes.outputs.product == 'true'
         run: yarn check
 

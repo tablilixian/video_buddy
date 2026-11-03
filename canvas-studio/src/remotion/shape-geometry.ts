@@ -152,3 +152,23 @@ export function boxToRect(box: ShapeBox): { left: number; top: number; width: nu
     height,
   }
 }
+
+/**
+ * P1（2026-11-03）：`ShapeTrack.pivot` → `transform-origin` 样式片段（纯函数，组件唯一取值点）。
+ *
+ * 语义：轴心是相对**渲染元素自身盒**的百分比（CSS `transform-origin` 同口径，缺省 50/50）。
+ * 轴心静止落点 = box 中心 + (pivot−50)% × 盒尺寸 —— `box` 仍是中心语义，pivot 不改变它，
+ * 只决定 rotate / scale 绕哪个点转（数学：`T(P)·translate(-50%,-50%)·R·T(-P)`，平移与
+ * 原点无关、旋转绕 P）。
+ *
+ * 未声明返回空对象 ⇒ 组件样式串与旧实现逐字符一致（老 manifest 逐像素不变）；
+ * 非有限值按缺省 50 处理（校验层已拦，这里只兜底防 NaN 渗进样式串）。
+ */
+export function pivotOriginStyle(
+  pivot: { x?: number; y?: number } | undefined,
+): { transformOrigin: string } | Record<string, never> {
+  if (pivot === undefined || typeof pivot !== 'object') return {}
+  const x = typeof pivot.x === 'number' && Number.isFinite(pivot.x) ? pivot.x : 50
+  const y = typeof pivot.y === 'number' && Number.isFinite(pivot.y) ? pivot.y : 50
+  return { transformOrigin: `${x}% ${y}%` }
+}

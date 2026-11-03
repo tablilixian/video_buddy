@@ -354,9 +354,13 @@ bullets 放轴上方避免压线。要「变速旅行」效果得靠多段 x 关
 | 对比拉杆 before-after-slider | 图像层缺按杆位的 clip/mask 揭示（`fx.maskFade` 只有整层淡入） |
 | 空心词点亮 outline-word-fill | textCard 缺描边空心字样式 + 瞬时填充帧 |
 | 渐变充能 gradient-word-sweep | 缺渐变填充 + 扫过波前 mask |
-| 满弧扫针 gauge-readout(A) | `animate` 缺 `rotate`（指针甩弧/圆环自转全依赖它） |
 | 点阵重组 chart-live(B) | 缺点群编排（数百点聚形拼数字），且成本必超标 |
 | 数位滚动 DigitRoll | 缺计数滚动组件（现只能多轨文本阶跃近似，见 F6 的近似法） |
+
+> **2026-11-03 解锁**：`满弧扫针 gauge-readout` 曾因"`animate` 缺 rotate"列在本表 —— 该判断已过时
+> （`animate.rotation` 插值本就全通），真正的缺口是旋转轴心，已由 `ShapeTrack.pivot`（transform-origin
+> 同口径）补上。指针/仪表盘/圆环自转现可按 `manifest-contract.md` shape 节的 pivot 配方拼装；
+> 该卡尚未过 cards.mjs 取证，取证通过前**不进 24 卡清单、不量产引用**。
 
 ---
 

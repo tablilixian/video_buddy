@@ -15,7 +15,7 @@ import type React from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ShapeTrack } from '../manifest.js'
-import { boxStyle, polygonPointsForShape } from '../shape-geometry.js'
+import { boxStyle, pivotOriginStyle, polygonPointsForShape } from '../shape-geometry.js'
 import { colorShiftAt, drawProgressAt } from '../timing.js'
 
 /** `fx` 里与容器相关的三项（文字类效果由各文本组件自己贴）。 */
@@ -35,6 +35,9 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   // 三期 W2-3：`colorShift` 覆盖静态 `color`（缺省 `null` ⇒ 原色，老 manifest 不变）。
   const color = colorShiftAt(track, frame) ?? track.color
   const box = track.box ?? { x: 50, y: 50, w: 30, h: 20 }
+  // P1（2026-11-03）：`pivot` 轴心 → `transform-origin`。未声明 = 空对象 ⇒ 样式串与
+  // 旧实现逐字符一致；`path` 分支的元素是铺满画布的层，轴心按画布百分比解释。
+  const originStyle = pivotOriginStyle(track.pivot)
   // `transform` / `animate` / `orbit` / `exit` 显式给出**某轴**位置时该轴以它们为准，
   // 未声明的轴仍用 `box` 落点（2026-10-26 布局压测实证：旧的单标志位会把只声明 y 的
   // animate 当成双轴都声明，`box.x` 被静默丢弃 → 多柱图表全叠画布中心）。
@@ -54,6 +57,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
           // path 没有 `box` 落点，位置/缩放/旋转只能走整层变换；未声明位置时**不加**
           // transform（保持恒等串 ⇒ 老 manifest 的 path 轨不受影响）。
           ...(anim.positionDeclared || anim.animated ? { transform: anim.layerTransform } : {}),
+          ...originStyle,
           ...containerFx(anim),
         }}
       >
@@ -91,6 +95,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
           style={{
             position: 'absolute',
             ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
+            ...originStyle,
           }}
         >
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%">
@@ -105,6 +110,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   const base: React.CSSProperties = {
     position: 'absolute',
     ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
+    ...originStyle,
   }
   let visual: React.CSSProperties
   switch (track.shape) {

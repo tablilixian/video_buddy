@@ -269,6 +269,23 @@
 - `path` 轨**不需要 `box`**（`transform` 的 x/y 仍可用来整体挪位置）。给非 `path` 形状写 `d` / `draw`
   不报错，但会收到"只在 shape:'path' 上生效"的 warning。
 
+**`pivot`（P1 · 旋转轴心）** —— 旋转 / 缩放绕哪个点转，相对**形状自身盒**的百分比
+（CSS `transform-origin` 同口径），缺省 50/50 = 盒中心：
+
+```jsonc
+{ "type": "shape", "id": "needle", "startFrame": 0, "durationInFrames": 90,
+  "shape": "rect", "color": "#F59E0B", "box": { "x": 50, "y": 42, "w": 0.8, "h": 16 },
+  "pivot": { "x": 50, "y": 100 },
+  "animate": { "from": { "rotation": -120 }, "to": { "rotation": 30 }, "durationInFrames": 60, "easing": "easeOutCubic" } }
+```
+
+- 轴心**静止落点 = box 中心 + (pivot−50)% × 盒尺寸**（`box` 仍是中心语义，pivot 不改变落点，
+  只决定绕哪转）。上例：细长指针绕底端从 −120° 甩到 30°，底端静止在 (50, 50)。
+- 指针 / 仪表盘 / 钟摆 / 偏心圆环自转都靠它 + `animate.rotation`（rotation 插值与缓动白名单
+  对所有维度同规则）。`shape:'path'` 的渲染层是铺满画布的层，此时 pivot 按**画布百分比**解释
+  （例：圆环画在 (30,50)，配 `pivot:{x:30,y:50}` 让它绕自己的圆心自转）。
+- 校验：`pivot.x` / `pivot.y` 必须是 0–100 的有限数；未声明 = 中心，老 manifest 逐像素不变。
+
 ### `transition`（转场）
 
 ```jsonc

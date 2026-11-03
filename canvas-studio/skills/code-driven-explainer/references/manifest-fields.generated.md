@@ -210,6 +210,7 @@
 - `d`?: string — `shape:'path'` 必填：SVG path 的 `d`。
 - `strokeWidth`?: number — `shape:'path'` 的描边宽度（百分比单位，缺省 0.5；相对 100 单位盒）。
 - `draw`?: DrawMotion — `shape:'path'` 的生长控制；缺省 = 全画出。
+- `pivot`?: { x?: number; y?: number } — 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
 
 ## TransitionTrack (extends BaseTrack)
 

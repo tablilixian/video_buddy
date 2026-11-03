@@ -29,6 +29,7 @@ import type { SpriteRect } from './sprite.js'
 import { validateSpriteRect } from './sprite.js'
 import { countSpokenChars } from './word-timing.js'
 import { collectAnchorIssues, KNOWN_ANCHOR_KEYS } from './anchor.js'
+import { lintZOrder } from './manifest-lint.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
@@ -495,6 +496,14 @@ export interface ShapeTrack extends BaseTrack {
   strokeWidth?: number
   /** `shape:'path'` 的生长控制；缺省 = 全画出。 */
   draw?: DrawMotion
+  /**
+   * 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
+   * `transform-origin` 同口径；缺省 50/50 = 盒中心 ⇒ 老 manifest 逐像素不变。
+   * 典型用法：指针 = 细长 rect + `pivot:{x:50,y:100}`（绕底端）配 `animate.rotation`。
+   * 轴心静止落点 = box 中心 + (pivot−50)% × 盒尺寸（`box` 仍是**中心**语义，不因 pivot 改变）；
+   * `shape:'path'` 的渲染层是铺满画布的 AbsoluteFill，此时轴心按**画布百分比**解释。
+   */
+  pivot?: { x?: number; y?: number }
 }
 
 export interface TransitionTrack extends BaseTrack {
@@ -799,7 +808,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
   image: new Set(['src', 'fit', 'caption']),
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions']),
-  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw']),
+  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
@@ -1533,6 +1542,20 @@ export function validateManifest(input: unknown): ManifestValidation {
           errors.push(`${at}.shape 非法（${String(track.shape)}）`)
         }
         if (!isNonEmptyString(track.color)) errors.push(`${at}.color 必须是非空字符串`)
+        // P1（2026-11-03）：旋转/缩放轴心 —— 盒形状按自身盒百分比、path 按画布百分比。
+        if (track.pivot !== undefined) {
+          if (!isRecord(track.pivot)) {
+            errors.push(`${at}.pivot 必须是对象（{ x?, y? }，百分比 0–100）`)
+          } else {
+            for (const axis of ['x', 'y'] as const) {
+              const value = track.pivot[axis]
+              if (value === undefined) continue
+              if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+                errors.push(`${at}.pivot.${axis} 必须是 0–100 的有限数（百分比；缺省 50 = 盒中心）`)
+              }
+            }
+          }
+        }
         if (track.shape === 'path') {
           if (!isNonEmptyString(track.d)) {
             errors.push(`${at}.d 缺失：shape:'path' 必须给 SVG path 的 d（坐标空间 0–100 双轴百分比）`)
@@ -1878,59 +1901,6 @@ export function validateManifest(input: unknown): ManifestValidation {
   }
 
   return { ok: errors.length === 0, errors, warnings }
-}
-
-/**
- * OPT-8（2026-10-26）：**z-order 风险体检**（只 warning）。
- *
- * track 数组序 = 层叠序（靠后在上）。无 box 的 video/image 轨铺满画布，排在
- * 内容轨（textCard / shape）之后时，重叠时间段内下方内容会被画面整体盖住 ——
- * 真机实证：全屏视频轨放在 title 卡之后 → 卡片「消失」，agent 只能改轨序绕过。
- * 渲染端底色已改为只跟媒体元素（同日修复），但视频画面本身仍是不透明覆盖，
- * 所以这条体检仍有价值：模型在收稿前就该看到提醒，而不是等渲染返工。
- *
- * 豁免：媒体轨带 box（只覆盖子区域）；下方 shape 的 box 铺满画布（本来就是
- * 全屏背景层，被盖住是预期）；时间不重叠（先后出场互不遮挡）。每条媒体轨只报一次。
- */
-function lintZOrder(tracks: unknown[]): string[] {
-  const out: string[] = []
-  const isMedia = (t: unknown): t is Record<string, unknown> =>
-    isRecord(t) && (t.type === 'video' || t.type === 'image')
-  const isContent = (t: unknown): t is Record<string, unknown> =>
-    isRecord(t) && (t.type === 'textCard' || t.type === 'shape')
-  const span = (t: Record<string, unknown>): [number, number] => {
-    const start = typeof t.startFrame === 'number' && Number.isFinite(t.startFrame) ? t.startFrame : 0
-    const duration = typeof t.durationInFrames === 'number' && Number.isFinite(t.durationInFrames) ? t.durationInFrames : 0
-    return [start, start + duration]
-  }
-  for (let i = 0; i < tracks.length; i += 1) {
-    const media = tracks[i]
-    if (!isMedia(media) || media.box !== undefined) continue
-    const [mStart, mEnd] = span(media)
-    for (let j = 0; j < i; j += 1) {
-      const below = tracks[j]
-      if (!isContent(below)) continue
-      if (below.type === 'shape') {
-        const box = below.box
-        // 全屏背景 shape（无 box 缺省 30×20 也不是全屏；显式铺满才豁免）：
-        const full = isRecord(box)
-          && typeof box.x === 'number' && typeof box.y === 'number'
-          && typeof box.w === 'number' && typeof box.h === 'number'
-          && box.w >= 95 && box.h >= 95
-        if (full) continue
-      }
-      const [bStart, bEnd] = span(below)
-      if (Math.min(mEnd, bEnd) - Math.max(mStart, bStart) <= 0) continue
-      const mid = typeof media.id === 'string' ? media.id : `#${i}`
-      const bid = typeof below.id === 'string' ? below.id : `#${j}`
-      out.push(
-        `z-order 风险：全屏 ${String(media.type)} 轨 "${mid}" 排在内容轨 "${bid}" 之后（数组靠后 = 更上层），重叠时间段内下方内容会被画面盖住 —— `
-        + `若需内容浮于视频上，把内容轨移到数组更后；若媒体只该占局部区域，给它加 box`,
-      )
-      break
-    }
-  }
-  return out
 }
 
 /**

@@ -351,7 +351,7 @@ bullets 放轴上方避免压线。要「变速旅行」效果得靠多段 x 关
 
 | 缺口卡（shotcraft） | 缺什么字段/能力 |
 |---|---|
-| 对比拉杆 before-after-slider | 图像层缺按杆位的 clip/mask 揭示（`fx.maskFade` 只有整层淡入） |
+| 对比拉杆 before-after-slider | ~~图像层缺 clip/mask 揭示~~ **2026-11-03 半解锁**：`reveal:{kind:'wipe'}` 可做动画式前后对比（底层图全显 + 顶层图帘式揭开）；按杆位**拖动**的交互式滑杆在视频里无意义，视为已覆盖 |
 | 空心词点亮 outline-word-fill | textCard 缺描边空心字样式 + 瞬时填充帧 |
 | 渐变充能 gradient-word-sweep | 缺渐变填充 + 扫过波前 mask |
 | 点阵重组 chart-live(B) | 缺点群编排（数百点聚形拼数字），且成本必超标 |
@@ -361,6 +361,10 @@ bullets 放轴上方避免压线。要「变速旅行」效果得靠多段 x 关
 > （`animate.rotation` 插值本就全通），真正的缺口是旋转轴心，已由 `ShapeTrack.pivot`（transform-origin
 > 同口径）补上。指针/仪表盘/圆环自转现可按 `manifest-contract.md` shape 节的 pivot 配方拼装；
 > 该卡尚未过 cards.mjs 取证，取证通过前**不进 24 卡清单、不量产引用**。
+>
+> **同日新增能力**：① `callout` 轨（锚点+引线+标签一条轨，「指着一个东西讲」不再手拼三轨坐标，
+> 见 `manifest-contract.md` callout 节）；② `BaseTrack.reveal`（卡片级 wipe 擦除 / spotlight
+> 聚光揭示，重点卡出场不再靠 shape 遮罩手拼）。两者同样未过 cards.mjs 取证，纪律同上。
 
 ---
 

@@ -39,6 +39,8 @@ import { Shape } from './Shape.js'
 import { TextCard } from './TextCard.js'
 import { TransitionShell } from './Transition.js'
 import { VideoClip } from './VideoClip.js'
+import { Callout } from './Callout.js'
+import { RevealShell } from './RevealShell.js'
 
 /** `<Composition>` 的缺省 props（会被 `calculateMetadata` 覆盖，但仍必须给，§7.3）。 */
 export const EMPTY_MANIFEST: CompositionManifest = {
@@ -172,6 +174,9 @@ const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManife
       return <Chart track={track} timelineData={track.source === 'timeline' ? chartDataFromTimeline(manifest, track) : undefined} />
     case 'caption':
       return <Caption track={track} />
+    case 'callout':
+      // P3（2026-11-03）：引线标注 —— 锚点 + 引线 + 标签一条轨。
+      return <Callout track={track} />
     case 'transition':
       return null
   }
@@ -255,9 +260,12 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
       >
         {manifest.tracks.filter(isContentTrack).map((track) => (
           <Sequence key={track.id} from={track.startFrame} durationInFrames={Math.max(1, track.durationInFrames)}>
-            <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
-              <TrackBody track={track} manifest={manifest} />
-            </TransitionShell>
+            {/* P3：分区揭示壳在 TransitionShell 外 —— clip 按轨内容自身坐标系求值。 */}
+            <RevealShell reveal={track.reveal}>
+              <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
+                <TrackBody track={track} manifest={manifest} />
+              </TransitionShell>
+            </RevealShell>
           </Sequence>
         ))}
         {/* 三期 W2-4：暗角。`multiply` 只压暗不自发光，比单独一层黑色 opacity 更像镜头。 */}

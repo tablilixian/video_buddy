@@ -45,7 +45,7 @@
 ## CompositionTrack
 > 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕。
 
-定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack
+定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack | CalloutTrack
 
 ## BaseTrack
 
@@ -62,6 +62,7 @@
 - `startAfter`?: StartAfter — 三期 W1-2：**顺序衔接**。与 `startFrame` 互斥。
 - `blend`?: TrackBlend — 三期 W2-5：混合模式（CSS `mix-blend-mode`）。缺省 `normal` ⇒ 不写样式，
 - `colorShift`?: ColorShift — 三期 W2-3：**颜色过渡**。作用于 `shape.color` / `textCard.accentColor` /
+- `reveal`?: TrackReveal — P3（2026-11-03）：**分区揭示**（卡片级）。缺省无 = 整卡随轨道出现（与之前一致）。
 
 ## ExitMotion
 > 三期 W1-1：退场动画。
@@ -266,6 +267,25 @@
 - `color`?: string — 已读字颜色（缺省白）。
 - `activeColor`?: string — 当前字颜色（缺省青 #5ad2ff + 辉光）。
 - `dimColor`?: string — 未读字颜色（缺省 28% 白）。
+
+## TrackReveal
+> P3（2026-11-03）：**分区揭示**配置（`BaseTrack.reveal`，卡片级）。
+
+- `kind`: 'wipe' | 'spotlight' — 揭示形态：`wipe` 帘式擦除 / `spotlight` 聚光圆从中心扩出。
+- `direction`?: 'left' | 'right' | 'up' | 'down' — wipe 揭示行进方向（缺省 `right` = 从左往右揭开）。
+- `durationInFrames`?: number — 揭示动画时长（帧，轨内相对；缺省 18）。
+- `startFrame`?: number — 揭示起点（轨内相对帧，缺省 0 = 轨道一出现就开始揭示）。
+- `center`?: { x?: number; y?: number } — spotlight 圆心（画布百分比，缺省 50/50）。
+
+## CalloutTrack (extends BaseTrack)
+> P3（2026-11-03）：**callout 引线标注**轨 —— 「指着一个东西讲」的原语。
+
+- `type`: 'callout'
+- `anchor`: { x: number; y: number } — 锚点（画布百分比 0–100）：引线指着的那个点。
+- `text`: string — 标签文案（单行，非空；上限 80 字符，建议 ≤24 字）。
+- `line`?: 'elbow' | 'straight' — 引线形态：`elbow` 肘线（先直后折，缺省）/ `straight` 直线。
+- `color`?: string — 线与标签文字颜色（缺省琥珀 #ffb454，与 chart 折线同族）。
+- `labelBackground`?: string — 标签底色（缺省 rgba(10,16,28,0.78) 深色玻璃）。
 
 ## ManifestVoiceOver
 > O-10：**单条旁白**（多句旁白各占一段时间轴）。

@@ -34,7 +34,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
 `recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
 单镜头动效从 `references/shot-cards.md` 挑卡填参（每卡实测可渲，带素材需求与每帧成本档）。
-手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
+手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz / chart / caption / callout）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
@@ -45,7 +45,8 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **素材轨时长硬口径**：video 轨 `durationInFrames` 必须来自 `list_shots` 真值，禁止目测或估算 → `references/source-duration.md`。
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
-- **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；卡片形态与节奏 → `references/explainer-patterns.md`。
+- **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；四种结构模板（陈述/对比/时间线/原理拆解）与卡片形态 → `references/explainer-patterns.md`。
+- **动效五要素**：动笔前按 beat / 主次 / 帧预算 / 进出场 / 禁用项过一遍 → `references/motion-brief.md`。
 - **动感范式（默认开）**：任何内容都要按 `references/motion-patterns.md` 的范式与决策表给画面加运动，避免成片像 PPT。
 
 ## 动感基线（默认开，避免成片像 PPT）

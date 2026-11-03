@@ -50,7 +50,7 @@
   画布百分比坐标（50 = 居中），`scale` 必须 > 0，`rotation` 单位是度。**六种轨通用**。
 - `box`（可选，2026-10-26）：**区域声明** —— `{ "x", "y", "w", "h" }`，0–100 画布百分比，
   **`x` / `y` 是区域中心**（不是左上角）。把本轨约束到该子区域：video / image / textCard /
-  shape 生效（内容铺满盒子、溢出裁掉）；transition / audioViz 给 box 直接拒收。
+  shape / chart / callout 生效（内容铺满盒子、溢出裁掉）；transition / audioViz 给 box 直接拒收。
   与 `transform` / `animate` / `exit` 的 `x` / `y` **互斥**（`scale` / `rotation` / `opacity`
   可同用）；出画布会被拒收（报错带修正算式）。**shape 轨豁免互斥与出画布检查**（沿用其
   既有语义：box 是缺省落点、显式 x/y 覆盖之）。**分屏 / 画中画 / 底部信息条等布局先抄
@@ -66,6 +66,11 @@
   与 `startFrame` **互斥**（同时写直接报错）。`gapFrames` 负数 = 与上一轨**重叠**（转场必用）。
 - `blend`（可选，三期）：`normal` / `screen` / `multiply` / `overlay` / `soft-light` —— 图层混合模式。
 - `colorShift`（可选，三期）：颜色随帧过渡（`shape.color` / `textCard.accentColor` / `audioViz.color`）。
+- `reveal`（可选，P3 · 2026-11-03）：**分区揭示** —— `{ "kind": "wipe" | "spotlight", "direction"?, "durationInFrames"?, "startFrame"?, "center"? }`。
+  `wipe` = 帘式擦除（`direction` = 揭示行进方向，缺省 `right` 从左往右揭开）；`spotlight` = 聚光圆从
+  `center`（缺省画布中心）半径 0 扩到 85%。揭示时长缺省 18 帧、`startFrame` 轨内相对缺省 0；揭示没开始时
+  内容**全遮**，走完后恒等（老 manifest 不写此字段逐像素不变）。用于：重点卡的擦除显现、聚光强调；
+  `transition` 轨写了只告警（自身不可见）。
 
 ## 帧级动画 `animate`
 
@@ -382,6 +387,31 @@
 用法要点：`box` 可用（内容轨）—— 半屏图表用 `{x:50,y:50,w:60,h:70}`；与 `textCard` 的
 `dataCard` 分工：`dataCard` 是 2–4 个大数字键值卡，`chart` 是 ≥3 项的完整图表；类别多时
 字号自动收缩，标签超长会截断（控制在 6 字内）。
+
+### `callout`（引线标注，P3 · 2026-11-03）
+
+「指着一个东西讲」的原语：一条轨收齐**锚点 + 引线 + 标签**（此前要 shape 线 / shape 点 /
+textCard 三轨手拼坐标）。
+
+```jsonc
+{ "type": "callout", "id": "co1", "startFrame": 30, "durationInFrames": 90,
+  "anchor": { "x": 62, "y": 40 },
+  "box": { "x": 30, "y": 30, "w": 22, "h": 9 },
+  "text": "日冕层温度反超光球", "line": "elbow", "color": "#ffb454" }
+```
+
+| 字段 | 缺省 | 说明 |
+| --- | --- | --- |
+| `anchor` | 必填 | `{x, y}` 画布百分比 0–100 —— 引线指着的那个点 |
+| `box` | 必填 | 标签盒（画布百分比中心语义，同区域声明口径） |
+| `text` | 必填 | 单行文案（≤80 字符，建议 ≤24 字；超宽自动截断） |
+| `line` | `elbow` | `elbow` 肘线（先直后折）/ `straight` 直线；出线点自动取标签盒朝锚点一侧的边缘中点 |
+| `color` | 琥珀 `#ffb454` | 线、锚点圆点、标签文字同色 |
+| `labelBackground` | 深色玻璃 | 标签底色 |
+
+动画是内置纯帧函数：引线 0→20 帧描边生长 → 锚点圆点 18→26 帧弹出 → 标签 14→26 帧淡入落位；
+BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用于整层）。配合
+`inspect_image` 的 bbox（换算成画布百分比）可以给生成图做标注。
 
 ### `caption`（词级字幕 / 卡拉OK，能力基准 #05 收口 · 2026-10-31）
 

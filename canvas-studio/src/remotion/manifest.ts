@@ -29,6 +29,8 @@ import type { SpriteRect } from './sprite.js'
 import { validateSpriteRect } from './sprite.js'
 import { countSpokenChars } from './word-timing.js'
 import { collectAnchorIssues, KNOWN_ANCHOR_KEYS } from './anchor.js'
+import { isNonEmptyString, isRecord, validateCalloutTrack, validateChartTrack } from './manifest-track-validate.js'
+import { validateReveal } from './reveal.js'
 import { lintZOrder } from './manifest-lint.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
@@ -113,6 +115,7 @@ export type CompositionTrack =
   | AudioVizTrack
   | ChartTrack
   | CaptionTrack
+  | CalloutTrack
 
 export interface BaseTrack {
   /**
@@ -199,6 +202,12 @@ export interface BaseTrack {
    * `audioViz.color`；sRGB 线性插值，区间外取端点。
    */
   colorShift?: ColorShift
+  /**
+   * P3（2026-11-03）：**分区揭示**（卡片级）。缺省无 = 整卡随轨道出现（与之前一致）。
+   * `wipe` = 帘式擦除、`spotlight` = 聚光圆扩出；纯帧函数在 `reveal.ts`，渲染端由
+   * RevealShell 在轨内坐标系按帧求值 clip-path（确定性铁律同 animate）。
+   */
+  reveal?: TrackReveal
 }
 
 /**
@@ -650,6 +659,49 @@ export interface CaptionTrack extends BaseTrack {
 }
 
 /**
+ * P3（2026-11-03）：**分区揭示**配置（`BaseTrack.reveal`，卡片级）。
+ *
+ * 长期缺口：TransitionShell 已有 clipPath/maskImage 原语（转场专用），但「一张卡
+ * 自己的擦除显现 / 聚光强调」没有入口，模型只能拿 shape 轨手拼遮罩。所有内容轨
+ * 通用；`transition` 轨自身不可见，给了只告警。
+ */
+export interface TrackReveal {
+  /** 揭示形态：`wipe` 帘式擦除 / `spotlight` 聚光圆从中心扩出。 */
+  kind: 'wipe' | 'spotlight'
+  /** wipe 揭示行进方向（缺省 `right` = 从左往右揭开）。 */
+  direction?: 'left' | 'right' | 'up' | 'down'
+  /** 揭示动画时长（帧，轨内相对；缺省 18）。 */
+  durationInFrames?: number
+  /** 揭示起点（轨内相对帧，缺省 0 = 轨道一出现就开始揭示）。 */
+  startFrame?: number
+  /** spotlight 圆心（画布百分比，缺省 50/50）。 */
+  center?: { x?: number; y?: number }
+}
+
+/**
+ * P3（2026-11-03）：**callout 引线标注**轨 —— 「指着一个东西讲」的原语。
+ *
+ * 长期缺口（shot-cards 缺口清单）：锚点标注此前只能拿 shape 轨手拼坐标（线/点/
+ * 文字三轨对齐，锚点一改全盘手算）。一条轨收齐「锚点 + 引线 + 标签」；标签盒复用
+ * BaseTrack 的 `box`（画布百分比中心语义，**callout 必填**）；引线自动从标签盒
+ * 朝锚点一侧的边缘中点出线。动画纯帧函数：引线描边生长 → 锚点圆点弹出 → 标签
+ * 淡入落位（Callout.tsx）。
+ */
+export interface CalloutTrack extends BaseTrack {
+  type: 'callout'
+  /** 锚点（画布百分比 0–100）：引线指着的那个点。 */
+  anchor: { x: number; y: number }
+  /** 标签文案（单行，非空；上限 80 字符，建议 ≤24 字）。 */
+  text: string
+  /** 引线形态：`elbow` 肘线（先直后折，缺省）/ `straight` 直线。 */
+  line?: 'elbow' | 'straight'
+  /** 线与标签文字颜色（缺省琥珀 #ffb454，与 chart 折线同族）。 */
+  color?: string
+  /** 标签底色（缺省 rgba(10,16,28,0.78) 深色玻璃）。 */
+  labelBackground?: string
+}
+
+/**
  * O-10：**单条旁白**（多句旁白各占一段时间轴）。
  *
  * 真机症状：三句旁白要落在 2.60 / 7.07 / 11.90 秒，而 `voiceOverUrl` 只收一个文件 ——
@@ -717,7 +769,7 @@ export interface ManifestValidation {
   warnings: string[]
 }
 
-const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption'])
+const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout'])
 const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
@@ -781,16 +833,8 @@ export function isAllowedManifestAssetRef(ref: string): boolean {
   return !ref.startsWith('//')
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function isFinitePositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
 }
 
 // ─────────────────────── CV-334 · 契约外字段告警（不阻断） ───────────────────────
@@ -812,8 +856,8 @@ const KNOWN_BASE_TRACK_KEYS = new Set([
   'box',
   // 二期 A1 / A2
   'orbit', 'fx',
-  // 三期 W1-1 / W1-2 / W2-3 / W2-5
-  'exit', 'startAfter', 'colorShift', 'blend',
+  // 三期 W1-1 / W1-2 / W2-3 / W2-5 / P3 揭示
+  'exit', 'startAfter', 'colorShift', 'blend', 'reveal',
 ])
 const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
@@ -824,6 +868,7 @@ const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
+  callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
@@ -839,6 +884,9 @@ const KNOWN_COLOR_SHIFT_KEYS = new Set(['from', 'to', 'startFrame', 'durationInF
 const KNOWN_LOOK_KEYS = new Set(['contrast', 'saturation', 'brightness', 'temperature', 'vignette', 'grain'])
 const KNOWN_TEXT_ANIM_OPTIONS_KEYS = new Set(['wordDelayFrames', 'offsetY', 'blur'])
 const KNOWN_SPRING_KEYS = new Set(['stiffness', 'damping', 'mass'])
+/** P3：reveal 子键 / callout 锚点子键（unknown-fields 扫描用；两处都是 {x,y} 百分比点）。 */
+const KNOWN_REVEAL_KEYS = new Set(['kind', 'direction', 'durationInFrames', 'startFrame', 'center'])
+const KNOWN_PERCENT_POINT_KEYS = new Set(['x', 'y'])
 /** O-10：多轨旁白的条数上限（防一份 manifest 塞进上百条把渲染器音频层压垮）。 */
 const MAX_VOICE_OVER_CLIPS = 64
 
@@ -917,6 +965,14 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
       }
       if (isRecord(track.animOptions)) {
         warnUnknownKeys(track.animOptions, KNOWN_TEXT_ANIM_OPTIONS_KEYS, `${at}.animOptions`, found)
+      }
+      // P3：reveal / callout.anchor 子对象同扫（口径同 orbit.center）。
+      if (isRecord(track.reveal)) {
+        warnUnknownKeys(track.reveal, KNOWN_REVEAL_KEYS, `${at}.reveal`, found)
+        warnUnknownKeys(track.reveal.center, KNOWN_PERCENT_POINT_KEYS, `${at}.reveal.center`, found)
+      }
+      if (isRecord(track.anchor)) {
+        warnUnknownKeys(track.anchor, KNOWN_PERCENT_POINT_KEYS, `${at}.anchor`, found)
       }
       if (isRecord(track.gradient)) {
         // 渐变只有两个键，单独扫一遍即可（避免把它当成契约外字段整条报掉）。
@@ -1467,7 +1523,7 @@ export function validateManifest(input: unknown): ManifestValidation {
     // 放在通用字段区（与 transform/orbit 同层），type 此刻已验证过、可直接引用。
     if (track.box !== undefined) {
       if (type === 'transition' || type === 'audioViz') {
-        errors.push(`${at}.box 只支持 video / image / textCard / shape 轨（${type} 轨的位置由其它字段决定，box 不适用）`)
+        errors.push(`${at}.box 只支持 video / image / textCard / shape / chart / callout 轨（${type} 轨的位置由其它字段决定，box 不适用）`)
       } else {
         // 以下两查只对**新获得 box 的三类轨**生效；shape 保持既有语义不动——
         // ① box 是缺省落点、transform/animate 显式 x/y 时覆盖（manifest-contract.md
@@ -1490,6 +1546,14 @@ export function validateManifest(input: unknown): ManifestValidation {
       errors.push(`${at}.blend 非法（${String(track.blend)}）—— 白名单：normal / screen / multiply / overlay / soft-light`)
     }
     if (track.colorShift !== undefined) validateColorShift(track.colorShift, at, errors)
+
+    // P3（2026-11-03）：分区揭示 —— 校验主体在 reveal.ts（纯函数模块），这里只接线。
+    if (track.reveal !== undefined) {
+      validateReveal(track.reveal, at, errors, warnings)
+      if (type === 'transition') {
+        warnings.push(`${at} 是 transition 轨（自身不可见），reveal 不生效（已忽略）`)
+      }
+    }
 
     switch (type) {
       case 'video':
@@ -1663,69 +1727,16 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         break
       }
-      case 'chart': {
-        const variant = track.variant
-        if (variant !== 'bars' && variant !== 'dual' && variant !== 'line') {
-          errors.push(`${at}.variant 只允许 bars / dual / line（当前：${String(variant)}）`)
-        }
-        // A2（2026-10-31）：数据来源 —— 'timeline' 从 video 轨真值推导，与内联互斥。
-        const timelineMode = track.source === 'timeline'
-        if (track.source !== undefined && !timelineMode) {
-          errors.push(`${at}.source 只允许 'timeline'（缺省 = 内联 labels / values）`)
-        }
-        if (timelineMode) {
-          const inline = track.labels !== undefined || track.values !== undefined || track.lineValues !== undefined
-          if (inline) {
-            errors.push(`${at} 的 source:'timeline' 与内联 labels/values/lineValues 互斥（数据来源必须唯一）`)
-          } else if (!input.tracks.some((t) => isRecord(t) && t.type === 'video')) {
-            errors.push(`${at} 的 source:'timeline' 需要 manifest 里至少一条 video 轨（每镜时长真值）`)
-          }
-        } else {
-          const labels = track.labels
-          if (
-            !Array.isArray(labels) || labels.length === 0 || labels.length > 32 ||
-            !labels.every((l) => isNonEmptyString(l))
-          ) {
-            errors.push(`${at}.labels 必须是非空字符串数组（1–32 项，与 values 一一对应）`)
-          }
-          const values = track.values
-          const valuesOk =
-            Array.isArray(values) && values.length > 0 &&
-            values.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-          if (!valuesOk) {
-            errors.push(`${at}.values 必须是非负有限数值数组（柱高数据，不允许负值）`)
-          } else if (Array.isArray(labels) && labels.length > 0 && Array.isArray(values) && values.length !== labels.length) {
-            errors.push(`${at}.values 长度（${String(Array.isArray(values) ? values.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
-          } else if (Array.isArray(values) && values.every((v) => v === 0)) {
-            errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
-          }
-          if (track.lineValues !== undefined) {
-            if (variant === 'bars' || variant === 'line') {
-              warnings.push(`${at} 是 variant:'${String(variant)}'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
-            } else {
-              const lv = track.lineValues
-              const lineOk =
-                Array.isArray(lv) && lv.length > 0 &&
-                lv.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
-              if (!lineOk) {
-                errors.push(`${at}.lineValues 必须是非负有限数值数组（折线数据）`)
-              } else if (Array.isArray(labels) && labels.length > 0 && lv.length !== labels.length) {
-                errors.push(`${at}.lineValues 长度（${String(Array.isArray(lv) ? lv.length : 0)}）必须与 labels（${String(Array.isArray(labels) ? labels.length : 0)}）一致`)
-              } else if (Array.isArray(lv) && lv.every((v) => v === 0)) {
-                errors.push(`${at}.lineValues 不能全为 0`)
-              }
-            }
-          } else if (variant === 'dual') {
-            errors.push(`${at} 是 variant:'dual'，必须提供 lineValues（折线数据，长度同 labels）`)
-          }
-        }
-        for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor'] as const) {
-          if (track[key] !== undefined && !isNonEmptyString(track[key])) {
-            errors.push(`${at}.${key} 必须是非空字符串`)
-          }
-        }
+      case 'chart':
+        // P3（2026-11-03）：校验主体外提到 manifest-track-validate.ts（棘轮合规），语义逐字不变。
+        validateChartTrack(
+          track, at, errors, warnings,
+          input.tracks.some((t) => isRecord(t) && t.type === 'video'),
+        )
         break
-      }
+      case 'callout':
+        validateCalloutTrack(track, at, errors)
+        break
       case 'caption': {
         if (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src)) {
           errors.push(`${at}.src 必须是 ${ASSET_URL_PREFIX} 开头的同源资产 URL（或以 / 开头的绝对路径，须位于本项目资产目录内）`)

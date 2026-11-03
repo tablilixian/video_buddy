@@ -2137,3 +2137,33 @@
 
 - **详情**：REQ-037 批次 4。**R3**：`upload_image` 收到 `http(s)` 外链时自动补一个画布参考图片节点（`ensureExternalImageNode`：`isReference` + `referenceRole:'image'`，Drama filename 直带；按「精确 URL 或 URL 末段」双口径查重——产物 URL 与重复导入不建新节点；本地路径不在此列）——治「链接参考三处无痕」（画布 / 素材托盘 / §07 登记链路随即可用）；工具描述与 toolchain.md 行同步。**R5 对账**：`renderStoryboard` 新增 `canvasNodeIds` 选项（routes 侧 `storyboardCanvasNodeIds` 读画布提供，读失败降级为不对账不阻断），§07 的 `canvasNode` 引用指向已删除节点时就地渲染「引用失效：画布节点已删除」红标（`.pill.stale`，双主题 `--red`/`--red-soft`）——「账面还在、实物没了」的漂移必须可见。
 - **验证**：typecheck 通过；真机验收 = 发图片链接 → 画布出节点进素材托盘；删除 §07 引用的节点 → 覆盖层标红。
+
+#### CV-409 · ShapeTrack.pivot 旋转轴心（指针/仪表盘/偏心自转）（2026-11-03，待桌面验收）
+
+- **详情**：`ShapeTrack.pivot`（50,50 缺省 = 盒中心）；轴心静止落点 = box 中心 + (pivot−50)% × 盒尺寸；path 轨轴心按画布百分比。`shape-geometry.ts` 新 `pivotOriginStyle` 纯函数；`Shape.tsx` 三分支接线；manifest.ts 撞 2187 行棘轮 → `lintZOrder` 拆到新文件 `manifest-lint.ts`。解锁指针甩弧/罗盘偏心自转/仪表盘。
+- **验证**：测试 `tests/remotion-shape-pivot.test.mjs` 含反向变异（守卫关掉必须变红）；真机分项验收通过（pivot 三帧核对）。
+
+#### CV-410 · explainer-format-director 科普编排壳（L2 薄壳首发）（2026-11-03，待桌面验收）
+
+- **详情**：新 skill `explainer-format-director`，三层架构（L1 总纲 → L2 编排壳 → L3 executor）的 L2 首发样板：定向三问 → 链路路由表 → executor 指派 → 验收清单 + 不做清单；SKILL.md 4102B（薄壳目标 ≤4KB / 硬闸 12288B）；stage:preview；platform.yaml（category: format）+ skill-catalog 快照同批。
+- **验证**：skill 守卫测试全绿（catalog 快照深等 / platform-meta / progressive-disclosure）；真机整片验收 = 六大体裁路线 §一 0.1，通过后 0.3 转正。
+
+#### CV-411 · chart line 独立折线 + dataCard countUp 数位滚动（2026-11-03，待桌面验收）
+
+- **详情**：chart `variant:'line'` 独立折线（区别于 bar）；dataCard `countUp` 数位滚动——新纯函数 `src/remotion/count-up.ts` 的 `countUpTextAt`（45 帧缓出、前后缀/小数位对齐），TextCard 接线。
+- **验证**：测试 `tests/chart-line-countup.test.mjs`；真机分项验收通过（新四卡跑通）。
+
+#### CV-412 · callout 引线标注轨 + reveal 分区揭示 + 结构模板（2026-11-03，待桌面验收）
+
+- **详情**：新轨道 `callout`（anchor+box+text 一条轨、elbow/straight 引线、non-scaling-stroke）；`reveal` 分区揭示（wipe 四方向 / spotlight 85%）——新 `src/remotion/reveal.ts` 纯函数 + `RevealShell.tsx` + TrackReveal 契约；explainer-patterns 三结构模板。chart 校验外提到新文件 `manifest-track-validate.ts`（棘轮合规）。
+- **验证**：测试 `tests/remotion-callout-reveal.test.mjs`（P3 时 3 用例红系测试断言写错已修：缺省时长 18 帧、spotlight 半径 74.375%）；真机负例补刀 = anchor 越界必须拒收（校验拒收已验）。
+
+#### CV-413 · 技能广场「体裁编排」分类 + 编排壳去重瘦身（2026-11-03，待桌面验收）
+
+- **详情**：`SKILL_CATEGORY_IDS` 加 `'format'`（体裁编排，置于 spec 前），编排壳挪组换 compass 图标——解决技能广场科普双 skill 同类重叠；explainer-format-director 去重瘦身。
+- **验证**：skill-catalog 快照深等 + platform-meta 守卫绿（改 catalog/yaml 后先 `yarn build` 再跑）。
+
+#### CV-414 · 科普复盘收尾批（指示优先/音色澄清/1:1 翻转）（2026-11-03，待桌面验收）
+
+- **详情**：总纲 `canvas-studio-creation/SKILL.md` 新增「用户明确指示压过项目预设/配方缺省」原则；`code-driven-explainer/SKILL.md` 音色人格澄清（未指定不得从资产库自挑）+ 草稿先行 + 预算前置（12206B / 闸 12288B）；`explainer-patterns.md` §流程纪律 + 三结构模板；`providers/types.ts` CV-136 注释翻转（1:1 拍板支持，接入属路线阶段 2.1）；新建 `docs/六大体裁推进路线-20261103.md`（剩余五体裁 SSOT，含科普会话实录复盘四问落地：references 按需读 / 机器判据与审美边界 / 草稿先行 / 音色澄清）。
+- **验证**：`yarn build` 绿 + skill 守卫 9 测试 2669·2669 全绿（status-shape 闸含）。

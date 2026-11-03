@@ -2167,3 +2167,23 @@
 
 - **详情**：总纲 `canvas-studio-creation/SKILL.md` 新增「用户明确指示压过项目预设/配方缺省」原则；`code-driven-explainer/SKILL.md` 音色人格澄清（未指定不得从资产库自挑）+ 草稿先行 + 预算前置（12206B / 闸 12288B）；`explainer-patterns.md` §流程纪律 + 三结构模板；`providers/types.ts` CV-136 注释翻转（1:1 拍板支持，接入属路线阶段 2.1）；新建 `docs/六大体裁推进路线-20261103.md`（剩余五体裁 SSOT，含科普会话实录复盘四问落地：references 按需读 / 机器判据与审美边界 / 草稿先行 / 音色澄清）。
 - **验证**：`yarn build` 绿 + skill 守卫 9 测试 2669·2669 全绿（status-shape 闸含）。
+
+#### CV-415 · handoff 交回契约最小门禁（decision 必填 + 指向存在）（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 1.0（拍板：最小门禁先行）。platform.yaml 新增 `handoff` 字段（`<skill>@<stage>` / `self`），6 个 decision 型非编排 skill 全部声明交回点（bible-story / action-scene → `@storyboard`；code-driven-explainer / explainer-format-director / viral-remake → `@render`；effect-test-runner → `self`）。stage 词表两枚：`storyboard`（拍摄定稿回流总纲）/ `render`（manifest 产物回流总纲渲染段）。§4.3 判据 2/4（knowledge 禁 handoff / 目标类型校验）留后续收紧。
+- **验证**：`tests/skill-handoff.test.mjs` 两级校验；反向变异 2 处验红（删 handoff → L1 红 / 幽灵指向 → L2 红）；`yarn check` 全绿。
+
+#### CV-416 · 资产库扩品牌三分类 logo/brand/product + manifest.global logo 位（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 1.1（品牌宣传/产品讲解能力前提）。LibCategory 五处同步：contracts 枚举 + LIB_CATEGORIES + 标签 + isLibCategory 收口 / param-guard 描述串 / AssetLibrary CATEGORY_COLORS（logo `#F472B6` / brand `#A3E635` / product `#F87171`）/ manifest.global 新 `logo` 键（KNOWN_GLOBAL_KEYS + 字段文档机器生成物同步）。REQ-032 C1 失败模式上闸：B-4 追加 param-guard 描述串同源断言。
+- **验证**：B-4 全量对拍绿 + 反向变异（描述串摘 logo → 红）；voice「排末位」断言退休改存在性（位置漂移由 B-4 兜底）；棘轮 manifest.ts +2（2187→2189）显式登记；`yarn check` 全绿。
+
+#### CV-417 · brand-format-director 品牌宣传编排壳（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 1.2。从 `brand-promo-video-generator` 拆编排层（explainer 壳同款样板）：定向三问（素材现实 / 投放场景 / 时长画幅语言，素材底线前置进第一问）+ 两条链路路由（brand-promo 风格链 / code-driven-explainer 动效图形链）+ 验收四条（真实性底线）+ 不做清单；风格与素材纪律留 L3 原样。SKILL.md 4334B；platform.yaml（category: format / stage: preview / role: decision / handoff）+ catalog 快照同批。
+- **验证**：skill 守卫全绿；裸 `references/` 路径踩渐进披露守卫（改跨 skill 全限定路径）；`yarn check` 全绿；真机整片验收 = 阶段 1.4。
+
+#### CV-418 · product-format-director 产品讲解编排壳（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 1.3。统一两个既有入口：`minimalist-product-ad-generator`（极简高级广告链，锚点照体系）+ `scaffold_manifest` recipe=`product-walkthrough`（单图起步走查链）——定向三问（产品素材现实 / 卖点调性 / 时长画幅）+ 两链路路由 + 混合需求分段走链降级 + 验收四条 + 不做清单。SKILL.md 4559B；platform.yaml + catalog 快照同批。
+- **验证**：skill 守卫全绿 + `yarn check` 全绿；真机整片验收 = 阶段 1.4。

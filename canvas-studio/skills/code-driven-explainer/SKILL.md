@@ -1,13 +1,13 @@
 ---
 name: code-driven-explainer
-description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → list_shots / list_references 取素材真值 → 组装 manifest → ask_user_choice 给轨道时序预览（可调时长档位 / 字幕粒度 / 卡片取舍）→ render_composition。边界：不改写总纲的流程与审批语义；词级卡拉OK走 `caption` 轨（能量谷推导或显式 words；句级硬切仍走 textCard）；纯片段顺序拼接仍走 compose_video，不用本工具。
+description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → list_shots / list_references 取素材真值 → 组装 manifest → ask_user_choice 给轨道时序预览 → render_composition。边界：不改写总纲的流程与审批语义；词级卡拉OK走 `caption` 轨（句级硬切仍走 textCard）；纯片段顺序拼接仍走 compose_video，不用本工具。
 ---
 
 # 代码驱动科普成片（code-driven-explainer）
 
-把知识 / 数据 / 观点做成**带字幕卡与转场的解说短片**时走本路径：时间轴由 `CompositionManifest`（一段 JSON）显式声明，客户端的 Remotion 渲染器按它出片，宿主只做校验、落盘、探测与混音。适合需要**代码级精确控制**（句级字幕对齐、卡片逐一入场、转场窗口）的成片。
+把知识 / 数据 / 观点做成**带字幕卡与转场的解说短片**时走本路径：时间轴由 `CompositionManifest`（一段 JSON）显式声明，客户端的 Remotion 渲染器按它出片，宿主只做校验、落盘、探测与混音。适合**代码级精确控制**的成片。
 
-本 skill 是 `canvas-studio-creation` 总纲的**下游分支**：总纲负责需求澄清、拍摄定稿与审批语义，本 skill 只负责「已定稿之后，怎么把素材组装成 manifest 并交给 `render_composition`」。启用它**不改变**总纲的流程与审批门禁。
+本 skill 是 `canvas-studio-creation` 总纲的**下游分支**：总纲负责需求澄清、拍摄定稿与审批语义，本 skill 只负责「已定稿之后，怎么把素材组装成 manifest 并交给 `render_composition`」。
 
 ## 何时用（trigger）
 
@@ -24,37 +24,36 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 工作流
 
-0. **先问三件事（confirm 模式）**：开工前用 `ask_user_choice`（一次一个问题，≤3 问）确认**只有用户能答**的项——
-   **音轨**（纯 BGM / 要旁白 / 不要声音）、**时长与画幅**（用户没明说时）、**素材来源**（用哪张图 / 要不要先生成）。
-   为什么必须前置：实测有会话把音轨问题拖到第 33 步才问，答案一变全返工。
+0. **先问清（confirm 模式）**：开工前用 `ask_user_choice`（一次一个问题，≤3 问）确认**只有用户能答**的项——
+   **音轨**（纯 BGM / 要旁白 / 不要声音；要旁白就连**音色人格**问一次——未指定**不得**自行从资产库挑，审美归用户，缺省用 tts 缺省锚并交付时说明）、**时长与画幅**（用户没明说时）、**素材来源**（用哪张图 / 要不要先生成）。
+   实测有会话拖到第 33 步才问，答案一变全返工。
    **auto 模式不问**（`autoAnswerFor` 直接给默认，见工具描述）；这是需求澄清，**不是审批门**。
-   问完就往下走，不要在第 3 步重复问同一件事。
 
 1. **取真值**：`list_shots` 读每个视频片段的**真实时长**（素材轨时长的唯一合法来源）；`list_references` 取角色 / 风格资产卡与图片。有旁白时以 `tts_voiceover` 结果里的真值时长为准。
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
 `recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
-单镜头动效从 `references/shot-cards.md` 挑卡填参（每卡实测可渲，带素材需求与每帧成本档）。
-手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz / chart / caption / callout）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
+单镜头动效从 `references/shot-cards.md` 挑卡填参。
+手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（九种轨型）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
 
 ## 组装要点（细则已下沉分册）
 
-- **工具地图**：每个工具干什么、参数与返回见 `../canvas-studio-creation/references/toolchain.md`——本 skill 只讲做法，别靠工具名猜用途。
+- **工具地图**：每个工具干什么、参数与返回见 `../canvas-studio-creation/references/toolchain.md`——别靠工具名猜用途。
 - **素材轨时长硬口径**：video 轨 `durationInFrames` 必须来自 `list_shots` 真值，禁止目测或估算 → `references/source-duration.md`。
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
 - **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；四种结构模板（陈述/对比/时间线/原理拆解）与卡片形态 → `references/explainer-patterns.md`。
 - **动效五要素**：动笔前按 beat / 主次 / 帧预算 / 进出场 / 禁用项过一遍 → `references/motion-brief.md`。
-- **动感范式（默认开）**：任何内容都要按 `references/motion-patterns.md` 的范式与决策表给画面加运动，避免成片像 PPT。
+- **动感范式（默认开）**：按 `references/motion-patterns.md` 的范式与决策表给画面加运动。
 
 ## 动感基线（默认开，避免成片像 PPT）
 
 成片「像幻灯片」的根因几乎从不是 Remotion 能力不够，而是 manifest **没写动画**。`animate` / `kenBurns` /
-`transition` 都是逐帧确定的合法手段（CV-336 后多段关键帧已正确插值）。**组装时默认就加动感基线**，不要等宿主回
+`transition` 都是逐帧确定的合法手段。**组装时默认就加动感基线**，不要等宿主回
 「静态图文」提示才补——那是补救，不是目标。范式怎么选、怎么让运动「被看懂」：全部下沉在
-`references/motion-patterns.md`（可复制范式 + 决策表），按决策表为画面选运动，而不是只放静态卡片。
+`references/motion-patterns.md`（可复制范式 + 决策表）。
 
 默认基线（每条都应在组装时落地，除非有明确理由静态）：
 
@@ -66,7 +65,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。
 - **数据对比**：≥3 项用 `chart` 轨（柱状/双轴/折线），2–4 个大数字用 `dataCard`（可 `countUp` 数位滚动）；字段见 `references/manifest-contract.md`。
 
-**保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景——这条不变，不要给字幕卡加 `fadeFrames`。
+**保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景，不要给字幕卡加 `fadeFrames`。
 
 **不要**为了「消静态提示」去逐镜生成视频（H3）——Remotion 程序化动画已能注入生命感，且成本 / 一致性更可控。H3 只用于需要**写实质感**（真实光影 / 运镜）的「英雄镜头」，且按既有 `video` 轨接入（见工作流第 2 步）。
 
@@ -79,8 +78,10 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **video 轨时长以真值为准**：宿主用 ffprobe 复核并**按真值改写** `durationInFrames`；校正后若相邻轨不再重叠、转场失效，会连同明细一起拒收（`CS-USER-ERR`）。收到就按报错里的真值重排轨道与转场窗口，**不要原样重试**。
 - **不要翻历史会话 / 旧项目考古**：需要知道"以前怎么做的"就问用户，或只看本项目 `build/` 与资产目录。
   `cat projects.json`、遍历 `~/.videobuddy/sessions/` 去找上一个项目为什么失败，属于**无效考古**——
-  实测三步烧掉约 5 分钟推理，还会把错误的先验带进来（旧项目失败的原因通常与本轮无关）。
+  实测烧几分钟推理且带入无关先验。
 - **风险提示不是错误**：全片无 video 轨时宿主会回一条「图文卡片型」提示（静态占比 / 运动密度 / 镜头数命中），**这条路线是合法的**，不要为此改成逐镜生成视频。
+- **草稿先行**：定稿落地 → **立即渲完整草稿落画布**给用户 → 按反馈迭代；探针（`spotFrames` **不落画布**）只排障，静默自检 ≤2 轮必出片；自验只验**机器判据**（出画/重叠/数据保真/响度实测），审美归用户 → `references/explainer-patterns.md` §流程纪律。
+- **预算前置**：references **按需取用**，bash 大输出落文件只回摘要；旁白先按 **4–5 字/秒** 卡预算，超了先改稿再合成。
 - **有下一步就别停轮**：一段渲成功后直接推进下一段 / 下一节，不要停下来等用户点头。只有「审美取向、总时长、素材取舍」这类**只有用户能回答**的事才值得停；其余一律自己决定并在汇报里说明。
 - **内容慢 vs 环境坏，先看工单再看内容**：返回文本里有一行 `工单：<执行者> · <认领状态> · <首帧> · 进度 · 用时`。
   - 出现「未认领 / 无首帧」或最小探针（1 轨 / 10 帧）仍 **>1s/帧** ⇒ 是**执行器链路问题**，停手去查（见「遇错处理」），**不要再缩 manifest 空转**；

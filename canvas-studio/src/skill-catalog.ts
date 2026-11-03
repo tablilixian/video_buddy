@@ -388,6 +388,16 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  {
+    name: 'product-format-director',
+    title: '产品讲解编排',
+    summary: '产品讲解体裁的 L2 编排壳：定向三问 + 链路路由，统一极简产品广告与产品走查两入口。',
+    category: 'format',
+    icon: 'compass',
+    hue: 24,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',

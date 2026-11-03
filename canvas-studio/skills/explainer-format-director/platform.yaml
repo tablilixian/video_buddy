@@ -17,3 +17,5 @@ stage: "preview"
 # 编排型（规定「走哪条下游链路」的决策型分支），不是知识型；不进能力槽位绑定表，slot 用 general。
 role: "decision"
 slot: "general"
+# 交回契约（六大体裁路线阶段 1.0，tests/skill-handoff.test.mjs 门禁）：decision 型非编排者必填，"<skill>@<stage>" 或 "self"。
+handoff: "canvas-studio-creation@render"

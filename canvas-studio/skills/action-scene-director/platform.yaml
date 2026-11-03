@@ -14,3 +14,5 @@ hue: 350
 featured: true
 role: "decision"
 slot: "general"
+# 交回契约（六大体裁路线阶段 1.0，tests/skill-handoff.test.mjs 门禁）：decision 型非编排者必填，"<skill>@<stage>" 或 "self"。
+handoff: "canvas-studio-creation@storyboard"

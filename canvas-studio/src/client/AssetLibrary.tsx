@@ -18,13 +18,16 @@ import type { ReactElement } from 'react'
 import type { LibCategory, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { LIB_CATEGORIES, LIB_CATEGORY_LABELS, libraryMediaUrl } from '../contracts/asset-library.js'
 
-/** 四分类色点（方案 §5.2：低饱和辅助识别色，取自 styles.ts 现有强调色系）。 */
+/** 分类色点（方案 §5.2：低饱和辅助识别色，取自 styles.ts 现有强调色系）。 */
 const CATEGORY_COLORS: Readonly<Record<LibCategory, string>> = {
   character: '#35C2A6',
   scene: '#4D9FFF',
   prop: '#F5A742',
   group: '#9C6CFF',
   voice: '#7DD3FC',
+  logo: '#F472B6',
+  brand: '#A3E635',
+  product: '#F87171',
 }
 
 /** 侧栏「全部」的伪分类 id。 */

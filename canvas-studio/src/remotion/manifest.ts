@@ -751,6 +751,8 @@ export interface ManifestGlobal {
   fonts?: ManifestFont[]
   theme?: 'light' | 'dark'
   brandColor?: string
+  /** 品牌 logo 图同源 URL（同 `tracks[].src` 约束；品牌宣传 / 产品讲解体裁的固定 logo 位，六大体裁路线阶段 1.1）。 */
+  logo?: string
 }
 
 export interface ManifestFont {
@@ -893,7 +895,7 @@ const MAX_VOICE_OVER_CLIPS = 64
 const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'voiceOver', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck'])
 const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
 const KNOWN_DUCK_KEYS = new Set(['amount'])
-const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor'])
+const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor', 'logo'])
 const KNOWN_FONT_KEYS = new Set(['family', 'weight', 'src'])
 
 /**

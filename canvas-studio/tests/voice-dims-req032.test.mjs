@@ -268,8 +268,10 @@ test('REQ-032 Step 5 资产库第五分类「音色」：契约 + 标签 + 颜�
   const contract = await read('src/contracts/asset-library.ts')
   const lib = await read('src/client/AssetLibrary.tsx')
   // C1：LibCategory 加 voice（第五分类），LIB_CATEGORIES 稳定枚举序含 voice。
+  // （六大体裁路线阶段 1.1 起品牌三分类 logo/brand/product 排在 voice 之后——
+  //   「排在末位」断言随之退休，只锁存在性；位置漂移由 B-4 全量对拍兜底。）
   assert.match(contract, /'character' \| 'scene' \| 'prop' \| 'group' \| 'voice'/, 'LibCategory 必须含 voice')
-  assert.match(contract, /\['character', 'scene', 'prop', 'group', 'voice'\]/, 'LIB_CATEGORIES 必须含 voice 且排在末位')
+  assert.match(contract, /'character', 'scene', 'prop', 'group', 'voice',/, 'LIB_CATEGORIES 必须含 voice')
   assert.match(contract, /voice: '音色'/, 'LIB_CATEGORY_LABELS 必须有 voice 中文标签')
   // AssetLibrary 的 Record<LibCategory,...> 必须补 voice 键（否则类型不完整）。
   assert.match(lib, /voice: '#7DD3FC'/, 'CATEGORY_COLORS 必须补 voice 键（audio accent #7dd3fc）')

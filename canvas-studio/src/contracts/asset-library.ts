@@ -6,7 +6,8 @@
  * 与 Client（资产库页 / `@` 引用候选取数）都只经本文件交流，不各自长形状。
  *
  * 与项目级 `StudioAsset`（`contracts/canvas.ts`，`role: character|scene|style`）是
- * **两套枚举**：库层用四分类（character/scene/prop/group），项目层 `StudioAsset.role`
+ * **两套枚举**：库层用独立分类集（character/scene/prop/group/voice + 品牌三分类
+ * logo/brand/product），项目层 `StudioAsset.role`
  * 保持不动（style 是风格锚点注入用途，不进库）——方案 §2.2 的决策，避免 bump
  * `CANVAS_DOCUMENT_VERSION` 与迁移 look-asset 流程。
  */
@@ -14,11 +15,13 @@
 /** 库文档/条目 schema 版本；结构变化时 bump 并在读侧迁移。 */
 export const LIBRARY_SCHEMA_VERSION = 1
 
-/** 分类枚举（需求表口径：角色 / 场景 / 物件 / 群像；REQ-032 C1 追加「音色」第五分类）。 */
-export type LibCategory = 'character' | 'scene' | 'prop' | 'group' | 'voice'
+/** 分类枚举（需求表口径：角色 / 场景 / 物件 / 群像；REQ-032 C1 追加「音色」；六大体裁路线阶段 1.1 追加品牌三分类）。 */
+export type LibCategory = 'character' | 'scene' | 'prop' | 'group' | 'voice' | 'logo' | 'brand' | 'product'
 
 /** 分类枚举的稳定枚举序（导航 / 计数按此顺序展示，不随对象键序漂移）。 */
-export const LIB_CATEGORIES: readonly LibCategory[] = ['character', 'scene', 'prop', 'group', 'voice']
+export const LIB_CATEGORIES: readonly LibCategory[] = [
+  'character', 'scene', 'prop', 'group', 'voice', 'logo', 'brand', 'product',
+]
 
 /** 分类中文标签（UI pill、agent 库清单共用同一份字面量）。 */
 export const LIB_CATEGORY_LABELS: Readonly<Record<LibCategory, string>> = {
@@ -27,6 +30,9 @@ export const LIB_CATEGORY_LABELS: Readonly<Record<LibCategory, string>> = {
   prop: '物件',
   group: '群像',
   voice: '音色',
+  logo: 'Logo',
+  brand: '品牌',
+  product: '产品',
 }
 
 /**
@@ -38,7 +44,8 @@ export const LIB_CATEGORY_LABELS: Readonly<Record<LibCategory, string>> = {
  * `tests/asset-library-store.test.mjs` 用 `LIB_CATEGORIES.every(isLibCategory)` 锁这条不变式。
  */
 export function isLibCategory(value: unknown): value is LibCategory {
-  return value === 'character' || value === 'scene' || value === 'prop' || value === 'group' || value === 'voice'
+  return value === 'character' || value === 'scene' || value === 'prop' || value === 'group'
+    || value === 'voice' || value === 'logo' || value === 'brand' || value === 'product'
 }
 
 /** 库媒体文件 URL（详情/卡片/hover 浮层的 `<img src>`；GET 由 requestAllowed 守卫）。 */

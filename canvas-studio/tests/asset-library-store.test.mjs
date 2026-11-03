@@ -405,11 +405,18 @@ test('B-3：视频节点加入资产库被拒（指名道姓 + 正路指引）',
 // `isLibraryAsset` 也用它做读侧校验，一旦库里存在 voice 条目，整库读取会判「文档
 // 损坏」并拒绝后续写入。这里用枚举全量对拍锁死，今后新增分类漏收口当场变红。
 // ---------------------------------------------------------------------------
-test('B-4：LIB_CATEGORIES 每个分类都被 isLibCategory 收口（含 voice）', async () => {
+test('B-4：LIB_CATEGORIES 每个分类都被 isLibCategory 收口（含 voice / 品牌三分类）', async () => {
   const { LIB_CATEGORIES, LIB_CATEGORY_LABELS, isLibCategory } = await import('../lib/contracts/asset-library.js')
   for (const category of LIB_CATEGORIES) {
     assert.equal(isLibCategory(category), true, `isLibCategory 漏收口分类 ${category}`)
     assert.equal(typeof LIB_CATEGORY_LABELS[category], 'string', `${category} 缺中文标签`)
   }
   assert.equal(isLibCategory('narration'), false, '未知分类必须拒收')
+  // 工具描述串同源（REQ-032 C1 失败模式：枚举加了、param-guard 的 category 描述串没跟上）。
+  const guard = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'param-guard.ts'), 'utf8')
+  const desc = /category: '([^']+)',/.exec(guard)?.[1] ?? ''
+  assert.ok(desc.startsWith('枚举（'), 'param-guard 的 category 描述串形态变了，本守卫需同步')
+  for (const category of LIB_CATEGORIES) {
+    assert.ok(desc.includes(category), `param-guard 的 category 描述串缺分类 ${category}（五处同步欠账）`)
+  }
 })

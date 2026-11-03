@@ -269,7 +269,7 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   startFrame: '数值（帧号，≥0），非法值由 planVoiceTimeline 夹到 0',
   gapSeconds: '数值（秒，负数 = 有意重叠），非法值按缺省间隔处理',
   // —— P1-2（2026-10-26）资产库工具 ——
-  category: '枚举（character / scene / prop / group / voice），取值不合规由 isLibCategory 拒收',
+  category: '枚举（character  / scene / prop / group / voice / logo / brand / product），取值不合规由 isLibCategory 拒收',
   q: '搜索关键词 —— 合法值可以是任意短串甚至单字（「雨」），整篇级尺子会大面积误伤；填错只是 0 命中，不会作为脏数据贯穿到下游',
   limit: '数值（返回条数上限），越界由 execute 钳制',
   tags: '短词数组（标签）—— 合法值天然就是一个词，整篇级尺子会误伤；错标签只影响检索',

@@ -310,6 +310,7 @@
 - `fonts`?: ManifestFont[] — 可选：动态字体描述（多语言扩展；随包子集未命中时按需下载并缓存）。
 - `theme`?: 'light' | 'dark'
 - `brandColor`?: string
+- `logo`?: string — 品牌 logo 图同源 URL（同 `tracks[].src` 约束；品牌宣传 / 产品讲解体裁的固定 logo 位，六大体裁路线阶段 1.1）。
 
 ## ManifestFont
 

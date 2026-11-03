@@ -398,6 +398,18 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  // 科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。
+  // stage 'preview' = 试跑期（新编排壳，待桌面验收转正）。
+  {
+    name: 'explainer-format-director',
+    title: '科普讲解编排',
+    summary: '科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。',
+    category: 'spec',
+    icon: 'film',
+    hue: 180,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 提示词技术 ----
   {
     name: 'h3-prompt-writing',

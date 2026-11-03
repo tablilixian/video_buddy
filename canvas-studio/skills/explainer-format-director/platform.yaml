@@ -1,0 +1,19 @@
+# 技能广场展示元数据（CV-324 单一事实源）。
+# 本文件是 explainer-format-director 的展示元数据唯一载体：广场卡片、skill 侧栏、推荐横滚都从这里派生。
+# 改展示字段只改本文件，不要再改 src/skill-catalog.ts 里的快照。
+# 边界：同目录若存在 meta.yaml 是上游署名（author/source/version）的唯一载体，
+#       一个字节都不许往里塞平台展示字段（tests/skill-platform-meta.test.mjs 有守卫）。
+# 字段契约见 src/skill-catalog.ts 文件头；role/slot 为放开用户上传预留（CV-325）。
+
+name: "explainer-format-director"
+title: "科普讲解编排"
+summary: "科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。"
+category: "spec"
+icon: "film"
+hue: 180
+featured: false
+# 试跑期：新编排壳先以试跑身份上线（广场可见时 UI 标「试跑」角标，CV-118）。
+stage: "preview"
+# 编排型（规定「走哪条下游链路」的决策型分支），不是知识型；不进能力槽位绑定表，slot 用 general。
+role: "decision"
+slot: "general"

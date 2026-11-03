@@ -2117,3 +2117,23 @@
 - **详情**：manifest 事件锚绝对帧 —— 变体替换文案后词数变化 → 能量谷重排 → 时机漂移只能人工重调（SKILL §5 自曝），是「批量裂变」质量不稳的根因。新纯函数模块 `src/remotion/anchor.ts`：`TrackAnchor`（ref/phrase/word?/from?/offsetFrames?）；`groupWordsByPhrase`（caption text 按句末标点 `。！？!?；;…` 与换行分句，词窗口按句分组）；`explicitWordWindows`（显式 words 轨内相对帧 → 绝对帧，长度不符回退 null 同 Caption 口径）/ `envelopeWordWindows`（能量谷包络 → 绝对帧）；`resolveAnchor` 全分支 fail-fast（phrase/word 越界错误含 ref 与索引，**绝不静默回退 0 帧**）；`collectAnchorIssues`（宿主 validateManifest 与客户端**同一份实现**：anchor 与 startFrame 互斥 / ref 必须是 caption 轨 / 被锚轨必须带 src / phrase·word 越界，全部硬失败）；`applyAnchorResolution`（组合期把锚字段折算成数值 startFrame = 绝对帧 − 轨道起点，anchor 字段删除，渲染器只认数字；无锚轨道原对象引用零拷贝）。客户端接线：Root.tsx `useAnchorResolution`（无锚零开销逐像素同路；有锚等词级 timing 就绪再渲，`useEnvelope` delayRender 闸；解析失败 throw 渲染硬失败）；包络解码从 Caption.tsx 抽出 `components/audio-envelope.ts` 共用（同一份实现不复制）。manifest 集成：KNOWN_ANIMATE/DRAW/COLOR_SHIFT_KEYS +anchor + 子键契约外扫描；scaffold_manifest 描述 + manifest-contract.md §anchor 登记（REQ §4.3）。`timingSegments` 双闸不动（拆解段仍是绝对时间基准）。
 - **测试**：`tests/remotion-anchor.test.mjs` 12 条 —— 分句分组/显式与包络双路/resolveAnchor 全分支（start/end × 整句/单词 × 正负 offset × 越界）/validateManifest 五类硬失败（互斥/ref 缺/无 src/phrase 越/word 越）/applyAnchorResolution 折算与零拷贝 + **双版 manifest 断言**（同一 anchor 结构 + 5 字 vs 11 字两套文案 → 事件均落对应词窗口 ±2 帧内，REQ §4.4 验收的 node 层等价，走与浏览器同一条 applyAnchorResolution 管线）。**偏差登记**：真 TTS 双版渲染的 bench 探针 = 真机验收项（两条 TTS 资产需真机自产录制）。
 - **棘轮**：manifest.ts 2175→2187 显式登记（+12：KNOWN 键表与集成，校验主体在新文件 anchor.ts）。
+
+#### CV-405 · download_video 标参考 + §07 用户参考登记纪律（REQ-037 R2/R5）（2026-11-03，待桌面验收）
+
+- **详情**：REQ-037 批次 1。**R2**：`download_video` 产物节点自动 `isReference:true` + `referenceRole:'source'`（新增角色，`contracts/canvas.ts` 联合类型扩展）——链接下载的参考视频不标身份就进不了素材托盘与 §07 引用链（立项痛点：首页发视频链接，画布/故事板均无处回看）；工具回执与描述同步「已标为参考素材」。**R5**：`write_storyboard` 的 assets 段口径与参数描述补「**用户提供的参考素材必须登记** `source:"user"` + `ref:{kind:"canvasNode",id}` + `status:"ready"`，漏登 = 用户找不到自己给的素材；口述文字参考先落便签节点再引用」；总纲第 4 步补一行指针；`toolchain.md` 新增 §「参考素材登记」三条口径（§07 是引用不是副本、节点已标身份直接引用、登记必写 source:user）。
+- **验证**：corepack yarn typecheck 通过；行为验收并入 REQ-037 桌面验收窗口（首页链接 → download_video → 素材托盘可见 → §07 出现 source:user 条目）。
+
+#### CV-406 · 参考身份泛化 + 素材托盘四分区 + list_references 扩（REQ-037 R1）（2026-11-03，待桌面验收）
+
+- **详情**：REQ-037 批次 2。**客户端**：`ReferenceTray` 升级素材托盘——图片/视频/音频/文本四分区（空分区不渲染），每项带查看（图预览浮层 / 音视频播放浮层 / 文本托盘内展开收起）、角色 chip（ROLE_LABELS 新增 `source`=源参考）、强度滑块、「引用到对话」与「移除」；新 `onOpenNode` 回调接 StudioFrame 既有播放/预览浮层。**托盘入口重新启用**：2026-10-08 的关闭拍板由 REQ-037（2026-11-03）正式反转，`StudioFrame.referenceNodes` 数据源去掉 `kind==='image'` 限制（所有 `isReference` 节点进托盘）。**Host 侧**：`list_references` 泛化到四类节点（references 每项加 `kind`；**filename 只对图片类要求**——视频/音频/文本节点用 url 直连，不再误导 agent 跑 upload_image）；空态与渲染措辞同步「可用参考素材」。
+- **验证**：corepack yarn typecheck 通过；真机验收 = 素材托盘四分区各放一件素材查看/播放/展开 + 引用到对话。
+
+#### CV-407 · 附件点击再落（待落画布条）（REQ-037 R4）（2026-11-03，待桌面验收）
+
+- **详情**：REQ-037 批次 3。**反转 2026-09-05（附件自动标参考落卡）与 2026-09-13（静默落卡）两个拍板**（2026-11-03 REQ-037 拍板）：项目内发附件**发送时不再自动落卡**——`divertAttachments` 改为 `stashLobbyFiles` 登记进暂存（复用 lobbyStash 机制与文件句柄表，零第二套登记实现），用户点「待落画布」条的「落进画布」才落。**占位说明进正文**：agent 必须知道「附件存在但未落卡」与提醒落卡的纪律（`LobbyStashResult` 新增 `acceptedNames` 支撑准确名单；未收件——类型不支持 / 超限额——名单一并进正文）。**UI**：StudioFrame 中栏画布上方「待落画布」条（暂存为空不渲染），「落进画布」按钮经新 `LOBBY_LAND_STASH_EVENT` 交 index.ts `landLobbyStash`（失败件自动留在条上，落成即消失）。**首页路径不变**：发送第一句话仍自动落暂存素材（claimAndSend 内 landLobbyStash 顺序闸不动）。
+- **验证**：typecheck 通过；`tests/lobby-stash.test.mjs` CV-261 行为门禁按新契约改写（旁路必须复用暂存 / 发送时禁止自动落卡 / 事件消费 / 占位说明），11·11 绿；全量 smoke 见 STATUS 头注。
+
+#### CV-408 · 图片链接落参考节点 + 故事板 §07 引用失效标红（REQ-037 R3/R5）（2026-11-03，待桌面验收）
+
+- **详情**：REQ-037 批次 4。**R3**：`upload_image` 收到 `http(s)` 外链时自动补一个画布参考图片节点（`ensureExternalImageNode`：`isReference` + `referenceRole:'image'`，Drama filename 直带；按「精确 URL 或 URL 末段」双口径查重——产物 URL 与重复导入不建新节点；本地路径不在此列）——治「链接参考三处无痕」（画布 / 素材托盘 / §07 登记链路随即可用）；工具描述与 toolchain.md 行同步。**R5 对账**：`renderStoryboard` 新增 `canvasNodeIds` 选项（routes 侧 `storyboardCanvasNodeIds` 读画布提供，读失败降级为不对账不阻断），§07 的 `canvasNode` 引用指向已删除节点时就地渲染「引用失效：画布节点已删除」红标（`.pill.stale`，双主题 `--red`/`--red-soft`）——「账面还在、实物没了」的漂移必须可见。
+- **验证**：typecheck 通过；真机验收 = 发图片链接 → 画布出节点进素材托盘；删除 §07 引用的节点 → 覆盖层标红。

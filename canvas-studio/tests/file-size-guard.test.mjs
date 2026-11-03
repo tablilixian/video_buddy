@@ -60,7 +60,9 @@ export const FILE_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页全屏样式（.csBill* 约 250 行）+ 用户卡三行
   // +266，10734 → 11000 显式登记。消化路径：`.csBill*` 段与既有「按域拆 CSS」计划
   // 同批外提，不在本次新立拆分批。
-  'src/client/styles.ts': 11000,
+  // REQ-037（2026-11-03）：素材托盘四分区样式（分组/文本展开）+ 待落画布条样式 +67，
+  // 11000 → 11067 显式登记。消化路径同上：按域拆 CSS 时随托盘/待落段外提。
+  'src/client/styles.ts': 11067,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
@@ -68,7 +70,9 @@ export const FILE_WHITELIST = {
   // —— 核心算法在 teardown-verify.ts（新文件），这里只是工具壳。
   // 批四（2026-11-02）：+teardown_store 工具（壳，核心在 teardown-store.ts）+ render_composition
   // 的 timingSegments 双闸接线，+120（4572 → 4692）显式登记。
-  'src/host-tools.ts': 4692,
+  // REQ-037（2026-11-03）：+ensureExternalImageNode（upload_image 外链落参考节点，
+  // 核心判据就近放 backfill 旁）+ 工具描述扩行，+13（4692 → 4705）显式登记。
+  'src/host-tools.ts': 4705,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3619,
@@ -79,13 +83,19 @@ export const FILE_WHITELIST = {
   // +1（3637）：前缀尾段归一化拆成两次 replace（`/^\/+$/` 会把 `/checkout` 留成原样
   // 导致写操作全部落到 404，是 billing-routes.test.mjs 抓出的真实缺陷），单行拆两行。
   // 复刻提效批（2026-11-02）：/remotion/commit 透传 spot=1，+3（3637 → 3640）。
-  'src/routes.ts': 3640,
+  // REQ-037（2026-11-03）：storyboardCanvasNodeIds（§07 引用失效对账）+ 接线 +14，
+  // 3640 → 3654 显式登记。
+  'src/routes.ts': 3654,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
   // +65，3168 → 3233。消化路径：随既有「显示外提 → 抽 hooks」第二阶段一起外提。
-  'src/client/StudioFrame.tsx': 3233,
-  'src/client/index.ts': 2983,
+  // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 JSX + 查看回调 +28，3233 → 3261
+  // 显式登记。消化路径同上。
+  'src/client/StudioFrame.tsx': 3261,
+  // REQ-037（2026-11-03）：divertAttachments 改「暂存 + 占位说明」（附件不再发送时
+  // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
+  'src/client/index.ts': 3008,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
   // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
@@ -136,13 +146,17 @@ export const FILE_WHITELIST = {
  */
 export const FUNC_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 10983, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
+  // REQ-037（2026-11-03）：素材托盘四分区 + 待落画布条样式 +67（10983 → 11050）。
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 11050, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
-  'src/routes.ts#registerStudioRoutes': { lines: 2967, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）' },
+  // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
+  'src/routes.ts#registerStudioRoutes': { lines: 2969, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2818, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行' },
-  'src/client/index.ts#studioClient': { lines: 2719, note: '阶段 3 同层两半' },
+  // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2844, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行' },
+  // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
+  'src/client/index.ts#studioClient': { lines: 2745, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26（2026-11-03）' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。

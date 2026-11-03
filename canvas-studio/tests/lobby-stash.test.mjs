@@ -137,9 +137,18 @@ test('CV-261 落地：四类各有落卡动作，且先载画布再落素材再�
   assert.match(INDEX, /actions\.addVideoNode\(projectId, \{/, '视频必须落 addVideoNode')
   assert.match(INDEX, /actions\.addAudioNode\(projectId, item\.url/, '音频必须落 addAudioNode')
   assert.match(INDEX, /actions\.addTextAssetNode\(projectId, item\.url/, '文本必须落 addTextAssetNode')
-  // 附件改道与首页暂存共用同一份落盘实现（同一个文件两条入口必须得到同一个节点）。
-  assert.match(INDEX, /const divertAttachments = async \([\s\S]{0,900}?await landStudioFiles\(projectId, files, signal\)/,
-    '对话附件旁路必须复用 landStudioFiles（不得留第二份落盘实现）')
+  // REQ-037/CV-407（2026-11-03 拍板，反转 09-05「附件自动落卡」）：对话附件旁路**发送时
+  // 不再直接落卡**——复用同一份暂存机制（stashLobbyFiles）等用户点「落进画布」，消费
+  // 仍走 landLobbyStash → landStudioFiles（同一个文件两条入口仍得到同一个节点，不得留
+  // 第二份落盘实现）。
+  assert.match(INDEX, /const divertAttachments = async \([\s\S]{0,900}?stashLobbyFiles\(files, storeInstance\.actions\)/,
+    '对话附件旁路必须复用 lobbyStash 暂存（不得另立一套登记实现）')
+  assert.ok(
+    !/const divertAttachments = async \([\s\S]{0,900}?await landStudioFiles\(projectId, files/u.test(INDEX),
+    '对话附件旁路不得在发送时自动落卡（REQ-037：落卡权交给用户的「落进画布」按钮）',
+  )
+  assert.match(INDEX, /LOBBY_LAND_STASH_EVENT/, '「落进画布」必须经事件消费暂存（index.ts 侧 landLobbyStash）')
+  assert.match(INDEX, /尚未落画布/, '正文占位说明必须写明「未落卡」事实（agent 靠它提醒用户落卡，不假装可用）')
 
   const claimAt = INDEX.indexOf('const claimAndSend')
   assert.ok(claimAt > 0, '找不到认领分支')

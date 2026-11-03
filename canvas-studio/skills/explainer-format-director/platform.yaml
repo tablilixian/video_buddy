@@ -8,8 +8,8 @@
 name: "explainer-format-director"
 title: "科普讲解编排"
 summary: "科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。"
-category: "spec"
-icon: "film"
+category: "format"
+icon: "compass"
 hue: 180
 featured: false
 # 试跑期：新编排壳先以试跑身份上线（广场可见时 UI 标「试跑」角标，CV-118）。

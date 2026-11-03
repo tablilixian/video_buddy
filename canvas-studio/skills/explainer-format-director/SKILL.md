@@ -35,9 +35,7 @@ description: 科普讲解体裁的 L2 编排壳（format director）。凡「科
 
 ## 3. 结构预算（开工前对齐）
 
-科普片默认叙事骨架：**钩子 10–15% → 主体 70–80%（3±2 个要点，一屏一点）→ 收尾 10–15%**；单卡 1.5–6s；数字必须 `dataCard` / `chart` 呈现。
-
-> 这些约束最终由 `code-driven-explainer/references/explainer-patterns.md` 校验口径兜底，本表只做开工前对齐，以它为准。
+段结构与时长占比（钩子/主体/收尾权重、单卡时长、一屏一点，含对比型/时间线型/原理拆解型模板）**唯一权威 = `code-driven-explainer/references/explainer-patterns.md`**——开工前按它对齐，本壳不复述比例表。
 
 ## 4. executor 指派与交付要求
 

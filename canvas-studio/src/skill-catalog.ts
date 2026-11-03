@@ -57,12 +57,13 @@
  */
 
 /** 广场侧栏分类（顺序即展示顺序）。 */
-export const SKILL_CATEGORY_IDS = ['spec', 'prompting', 'marketing', 'style', 'audio', 'other'] as const
+export const SKILL_CATEGORY_IDS = ['format', 'spec', 'prompting', 'marketing', 'style', 'audio', 'other'] as const
 
 export type SkillCategoryId = (typeof SKILL_CATEGORY_IDS)[number]
 
 /** 分类中文名。 */
 export const SKILL_CATEGORY_LABELS: Record<SkillCategoryId, string> = {
+  format: '体裁编排',
   spec: '创作规范',
   prompting: '提示词技术',
   marketing: '营销广告',
@@ -363,6 +364,20 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     hidden: true,
   },
+  // ---- 体裁编排 ----
+  // L2 编排壳（format director）：按体裁路由到下游 executor，与「创作规范」里的
+  // 执行手册层分层展示。后续品牌/产品/短剧等编排壳都进本组。
+  // stage 'preview' = 试跑期（新编排壳，待桌面验收转正）。
+  {
+    name: 'explainer-format-director',
+    title: '科普讲解编排',
+    summary: '科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。',
+    category: 'format',
+    icon: 'compass',
+    hue: 180,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',
@@ -395,18 +410,6 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'spec',
     icon: 'film',
     hue: 168,
-    featured: false,
-    stage: 'preview',
-  },
-  // 科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。
-  // stage 'preview' = 试跑期（新编排壳，待桌面验收转正）。
-  {
-    name: 'explainer-format-director',
-    title: '科普讲解编排',
-    summary: '科普讲解体裁的 L2 编排壳：定向三问 + 链路路由，分派给下游科普 executor。',
-    category: 'spec',
-    icon: 'film',
-    hue: 180,
     featured: false,
     stage: 'preview',
   },

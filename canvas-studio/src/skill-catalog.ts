@@ -418,6 +418,16 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  {
+    name: 'drama-format-director',
+    title: '短剧编排',
+    summary: '短剧体裁的 L2 编排壳：题材定向 + 系列建档与集间定位，路由到短剧单集执行手册。',
+    category: 'format',
+    icon: 'film',
+    hue: 300,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',
@@ -438,6 +448,17 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'spec',
     icon: 'film',
     hue: 210,
+    featured: false,
+    stage: 'preview',
+  },
+  // 六大体裁路线 3.2：通用短剧单集执行手册（知识型，与题材导演叠加使用）。
+  {
+    name: 'drama-episode-executor',
+    title: '短剧单集执行手册',
+    summary: '通用短剧单集执行手册：集结构 / 节拍密度 / 角色预算 / episodic 流程纪律（前情注入与收尾登记）。',
+    category: 'spec',
+    icon: 'film',
+    hue: 300,
     featured: false,
     stage: 'preview',
   },

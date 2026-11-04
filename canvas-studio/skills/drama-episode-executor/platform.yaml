@@ -1,0 +1,19 @@
+# 技能广场展示元数据（CV-324 单一事实源）。
+# 本文件是 drama-episode-executor 的展示元数据唯一载体：广场卡片、skill 侧栏、推荐横滚都从这里派生。
+# 改展示字段只改本文件，不要再改 src/skill-catalog.ts 里的快照。
+# 边界：同目录若存在 meta.yaml 是上游署名（author/source/version）的唯一载体，
+#       一个字节都不许往里塞平台展示字段（tests/skill-platform-meta.test.mjs 有守卫）。
+# 字段契约见 src/skill-catalog.ts 文件头；role/slot 为放开用户上传预留（CV-325）。
+
+name: "drama-episode-executor"
+title: "短剧单集执行手册"
+summary: "通用短剧单集执行手册：集结构 / 节拍密度 / 角色预算 / episodic 流程纪律（前情注入与收尾登记）。"
+category: "spec"
+icon: "film"
+hue: 300
+featured: false
+# 知识型 executor 手册（与 code-driven-explainer 同层）；不设试跑角标，随 drama 壳验收转正。
+stage: "preview"
+# 知识型：只提供短剧特化判据，流程与审批归总纲（正文有让位声明，role-consistency 门禁锁定）。
+role: "knowledge"
+slot: "general"

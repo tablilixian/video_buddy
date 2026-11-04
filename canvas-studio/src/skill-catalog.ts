@@ -408,6 +408,16 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  {
+    name: 'data-viz-format-director',
+    title: '数据可视化编排',
+    summary: '数据可视化 L2 编排壳：数据来源定向 + 图型选型判据，路由到 code-driven-explainer 图表链。',
+    category: 'format',
+    icon: 'compass',
+    hue: 205,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',

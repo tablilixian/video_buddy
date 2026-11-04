@@ -2187,3 +2187,44 @@
 
 - **详情**：六大体裁路线阶段 1.3。统一两个既有入口：`minimalist-product-ad-generator`（极简高级广告链，锚点照体系）+ `scaffold_manifest` recipe=`product-walkthrough`（单图起步走查链）——定向三问（产品素材现实 / 卖点调性 / 时长画幅）+ 两链路路由 + 混合需求分段走链降级 + 验收四条 + 不做清单。SKILL.md 4559B；platform.yaml + catalog 快照同批。
 - **验证**：skill 守卫全绿 + `yarn check` 全绿；真机整片验收 = 阶段 1.4。
+
+
+#### CV-419 · 视频 1:1 画幅放行 —— 客户端三件套（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 2.1。`VideoAspectRatio` 加 `'1:1'`（types.ts 规范键 + is/normalize 归一唯一实现点）；generate 写路径字面量钳制退役；drama 放行直传并带联调前降级警告（ProviderHandle.warnings 回流，联调通过后摘）；两个视频工具 schema + NodeInputCard 视频 chips 同步三档。图片端/plan/默认设置四处 1:1 先例早已在，本批只补视频链。棘轮 generate.ts +1 显式登记。
+- **验证**：旧契约两处按新口径改写（drama 降级测试 / REQ-031 画幅两选）；反向变异 2 处验红；`yarn check` 全绿。静默降级警告保留至后台 1:1 联调通过（外部依赖）。
+
+#### CV-420 · social-ad-format-director 社媒广告编排壳（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 2.2。定向三问（平台场景 / 前 3 秒钩子 / 时长画幅多版本）+ 三链路路由（code-driven 卡点快剪 / viral-remake 对标复刻 / 总纲标准实拍链）+ 前 3 秒钩子纪律（四形态 + 钩子与卖点同源 + 单一信息点）+ 多画幅分发策略（主版本定内容变体改画幅重渲）+ 验收四条 + 不做清单。platform.yaml（format/preview/handoff）+ catalog 快照同批。
+- **验证**：`yarn check` 全绿。
+
+#### CV-421 · chart 扩型 pie/donut/gauge —— 饼图/环形/进度环（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 4.1。新纯函数模块 `chart-pie.ts`（份额归一 / wedge+donut 路径 / gauge dasharray / pie 族校验，node 直连可测）；ChartTrack variant 三档 + gaugeMax/palette 字段；校验白名单扩三变体（lineValues 对新变体只警告）。非等比护栏：pie 族 SVG 走缺省等比 meet（0–100 正方 viewBox），既有 dual/line 两处 none 拉伸不动并由守卫钉死数量；gauge 中心百分比复用 countUpTextAt。旧契约两处按新白名单改写（非法样本 pie→treemap）；棘轮 manifest.ts +7 显式登记。bench 取证（视觉目检）留真机整片验收批。
+- **验证**：反向变异（gauge 单值判据）经 rebuild 验红；`yarn check` 全绿。
+
+#### CV-422 · import_csv 数据导入工具 —— CSV → chart 数据卡（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 4.2。新纯函数模块 `csv-parse.ts`（RFC4180-lite 引号包裹 / 分隔符嗅探 , ; Tab / 千分位与 % 按比例收口 / 文本列不猜数）；新工具组 `host-tools-data.ts` 的 `import_csv`（建议 label·value 列 + 数组，limit 1-32 截断记 note）；注册面 43 → 44 + presentation A 档 + toolchain/docs 两处行 + param-guard 归类。TOOL_SOURCES 补 host-tools-data.ts（skill 审计点名的埋雷名单，本批排一颗）；棘轮 host-tools.ts +3 显式登记。
+- **验证**：反向变异（coerceNumber 关停）经 rebuild 验红；`yarn check` 全绿。
+
+#### CV-423 · data-viz-format-director 数据可视化编排壳（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 4.3（4.1/4.2 落地后开壳）。定向三问（数据来源溯源红线 / 图型选型 / 时长节奏）+ 路由表（import_csv 数据链 / 手填少量数字 / source:timeline 时间线真值）+ 图型选型判据五条（比较/趋势/占比/进度/双量纲）+ 验收四条（数字非编造为第一条）+ 不做清单。executor = code-driven-explainer（chart 六变体 + dataCard + import_csv）。platform.yaml（format/preview/handoff）+ catalog 快照同批。
+- **验证**：summary 超 60 字被 catalog 闸抓住后收短；`yarn check` 全绿。
+
+#### CV-424 · 短剧 episodic 剧集管理 —— series.json + series_manage/episode_brief（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 3.1（方案 [短剧episodic方案-20261104.md](../plans/短剧episodic方案-20261104.md)，三问口径：集 = 项目 / recap 由 agent 撰写 / 上下文经工具注入；用户全量推进指示下按既定授权先行落地，批量验收复核点见方案 §四）。新 SeriesStore（registry 根 series.json，groups.json 同款独立文件模式：损坏降级 / sharedWriteQueue 串写 / recap 钳 2000 字 / episodeNo 系列内唯一）；新工具组 host-tools-series.ts 两工具（series_manage 三动作 / episode_brief 只读装配前情 recap + 库内角色 lib: 句柄）。角色跨集复用核实为零开发（资产库 REQ-001 既有能力）。注册面 44 → 46 + 两面文档行 + param-guard 归类 + TOOL_SOURCES 扩 host-tools-series.ts + upsert_episode 入幽灵守卫豁免；棘轮 host-tools.ts +3 显式登记。
+- **验证**：反向变异（集号判据关停）经 rebuild 验红；`yarn check` 全绿。
+
+#### CV-425 · drama-episode-executor 通用短剧单集执行手册（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 3.2。知识型 executor（与题材导演叠加、不互替）：§0 episodic 流程纪律四步（episode_brief 取前情 → recap 进澄清 → 角色走 lib: 句柄禁文字重描述 → upsert_episode 收尾登记本集 recap）；集结构四段表（0–3s 冷开场钩子三选一 / 3–15s 一句台词内回收上集悬念 / 中段 2–3 拍有因果 / 最后 10% 悬念收尾断点在动作信息非旁白）；节拍密度（90s ≈ 6–9 主节拍、每 15–25s 微钩、对白每镜 ≤2 句）；角色预算（常驻 ≤4 带 lib: 句柄、每集新面孔 ≤1、定妆四视图入库一次跨集只引用、主场景入库）；镜头预算 12–20 镜 + 钩子镜/悬念镜点名必在 + 单集验收 5 条 + 边界三条（不复述总纲/存储口径/题材纪律）。SKILL.md + platform.yaml（spec/preview/handoff）+ catalog 快照同批。
+- **验证**：typecheck / build / verify:loader / smoke 2687 全过（门禁 0 红）；真机整片验收 = 阶段 3.4（连续两集）。
+
+#### CV-426 · drama-format-director 短剧编排壳（2026-11-04，待桌面验收）
+
+- **详情**：六大体裁路线阶段 3.3。L2 编排壳（上游 canvas-studio-creation 总纲，下游 drama-episode-executor + 题材导演叠加层）：定向三问（题材与基调 / 单集规格与集数规划 / 追看定位——一句话说出观众为什么追下一集）+ 链路路由表（连续剧 → executor + series_manage 建档 / 单集独立小品走总纲不建系列 / 题材命中导演叠加同读）+ 系列建档与集间定位（本壳核心输出：开工即建档、悬念收尾硬判据逐集核对、>9 集先只建前 3 集档因 recap 会改变走向）+ executor 显式指派 + 逐集验收 4 条 + 不做清单（不复述集结构/题材纪律/审批语义）。SKILL.md + platform.yaml（format/preview/handoff）+ catalog 快照同批。
+- **验证**：`yarn check` 全绿；真机整片验收 = 阶段 3.4（连续两集）。

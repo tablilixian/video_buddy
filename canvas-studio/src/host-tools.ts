@@ -75,6 +75,7 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { defineAudioTools, generateMusicWithVariants } from './host-tools-audio.js'
 import { defineArtifactTools } from './host-tools-artifact.js'
 import { defineRemakeTools } from './host-tools-remake.js'
+import { defineDataTools } from './host-tools-data.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment } from './audio-cut.js'
@@ -4316,6 +4317,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     }),
     // 2026-11-02：素材加工与便签类工具外置到 host-tools-artifact.ts（行数 / 函数跨度双棘轮）。
     ...defineArtifactTools({ registry, resolveProjectId }),
+    // 4.2（2026-11-04）：数据导入组外置到 host-tools-data.ts（纯文本解析，零后端槽位）。
+    ...defineDataTools(),
     defineTool({
       name: 'verify_teardown',
       description:

@@ -39,7 +39,8 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // 复刻提效批二/三（2026-11-02）：+image_crop（拼贴裁切）、+write_note（过程便签），38 → 40。
 // REQ-036 复刻客户端能力批（2026-11-03）：+media_probe（媒体探针），40 → 41；+evidence_grid（证据网格），41 → 42；
 // +download_video（视频页链接落盘），42 → 43。
-const EXPECTED_TOOL_COUNT = 43
+// 六大体裁路线 4.2（2026-11-04）：+import_csv（CSV → chart 数据卡），43 → 44。
+const EXPECTED_TOOL_COUNT = 44
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -56,6 +57,8 @@ const EXPECTED_TOOL_NAMES = [
   'image_crop',
   'image_fix',
   'image_generate',
+  // 六大体裁路线 4.2：CSV → chart 数据卡（纯文本解析，零后端槽位）。
+  'import_csv',
   'image_generate_withtxt',
   // CV-394（REQ-036 复刻复盘批）：纯色底抠透明底（内置 ffmpeg colorkey）。
   'image_matting',

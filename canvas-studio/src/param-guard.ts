@@ -139,6 +139,9 @@ const PROSE_PARAMS: readonly string[] = [
   'instructPrompt',
   // P1-2（2026-10-26）：add_to_library 的资产描述（模型自撰，进详情页给人看）。
   'description',
+  // 4.2（2026-11-04）：import_csv 的 CSV 全文（用户数据经模型转贴；占位守卫照 prose 口径，
+  // 整篇占位词才拦 —— 纯数字/混合 CSV 不会误伤）。
+  'content',
   'name',
   'summary',
   'question',
@@ -154,6 +157,7 @@ const PROSE_PARAMS: readonly string[] = [
 const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // —— S5（2026-10-28）：节拍分析 / 抽卡 ——
   variants: '数值（抽卡份数 2-3，D-06 仅显式请求），越界由 execute 钳制',
+  // —— 4.2（2026-11-04）：import_csv ——（limit 复用上方「返回条数上限」既有豁免，同语义）
   toleranceBeats: '数值（卡点吸附容差，拍），缺省 0.5，越界无破坏性',
   lyricsLines: '歌词行数组（模型自撰歌词正文，与 lyrics 同属散文——逐行给出时进启发式对齐）',
   // —— 枚举：取值由 schema 校验，不存在「占位串」这个形态 ——

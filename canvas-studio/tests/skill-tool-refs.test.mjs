@@ -50,7 +50,7 @@ const SKILLS_DIR = join(ROOT, 'skills')
  *  host-tools-audio.ts —— analyze_beats/snap_cuts_to_beats 经 defineAudioTools 工厂展开注册
  *  （host-tools.ts:3030 只剩展开调用），名字只在该文件源文本出现；漏列时门禁表 41 vs 真实 43，
  *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'skills/placeholder-tools.ts']
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {

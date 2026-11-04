@@ -64,3 +64,49 @@ test('反向变异：临时源文件多一个字段，生成结果必须跟着�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ── B-5 / P-02：实现读取的 track.X 必须已登记（「加字段漏登记」机制性免疫）──
+// P-02 事故：gaugeMax / palette / sourceRect / hasAlpha 四个被实现真实读取的字段
+// 不在 KNOWN_TRACK_KEYS 里 ⇒ 每次使用都被告警「它不会生效」——app 对 agent 谎报。
+// 本扫描剥掉字符串与注释后收集 src/ 里全部 `track.<key>` 读取，
+// 断言每个键都能在 KNOWN_BASE_TRACK_KEYS ∪ KNOWN_TRACK_KEYS 里找到登记。
+
+import { readdirSync, statSync } from 'node:fs'
+
+function walkSources(dir, out = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'lib' || entry.name === 'build') continue
+    const p = join(dir, entry.name)
+    if (statSync(p).isDirectory()) walkSources(p, out)
+    else if (/\.(ts|tsx)$/u.test(entry.name)) out.push(p)
+  }
+  return out
+}
+
+/** 剥字符串与注释（track.m4a 这类路径串、文档里的 track.X 示例都不算实现读取）。 */
+function stripStringsAndComments(src) {
+  return src
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+test('P-02 漂移检查：实现里真实读取的 track.X 必须登记进 KNOWN_TRACK_KEYS', async () => {
+  const { KNOWN_TRACK_KEYS, KNOWN_BASE_TRACK_KEYS } = await import('../lib/remotion/manifest.js')
+  const union = new Set([
+    ...KNOWN_BASE_TRACK_KEYS,
+    ...Object.values(KNOWN_TRACK_KEYS).flatMap((set) => [...set]),
+  ])
+  const read = new Set()
+  const re = /(?:^|[^.\w])track\.([a-zA-Z]\w*)/g
+  for (const file of walkSources(join(import.meta.dirname, '..', 'src'))) {
+    const src = stripStringsAndComments(await import('node:fs').then((m) => m.readFileSync(file, 'utf8')))
+    let m
+    while ((m = re.exec(src))) read.add(m[1])
+  }
+  assert.ok(read.size > 60, `扫描面过窄（${read.size} 键）——扫描器可能失效`)
+  const missing = [...read].filter((k) => !union.has(k))
+  assert.deepEqual(missing, [], `实现读取了未登记字段：${missing.join(', ')}——登记进 KNOWN_TRACK_KEYS 对应轨型（P-02），或确认是误匹配再收紧扫描`)
+})

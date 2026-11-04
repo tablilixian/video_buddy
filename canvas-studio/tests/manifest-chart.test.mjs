@@ -29,6 +29,10 @@ function chart(overrides = {}) {
     variant: 'bars',
     labels: ['shot1', 'shot2', 'shot3'],
     values: [8, 7.27, 6],
+    // B-4 观察期起内联数值的合法形态 = 带溯源字段（缺失收观察期 warning）；
+    // 需要「缺字段」场景的用例显式 override 掉。
+    dataSource: '构造样本（测试），https://example.test/fixture',
+    baseline: '构造样本口径',
     startFrame: 0,
     durationInFrames: 300,
     ...overrides,
@@ -142,3 +146,21 @@ test('chart source:timeline：与内联数据互斥；无 video 轨拒收；非�
 function shot(id, startFrame, durationInFrames) {
   return { id, type: 'video', src: `/canvas-studio/assets/p1/${id}.mp4`, startFrame, durationInFrames }
 }
+
+// ── B-5 / P-03：未知字段文案不越界 + 拼写近亲定向提示 ──────────────────────
+// 旧文案对一切未知字段断言「已忽略 / 它不会生效」—— 但「契约外」只说明本版本
+// 没登记，对拼写近亲说「不会生效」是在替引擎撒谎（可能存在同名能力换了归属）。
+
+test('P-03：拼写近亲给「你是不是想写」提示，且不再断言「它不会生效」', () => {
+  const v = validateManifest(base({ tracks: [chart({ gaugeMaxx: 100 })] }))
+  const joined = v.warnings.join('\n')
+  assert.match(joined, /你是不是想写 "gaugeMax"/u, `近亲提示缺失：${joined}`)
+  assert.ok(!joined.includes('它不会生效'), '不许再替引擎撒谎')
+})
+
+test('P-03：自造词（无近亲）不猜替换', () => {
+  const v = validateManifest(base({ tracks: [chart({ totallyMadeUpField: 1 })] }))
+  const joined = v.warnings.join('\n')
+  assert.match(joined, /含契约外字段 "totallyMadeUpField"/u)
+  assert.ok(!joined.includes('你是不是想写'), `没有近亲就不该猜：${joined}`)
+})

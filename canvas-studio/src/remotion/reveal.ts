@@ -256,13 +256,17 @@ export function validateReveal(
   // 「右 wipe 出」这类需求最常见的误写就是拿 `direction` 当退场方向用 ——
   // `direction` 是**进场**方向（可见区自该侧展开），与「内容朝该侧退去」正好相反。
   // 只在方向指向本卡自己那一侧时提示（那正是同词异义最容易发生的场合）。
+  // P-16（B-5）：**只在作者显式写了 direction 时判定** —— 没写时的 'right' 是引擎
+  // 补的缺省值，不是作者意图；拿缺省值参与 sameSide 会对「从未写过 direction」的卡
+  // 报「请改用 reveal.out.direction='right'」，作者按建议改反而真的改掉了渲染。
   if (reveal.kind === 'wipe' && context?.box !== undefined) {
     const box = context.box
     const x = typeof box.x === 'number' && Number.isFinite(box.x) ? box.x : undefined
     const y = typeof box.y === 'number' && Number.isFinite(box.y) ? box.y : undefined
     const direction = typeof reveal.direction === 'string' && REVEAL_DIRECTIONS.has(reveal.direction)
       ? reveal.direction
-      : 'right'
+      : null
+    if (direction === null) return
     const sameSide =
       (x !== undefined && x > 50 && direction === 'right') ||
       (x !== undefined && x < 50 && direction === 'left') ||

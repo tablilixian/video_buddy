@@ -404,3 +404,36 @@ test('P7：ML-10 的动效时间按区间并集算（三轨同帧一起动只算
   assert.equal(ml10.length, 1)
   assert.match(ml10[0].message, /画面上有东西在动的时间只占 25%/)
 })
+
+// ── B-5 / P-05：ML-04 可见幅度阈值在浮点边界上判反方向 ──────────────────────
+// 实测 |1.0-0.9|×10 = 0.9999999999999998 < 1 ⇒ 恰好达到可见门槛的 opacity
+// 0.9↔1.0 往复被误判"看不见"而照报 ML-04。修法：幅度按 1e-9 取整再比。
+// 三条边界表：0.9↔1.0 豁免 / 0.8↔1.0 豁免 / 0.994↔1.006 照报（微幅假呼吸）。
+
+/** 一条双段往复呼吸的 textCard（first.from ≈ last.to，每段 > 45 帧）。 */
+function breathingTrack(id, from, to) {
+  return {
+    id, type: 'textCard', variant: 'title', text: id, startFrame: 0, durationInFrames: 180,
+    animate: [
+      { from: { ...from }, to: { ...to }, startFrame: 0, durationInFrames: 90, easing: 'easeInOutSine' },
+      { from: { ...to }, to: { ...from }, startFrame: 90, durationInFrames: 90, easing: 'easeInOutSine' },
+    ],
+  }
+}
+
+test('P-05：opacity 0.9↔1.0 往复（幅度恰达可见门槛）不报 ML-04', () => {
+  const issues = lintMotion(manifest([breathingTrack('g1', { opacity: 0.9 }, { opacity: 1 })]))
+  assert.equal(codes(issues).filter((c) => c === 'ML-04').length, 0,
+    `浮点边界呼吸应豁免，实际：${formatMotionLint(issues)}`)
+})
+
+test('P-05：opacity 0.8↔1.0 往复（幅度更大）同样不报 ML-04', () => {
+  const issues = lintMotion(manifest([breathingTrack('g2', { opacity: 0.8 }, { opacity: 1 })]))
+  assert.equal(codes(issues).filter((c) => c === 'ML-04').length, 0)
+})
+
+test('P-05：scale 0.994↔1.006 微幅假呼吸照报 ML-04（1.2% 人眼读不出）', () => {
+  const issues = lintMotion(manifest([breathingTrack('g3', { scale: 0.994 }, { scale: 1.006 })]))
+  assert.equal(codes(issues).filter((c) => c === 'ML-04').length, 1,
+    `微幅假呼吸必须照报：${formatMotionLint(issues)}`)
+})

@@ -102,12 +102,16 @@ function sameState(a: Record<string, number>, b: Record<string, number>, toleran
   return true
 }
 
-/** 位移强度（把不同维度折算到同一量纲：1% 位移 ≈ 1，scale 0.1 ≈ 5，rotation 10° ≈ 3.3）。 */function movementMagnitude(from: Record<string, number>, to: Record<string, number>): number {
+/** 位移强度（把不同维度折算到同一量纲：1% 位移 ≈ 1，scale 0.1 ≈ 5，rotation 10° ≈ 3.3）。 */
+function movementMagnitude(from: Record<string, number>, to: Record<string, number>): number {
   const delta = (key: string, scale: number): number => {
     const a = from[key]
     const b = to[key]
     if (a === undefined || b === undefined) return 0
-    return Math.abs(b - a) * scale
+    // P-05：幅度按 1e-9 取整再比 —— 浮点边界会判反方向（实测
+    // |1.0-0.9|×10 = 0.9999999999999998 < 1，恰好达到可见门槛的 opacity
+    // 0.9↔1.0 呼吸被误判成"看不见"而照报 ML-04）。
+    return Math.round(Math.abs(b - a) * scale * 1e9) / 1e9
   }
   return Math.max(delta('x', 1), delta('y', 1), delta('scale', 50), delta('rotation', 1 / 3), delta('opacity', 10))
 }

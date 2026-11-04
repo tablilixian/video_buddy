@@ -251,3 +251,18 @@ test('缺口清单同步：shot-cards.md 标注 callout / reveal 解锁', () => 
   assert.ok(doc.includes('`callout` 轨'))
   assert.ok(doc.includes('`BaseTrack.reveal`'))
 })
+
+// ── B-5 / P-16：没写 direction 的卡不参与 sameSide 判定 ────────────────────
+// 引擎给 wipe 补的缺省方向 'right' 是实现细节，不是作者意图；拿它参与
+// sameSide 会对「从未写过 direction」的右侧卡误报「请改用 reveal.out.direction」
+// —— 作者按建议改反而真的改掉了渲染。
+
+test('P-16：未写 direction 的右侧卡不报方向告警（引擎缺省 ≠ 作者意图）', () => {
+  const r = validateManifest(baseManifest(calloutTrack({
+    box: { x: 74, y: 48, w: 44, h: 60 },
+    reveal: { kind: 'wipe', durationInFrames: 24 },
+  })))
+  ok(r)
+  assert.equal(r.warnings.filter((w) => w.includes('reveal.out.direction')).length, 0,
+    `未写 direction 不该报：${r.warnings.join('；')}`)
+})

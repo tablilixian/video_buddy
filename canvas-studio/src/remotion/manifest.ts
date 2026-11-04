@@ -910,7 +910,8 @@ function isFinitePositive(value: unknown): value is number {
 /** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
 const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
 const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint'])
-const KNOWN_BASE_TRACK_KEYS = new Set([
+/** P-02 漂移检查数据面（见 KNOWN_TRACK_KEYS 注释）。 */
+export const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',
   // 会话效率优化 2026-10-26：区域声明 box（自 ShapeTrack 上提，video/image/textCard/shape 生效）
   'box',
@@ -919,14 +920,22 @@ const KNOWN_BASE_TRACK_KEYS = new Set([
   // 三期 W1-1 / W1-2 / W2-3 / W2-5 / P3 揭示
   'exit', 'startAfter', 'colorShift', 'blend', 'reveal',
 ])
-const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+/**
+ * P-02 漂移检查的数据面：实现里真实读取的 `track.X` 必须能在
+ * `KNOWN_BASE_TRACK_KEYS ∪ KNOWN_TRACK_KEYS[轨型]` 里找到登记，漏登记即
+ * `tests/manifest-fields-drift.test.mjs` 红（「加字段漏登记」从机制上不可能再悄悄发生）。
+ */
+export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
-  image: new Set(['src', 'fit', 'caption']),
+  // P-02：sourceRect（CV-392 精灵图子区域裁切）/ hasAlpha（复刻批）实现真实读取
+  // （sprite.ts / ImageClip.tsx），此前漏登记 ⇒ 每次使用都被告警「不会生效」。
+  image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha']),
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp', 'dataSource']),
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
-  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline']),
+  // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
+  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'gaugeMax', 'palette']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }
@@ -963,6 +972,45 @@ const KNOWN_FONT_KEYS = new Set(['family', 'weight', 'src'])
  */
 const MAX_UNKNOWN_FIELD_WARNINGS = 12
 
+/** P-03：受限编辑距离（只用于 ≤2 的近似判定，短串双行 DP，超 cap 剪枝）。 */
+function levenshteinWithin(a: string, b: string, cap: number): number {
+  if (Math.abs(a.length - b.length) > cap) return cap + 1
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i += 1) {
+    const cur: number[] = [i]
+    let rowMin = i
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const up = prev[j] ?? cap + 1
+      const left = cur[j - 1] ?? cap + 1
+      const diag = prev[j - 1] ?? cap + 1
+      const d = Math.min(up + 1, left + 1, diag + cost)
+      cur.push(d)
+      if (d < rowMin) rowMin = d
+    }
+    if (rowMin > cap) return cap + 1
+    prev = cur
+  }
+  return prev[b.length] ?? cap + 1
+}
+
+/**
+ * P-03：在已知键里找编辑距离 ≤2 的近似键（「你是不是想写 X」定向提示）。
+ * 没有近亲返回 null —— 对自造词不猜，避免误导。
+ */
+function nearestKnownKey(key: string, known: ReadonlySet<string>): string | null {
+  let best: string | null = null
+  let bestDist = 3
+  for (const candidate of known) {
+    const dist = levenshteinWithin(key.toLowerCase(), candidate.toLowerCase(), 2)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = candidate
+    }
+  }
+  return best
+}
+
 function warnUnknownKeys(
   value: unknown,
   known: ReadonlySet<string>,
@@ -972,7 +1020,14 @@ function warnUnknownKeys(
   if (!isRecord(value)) return
   for (const key of Object.keys(value)) {
     if (known.has(key)) continue
-    sink.push(`${at} 含契约外字段 "${key}"（已忽略）。请核对字段名与写法 —— 它不会生效。`)
+    // P-03（P-03 复核）：旧文案断言「已忽略 + 它不会生效」对所有未知字段一刀切，
+    // 但「契约外」只说明**本版本没登记**，对拼写近亲说「不会生效」是在替引擎撒谎
+    //（可能存在同名能力换了归属）。改为不越界表述 + 编辑距离 ≤2 的定向提示。
+    const near = nearestKnownKey(key, known)
+    sink.push(
+      `${at} 含契约外字段 "${key}"（本版本不保证生效；字段全表见 manifest-fields.generated.md）`
+      + (near !== null ? `——你是不是想写 "${near}"？` : ''),
+    )
   }
 }
 

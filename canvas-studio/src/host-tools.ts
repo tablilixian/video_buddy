@@ -711,7 +711,7 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     const lines = ['spot-check 完成（只渲指定帧，未编码成片）：']
     const spotFrames = [...(v.frames ?? [])].sort((a, b) => a.frame - b.frame)
     if (spotFrames.length > 0) {
-      lines.push(`静帧 ${spotFrames.length} 张（**具备读图能力时**先看图再汇报；看不了就说明"未做画面自检"）：`)
+      lines.push(`静帧 ${spotFrames.length} 张（画面类判据请逐张 read_image 看图取证后再汇报；确实没做成要明说"未做画面自检"）：`)
       for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
     }
     for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
@@ -743,13 +743,14 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   // ⇒ 8 张抽帧已经落盘，模型却不知道，自己 ls 资产目录、翻 /tmp、再用 ffmpeg 重抽一遍。
   // `compose_video` 没这两个字段，自动跳过。
   //
-  // REQ-035 F-07：这句"先看这几张图"对**看不了图的模型**是不可执行的指令（2026-10-24
-  // 事故里 26 张抽帧 0 次被消费，agent 只能自写 PNG 解码器）。改成条件式，并给出
-  // "没有视觉能力"时的明确出路。
+  // REQ-035 F-07：这句"先看这几张图"在**无图像输入**时期是不可执行的指令
+  // （2026-10-24 事故里 26 张抽帧 0 次被消费，agent 只能自写 PNG 解码器）。
+  // 2026-11-04 起网关模型行声明了 image input，恢复成无条件取证的硬要求；
+  // 仍保留"未做画面自检"的诚实出口，防止能力声明失效时又变成空话。
   const frames = v.frames ?? []
   if (frames.length > 0) {
     const listed = [...frames].sort((a, b) => a.frame - b.frame)
-    lines.push(`抽帧 ${listed.length} 张（**具备读图能力时**先看这几张再向用户汇报；看不了就跳过并说明"未做画面自检"）：`)
+    lines.push(`抽帧 ${listed.length} 张（**先逐张 read_image 看图**，对照判据逐条核对后再向用户汇报；未做要明说"未做画面自检"）：`)
     for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
   }
   if (v.report !== undefined) lines.push(formatRenderReport(v.report))
@@ -2773,7 +2774,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'image2vl',
       description:
-        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ 你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。⚠️ **不做像素级定位**：本工具只回自然语言描述，拿不到坐标 / 边界框；问"屏幕在画面哪个位置、占多大"只会得到含糊甚至编造的比例。定位请用 `inspect_image`（`grid` 看分布、`bbox-*` + `region` 拿画布百分比矩形）。',
+        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ **本工具不是「你自己看图」**：2026-11-04 起创作模型已能直接读本地图（`read_image(file_path=…)`，画面类判据优先走它）；本工具走的是后端 VLM，返回的是另一个模型的文字转述，只作辅助参考。⚠️ **不做像素级定位**：本工具只回自然语言描述，拿不到坐标 / 边界框；问"屏幕在画面哪个位置、占多大"只会得到含糊甚至编造的比例。定位请用 `inspect_image`（`grid` 看分布、`bbox-*` + `region` 拿画布百分比矩形）。',
       parameters: {
         // CV-155：补上「产物名不可直接用」——本工具最常被喂的就是刚生成图的产物名。
         filename: { type: 'string' as const, required: true, description: '可用句柄（`upload_image` 的返回），或 `@ref[显示名]` 引用标记（Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传。' },

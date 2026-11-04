@@ -1,10 +1,12 @@
 /**
  * CV-362 · inspect_image 纯函数层：零依赖 PNG 解码 + 像素级分析。
  *
- * 为什么存在：真机复盘（session-postmortem-2026-10-23）暴露宿主**没有任何图像检测能力**
- * —— `read_image` 对项目素材报错、环境无 PIL/ImageMagick/sharp，agent 为「把代码 UI
+ * 为什么存在：真机复盘（session-postmortem-2026-10-23）里模型行的图像输入声明缺失，
+ * `read_image` 对项目素材报错、环境无 PIL/ImageMagick/sharp，agent 为「把代码 UI
  * 精准落进表盘屏幕」手写了 8 个 PNG 解码脚本（decode/an/an2/…/colors），烧 25 分钟与
  * 大量上下文。本模块把那套东西收敛成一个工具。
+ * 2026-11-04 起模型行补了 `input: [text, image]`，`read_image` 已能直接读图；但那给的是
+ * **语义描述**，精确坐标 / 颜色 / alpha 仍只有本模块的像素数值可信。两者互补，不是替代。
  *
  * 依赖策略：**只用 node:zlib** —— PNG = zlib 流 + 定义明确的行滤波，纯函数可完整实现；
  * JPEG/WEBP 的解码器复杂度不成比例（超本仓范围），遇到即显式报错并给出替代路径。

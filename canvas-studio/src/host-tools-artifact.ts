@@ -77,8 +77,9 @@ export function defineArtifactTools(deps: ArtifactToolsDeps): ReturnType<typeof 
         } catch (error) {
           throwError('CS-USER-ERR', { message: error instanceof Error ? error.message : String(error), detail: 'image_matting failed' })
         }
-        // 2026-11-02 复刻真机复盘：质量自查从「目视边缘」改成数值自检 —— 创作模型
-        // 没有图像输入，「把产物叠在深色卡上看一眼」这句指引永远执行不了。
+        // 2026-11-02 复刻真机复盘：质量自查从「目视边缘」改成数值自检 —— 当时模型行
+        // 未声明 image input，read_image 会报错。2026-11-04 已补声明、可直接读图，
+        // 但数值自检仍是更可复算的客观判据（alpha / 残留底色），不随能力恢复而删。
         const audit = auditMattingFile(result.destPath, result.key)
         const verdict = audit === null ? null : auditVerdict(audit)
         const lines = [

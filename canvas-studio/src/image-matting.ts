@@ -127,9 +127,11 @@ export async function runImageMatting(
  *
  * ## 为什么必须要这一层
  *
- * 上一版把质量自查写成「把产物叠在深色卡上**目视**边缘」—— 而本项目的创作模型
- * （deepseek-flash）**没有图像输入**，读图会直接报 `model does not declare image
- * input`。于是那句指引永远无法执行，模型只能拿着「抠图完成」四个字往下走。
+ * 上一版把质量自查写成「把产物叠在深色卡上**目视**边缘」—— 当时（2026-11-02）
+ * 网关模型行缺 `image` 能力声明，`read_image` 直接报 `model does not declare
+ * image input`，那句指引无法执行，模型只能拿着「抠图完成」四个字往下走。
+ * 2026-11-04 起模型行已声明 `input: [text, image]`、可直接读图；**数值自检仍保留**：
+ * alpha / 残留底色是客观量，比「看一眼边缘」更可复算，也不吃 VLM 复述误差。
  * 甜品复刻会话的实际后果：它用「四角 alpha=255 ⇒ 白底没被 key 掉」判本工具失败，
  * 弃用产物改用自写 alpha 蒙版 —— 而那几张产品图是**圆角白卡**，圆角外侧本来就该
  * 不透明，判据本身是错的。等于 CV-394 这条验收从来没真正做过。
@@ -229,7 +231,7 @@ export function auditMattingFile(destPath: string, key: string): MattingAudit | 
 /**
  * 把审计结果翻译成「通过 / 可疑 + 该怎么调」的一句话结论。
  *
- * 判据只有三条，且都能给出**可执行的下一步**（不提「目视」—— 模型看不见图）。
+ * 判据只有三条，且都能给出**可执行的下一步**（数值判据可复算，不依赖「看一眼」）。
  */
 export function auditVerdict(audit: MattingAudit): { ok: boolean; note: string } {
   if (audit.alphaPct < 2) {

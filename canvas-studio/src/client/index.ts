@@ -405,8 +405,10 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
   }
 
   // 方案 B（2026-09-05）：对话附件旁路。用户在输入框贴参考图后点发送，图片
-  // 不再作为 base64 content block 塞给模型（纯文本模型会报「当前模型不支持
-  // 图片」），而是落盘 + 画布落**普通素材节点**（不自动标记参考，由用户在详情
+  // 不再作为 base64 content block 塞给模型（当时模型行未声明 image input，会报
+  // 「当前模型不支持图片」；2026-11-04 已补声明，但**旁路保留**：落画布 + @ref 血缘
+  // 让附件能被生成工具无损复用，与模型能否看图无关），而是落盘 + 画布落**普通素材节点**
+  // （不自动标记参考，由用户在详情
   // 面板手动标记）→ 正文追加 @ref[标题] 引用标记，Host 生成工具可无损解析成
   // Drama filename。旁路处理器注册到 conversation 服务的 sendSession（唯一附件
   // 提交入口，见 ui-conversation service.ts）。

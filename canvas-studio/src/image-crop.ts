@@ -18,7 +18,7 @@
  *    （为了把结果直接填进 render 轨 transform），这边是图片像素左上角语义（因为
  *    裁出来的是物理像素，百分比还要再换算、还要摊取整误差）。
  * 2. **必须能自证**：产物返回尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图。
- *    模型看不见图，裁歪了（rect 算错、行列数错）唯一能发现的方式就是这些数字；
+ *    模型虽已能直接读图，裁歪了（rect 算错、行列数错）仍要靠这些数字复核；
  *    没有自证它只会一路带着错素材跑下去。
  * 3. **越界报错而不是静默 clamp**：ffmpeg 的 crop 会把超界矩形自动收进画面，产物
  *    看起来「成功」但内容是错的。这里先拿源图尺寸严格校验，报错里带源尺寸与
@@ -176,7 +176,7 @@ export function resolveCropSource(source: string, registry: ProjectRegistry, pro
   return localPath
 }
 
-/** 自证用摘要：模型看不见图，只能靠这些数字判断「裁对了没有」。 */
+/** 自证用摘要：读图给语义，数字给可复算的「裁对了没有」判据。 */
 export interface CropProvenance {
   width: number
   height: number

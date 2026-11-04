@@ -234,7 +234,7 @@
 
 **端点**：`POST /api/v1/generate/image2vl`（`image` + `prompt` + `system_prompt`）。
 
-> ⚠️ 模型没有视觉能力：不要读本地图片路径、不要把图片 URL 当参数（会报 `model does not declare image input`）。
+> ⚠️ 2026-11-04 起模型行已声明 `input: [text, image]`，可直接 `read_image(file_path=…)` 读项目内本地图；本工具走的是后端 VLM，文字转述只作辅助参考。产物 URL / filename 句柄**不是**本地图片路径，别塞给 `read_image`。
 > ⚠️ 跨请求脏状态：**不传图**时后端会返回陈旧缓存图的描述 → 不带图的 VL 结果不可信。
 
 ---
@@ -722,7 +722,7 @@ export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResult
 
 **返回（自证）**：产物尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图（字符越靠后越亮）。
 判读：四边接近 `#ffffff` = 白底产品区；某边明显偏暗 = 边界切到相邻内容，改 `row/col`
-或 `rect` 重裁。模型没有图像输入，**这组数字就是「裁对没裁对」的唯一证据**。
+或 `rect` 重裁。模型已能直接读图，但**「裁对没裁对」仍以这组可复算数字为准**（语义看图只判内容，不判像素边界）。
 
 **与 `sourceRect` 的分工**：同图多格**同屏引用**（一图多轨各取子区域）→ 轨上加
 `sourceRect`；某一格要**独立当素材** → 先 `image_crop`。

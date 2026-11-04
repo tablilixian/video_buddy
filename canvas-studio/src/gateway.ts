@@ -35,6 +35,39 @@ export const GATEWAY_DEFAULT_CONTEXT_WINDOW = 262_144
  */
 export const GATEWAY_MAX_OUTPUT_TOKENS = 32_768
 
+/**
+ * 已实测支持图像输入、但服务端目录未声明的网关模型。
+ *
+ * 2026-11-04 实测：DramaServer `/v1/llm` 把 `deepseek-flash` 路由到
+ * `deepseek-v4.1-flash`；带 `image_url` 的 chat/completions 返回 200，
+ * 纯色图答 "Red"，真实静帧能描述太阳/地球/弧线/文字。而 `/v1/models`
+ * 目录仍标 `modality="text"`、`capabilities` 无 `inputs`。
+ *
+ * llm-pi-ai 的模型行缺 `input` 字段时会回落到 route 的 `defaultInput=[text]`，
+ * 于是 tool-fs/read-image.ts 的严格能力闸拒收 read_image，llm 还会把消息里的
+ * 图片投影成文本。目录不是能力 SSOT 期间用本表兜底；后端把
+ * `capabilities.inputs` 补成 `["text","image"]` 后删除本表即可。
+ */
+export const GATEWAY_IMAGE_INPUT_OVERRIDES: ReadonlySet<string> = new Set(['deepseek-flash'])
+
+export type GatewayInputModality = 'text' | 'image'
+const GATEWAY_INPUT_MODALITIES: readonly GatewayInputModality[] = ['text', 'image']
+
+/** 单条目录模型 → llm-pi-ai 的 `input` 声明（目录优先，实测覆盖表兜底）。 */
+export function resolveModelInput(
+  model: Pick<CatalogModel, 'code' | 'modality' | 'capabilities'>,
+): GatewayInputModality[] {
+  const declared = model.capabilities?.['inputs']
+  const fromCatalog = Array.isArray(declared)
+    ? GATEWAY_INPUT_MODALITIES.filter((modality) => declared.includes(modality))
+    : []
+  const fallback: GatewayInputModality[] = model.modality === 'image' ? ['text', 'image'] : ['text']
+  const resolved = new Set<GatewayInputModality>(fromCatalog.length > 0 ? fromCatalog : fallback)
+  resolved.add('text')
+  if (GATEWAY_IMAGE_INPUT_OVERRIDES.has(model.code)) resolved.add('image')
+  return GATEWAY_INPUT_MODALITIES.filter((modality) => resolved.has(modality))
+}
+
 export interface GatewayCatalog {
   apiBaseUrl: string
   models: CatalogModel[]
@@ -43,7 +76,7 @@ export interface GatewayCatalog {
 
 export interface GatewayRow {
   apiBaseUrl: string
-  models: { code: string; displayName: string }[]
+  models: { code: string; displayName: string; input: GatewayInputModality[] }[]
 }
 
 /** 折进 `llm-pi-ai` 的 `providers` 路由对象（与 Models 页的配置形状一致）。 */
@@ -52,7 +85,7 @@ export interface GatewayProviderProfile {
   apiKeyEnv: string
   api: string
   baseURL: string
-  models: { id: string; name: string; contextWindow: number; maxTokens: number }[]
+  models: { id: string; name: string; contextWindow: number; maxTokens: number; input: GatewayInputModality[] }[]
 }
 
 export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
@@ -66,6 +99,7 @@ export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
       name: model.displayName,
       contextWindow: GATEWAY_DEFAULT_CONTEXT_WINDOW,
       maxTokens: GATEWAY_MAX_OUTPUT_TOKENS,
+      input: model.input,
     })),
   }
 }
@@ -137,7 +171,11 @@ export function gatewayRow(catalog: GatewayCatalog | null): GatewayRow | null {
   if (catalog === null) return null
   const models = catalog.models
     .filter((model) => model.available !== false)
-    .map((model) => ({ code: model.code, displayName: model.display_name || model.code }))
+    .map((model) => ({
+      code: model.code,
+      displayName: model.display_name || model.code,
+      input: resolveModelInput(model),
+    }))
   if (models.length === 0) return null
   return { apiBaseUrl: catalog.apiBaseUrl, models }
 }
@@ -147,7 +185,7 @@ export function gatewayFingerprint(gateway: GatewayRow | null): string {
   if (gateway === null) return ''
   return JSON.stringify({
     apiBaseUrl: gateway.apiBaseUrl,
-    models: gateway.models.map((model) => [model.code, model.displayName]),
+    models: gateway.models.map((model) => [model.code, model.displayName, model.input]),
   })
 }
 

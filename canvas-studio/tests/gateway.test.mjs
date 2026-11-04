@@ -14,8 +14,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   gatewayCatalogPath, gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
-  publishGatewayCredential, readGatewayCatalog, writeGatewayCatalog,
-  GATEWAY_CREDENTIAL_REF, GATEWAY_MAX_OUTPUT_TOKENS, GATEWAY_ROUTE_NAME,
+  publishGatewayCredential, readGatewayCatalog, resolveModelInput, writeGatewayCatalog,
+  GATEWAY_CREDENTIAL_REF, GATEWAY_IMAGE_INPUT_OVERRIDES, GATEWAY_MAX_OUTPUT_TOKENS, GATEWAY_ROUTE_NAME,
 } from '../lib/gateway.js'
 
 const catalogOf = (models) => ({ apiBaseUrl: 'http://business.test', models, updatedAt: '2026-10-22T00:00:00Z' })
@@ -33,8 +33,8 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
   assert.deepEqual(row, {
     apiBaseUrl: 'http://business.test',
     models: [
-      { code: 'deepseek-flash', displayName: 'DEEPSEEK-FLASH' },
-      { code: 'no-display-name', displayName: 'no-display-name' },
+      { code: 'deepseek-flash', displayName: 'DEEPSEEK-FLASH', input: ['text', 'image'] },
+      { code: 'no-display-name', displayName: 'no-display-name', input: ['text'] },
     ],
   })
   // 全部不可用 → 无网关行（防已下线模型复活）。
@@ -48,10 +48,37 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
     api: 'openai-completions',
     baseURL: 'http://business.test/v1/llm',
     models: [
-      { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768 },
-      { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144, maxTokens: 32_768 },
+      { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768, input: ['text', 'image'] },
+      { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144, maxTokens: 32_768, input: ['text'] },
     ],
   })
+})
+
+test('网关模型行必须声明图像输入（目录标 text 也由实测覆盖表兜底）', () => {
+  // 根因回归：index.ts 的 reconcile 用 gatewayProfile 整体覆盖 providers 行；
+  // 模型行若不带 input，llm-pi-ai 回落到 defaultInput=[text]，
+  // tool-fs/read-image.ts 的严格能力闸会拒收 read_image，本机 patch 也会被冲掉。
+  const row = gatewayRow(catalogOf([modelOf('deepseek-flash')]))
+  assert.deepEqual(row.models[0].input, ['text', 'image'])
+  assert.deepEqual(gatewayProfile(row).models[0].input, ['text', 'image'])
+  assert.ok(GATEWAY_IMAGE_INPUT_OVERRIDES.has('deepseek-flash'))
+})
+
+test('resolveModelInput：目录声明优先，未命中覆盖表保持纯文本', () => {
+  assert.deepEqual(resolveModelInput(modelOf('plain-x')), ['text'])
+  assert.deepEqual(
+    resolveModelInput(modelOf('vision-x', { capabilities: { inputs: ['text', 'image'] } })),
+    ['text', 'image'],
+  )
+  assert.deepEqual(resolveModelInput(modelOf('image-only', { modality: 'image' })), ['text', 'image'])
+  // 脏目录不炸，也不凭空获得图像能力。
+  assert.deepEqual(resolveModelInput(modelOf('dirty', { capabilities: { inputs: 'image' } })), ['text'])
+})
+
+test('目录指纹纳入 input：能力变化必须触发 reconcile', () => {
+  const textOnly = gatewayRow(catalogOf([modelOf('vision-x', { capabilities: { inputs: ['text'] } })]))
+  const withImage = gatewayRow(catalogOf([modelOf('vision-x', { capabilities: { inputs: ['text', 'image'] } })]))
+  assert.notEqual(gatewayFingerprint(textOnly), gatewayFingerprint(withImage))
 })
 
 test('模型行必须带 maxTokens=32768（DramaServer 输出上限，压缩压力预留依据）', () => {

@@ -91,6 +91,7 @@ import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
 import { lintReceiptLines, writeLintReport } from './lint-report.js'
+import { readPendingFactWarning } from './data-provenance.js'
 import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -3726,6 +3727,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // OPT-15：动画窗口表 —— QC 抽帧号对窗口用，防止把动画中段当布局 bug 排查。
         const animationWindows = probe || spot ? [] : collectAnimationWindows(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
+        // B-4（CV-440，P-01/P-17）：storyboard pending 事实桥 —— write_storyboard 的
+        // facts[].status 与 manifest 之间此前无任何桥（pending 照样变成图表数字）。
+        // 观察期只点名不阻断；探针 / spot 不出（它们不交付，提醒是噪声）。
+        const pendingFactNote = probe || spot ? '' : readPendingFactWarning(registry.storyboardFile(projectId))
         const warnings = [
           ...validation.warnings,
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
@@ -3735,6 +3740,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // 放在 reconciled 之后：判的是**真正要渲染的**那份排布。
           ...checkManifestResolution(renderManifest, pre.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
+          ...(pendingFactNote !== '' ? [pendingFactNote] : []),
           ...coverageWarnings,
           ...job.warnings,
         ]

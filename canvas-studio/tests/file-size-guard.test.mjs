@@ -79,7 +79,9 @@ export const FILE_WHITELIST = {
   // CV-439（2026-11-05）：B-3 体检回执消费端接线（lint message/lintPath schema + executor 落盘
   // 调用 + 报告/spot 双渲染点 + 折叠行改指渲染报告），+22（4730 → 4752）显式登记；
   // 核心在 lint-report.ts（新文件，65 行），此处只是接线。
-  'src/host-tools.ts': 4752,
+  // CV-440（2026-11-05）：B-4 storyboard pending 事实桥 —— 回执 warnings 点名 pending
+  // 事实（判据在 data-provenance.ts 新文件），+6（4752 → 4758）显式登记。
+  'src/host-tools.ts': 4758,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,

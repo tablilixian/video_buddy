@@ -22,6 +22,7 @@ export function isNonEmptyString(value: unknown): value is string {
 
 import { validatePieFamilyTrack } from './chart-pie.js'
 import { animateStateAt } from './timing.js'
+import { looksLikeNumericFact } from '../data-provenance.js'
 import type { Animate, BaseTrack, Transform } from './manifest.js'
 
 // ─────────────────────── 视觉状态校验原语 ───────────────────────
@@ -231,8 +232,17 @@ export function validateChartTrack(
     } else if (variant === 'dual') {
       errors.push(`${at} 是 variant:'dual'，必须提供 lineValues（折线数据，长度同 labels）`)
     }
+    // B-4（CV-440，P-01/P-17）：数据出处 / 基准 —— 观察期 warning（P5 拍板本轮不升
+    // error）。缺失给补法不阻断；'timeline'（片内真值派生）豁免 —— 它的出处是本片
+    // video 轨，无需外溯源。混基准序列（RUN-2）靠 baseline 强制声明口径来暴露。
+    if (track.dataSource === undefined) {
+      warnings.push(`${at} 内联数值缺 dataSource（数据集 + 可复核入口，如 'NASA GISTEMP v4, https://…'）——L3 数据保真判据前置，成片前请补（B-4 观察期提醒，暂不阻断）`)
+    }
+    if (track.baseline === undefined) {
+      warnings.push(`${at} 内联数值缺 baseline（口径 / 基线说明，如 '1951–1980 基线距平'）——混基准会画出错误结论（RUN-2），成片前请补（B-4 观察期提醒，暂不阻断）`)
+    }
   }
-  for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor'] as const) {
+  for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline'] as const) {
     if (track[key] !== undefined && !isNonEmptyString(track[key])) {
       errors.push(`${at}.${key} 必须是非空字符串`)
     }
@@ -240,6 +250,26 @@ export function validateChartTrack(
   // 4.1（2026-11-04）：pie / donut / gauge 专属语义（gauge 单值 / gaugeMax / palette）。
   if (variant === 'pie' || variant === 'donut' || variant === 'gauge') {
     validatePieFamilyTrack(track, at, errors)
+  }
+}
+
+/**
+ * B-4（CV-440，P-01/P-17）：dataCard 数值型事实的溯源观察期检查。
+ *
+ * 触发口径收窄（P-01 复核实测修正）：只有 `v` 像**可溯源数字**（温标 / 百分比 /
+ * 量级等，判据见 `looksLikeNumericFact`）才要求 `dataSource`；BPM / 时长 / 计数
+ * 等元数据豁免。`dataSource:'observed' | 'inline'` = 声明「非外部事实」，诚实出口。
+ * 观察期只 warning —— 让漂移的数据自己现形，不诱导编造出处。
+ */
+export function validateDataCardProvenance(track: Record<string, unknown>, at: string, warnings: string[]): void {
+  if (track.dataSource !== undefined) return
+  const data = track.data
+  if (!Array.isArray(data)) return
+  for (const entry of data) {
+    if (!isRecord(entry) || typeof entry.v !== 'string') continue
+    if (!looksLikeNumericFact(entry.v)) continue
+    warnings.push(`${at} 数据卡含数值型事实（"${entry.v}"）缺 dataSource（数据集 / 来源 URL；自测值写 'observed'，占位演示写 'inline'）——L3 数据保真判据前置（B-4 观察期提醒，暂不阻断）`)
+    break // 一张卡点名一次即可，不逐条刷
   }
 }
 

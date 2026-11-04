@@ -203,6 +203,7 @@
 - `anim`?: TextAnimPreset — 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。
 - `animOptions`?: TextAnimOptions — 三期 W4-2：文本动效参数。
 - `countUp`?: boolean — P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」
+- `dataSource`?: string — B-4（CV-440，P-01/P-17）：数值型事实的溯源声明 —— 触发口径收窄（见
 
 ## ShapeTrack (extends BaseTrack)
 
@@ -245,6 +246,8 @@
 
 - `type`: 'chart'
 - `source`?: 'timeline' — 数据来源（A2，2026-10-31）：
+- `dataSource`?: string — B-4（CV-440，P-01/P-17）：数据出处 —— 数据集名 + 可复核入口（如
+- `baseline`?: string — B-4（CV-440，P-01/P-17）：口径 / 基准说明（如 `'1951–1980 基线距平'`）。
 - `variant`: 'bars' | 'dual' | 'line' | 'pie' | 'donut' | 'gauge' — 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
 - `labels`: string[] — 类目标签（与 `values` 一一对应；上限 32 项）。
 - `values`: number[] — 主序列（柱，左轴；非负、有限，至少一个 > 0）。

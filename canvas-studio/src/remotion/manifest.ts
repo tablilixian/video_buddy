@@ -37,6 +37,7 @@ import {
   validateAnimateWindows,
   validateCalloutTrack,
   validateChartTrack,
+  validateDataCardProvenance,
   validateColorShift,
   validateExitMotion,
   validateNonNegativeInteger,
@@ -499,6 +500,14 @@ export interface TextCardTrack extends BaseTrack {
    * 缺省 false = 老行为（数值静态）。非 dataCard 变体写了只收 warning 不生效。
    */
   countUp?: boolean
+  /**
+   * B-4（CV-440，P-01/P-17）：数值型事实的溯源声明 —— 触发口径收窄（见
+   * `data-provenance.ts` 的 `looksLikeNumericFact`）：温标 / 量级 / 百分比等
+   * 可溯源数字缺它才 warning；BPM / 时长 / 计数等元数据豁免。
+   * 特殊值 `'observed'`（自己实测 / 片内观察）与 `'inline'`（占位演示数据）
+   * = 声明「非外部事实」，同样豁免 —— 给练习片一个不编造出处的诚实出口。
+   */
+  dataSource?: string
 }
 
 export interface ShapeTrack extends BaseTrack {
@@ -618,6 +627,19 @@ export interface ChartTrack extends BaseTrack {
    *   该模式下再内联 labels/values/lineValues 会被拒收。
    */
   source?: 'timeline'
+  /**
+   * B-4（CV-440，P-01/P-17）：数据出处 —— 数据集名 + 可复核入口（如
+   * `'NASA GISTEMP v4（J-D 列），https://data.giss.nasa.gov/gistemp/'`）。
+   * 内联数值时观察期 warning（缺失提示补）；`source:'timeline'`（片内真值派生）豁免。
+   * 观察期（P5 拍板）暂不阻断渲染。
+   */
+  dataSource?: string
+  /**
+   * B-4（CV-440，P-01/P-17）：口径 / 基准说明（如 `'1951–1980 基线距平'`）。
+   * 混基准序列 = RUN-2 事故的直接根因 —— 同一图表里的数值必须同口径，
+   * 不同口径的序列必须让读者可辨。观察期 warning 同上。
+   */
+  baseline?: string
   /**
    * 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
    * `dual` = 柱状 + 折线双轴（`lineValues` 必填）；`line` = 独立折线图（主序列
@@ -900,11 +922,11 @@ const KNOWN_BASE_TRACK_KEYS = new Set([
 const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
   image: new Set(['src', 'fit', 'caption']),
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp', 'dataSource']),
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
-  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor']),
+  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }
@@ -1535,6 +1557,10 @@ export function validateManifest(input: unknown): ManifestValidation {
           } else if (track.countUp && track.variant !== 'dataCard') {
             warnings.push(`${at} 是 variant:'${String(track.variant)}'，countUp 只在 variant:'dataCard' 下生效（已忽略）`)
           }
+        }
+        // B-4（CV-440，P-01/P-17）：数值型事实溯源观察期（收窄口径，见本函数文档）。
+        if (track.variant === 'dataCard' && track.data !== undefined) {
+          validateDataCardProvenance(track, at, warnings)
         }
         break
       }

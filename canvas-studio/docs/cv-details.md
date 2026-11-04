@@ -2353,7 +2353,7 @@
 - **优先级**：P1
 - **详情**：四条机制层收口。① **P-02 字段表漂移**：gaugeMax / palette / sourceRect / hasAlpha 四个被实现真实读取的字段补登记进 KNOWN_TRACK_KEYS（此前每次使用都被告警「它不会生效」= app 对 agent 谎报）；并加**字段表漂移检查**（`manifest-fields-drift.test.mjs` 新增扫描：剥字符串与注释后收集 src/ 全部 `track.X` 读取，凡不在 KNOWN_BASE ∪ KNOWN_TRACK_KEYS 联合集即红）——「加字段漏登记」从机制上不可能再悄悄发生；KNOWN 两表 export 供扫描。② **P-03 未知键文案**：删掉对所有未知字段一刀切的「已忽略 / 它不会生效」（契约外 ≠ 不生效，替引擎撒谎）；改「本版本不保证生效；字段全表见 manifest-fields.generated.md」+ **编辑距离 ≤2 的定向提示**（levenshteinWithin 剪枝实现，`gaugeMaxx` ⇒ 「你是不是想写 "gaugeMax"？」）；自造词不猜。③ **P-05 ML-04 浮点边界**：`movementMagnitude` 的 delta 按 1e-9 取整再比（实测 |1.0−0.9|×10 = 0.9999999999999998 < 1，恰好达到可见门槛的 opacity 0.9↔1.0 往复被误判"看不见"照报 ML-04）；三条边界表测（0.9↔1.0 豁免 / 0.8↔1.0 豁免 / 0.994↔1.006 微幅假呼吸照报）。④ **P-16 reveal 缺省方向误报**：sameSide 判定只在**作者显式写了 direction** 时进行——引擎补的 'right' 缺省不是作者意图，拿它判定会对从未写过 direction 的右侧卡报「请改用 reveal.out」，按建议改反而真改了渲染。**P-04 / P-06 已由 CV-438（ML-10 分子补 kenburns/reveal.out）与 CV-439（ML-00 折叠改计数+前 N+落盘）覆盖，不重复立项。**
 - **涉及文件**：src/remotion/manifest.ts（KNOWN 表补登 + export + levenshteinWithin/nearestKnownKey + warnUnknownKeys 文案）、src/remotion/reveal.ts（direction 显式判定）、src/remotion/motion-lint.ts（delta 取整）、tests/{manifest-fields-drift,manifest-chart,remotion-motion-lint,remotion-callout-reveal}.test.mjs。
-- **验证**：见本批末尾统一测试记录（段 A 收官跑）。反向变异靶：漂移扫描删 hasAlpha 登记 ⇒ 红；P-05 去掉取整 ⇒ 0.9↔1.0 用例红。
+- **验证**：反向变异实证两条 —— ① 漂移扫描：lib 删 hasAlpha 登记 ⇒ 「实现读取了未登记字段：hasAlpha」红，还原 ⇒ 绿；② P-05：lib 去掉 1e-9 取整 ⇒ 0.9↔1.0 边界用例红，还原 ⇒ 绿。段 A 收官统一测试：**全量 294 文件 2756·2756 全绿**（分 6 批跑通；唯一两红 = chart-line-countup 夹具未带 B-4 溯源字段，补「构造样本 / observed」归零）+ verify:loader + 双 tsc 绿。全量 test:smoke 按计划仍由用户终端跑（P2 基线）。
 
 #### CV-442 · B-6 六体裁推广工程准备：六壳工程纪律节 + 通用护栏（2026-11-05，待桌面验收）
 
@@ -2361,4 +2361,4 @@
 - **优先级**：P1
 - **详情**：段 A 收官批（P4 收窄口径：6 编排壳 + 各自 executor + 通用护栏，打勾靠 §5.2 真机循环）。① **六壳统一「工程纪律」节**（explainer / brand / product / data-viz / social-ad / drama 六个 format director，各 +572B 同文）：三层取证层级（read_image 首选看图本身 / inspect_image 精确数值 / image2vl·video2vl 仅三种情况保底且不可当事实 + toolchain §7 指针）、交付前复述未决项（体检 N 条段 + lint 落盘清单）、数据判据（dataSource/baseline/observed/inline/pending 禁入）。② **五 executor 补取证层级**（drama-episode-executor / brand-promo-video-generator / minimalist-product-ad-generator / mv-production / viral-remake，各 +232B）：read_image 首选 + 禁 manifest 自证。此前六壳与五 executor **零 read_image 覆盖**（grep 实证）——读图能力恢复后只有科普 executor 接上了，B-6 把工程能力铺满六体裁入口。③ **通用护栏**：新 `tests/skill-genre-guardrail.test.mjs` 4 条（六壳三标记 + toolchain 指针 / 五 executor 两标记 / data-viz 数据判据 / 12KB 体积闸）——在场性守卫不锁全文措辞，新体裁壳落地时这条闸会要求接上工程纪律。
 - **涉及文件**：skills/{6 壳 + 5 executor}/SKILL.md、tests/skill-genre-guardrail.test.mjs（新）。
-- **验证**：见本批末尾统一测试记录（段 A 收官跑）。**能力矩阵「工程改动」半边就此就绪**（§5.3 六格的「读图取证 / 体检回执 / 动效口径 / 数据契约 / 负例纠偏 / 通用护栏」行）；「打勾」另一半 = §5.2 协作循环（用户真机跑 + 判定报告），段 A 不自判。
+- **验证**：段 A 收官统一测试 **2756·2756 全绿**（含 skill-genre-guardrail 4 条）；**能力矩阵「工程改动」半边就此就绪**（§5.3 六格的「读图取证 / 体检回执 / 动效口径 / 数据契约 / 负例纠偏 / 通用护栏」行）；「打勾」另一半 = §5.2 协作循环（用户真机跑 + 判定报告），段 A 不自判。

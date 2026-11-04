@@ -398,6 +398,16 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: false,
     stage: 'preview',
   },
+  {
+    name: 'social-ad-format-director',
+    title: '社媒广告编排',
+    summary: '社媒广告体裁的 L2 编排壳：前 3 秒钩子纪律 + 三链路路由（卡点快剪 / 爆款复刻 / 实拍）+ 多画幅分发。',
+    category: 'format',
+    icon: 'megaphone',
+    hue: 0,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',

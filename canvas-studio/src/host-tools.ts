@@ -2582,7 +2582,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 0.7.0 对拍（CV-269）：fl2va 端点原生就是 image1+image2 两个图片位 ——
         // 尾帧位从 video_composite 的「2 张图」语义里拆出来，归位到本工具。
         filenameTail: { type: 'string' as const, description: '可选：尾帧图的**句柄**（同 filename 的来源纪律）。与 filename 联用 = 首尾帧插值（filename 定开场、filenameTail 定收尾，中间由模型演绎）；只传 filename 不传它 = 单首帧图生视频。**只传 filenameTail 不传 filename 不合法**（会按纯文生处理，尾帧被忽略）' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。16:9 横屏 / 9:16 竖屏 / 1:1 方幅（1:1 已放行提交；后台联调就绪前可能被静默降级，成片画幅以实际产物为准）' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
@@ -2653,7 +2653,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。
         filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组，1~9 张（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即 `<Picture N>` 的位次**（第 N 张 = `<Picture N>`，锁定角色/场景/风格锚点）。**两张图不再解释为首尾帧插值**（CV-269 拆分后本工具恒为多参考通道；要首尾帧书挡请用 video_generate 传 filename + filenameTail）。**写 IR 简报时每一张参考图都应在简报里出现一次**：要么单独立 `<Picture N>` 条目（充当某镜关键帧/构图锚点时），要么在对应 `<Subject N>` 里 inline 注明出处（如「…in <Picture 3>」）——跳号意味着有一张素材压根没被引用；漏引只出一句提示、**不阻断生成**，但那张参考图对本次生成也就没起作用了' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。16:9 横屏 / 9:16 竖屏 / 1:1 方幅（1:1 已放行提交；后台联调就绪前可能被静默降级，成片画幅以实际产物为准）' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },

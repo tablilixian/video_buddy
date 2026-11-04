@@ -182,7 +182,7 @@ test('multi-reference（12 张）：收敛到 9 张（image1..image9），保留
   )
 })
 
-test('画幅归一：9:16 保留；1:1 在 Drama 侧降级为 16:9', async () => {
+test('画幅归一：9:16 保留；1:1 阶段 2.1 起直传并带联调前降级警告', async () => {
   const { post: postA, calls: callsA } = makePoster()
   await createDramaProvider().submit(
     baseReq({ capability: 'text-to-video', aspectRatio: '9:16' }),
@@ -191,11 +191,15 @@ test('画幅归一：9:16 保留；1:1 在 Drama 侧降级为 16:9', async () =>
   assert.equal(callsA[0].body.aspect, '9:16')
 
   const { post: postB, calls: callsB } = makePoster()
-  await createDramaProvider().submit(
+  const handleB = await createDramaProvider().submit(
     baseReq({ capability: 'text-to-video', aspectRatio: '1:1' }),
     { dramaPostWithFallback: postB },
   )
-  assert.equal(callsB[0].body.aspect, '16:9')
+  assert.equal(callsB[0].body.aspect, '1:1', '1:1 必须直传后台（阶段 2.1 放行）')
+  assert.ok(
+    handleB.warnings?.some((w) => w.includes('后台 1:1 联调就绪前可能被静默降级')),
+    `1:1 必须带联调前降级警告，实得 ${JSON.stringify(handleB.warnings)}`,
+  )
 })
 
 test('提交响应缺 job_id：抛结构异常（0.5.0 硬切，不再兼容同步 full_url 形态）', async () => {

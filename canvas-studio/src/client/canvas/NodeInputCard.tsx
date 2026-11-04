@@ -313,10 +313,11 @@ const VIDEO_MODELS = [
   { id: 'seedance-25', name: 'SeedDance 2.5', cost: 24, cap: '旗舰画质 · 支持音频 · 最长 15s', maxDur: 15, enabled: false },
 ] as const
 
-/** video 画幅两选（演示 ARS 逐字：16:9 横屏 / 9:16 竖屏——与 Host CV-136 枚举一致，1:1 仅图片类工具可用）。 */
+/** video 画幅三选（阶段 2.1 起与 Host 枚举一致；1:1 联调就绪前成片可能降级，以实际产物为准）。 */
 const VIDEO_RATIOS = [
   { value: '16:9', label: '16:9 横屏' },
   { value: '9:16', label: '9:16 竖屏' },
+  { value: '1:1', label: '1:1 方幅' },
 ] as const
 
 /** 时长预设六档（拍板④；全部 ≤ H3 maxDur 15s；写 duration 参数走 Host clampDuration）。 */

@@ -32,13 +32,12 @@ test('REQ-031 模型弹层：三行逐字取演示，H3 可选、SeedDance 置�
   assert.equal(card.includes("commitRaw('model'"), false, 'video 模型选择不得写 model 参数（H3 唯一可选，chip 为展示+置灰）')
 })
 
-test('REQ-031 spec chip：画幅两选 + 时长六档写数字 + 清晰度内部键', async () => {
+test('REQ-031 spec chip：画幅三选 + 时长六档写数字 + 清晰度内部键', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  // 画幅：演示 ARS 只有 16:9/9:16（与 Host CV-136 枚举一致）——不得出现 1:1。
-  assert.match(card, /\{ value: '16:9', label: '16:9 横屏' \}/, '画幅必须含 16:9 横屏（演示 ARS 逐字）')
+  // 画幅：阶段 2.1 起与 Host 枚举一致三档（16:9 / 9:16 / 1:1；1:1 联调前产物可能降级）。
+  assert.match(card, /\{ value: '16:9', label: '16:9 横屏' \}/, '画幅必须含 16:9 横屏')
   assert.match(card, /\{ value: '9:16', label: '9:16 竖屏' \}/, '画幅必须含 9:16 竖屏')
-  const ratioBlock = card.slice(card.indexOf('const VIDEO_RATIOS'), card.indexOf('const VIDEO_DURATIONS'))
-  assert.equal(ratioBlock.includes('1:1'), false, 'video 画幅不得出现 1:1（Host 会静默落回 16:9，显示即撒谎）')
+  assert.match(card, /\{ value: '1:1', label: '1:1 方幅' \}/, '画幅必须含 1:1 方幅（阶段 2.1 放行）')
   // 时长：六档数字参数（拍板④）。
   assert.match(card, /const VIDEO_DURATIONS = \[4, 6, 8, 10, 12, 15\] as const/, '时长必须为预设六档')
   assert.match(card, /commitRaw\('duration', d\)/, '时长必须写 duration 数字参数（clampDuration 消费）')

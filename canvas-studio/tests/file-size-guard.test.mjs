@@ -75,7 +75,7 @@ export const FILE_WHITELIST = {
   'src/host-tools.ts': 4705,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
-  'src/generate.ts': 3619,
+  'src/generate.ts': 3620,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
   // 阶段 2 按域拆分时随 routes 段消化。
   // 订阅与积分（2026-11-02）：/canvas-studio/billing 前缀三分派 +105（含 sendBillingFailure），

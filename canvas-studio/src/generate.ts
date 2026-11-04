@@ -70,6 +70,7 @@ import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
 import type { CanvasStudioError } from './error-system.js'
 import './errors/catalog.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
+import { normalizeVideoAspect } from './providers/types.js'
 // Drama 异步任务台账（jobs.json）：job_id 落地 / 状态回写 / 重启恢复（后端 0.5.0）。
 import { isTerminalJobPhase, readDramaJobs, recordDramaJobSubmitted, updateDramaJobStatus } from './video-jobs.js'
 import type { DramaVideoJobRecord } from './video-jobs.js'
@@ -333,9 +334,9 @@ function effectiveCapabilityOf(tool: string, params: GenerateParams): VideoCapab
 
 function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number, planValue?: unknown): VideoRequest {
   const capability = effectiveCapabilityOf(tool, params)
-  // CV-136：视频画幅只归一为 16:9 / 9:16 两档（方形 1:1 仅图片类工具可用）。历史节点
-  // 重放 generationPrompt 时带的 '1:1' 同样落回横屏，不再进请求体。
-  const aspectRatio: VideoAspectRatio = params.aspectRatio === '9:16' ? '9:16' : '16:9'
+  // 阶段 2.1：视频画幅三档放行（16:9 / 9:16 / 1:1）——1:1 由 drama 供应商层带
+  // 联调前降级警告；历史脏值仍回落 16:9（normalizeVideoAspect 唯一实现点）。
+  const aspectRatio: VideoAspectRatio = normalizeVideoAspect(params.aspectRatio)
   const fallback = durationFallback ?? (tool === 'video_generate' ? 5 : 10)
   const references: VideoReference[] =
     tool === 'video_generate'

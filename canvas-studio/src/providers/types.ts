@@ -32,15 +32,34 @@ export type VideoCapability =
 export type VideoProviderId = 'drama' | 'fal'
 
 /**
- * 归一化画幅（CV-136，2026-11-03 拍板翻转；4:5 去留 2026-11-04 拍板）：
- * 视频横屏 16:9 / 竖屏 9:16，**1:1 已拍板支持**——后台将支持 1:1 的图片与视频
- * （社媒体裁多画幅分发的入场券），接入属「六大体裁推进路线」阶段 2.1：本类型
- * union、resolution-tiers 加档、Drama 后端联调三件套。**4:5 v1 砍掉**（fal t2v
- * 六档无 4:5，唯一曲线 = i2v 画幅跟随 4:5 首帧图，真需求出现再走）。
- * **接入落地前**旧警告仍有效：Drama 现网只认两档，传 `1:1` 会被静默降级
- * （「参数没生效但不报错」）。
+ * 归一化画幅（CV-136，2026-11-03 拍板翻转；4:5 去留 2026-11-04 拍板；
+ * 1:1 视频放行 = 六大体裁推进路线阶段 2.1）：16:9 / 9:16 / **1:1**。
+ *
+ * - **1:1 已拍板支持**（社媒体裁多画幅分发的入场券）：图片端点早已放行
+ *   （frames 表 `SQUARE_FRAME` / 图片工具 schema / 项目 plan / 默认设置四处先例），
+ *   视频端点自本类型起放行——Drama 后台 1:1 联调就绪前，供应商层对 1:1 请求
+ *   **显式带降级警告**（不装生效），联调通过后摘除。
+ * - **4:5 v1 砍掉**（fal t2v 六档无 4:5，唯一曲线 = i2v 画幅跟随 4:5 首帧图，
+ *   真需求出现再走）。
  */
-export type VideoAspectRatio = '16:9' | '9:16'
+export type VideoAspectRatio = '16:9' | '9:16' | '1:1'
+
+/** 视频画幅规范键（写路径 / schema enum 的唯一来源）。 */
+export const VIDEO_ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const
+
+/** 严格判定（写路径 / schema 用）。 */
+export function isVideoAspectRatio(value: unknown): value is VideoAspectRatio {
+  return typeof value === 'string' && (VIDEO_ASPECT_RATIOS as readonly string[]).includes(value)
+}
+
+/**
+ * 读路径 / 入参归一：合法值原样，其余（脏值 / 历史回放 / 缺省）回落 16:9——
+ * 与原 generate.ts 的两档钳制同语义，仅多放行 1:1。唯一实现点，调用方不得
+ * 再写字面量钳制。
+ */
+export function normalizeVideoAspect(value: string | undefined): VideoAspectRatio {
+  return value === '9:16' || value === '1:1' ? value : '16:9'
+}
 
 /**
  * 视频分辨率档位（三档）。**档位名与像素的对应表见 `config.ts` 的 `OUTPUT_SIZE`**

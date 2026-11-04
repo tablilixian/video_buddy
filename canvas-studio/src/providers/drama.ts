@@ -28,10 +28,12 @@ import type {
   ProviderContext,
   ProviderHandle,
   ProviderPoll,
+  VideoAspectRatio,
   VideoCapability,
   VideoProvider,
   VideoRequest,
 } from './types.js'
+import { normalizeVideoAspect } from './types.js'
 import { sliceToMax } from './shared.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
@@ -64,14 +66,14 @@ const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio'
 const DRAMA_MAX_REFERENCES = 9
 
 /**
- * Drama 的画幅归一（CV-136）：**只发 16:9 / 9:16 两种**——竖屏直接传 9:16，
- * 经用户与后端确认可用。
+ * Drama 的画幅归一（CV-136 → 阶段 2.1 三档）：9:16 直接传（用户与后端确认可用）；
+ * 1:1 自阶段 2.1 起放行直传，联调就绪前由 submit 显式带降级警告；其余一律落回 16:9。
  *
- * 契约 `VideoAspectRatio` 已是两档，这里保留函数是**运行时兜底**：画布老节点重放
- * generationPrompt 时可能仍带着历史参数 `1:1`，统一落回横屏，绝不把非法取值发出去。
+ * 保留函数仍是**运行时兜底**：画布老节点重放 generationPrompt 时可能带历史脏值，
+ * 归一后绝不把非法取值发出去。
  */
-function dramaAspect(ratio: VideoRequest['aspectRatio'] | string): '16:9' | '9:16' {
-  return ratio === '9:16' ? '9:16' : '16:9'
+function dramaAspect(ratio: VideoRequest['aspectRatio'] | string): VideoAspectRatio {
+  return normalizeVideoAspect(typeof ratio === 'string' ? ratio : undefined)
 }
 
 /** 取出 Drama 提交 POST 注入（参考图自愈闭包，由 generate.ts 每次调用时注入）。 */
@@ -172,6 +174,13 @@ export function createDramaProvider(): VideoProvider {
       const images = req.references.map((ref) => ref.localPath)
       // 非致命提示（截断等）经 executor 汇入生成结果 warnings 回流给 agent。
       const warnings: string[] = []
+      // 阶段 2.1：1:1 客户端已放行；后台 1:1 联调就绪前可能被静默降级——显式带
+      // 警告不装生效（联调通过后摘除本条）。
+      if (aspect === '1:1') {
+        warnings.push(
+          '1:1 画幅已提交 Drama 后台；后台 1:1 联调就绪前可能被静默降级（不报错但不生效），成片画幅以实际产物为准',
+        )
+      }
 
       let endpoint: string
       let body: Record<string, unknown>

@@ -1,6 +1,6 @@
 ---
 name: data-viz-format-director
-description: 数据可视化体裁的 L2 编排壳（format director）。凡「数据视频 / 图表动画 / 数据报告片 / KPI 展示 / 年度总结视频 / 数据可视化」类需求，先用定向三问对齐（数据来源 / 图型选型 / 时长画幅），再把任务分派给下游 executor（code-driven-explainer 的 chart 六变体 + dataCard + import_csv 链路）。本 skill 只做定向与调度，不复述 chart 字段手册与解析口径；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：数据可视化、数据视频、图表、KPI、数据报告、年度总结、data viz。
+description: 数据可视化体裁的 L2 编排壳（format director）。凡「数据视频 / 图表动画 / 数据报告片 / KPI 展示 / 年度总结视频 / 数据可视化」类需求，先用定向三问对齐（数据来源 / 图型选型 / 时长画幅），再把任务分派给下游 executor（code-driven-explainer 的 chart 六变体 + dataCard + import_csv 链路）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「数据来源 / 图型选型 / 时长画幅」三问。本 skill 只做定向与调度，不复述 chart 字段手册与解析口径；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：数据可视化、数据视频、图表、KPI、数据报告、年度总结、data viz。
 ---
 
 # 数据可视化体裁编排（data-viz-format-director）

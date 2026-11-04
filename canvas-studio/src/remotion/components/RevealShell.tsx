@@ -8,18 +8,31 @@
  * 自身坐标系求值，转场的位移/透明度作用在已揭示的画面上。
  *
  * 缺省无 reveal ⇒ 恒等直通（老 manifest 逐像素不变）；揭示走完 ⇒ `''` 不写样式。
+ *
+ * 2026-11-04（P2）：补退场擦除 `reveal.out` —— 退场区间锚在**轨尾**，所以本壳必须
+ * 拿到轨长（`trackDurationInFrames`），否则算不出退场窗口。
  */
 import type React from 'react'
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import type { TrackReveal } from '../manifest.js'
-import { revealClipAt } from '../reveal.js'
+import { revealClipAt, revealClipWithOut } from '../reveal.js'
 
-export const RevealShell: React.FC<{ reveal?: TrackReveal | undefined; children: React.ReactNode }> = ({
+export const RevealShell: React.FC<{
+  reveal?: TrackReveal | undefined
+  /** 轨长（帧）—— 退场擦除 `reveal.out` 的区间锚在轨尾，必须有。 */
+  trackDurationInFrames: number
+  children: React.ReactNode
+}> = ({
   reveal,
+  trackDurationInFrames,
   children,
 }) => {
   const frame = useCurrentFrame()
-  const clipPath = reveal === undefined ? '' : revealClipAt(reveal, frame)
+  const clipPath = reveal === undefined
+    ? ''
+    : reveal.out === undefined
+      ? revealClipAt(reveal, frame)
+      : revealClipWithOut(reveal, frame, trackDurationInFrames)
   if (clipPath === '') return <AbsoluteFill>{children}</AbsoluteFill>
   return (
     <AbsoluteFill style={{ clipPath, WebkitClipPath: clipPath }}>{children}</AbsoluteFill>

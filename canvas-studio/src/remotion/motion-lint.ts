@@ -13,8 +13,10 @@
  * - `meta.lint: "off"` 可整体关闭（刻意的写法不被噪声淹没）。
  */
 
-import type { CompositionManifest, CompositionTrack, ShapeTrack, TextCardTrack } from './manifest.js'
+import type { CompositionManifest, CompositionTrack, TextCardTrack } from './manifest.js'
 import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
+import { exitWindow } from './timing.js'
+import { REVEAL_DEFAULT_DURATION_FRAMES } from './reveal.js'
 
 export interface MotionLintIssue {
   /** `ML-01` … `ML-13`。 */
@@ -111,26 +113,50 @@ function sameState(a: Record<string, number>, b: Record<string, number>, toleran
   return Math.max(delta('x', 1), delta('y', 1), delta('scale', 50), delta('rotation', 1 / 3), delta('opacity', 10))
 }
 
-/** 满画布背景板（`box` 的 x/y 是中心，w/h ≥ 95% 即铺满）。 */
-function isFullCanvasBackdrop(track: ShapeTrack): boolean {
-  const box = track.box
-  if (box === undefined) return false
-  const w = numeric(box.w)
-  const h = numeric(box.h)
-  return w !== undefined && h !== undefined && w >= 95 && h >= 95
+/**
+ * 一条轨的 `reveal` 擦除显现区间（绝对帧）；没有 reveal ⇒ `null`。
+ *
+ * 帘式擦除 / 聚光强调也是「画面在动」—— ML-10 的动效时间必须算它
+ * （旧口径一个都不算，导致带 reveal 的片被算成静止）。
+ */
+function revealInterval(track: CompositionTrack): { start: number; end: number } | null {
+  const reveal = (track as { reveal?: { startFrame?: number; durationInFrames?: number } }).reveal
+  if (reveal === undefined) return null
+  const start = numeric(reveal.startFrame) ?? 0
+  const duration = numeric(reveal.durationInFrames) ?? REVEAL_DEFAULT_DURATION_FRAMES
+  return { start: track.startFrame + start, end: track.startFrame + start + Math.max(0, duration) }
 }
 
 /**
- * 常驻装饰轨：满画布背景板 / 整片长的 `audioViz`，**且自己没写 animate/exit**。
+ * 若干区间的**并集**长度（重叠只算一次），并裁剪到 `[lo, hi)`。
  *
- * 这类轨不该被要求「补动效」（动它反而怪），也不进 ML-10 分母。一旦作者确实给它写了
- * animate / exit，就照常计入 —— 否则会出现「分子在涨、分母不涨」的虚高比例。
+ * ML-10 的「画面在动的时间」必须按并集算：三条轨同帧一起动是 1 帧，不是 3 帧。
  */
-function isResidentDecoration(track: CompositionTrack, metaDuration: number): boolean {
-  if (animateList(track).length > 0 || track.exit !== undefined) return false
-  if (track.type === 'audioViz') return track.durationInFrames >= metaDuration * 0.9
-  if (track.type === 'shape') return isFullCanvasBackdrop(track)
-  return false
+function unionLength(
+  intervals: ReadonlyArray<{ start: number; end: number }>,
+  lo: number,
+  hi: number,
+): number {
+  const clipped = intervals
+    .map((iv) => [Math.max(lo, iv.start), Math.min(hi, iv.end)] as const)
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0])
+  if (clipped.length === 0) return 0
+  const first = clipped[0] as readonly [number, number]
+  let total = 0
+  let curStart = first[0]
+  let curEnd = first[1]
+  for (let i = 1; i < clipped.length; i += 1) {
+    const [s, e] = clipped[i] as readonly [number, number]
+    if (s <= curEnd) {
+      if (e > curEnd) curEnd = e
+      continue
+    }
+    total += curEnd - curStart
+    curStart = s
+    curEnd = e
+  }
+  return total + (curEnd - curStart)
 }
 
 /**
@@ -204,6 +230,15 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   // 一条轨的动画首尾状态相同（from ≈ to）说明它是"来回呼吸/循环脉动"，长时长恰恰是
   // 设计意图；ML-04 原判据只看"时长长且位移小"，会把它判成"动画拖沓"，诱导 agent
   // 去改掉正确的环境光/呼吸层（事故里 glowWide/Core/Hot 三条都被误报）。
+  //
+  // 2026-11-04（科普 0.1 验收 P7）**收紧**：豁免只对**看得见的**呼吸有效。
+  // 事故：为消 ML-04，agent 给 19 条轨挂上 `scale 0.994↔1.006` 的往复动画 ——
+  // 「首尾同值」一测就豁免，于是"加一段假呼吸"成了消告警的**万能钥匙**；而 1.2% 的
+  // 缩放幅度人眼根本读不出来，等于拿画面代价换一条它本来就会主动放弃的 warning
+  //（agent 自己事后写道："ML-04 只是 warning 级别，不值得为它牺牲观感"）。
+  // 判据：振荡幅度必须**达到可见量级**（`movementMagnitude ≥ 1`）。
+  // 换算：x/y 1 个画布百分点、scale 2%、opacity 0.1、rotation 3°。
+  const CYCLIC_MIN_VISIBLE_MAGNITUDE = 1
   const cyclicTracks = new Set<string>()
   {
     const byTrack = new Map<string, AbsoluteSegment[]>()
@@ -216,7 +251,15 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
       if (list.length < 2) continue
       const first = list[0]
       const last = list[list.length - 1]
-      if (first !== undefined && last !== undefined && sameState(first.from, last.to)) cyclicTracks.add(trackId)
+      if (first === undefined || last === undefined) continue
+      if (!sameState(first.from, last.to)) continue
+      // 幅度看得见才算"呼吸"；1% 级的微幅往复只是让画面"看起来有动效"的空动作。
+      let amplitude = 0
+      for (const segment of list) {
+        amplitude = Math.max(amplitude, movementMagnitude(segment.from, segment.to))
+      }
+      if (amplitude < CYCLIC_MIN_VISIBLE_MAGNITUDE) continue
+      cyclicTracks.add(trackId)
     }
   }
 
@@ -319,44 +362,48 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
     })
   }
 
-  // ML-10：静态时长占比过高 ⇒ 幻灯片。
+  // ML-10：画面上有东西在动的时间占比过低 ⇒ 幻灯片。
   //
   // REQ-034 O-02：原实现只把 animate/exit/fade/draw 当分子，分母却把**所有轨**算进去
   // —— 素材驱动片（bg 600 + 三镜视频 465 + 波形 600 + 文字卡 656 ≈ 2321 帧）恒判 5%，
   // 真机连报 7 次。一条永远为真的提示 = 噪声，代价是 agent 学会无视整份体检
   // （真出 ML-02 这类硬问题也会被一起跳过）。
   //
-  // 现口径（两条同时生效）：
-  // ① **video 轨按「自己就在动」计入分子**（它不该被要求写 animate，也不该被当成静态）；
-  // ② 分母排除常驻装饰轨（满画布 shape / 整片长 audioViz）。
+  // 2026-11-04（科普 0.1 验收 P7）**换口径**：从「各轨动效时长之和 / 可动轨总时长」
+  // 改成「**画面在动的时间** / 整片时长」——各运动区间的**并集**（重叠只算一次）。
   //
-  // 之所以不再保留方案里的「video 占比 > 40% 直接不判」兜底：在口径 ① 之下它恒真已无作用
-  // （video 占比 > 40% ⇒ 比例本身必 > 40% ⇒ 本来就不报警）。留着是测不出来的死分支。
-  const movingByTrack = new Map<string, number>()
-  for (const segment of segments) {
-    const key = segment.trackId
-    movingByTrack.set(key, (movingByTrack.get(key) ?? 0) + Math.max(0, segment.end - segment.start))
-  }
-  let movingFrames = 0
-  let totalTrackFrames = 0
-  tracks.forEach((track, index) => {
-    const duration = Math.max(0, track.durationInFrames)
+  // 旧口径的两个毛病都被真机会话踩到：
+  // ① 分母被「设计性静物」灌水：一条静止的标题卡 / 地轴线 / 边框撑满整条轨的时长，
+  //    全都算进「可动轨总时长」，把比例压到 10%。agent 收到「画面太静」的告警后，
+  //    唯一可行的响应就是给 19 条轨挂 1.2% 缩放的假呼吸 —— **拿画面代价换一条它本来
+  //    就会主动放弃的 warning**（实测：剥掉假呼吸后 ML-10 立刻以 10% 报出来）。
+  // ② 分子漏算 `reveal` / `exit`：帘式擦除与退场都是画面在动，旧口径一个都不算。
+  //
+  // 新口径直接回答「这画面有多少时间在动」：静态支撑元素不再稀释分母（它们本来就不该
+  // 被要求动效），而擦除显现 / 退场 / 素材播放都计入动效时间。
+  //
+  // 口径②已由「video 轨按自己就在动计入」覆盖（REQ-034 O-02），保留。
+  const motionIntervals: Array<{ start: number; end: number }> = []
+  for (const track of tracks) {
     if (track.type === 'video') {
-      totalTrackFrames += duration
-      movingFrames += duration
-      return
+      motionIntervals.push({ start: track.startFrame, end: track.startFrame + track.durationInFrames })
     }
-    if (isResidentDecoration(track, metaDuration)) return
-    totalTrackFrames += duration
-    movingFrames += movingByTrack.get(track.id !== undefined ? String(track.id) : `tracks[${index}]`) ?? 0
-  })
-  const ratio = totalTrackFrames > 0 ? Math.min(1, movingFrames / totalTrackFrames) : 1
-  if (totalTrackFrames > 0 && ratio < 0.3) {
+    const reveal = revealInterval(track)
+    if (reveal !== null) motionIntervals.push(reveal)
+    const exit = exitWindow(track)
+    if (exit !== null) {
+      motionIntervals.push({ start: track.startFrame + exit.start, end: track.startFrame + exit.start + exit.duration })
+    }
+  }
+  for (const segment of segments) motionIntervals.push({ start: segment.start, end: segment.end })
+  const movingFrames = unionLength(motionIntervals, 0, metaDuration)
+  const ratio = metaDuration > 0 ? Math.min(1, movingFrames / metaDuration) : 1
+  if (metaDuration > 0 && ratio < 0.3) {
     push({
       code: 'ML-10',
       at: 'manifest',
-      message: `动效覆盖仅占可动轨总时长的 ${(100 * ratio).toFixed(0)}%`,
-      hint: '静态时长占比 > 70% 会被当成幻灯片；建议给关键元素补入场/强调动画。',
+      message: `画面上有东西在动的时间只占 ${(100 * ratio).toFixed(0)}%（整片 ${metaDuration} 帧）`,
+      hint: '静态时长占比 > 70% 会被当成幻灯片；建议给关键元素补入场/强调/退场动效。',
     })
   }
 

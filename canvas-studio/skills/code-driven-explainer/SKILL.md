@@ -33,10 +33,12 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
 `recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
 单镜头动效从 `references/shot-cards.md` 挑卡填参。
-手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（九种轨型）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
+手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（九种轨型）+ 可选 `audio`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
+   **首轮渲染就用 `spotFrames` 探针**（~1.5s vs 全片 ~25s）逐条判据取代表帧；全片 draft 只用于交付前定稿 → `references/verification.md`。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
+   **交付前必须发出负例**并验证拦截，**未执行不得结案** → `references/verification.md`。
 
 ## 组装要点（细则已下沉分册）
 
@@ -47,27 +49,24 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；四种结构模板（陈述/对比/时间线/原理拆解）与卡片形态 → `references/explainer-patterns.md`。
 - **动效五要素**：动笔前按 beat / 主次 / 帧预算 / 进出场 / 禁用项过一遍 → `references/motion-brief.md`。
 - **动感范式（默认开）**：按 `references/motion-patterns.md` 的范式与决策表给画面加运动。
+- **上游体裁壳（必读）**：点名本 skill **仍须先加载**壳定向 → `references/format-directors.md`。
+- **常见坑（必读）**：animate 相对帧 / reveal 方向口径 / exit 不支持 clip / subtitle 多行溢出 → `references/pitfalls.md`。
 
 ## 动感基线（默认开，避免成片像 PPT）
 
-成片「像幻灯片」的根因几乎从不是 Remotion 能力不够，而是 manifest **没写动画**。`animate` / `kenBurns` /
-`transition` 都是逐帧确定的合法手段。**组装时默认就加动感基线**，不要等宿主回
-「静态图文」提示才补——那是补救，不是目标。范式怎么选、怎么让运动「被看懂」：全部下沉在
-`references/motion-patterns.md`（可复制范式 + 决策表）。
+成片「像幻灯片」的根因几乎从不是能力不够，而是 manifest **没写动画**。`animate` / `kenBurns` /
+`transition` 都是逐帧确定的合法手段 —— **组装时默认就加动感基线**，别等宿主回「静态图文」提示
+才补（那是补救，不是目标）。范式与决策表见 `references/motion-patterns.md`。
 
-默认基线（每条都应在组装时落地，除非有明确理由静态）：
+默认基线（每条都应在组装时落地，除非有明确理由静态）：图片轨默认 `kenburns`；标题 / 数据卡 / 要点卡
+默认滑入 `animate`（`x:115→50` + `opacity:0→1`，18 帧）；段落之间人为重叠 10–20 帧并放 `transition`；
+过程 / 关系 / 对比用 `shape` + `animate` 程序化表达；发光 / 描边 / 投影用 `fx`；音画同步用 `audioViz`；
+数据对比 ≥3 项用 `chart`（柱状/双轴/折线），2–4 个大数字用 `dataCard`（可 `countUp` 数位滚动）。
+**全表见 `references/motion-patterns.md` §1.5。**
 
-- **图片轨道**：默认 `fit: "kenburns"`（缓慢推近，零额外成本）；或加一条 `animate` 滑入。
-- **标题 / 数据卡 / 要点卡**（`title` / `dataCard` / `bullets`）：默认滑入 `animate`（`x:115→50` + `opacity:0→1`，`durationInFrames:18`，`easing:"easeOut"`），并显式写 `fadeFrames:0`。
-- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（11 种，选型表见 `references/manifest-contract.md`；数据揭晓用 `clock` / `zoomBlur`）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。
-- **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；绕点转圈、路径描边生长这类**关系型运动**用 `orbit` / `shape:"path"`+`draw`（一行声明，别手算关键帧）；范式的选择见 `motion-patterns.md` §2。
-- **发光 / 描边 / 投影 / 虚化样式**：用 `fx`（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），不要试图用多层 shape + 透明度硬模拟。
-- **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。
-- **数据对比**：≥3 项用 `chart` 轨（柱状/双轴/折线），2–4 个大数字用 `dataCard`（可 `countUp` 数位滚动）；字段见 `references/manifest-contract.md`。
+**保留纪律**：字幕卡（`subtitle`）按句首尾相接、硬切（不淡入），不加 `fadeFrames`（接缝闪背景）。
 
-**保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景，不要给字幕卡加 `fadeFrames`。
-
-**不要**为了「消静态提示」去逐镜生成视频（H3）——Remotion 程序化动画已能注入生命感，且成本 / 一致性更可控。H3 只用于需要**写实质感**（真实光影 / 运镜）的「英雄镜头」，且按既有 `video` 轨接入（见工作流第 2 步）。
+**不要**为「消静态提示」逐镜生成视频（H3）——Remotion 程序化动画已能注入生命感。H3 只用于需要**写实质感**（真实光影 / 运镜）的「英雄镜头」，按既有 `video` 轨接入（见工作流第 2 步）。
 
 ## 纪律
 
@@ -76,16 +75,15 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **素材引用**：`src` 只接受 `/canvas-studio/assets/...` 同源 URL，或**本项目资产目录内**的绝对路径（宿主会自动物化成同源 URL），**禁一切外链**。
 - **缺素材会被直接拒收**：宿主在渲染前核对素材，缺失或引用不可用即 `CS-USER-ERR` **硬失败**（不落节点、不出片）。收到该错误时**不要原样重试**，先去补齐素材或改用已有画布资产。
 - **video 轨时长以真值为准**：宿主用 ffprobe 复核并**按真值改写** `durationInFrames`；校正后若相邻轨不再重叠、转场失效，会连同明细一起拒收（`CS-USER-ERR`）。收到就按报错里的真值重排轨道与转场窗口，**不要原样重试**。
-- **不要翻历史会话 / 旧项目考古**：需要知道"以前怎么做的"就问用户，或只看本项目 `build/` 与资产目录。
-  `cat projects.json`、遍历 `~/.videobuddy/sessions/` 去找上一个项目为什么失败，属于**无效考古**——
-  实测烧几分钟推理且带入无关先验。
+- **不要翻历史会话 / 旧项目考古**：要"以前怎么做的"就问用户，或只看本项目 `build/` 与资产目录；`cat projects.json`、遍历 `~/.videobuddy/sessions/` 属于**无效考古**（实测烧几分钟推理且带入无关先验）。
 - **风险提示不是错误**：全片无 video 轨时宿主会回一条「图文卡片型」提示（静态占比 / 运动密度 / 镜头数命中），**这条路线是合法的**，不要为此改成逐镜生成视频。
-- **草稿先行**：定稿落地 → **立即渲完整草稿落画布**给用户 → 按反馈迭代；探针（`spotFrames` **不落画布**）只排障，静默自检 ≤2 轮必出片；自验只验**机器判据**（出画/重叠/数据保真/响度实测），审美归用户 → `references/explainer-patterns.md` §流程纪律。
+- **草稿先行**：定稿落地 → **立即渲完整草稿落画布**给用户 → 按反馈迭代；自验只验**机器判据**（出画/重叠/数据保真/响度实测），审美归用户 → `references/verification.md`。
+- **画面类判据必须看图本身**：`inspect_image` 的 grid/bbox 只用于**定位疑点**，不能当「元素是否存在」的结论依据，也**禁止拿 manifest 字段自证画面效果** → `references/verification.md`。
 - **预算前置**：references **按需取用**，bash 大输出落文件只回摘要；旁白先按 **4–5 字/秒** 卡预算，超了先改稿再合成。
 - **有下一步就别停轮**：一段渲成功后直接推进下一段 / 下一节，不要停下来等用户点头。只有「审美取向、总时长、素材取舍」这类**只有用户能回答**的事才值得停；其余一律自己决定并在汇报里说明。
 - **内容慢 vs 环境坏，先看工单再看内容**：返回文本里有一行 `工单：<执行者> · <认领状态> · <首帧> · 进度 · 用时`。
-  - 出现「未认领 / 无首帧」或最小探针（1 轨 / 10 帧）仍 **>1s/帧** ⇒ 是**执行器链路问题**，停手去查（见「遇错处理」），**不要再缩 manifest 空转**；
-  - 只有在「已出首帧、进度在涨、msPerFrame 稳定」的前提下，才值得怀疑内容复杂度。
+  - 出现「未认领 / 无首帧」或最小探针（1 轨 / 10 帧）仍 **>1s/帧** ⇒ **执行器链路问题**，停手去查（见「遇错处理」），**不要再缩 manifest 空转**；
+  - 只有「已出首帧、进度在涨、msPerFrame 稳定」时，才值得怀疑内容复杂度。
 
 ## 遇错处理
 

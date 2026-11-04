@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateManifest } from '../lib/remotion/manifest.js'
-import { revealClipAt } from '../lib/remotion/reveal.js'
+import { revealClipAt, revealClipWithOut } from '../lib/remotion/reveal.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel) => readFileSync(join(here, '..', rel), 'utf8')
@@ -152,6 +152,89 @@ test('revealClipAt：spotlight 圆心与半径按帧扩出，center 落进 clip 
   assert.match(at, /^circle\(74\.375% at 30\.000% 70\.000%\)$/)
   // 无 center 缺省 50/50
   assert.match(revealClipAt({ kind: 'spotlight' }, 5), /at 50\.000% 50\.000%\)$/)
+})
+
+// ─────────────────── 2026-11-04 · P2 退场擦除 `reveal.out` ───────────────────
+//
+// 事故（科普 0.1 验收 A5）：右面板要"右 wipe 出"，但 `direction` 是**进场**方向，
+// 而 `exit` 不支持 clip 退场 ⇒ "朝某侧擦出去"没有表达手段，Agent 只能写
+// `direction:"right"` ⇒ 视觉正好相反（面板自左向右展开，而不是向右退去）。
+
+test('reveal.out：合法配置通过；坏 direction / 坏时长 / 坏 gap 拒收', () => {
+  const okr = validateManifest(baseManifest(calloutTrack({
+    reveal: { kind: 'wipe', direction: 'right', durationInFrames: 24, out: { direction: 'right', durationInFrames: 20, gapFrames: 4 } },
+  })))
+  ok(okr)
+
+  const badDir = validateManifest(baseManifest(calloutTrack({
+    reveal: { kind: 'wipe', out: { direction: 'diagonal' } },
+  })))
+  assert.ok(badDir.errors.some((e) => e.includes('reveal.out.direction')))
+
+  const badDur = validateManifest(baseManifest(calloutTrack({
+    reveal: { kind: 'wipe', out: { direction: 'right', durationInFrames: 2.5 } },
+  })))
+  assert.ok(badDur.errors.some((e) => e.includes('reveal.out.durationInFrames')))
+
+  const badGap = validateManifest(baseManifest(calloutTrack({
+    reveal: { kind: 'wipe', out: { direction: 'right', gapFrames: -1 } },
+  })))
+  assert.ok(badGap.errors.some((e) => e.includes('reveal.out.gapFrames')))
+})
+
+test('reveal.out：spotlight 只告警不拒收（退场擦除只对 wipe 生效）', () => {
+  const r = validateManifest(baseManifest(calloutTrack({
+    reveal: { kind: 'spotlight', out: { direction: 'right' } },
+  })))
+  ok(r)
+  assert.ok(r.warnings.some((w) => w.includes('退场擦除 out 只对 wipe 生效')))
+})
+
+test('revealClipWithOut：无 out 时与 revealClipAt 逐字一致（老 manifest 逐像素不变）', () => {
+  const wipe = { kind: 'wipe', direction: 'right', startFrame: 10, durationInFrames: 20 }
+  for (const f of [0, 9, 10, 15, 29, 30, 999]) {
+    assert.equal(revealClipWithOut(wipe, f, 200), revealClipAt(wipe, f), `frame ${f}`)
+  }
+})
+
+test('revealClipWithOut：退场擦除锚在轨尾，方向与进场方向口径相反', () => {
+  const base = { kind: 'wipe', direction: 'right', startFrame: 0, durationInFrames: 20 }
+  const outRight = { ...base, out: { direction: 'right', durationInFrames: 20 } }
+  const outLeft = { ...base, out: { direction: 'left', durationInFrames: 20 } }
+  const TRACK = 100
+  // 退场起点 = 轨长 - 退场时长 = 80
+  // 内容向右退去 ⇒ 遮**左**侧（left inset 0 → 100）
+  assert.equal(revealClipWithOut(outRight, 79, TRACK), '')
+  // frame 90 ⇒ progress = 10/20 = 0.5 ⇒ easeOutCubic(0.5) = 0.875 ⇒ 遮 87.5%
+  assert.match(revealClipWithOut(outRight, 90, TRACK), /^inset\(0\.000% 0\.000% 0\.000% 87\.500%\)$/)
+  assert.match(revealClipWithOut(outRight, 99, TRACK), /^inset\(0\.000% 0\.000% 0\.000% 99\.987%\)$/)
+  // 内容向左退去 ⇒ 遮**右**侧
+  assert.match(revealClipWithOut(outLeft, 90, TRACK), /^inset\(0\.000% 87\.500% 0\.000% 0\.000%\)$/)
+})
+
+test('revealClipWithOut：进场遮蔽与退场遮蔽按「每侧取大」合成', () => {
+  // 进场方向 left（遮左）+ 退场方向 right（遮左）⇒ 同侧遮蔽取大
+  const both = { kind: 'wipe', direction: 'left', startFrame: 0, durationInFrames: 20, out: { direction: 'right', durationInFrames: 20 } }
+  const clip = revealClipWithOut(both, 90, 100)
+  assert.match(clip, /^inset\(0\.000% 0\.000% 0\.000% 87\.500%\)$/)
+})
+
+test('语义告警：揭示方向指向本卡所在侧 ⇒ 提示这是进场方向、退出请用 out', () => {
+  // 右半边的卡 + direction:'right' ⇒ 同侧 ⇒ 告警
+  const rRight = validateManifest(baseManifest(calloutTrack({
+    box: { x: 74, y: 48, w: 44, h: 60 },
+    reveal: { kind: 'wipe', direction: 'right' },
+  })))
+  ok(rRight)
+  assert.ok(rRight.warnings.some((w) => w.includes('进场') && w.includes('reveal.out.direction')))
+
+  // 左半边的卡 + direction:'right' ⇒ 异侧 ⇒ 不告警
+  const rLeft = validateManifest(baseManifest(calloutTrack({
+    box: { x: 26, y: 48, w: 44, h: 60 },
+    reveal: { kind: 'wipe', direction: 'right' },
+  })))
+  ok(rLeft)
+  assert.equal(rLeft.warnings.filter((w) => w.includes('reveal.out.direction')).length, 0)
 })
 
 // ─────────────────────────── 文档对码 ───────────────────────────

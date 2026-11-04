@@ -66,11 +66,17 @@
   与 `startFrame` **互斥**（同时写直接报错）。`gapFrames` 负数 = 与上一轨**重叠**（转场必用）。
 - `blend`（可选，三期）：`normal` / `screen` / `multiply` / `overlay` / `soft-light` —— 图层混合模式。
 - `colorShift`（可选，三期）：颜色随帧过渡（`shape.color` / `textCard.accentColor` / `audioViz.color`）。
-- `reveal`（可选，P3 · 2026-11-03）：**分区揭示** —— `{ "kind": "wipe" | "spotlight", "direction"?, "durationInFrames"?, "startFrame"?, "center"? }`。
+- `reveal`（可选，P3 · 2026-11-03）：**分区揭示** —— `{ "kind": "wipe" | "spotlight", "direction"?, "durationInFrames"?, "startFrame"?, "center"?, "out"? }`。
   `wipe` = 帘式擦除（`direction` = 揭示行进方向，缺省 `right` 从左往右揭开）；`spotlight` = 聚光圆从
   `center`（缺省画布中心）半径 0 扩到 85%。揭示时长缺省 18 帧、`startFrame` 轨内相对缺省 0；揭示没开始时
   内容**全遮**，走完后恒等（老 manifest 不写此字段逐像素不变）。用于：重点卡的擦除显现、聚光强调；
   `transition` 轨写了只告警（自身不可见）。
+- `reveal.out`（可选，P2 · 2026-11-04）：**退场擦除** —— `{ "direction": "left" | "right" | "up" | "down", "durationInFrames"?, "gapFrames"? }`。
+  只对 `kind:"wipe"` 生效。区间锚在**轨尾**：`[轨长 - gapFrames - durationInFrames, 轨长 - gapFrames)`
+  （与 `exit` 同口径，时长缺省 18、`gapFrames` 缺省 0 = 贴着轨道末尾擦出去）。
+  ⚠️ **方向口径与 `direction` 相反，勿混用**：`direction`（进场）= 可见区**展开**的行进方向、隐藏侧 = 该方向；
+  `out.direction`（退场）= 内容**退去**的方向、隐藏侧 = 该方向的**对侧**。
+  即「右面板向右擦出去」写 `out.direction:"right"`（遮左侧），**不是** `direction:"right"`（那是自左向右展开）。
 
 ## 帧级动画 `animate`
 
@@ -96,6 +102,18 @@
    所以只接受这种声明式插值。要往复（脉动 / 呼吸）就写**两条首尾相接的 `animate`**。
 3. `startFrame` 是**轨内相对帧**（不是全片帧）。多个元素"依次出场"= 各轨错开自己的 `startFrame`，
    各自的 `animate` 从 0 开始即可。
+
+⚠️ **动画段必须落在轨内，否则整层会静默消失**（2026-11-04 新增静态校验，阻断渲染）：
+命中窗口是 `轨内帧 >= startFrame && 轨内帧 < startFrame + durationInFrames`。于是
+
+- `startFrame + durationInFrames > 轨长` ⇒ **段尾被截断**（warning）；
+- `startFrame >= 轨长` ⇒ **段永不命中**（error：多半是把全片绝对帧误写进来了）；
+- 段只剩 1 帧命中且 `from.opacity = 0` ⇒ 该帧 progress 恒为 0 ⇒ **整层 opacity 恒 0，
+  这条轨渲染出来是空白**（error）。
+
+真实事故：32 帧的轨上写 `startFrame: 31, durationInFrames: 1` + `from.opacity: 0` ⇒
+该段唯一命中帧 progress = 0 ⇒ 引线标注全程透明（画面上什么都没有）。
+**淡入段要写 `startFrame: 0` 起、时长覆盖到轨尾之前**，别贴着轨尾写。
 
 三个可直接照抄的例子：
 

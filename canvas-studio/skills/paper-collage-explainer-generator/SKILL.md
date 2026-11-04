@@ -9,6 +9,10 @@ exported-by: MiniMax-hub
 
 # Paper Collage Explainer Generator
 
+> **上游体裁壳（必读）**：本 skill 是 `explainer-format-director` 的**下游 executor**。
+> 用户点名本 skill 时**仍须先加载该壳**完成定向三问（受众 / 记住哪一件�� / 时长画幅）——
+> 点名只决定「用哪条链」，不替代定向。
+
 编辑感半调纸拼贴动画的**风格知识库**：色彩语言、纸张质感、拼贴工艺动作、音效基调与质检标准。
 
 ## 立场声明

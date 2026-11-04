@@ -1,6 +1,6 @@
 ---
 name: drama-format-director
-description: 短剧体裁的 L2 编排壳（format director）。凡「短剧 / 连续剧 / 多集短剧 / 系列剧 / 追剧 / drama series」类需求，先用定向三问对齐（题材基调 / 单集规格 / 追看定位），再按链路路由表把任务分派给下游（drama-episode-executor 单集手册 + 题材特化导演叠加）。本 skill 只做定向与调度，不复述集结构与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：短剧、连续剧、多集、系列剧、追剧、drama series。
+description: 短剧体裁的 L2 编排壳（format director）。凡「短剧 / 连续剧 / 多集短剧 / 系列剧 / 追剧 / drama series」类需求，先用定向三问对齐（题材基调 / 单集规格 / 追看定位），再按链路路由表把任务分派给下游（drama-episode-executor 单集手册 + 题材特化导演叠加）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「题材基调 / 单集规格 / 追看定位」三问。本 skill 只做定向与调度，不复述集结构与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：短剧、连续剧、多集、系列剧、追剧、drama series。
 ---
 
 # 短剧体裁编排（drama-format-director）

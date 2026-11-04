@@ -1,6 +1,6 @@
 ---
 name: brand-format-director
-description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品牌宣传片 / brand promo / 新品发布 / 官网展示 / 应用与店铺宣传 / 社媒品牌推广 / logo 短片」类需求，先用定向三问对齐（素材现实 / 投放场景 / 时长画幅语言），再按链路路由表把任务分派给下游 executor（brand-promo-video-generator 风格链 / code-driven-explainer 动效图形链）。本 skill 只做定向与调度，不复述素材纪律与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：品牌宣传、品牌片、brand promo、新品发布、宣传片、logo 短片。
+description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品牌宣传片 / brand promo / 新品发布 / 官网展示 / 应用与店铺宣传 / 社媒品牌推广 / logo 短片」类需求，先用定向三问对齐（素材现实 / 投放场景 / 时长画幅语言），再按链路路由表把任务分派给下游 executor（brand-promo-video-generator 风格链 / code-driven-explainer 动效图形链）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「素材现实 / 投放场景 / 时长画幅语言」三问。本 skill 只做定向与调度，不复述素材纪律与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：品牌宣传、品牌片、brand promo、新品发布、宣传片、logo 短片。
 ---
 
 # 品牌宣传体裁编排（brand-format-director）

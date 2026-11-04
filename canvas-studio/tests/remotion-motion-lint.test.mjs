@@ -325,3 +325,82 @@ test('F-09：首尾不同的长动画仍要报 ML-04（豁免不能放太宽）'
   ])
   assert.equal(lintMotion(m).filter((issue) => issue.code === 'ML-04').length, 1)
 })
+
+// ── 2026-11-04 · 科普 0.1 验收 P7：豁免收紧 + ML-10 换口径 ───────────────────
+//
+// 事故：为消 ML-04，agent 给 19 条轨挂上 `scale 0.994↔1.006` 的往复动画 ——
+// 「首尾同值」一测就豁免，于是"加一段假呼吸"成了消告警的万能钥匙；而 1.2% 的缩放
+// 幅度人眼读不出来，等于拿画面代价换一条它本来就会主动放弃的 warning。
+
+test('P7：微幅往复（0.994↔1.006）不再被 cyclic 豁免放过，ML-04 照报', () => {
+  const m = manifest([
+    {
+      id: 'fakeBreath',
+      type: 'shape',
+      shape: 'rect',
+      color: '#123456',
+      box: { x: 50, y: 50, w: 10, h: 10 },
+      startFrame: 0,
+      durationInFrames: 120,
+      animate: [
+        { from: { scale: 0.994 }, to: { scale: 1.006 }, durationInFrames: 55 },
+        { from: { scale: 1.006 }, to: { scale: 0.994 }, durationInFrames: 55 },
+      ],
+    },
+  ])
+  const ml04 = lintMotion(m).filter((issue) => issue.code === 'ML-04')
+  assert.equal(ml04.length, 1, `微幅往复应报 ML-04，实际：${codes(lintMotion(m)).join(',')}`)
+})
+
+test('P7：幅度看得见的往复呼吸仍豁免（不能把真设计也一起打掉）', () => {
+  // x 50↔53 = 3 个画布百分点 ⇒ 看得见 ⇒ 豁免
+  const m = manifest([
+    {
+      id: 'realBreath',
+      type: 'shape',
+      shape: 'rect',
+      color: '#123456',
+      box: { x: 50, y: 50, w: 10, h: 10 },
+      startFrame: 0,
+      durationInFrames: 120,
+      animate: [
+        { from: { x: 50 }, to: { x: 53 }, durationInFrames: 60 },
+        { from: { x: 53 }, to: { x: 50 }, durationInFrames: 60 },
+      ],
+    },
+  ])
+  assert.deepEqual(lintMotion(m).filter((issue) => issue.code === 'ML-04'), [])
+})
+
+test('P7：ML-10 按「画面在动的时间」计 —— 设计性静物不再稀释分母', () => {
+  // 一条真正在动的轨（入场 50 帧）+ 三条设计性静物（无 animate/exit）⇒ 不该报幻灯片。
+  // 旧口径：分母 = 4 条轨共 480 帧、分子 50 ⇒ 10% ⇒ 误报「幻灯片」；
+  // 新口径：分母 = 整片 120 帧、分子 50 ⇒ 42% ⇒ 不报。
+  const m = manifest([
+    { id: 'hero', type: 'chart', variant: 'bars', labels: ['a'], values: [1], startFrame: 0, durationInFrames: 120, animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 50 } },
+    { id: 'rule1', type: 'shape', shape: 'rect', color: '#334455', box: { x: 50, y: 20, w: 40, h: 0.5 }, startFrame: 0, durationInFrames: 120 },
+    { id: 'rule2', type: 'shape', shape: 'rect', color: '#334455', box: { x: 50, y: 80, w: 40, h: 0.5 }, startFrame: 0, durationInFrames: 120 },
+    { id: 'ground', type: 'shape', shape: 'rect', color: '#334455', box: { x: 50, y: 88, w: 90, h: 0.5 }, startFrame: 0, durationInFrames: 120 },
+  ])
+  assert.ok(!codes(lintMotion(m)).includes('ML-10'), `设计性静物不该被判成幻灯片，实际：${codes(lintMotion(m)).join(',')}`)
+})
+
+test('P7：ML-10 把 reveal 擦除显现算作动效时间', () => {
+  // 只靠 reveal 擦除入场的片：旧口径动效 0%（误报幻灯片），新口径 40/120 = 33% ⇒ 不报。
+  const m = manifest([
+    { id: 'panel', type: 'shape', shape: 'rect', color: '#334455', box: { x: 50, y: 50, w: 40, h: 40 }, startFrame: 0, durationInFrames: 120, reveal: { kind: 'wipe', direction: 'right', durationInFrames: 40 } },
+  ])
+  assert.ok(!codes(lintMotion(m)).includes('ML-10'), `带 reveal 的片不该判成幻灯片，实际：${codes(lintMotion(m)).join(',')}`)
+})
+
+test('P7：ML-10 的动效时间按区间并集算（三轨同帧一起动只算一次）', () => {
+  const m = manifest([
+    { id: 'a', type: 'shape', shape: 'rect', color: '#334455', box: { x: 30, y: 30, w: 10, h: 10 }, startFrame: 0, durationInFrames: 120, animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 30 } },
+    { id: 'b', type: 'shape', shape: 'rect', color: '#334455', box: { x: 50, y: 30, w: 10, h: 10 }, startFrame: 0, durationInFrames: 120, animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 30 } },
+    { id: 'c', type: 'shape', shape: 'rect', color: '#334455', box: { x: 70, y: 30, w: 10, h: 10 }, startFrame: 0, durationInFrames: 120, animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 30 } },
+  ])
+  // 并集 30 帧 / 整片 120 帧 = 25% ⇒ 仍报（真·静物没解决），但不是 3×30/120=75%
+  const ml10 = lintMotion(m).filter((issue) => issue.code === 'ML-10')
+  assert.equal(ml10.length, 1)
+  assert.match(ml10[0].message, /画面上有东西在动的时间只占 25%/)
+})

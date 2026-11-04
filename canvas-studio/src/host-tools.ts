@@ -2981,7 +2981,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         } catch (cause) {
           // 打断 / 出错都要把挂起的问题清掉，避免卡片残留。
           await registry.setPendingQuestion(projectId, null).catch(() => {})
-          throw cause
+          // 用户主动打断 = 用户意图，照旧外抛。
+          const causeName = (cause as { name?: string } | null)?.name ?? ''
+          if (exec.signal.aborted || causeName === 'AbortError') throw cause
+          // 其它故障**不得**把 turn 带崩。
+          // 事故（科普 0.1 验收 A8 收口）：工具报「操作未完成（内部错误）」⇒ 4 个方案全丢、
+          // turn 静默结束 —— 用户拿到的是"需要你定方向"然后**没有下文**，整批验收卡死。
+          // 兜底口径同超时路径（2980 行）：把推荐项交回给模型，让它按默认假设继续走，
+          // 决策不因一次工具故障卡死。
+          const recommended = recommendedOptionOf(options) ?? ''
+          return { text: `提问失败（内部错误），未能收到用户作答。已改用默认项继续：「${recommended}」，并在回复中说明该选择采用了默认假设。` }
         }
       },
     }),

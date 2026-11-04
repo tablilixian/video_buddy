@@ -5,6 +5,10 @@ description: 通用短剧单集执行手册（知识型 executor）。凡连续�
 
 # 通用短剧执行手册（drama-episode-executor）
 
+> **上游体裁壳（必读）**：本 skill 是 `drama-format-director` 的**下游 executor**。
+> 用户点名本 skill 时**仍须先加载该壳**完成定向三问（题材基调 / 单集规格 / 追看定位）——
+> 点名只决定「用哪条链」，不替代定向。
+
 **定位**：知识型 executor 手册——`drama-format-director` 壳与题材特化导演（`bible-story-director` 等）之下、总纲流程之上的**单集执行细则**。上游 `canvas-studio-creation` 负责流程与审批；本手册只回答「一集怎么写、怎么拍、怎么收」。
 
 ## 0. 开工上下文（episodic 流程纪律，每集必走）

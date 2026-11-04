@@ -9,6 +9,10 @@ metadata:
 
 # Minimalist Product Ad Generator
 
+> **上游体裁壳（必读）**：本 skill 是 `product-format-director` 的**下游 executor**。
+> 用户点名本 skill 时**仍须先加载该壳**完成定向三问（产品与素材现实 / 卖点与调性 / 时长画幅）——
+> 点名只决定「用哪条链」，不替代定向。
+
 极简高级产品广告片的**风格知识库**：视觉语言、锚点照控制体系、画面内排印、叙事骨架、运动语言、配乐基调。
 
 ## 立场声明

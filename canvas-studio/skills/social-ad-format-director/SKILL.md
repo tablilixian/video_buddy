@@ -1,6 +1,6 @@
 ---
 name: social-ad-format-director
-description: 社媒广告体裁的 L2 编排壳（format director）。凡「抖音广告 / 社媒短视频广告 / 信息流广告 / 带货短视频 / 种草视频 / 社交媒体推广片」类需求，先用定向三问对齐（平台场景 / 前 3 秒钩子 / 时长画幅多版本），再按链路路由表把任务分派给下游链路（code-driven-explainer 卡点快剪 / viral-remake 对标复刻 / 总纲标准视频链实拍）。本 skill 只做定向与调度，不复述节拍工具用法与复刻手法；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：社媒广告、抖音、信息流、带货、种草、短视频广告、social ad。
+description: 社媒广告体裁的 L2 编排壳（format director）。凡「抖音广告 / 社媒短视频广告 / 信息流广告 / 带货短视频 / 种草视频 / 社交媒体推广片」类需求，先用定向三问对齐（平台场景 / 前 3 秒钩子 / 时长画幅多版本），再按链路路由表把任务分派给下游链路（code-driven-explainer 卡点快剪 / viral-remake 对标复刻 / 总纲标准视频链实拍）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「平台场景 / 前 3 秒钩子 / 时长画幅多版本」三问。本 skill 只做定向与调度，不复述节拍工具用法与复刻手法；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：社媒广告、抖音、信息流、带货、种草、短视频广告、social ad。
 ---
 
 # 社媒广告体裁编排（social-ad-format-director）

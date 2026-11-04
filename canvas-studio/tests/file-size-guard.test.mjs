@@ -72,7 +72,9 @@ export const FILE_WHITELIST = {
   // 的 timingSegments 双闸接线，+120（4572 → 4692）显式登记。
   // REQ-037（2026-11-03）：+ensureExternalImageNode（upload_image 外链落参考节点，
   // 核心判据就近放 backfill 旁）+ 工具描述扩行，+13（4692 → 4705）显式登记。
-  'src/host-tools.ts': 4711,
+  // 科普 0.1 验收 P6（2026-11-04）：ask_user_choice 的 catch 分支加**失败兜底**
+  // （非 abort 的内部错误不再外抛成 turn 终止，改回默认项继续），+9（4711 → 4720）显式登记。
+  'src/host-tools.ts': 4720,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,

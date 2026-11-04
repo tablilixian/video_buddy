@@ -278,6 +278,14 @@
 - `durationInFrames`?: number — 揭示动画时长（帧，轨内相对；缺省 18）。
 - `startFrame`?: number — 揭示起点（轨内相对帧，缺省 0 = 轨道一出现就开始揭示）。
 - `center`?: { x?: number; y?: number } — spotlight 圆心（画布百分比，缺省 50/50）。
+- `out`?: TrackRevealOut — 退场擦除（2026-11-04）：内容朝某侧擦出去。缺省 = 无退场擦除（轨尾硬切）。
+
+## TrackRevealOut
+> P2（2026-11-04）：**退场擦除**配置（`BaseTrack.reveal.out`，卡片级）。
+
+- `direction`: 'left' | 'right' | 'up' | 'down' — 退场擦除方向：内容朝该侧退去（缺省 `right`）。
+- `durationInFrames`?: number — 退场擦除时长（帧，轨内相对；缺省 18）。
+- `gapFrames`?: number — 距轨道末尾的提前量（帧，缺省 0 = 贴着轨道末尾擦出去）。
 
 ## CalloutTrack (extends BaseTrack)
 > P3（2026-11-03）：**callout 引线标注**轨 —— 「指着一个东西讲」的原语。

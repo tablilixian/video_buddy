@@ -1,6 +1,6 @@
 ---
 name: product-format-director
-description: 产品讲解体裁的 L2 编排壳（format director）。凡「产品广告片 / 产品走查 / 电商产品视频 / 新品发布广告 / product ad / product walkthrough / 极简高级产品片」类需求，先用定向三问对齐（产品与素材现实 / 卖点与调性 / 时长画幅），再按链路路由表把任务分派给下游 executor（minimalist-product-ad-generator 极简广告链 / code-driven-explainer 的 product-walkthrough 配方）。本 skill 只做定向与调度，不复述锚点照体系与配方字段；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：产品讲解、产品广告、产品短片、电商产品视频、产品走查、product ad、product walkthrough。
+description: 产品讲解体裁的 L2 编排壳（format director）。凡「产品广告片 / 产品走查 / 电商产品视频 / 新品发布广告 / product ad / product walkthrough / 极简高级产品片」类需求，先用定向三问对齐（产品与素材现实 / 卖点与调性 / 时长画幅），再按链路路由表把任务分派给下游 executor（minimalist-product-ad-generator 极简广告链 / code-driven-explainer 的 product-walkthrough 配方）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「产品与素材现实 / 卖点与调性 / 时长画幅」三问。本 skill 只做定向与调度，不复述锚点照体系与配方字段；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：产品讲解、产品广告、产品短片、电商产品视频、产品走查、product ad、product walkthrough。
 ---
 
 # 产品讲解体裁编排（product-format-director）

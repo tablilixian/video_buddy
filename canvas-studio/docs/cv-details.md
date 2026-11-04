@@ -2228,3 +2228,67 @@
 
 - **详情**：六大体裁路线阶段 3.3。L2 编排壳（上游 canvas-studio-creation 总纲，下游 drama-episode-executor + 题材导演叠加层）：定向三问（题材与基调 / 单集规格与集数规划 / 追看定位——一句话说出观众为什么追下一集）+ 链路路由表（连续剧 → executor + series_manage 建档 / 单集独立小品走总纲不建系列 / 题材命中导演叠加同读）+ 系列建档与集间定位（本壳核心输出：开工即建档、悬念收尾硬判据逐集核对、>9 集先只建前 3 集档因 recap 会改变走向）+ executor 显式指派 + 逐集验收 4 条 + 不做清单（不复述集结构/题材纪律/审批语义）。SKILL.md + platform.yaml（format/preview/handoff）+ catalog 快照同批。
 - **验证**：`yarn check` 全绿；真机整片验收 = 阶段 3.4（连续两集）。
+
+#### CV-427 · animate 窗口静态校验（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：科普 0.1 成片验收发现 `s2_callout` 引线**整层从未可见**（抽帧 380–413 帧引线区橙像素恒为 0），根因是 `animate{startFrame:31, durationInFrames:1}` 配 32 帧轨 ⇒ 唯一命中帧插值进度恒 0 ⇒ `opacity 0→1` 的读数永远是 0。修复落**校验层**：`src/remotion/manifest-track-validate.ts` 新增 `validateAnimateWindows(track, at, trackDuration, errors, warnings)`，三条判据 —— ① 段整段落在轨外（`startFrame ≥ 轨长`）⇒ **error**；② 段尾越出轨尾 ⇒ **warning**（良性场景真实存在，作 error 会误报）；③ opacity 维度轨内全程读到 0 ⇒ **error**「整层永久不可见」（`exit` 能救回来时除外）。判据③的读数**复用渲染层同一纯函数** `animateStateAt`（timing.ts），校验层绝不自己重写插值规则 ⇒ 校验与渲染零漂移；采样点取各段窗口四个边界 + 轨首尾（段内读数是进度的线性函数，极值在端点）。
+- **涉及文件**：`src/remotion/manifest-track-validate.ts`（新函数）、`src/remotion/manifest.ts`（import + 调用点各一行）、`tests/manifest-animate-window.test.mjs`（新，10 例）、`tests/fixtures/animate-window/real-s2-callout.json`（新，真实事故轨逐字备份作反向变异靶）。
+- **验证**：反向变异靶（把 fixture 改好 ⇒ 断言必须变红）实测变红；真实成片 manifest 实测**恰好 1 error 指向 `tracks[18](s2_callout)`**，零误报。
+
+#### CV-428 · reveal 退场擦除 `reveal.out` + 进场方向语义告警（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：科普 0.1 成片验收发现右面板 reveal **自左往右推进**，与需求「右 wipe 出」相反。根因：`reveal.direction` 只描述**进场**方向（可见区自该侧展开），而当时 `exit` 只支持 opacity/scale/rotation/x/y、**没有 clip** ⇒ 「wipe 出」只能写 `direction:"right"`，而那是进场方向 ⇒ 视觉正好相反。修复：① 新增 `TrackRevealOut` 契约（`direction` 退场方向 / `durationInFrames` / `gapFrames`）+ `reveal.out?` 字段 + `KNOWN_REVEAL_OUT_KEYS` 子键扫描；② `reveal.ts` 新增 `revealClipWithOut` / `revealOutWindow` / `revealHiddenSide` / `revealOutHiddenSide`（老路径 `revealClipAt` **逐字不变**，无 `out` 的老 manifest 逐像素不变）；③ **两个方向不是同一口径**：进场 `direction` = 可见区展开方向 ⇒ 隐藏侧 = 该方向；退场 `out.direction` = 内容退去方向 ⇒ 隐藏侧 = 该方向的**对侧**；退场区间锚轨尾 `[dur-gap-dur, dur-gap)`，与 `exit` 同口径；④ `validateReveal` 加 A5 语义告警：**仅当**进场方向指向本卡所在侧才提示改用 `reveal.out.direction`（异侧不报）；⑤ `RevealShell.tsx` 增必填 prop `trackDurationInFrames`，`Root.tsx` 传 `track.durationInFrames`。
+- **涉及文件**：`src/remotion/reveal.ts`、`src/remotion/manifest.ts`、`src/remotion/components/{RevealShell,Root}.tsx`、`skills/code-driven-explainer/references/manifest-contract.md`、`tests/remotion-callout-reveal.test.mjs`（+6 例）。
+- **验证**：告警精准命中真实 manifest 的 `tracks[38]`（s4_rPanel），左面板不报；退场擦除方向正确。
+
+#### CV-429 · 六个体裁编排壳 description 补消解句（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：科普 0.1 验收 A1：`explainer-format-director` 全会话出现 5 次但**全部不在路由声明里**，可见回复中路由声明 0 次 —— 点名下游 executor 时体裁壳被整层跳过。根因**在 executor 侧**：壳的 description 只说自己是什么，没说与 executor 的分工；executor 侧对体裁壳**零提及**。修复取**双侧**：① 六个壳（brand / data-viz / drama / explainer / product / social-ad）的 description 补「用户点名下游 executor 时本壳仍须先加载做定向——点名只决定『用哪条链』，不替代定向三问」；② 七个 executor（code-driven-explainer / papercraft-stop-motion-explainer / paper-collage-explainer-generator / brand-promo-video-generator / minimalist-product-ad-generator / viral-remake / drama-episode-executor）加回指上游壳 —— 点名时 agent 读的是它，这才是真根因侧。
+- **涉及文件**：6 个 `skills/*-format-director/SKILL.md`、7 个 executor `SKILL.md`、`tests/skill-tool-refs.test.mjs`（+3 条门禁：壳 description 消解句 / executor 回指 / 双向引用不成环）。
+- **验证**：description 长度 334–465 ≤ 500 字符；skill 相关门禁 44/44 绿。⚠️ `code-driven-explainer/SKILL.md` 因 12 KB 闸（12241 B）把细则下沉到 `references/format-directors.md`。
+
+#### CV-430 · 验收结论传递：pitfalls / verification 分册 + 项目级 lessons（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：本轮最贵的问题 —— 英文重制是**新任务**，Agent 从改写 manifest 重新开始，**既没读上一批的验收结论也没继承修复** ⇒ A4 / A5 / A1 三个已知 bug 原样继承（连 `animate{startFrame:31,durationInFrames:1}` 都一字未改）。根因：经验没有沉淀的机制 ⇒ 每批次都在重新发现同一批 bug。修复落两条：① **技能级**：新增 `skills/code-driven-explainer/references/pitfalls.md`（契约坑八条：animate 轨内相对帧 / `durationInFrames:1` 钉死整层 / reveal 两方向口径表 / `exit` 不支持 clip / subtitle 多行溢出 / ML-04 假呼吸 / ML-10 屏幕时间口径 / 素材轨时长真值）+ `references/verification.md`（验收与交付纪律：探针前置 / 画面判据取证 / 负例必发闸门 / 自验边界 / 上下文预算），两者均以「症状 → 根因 → 修法」格式写；② **项目级**：项目工作区 `lessons.md`（判据/症状 → 根因 → 修法，每批验收后追加）。
+- **涉及文件**：`skills/code-driven-explainer/references/{pitfalls,verification}.md`（新）、`skills/code-driven-explainer/SKILL.md`（必读指针 + 纪律节改指）、`skills/code-driven-explainer/references/explainer-patterns.md`（流程纪律下沉，避免两份事实源）。
+- **验证**：references 断链守卫（渐进披露门禁）绿；SKILL.md 11588 B / 上限 12288 B。
+
+#### CV-431 · 三条流程纪律进 SKILL.md（负例闸门 / 画面判据取证 / 探针前置）（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：三条纪律此前只落在文档、没落进流程，靠人记得。① **负例必发闸门**（P5）：正例成片交付后必须发出负例提示词并验证拦截，**未执行不得结案**（0.1 批 A8 因漏发无法判定，卡住整批收口，续跑批人工补上 +245.7min）；② **画面类判据必须看图本身**（P8）：`inspect_image` 的 grid/bbox 只用于**定位疑点**，不能当「元素是否存在」的结论依据，**禁止拿 manifest 字段自证画面效果**（0.1 批 render #7 看的是 32×18 亮度网格，把地轴误认成引线；A4 正是凭 manifest 字段自证，漏检了整层不可见）；③ **首轮渲染即用 `spotFrames` 探针**（P9）：探针 ~1.5s vs 全片 ~25s（快 17 倍），逐条判据取代表帧；全片 draft 只用于交付前定稿（0.1 批前 6 次渲染全是全片 draft，第 7 次才首次用上探针）。
+- **涉及文件**：`skills/code-driven-explainer/SKILL.md`（工作流第 4/5 步 + 纪律节）、`skills/code-driven-explainer/references/verification.md`、`skills/code-driven-explainer/references/explainer-patterns.md`（自检清单加两条）。
+- **验证**：SKILL.md 体积闸（12 KB）绿；渐进披露 / 引用断链门禁绿。
+
+#### CV-432 · `ask_user_choice` 失败兜底（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：A8 收口时 `ask_user_choice` 报「操作未完成（内部错误）」，**4 个方案全部丢失、turn 直接结束**，用户拿到「需要你定方向」然后没有下文。根因：`src/host-tools.ts` 的 `ask_user_choice` catch 分支清掉挂起问题后 `throw cause`，异常直接冲出工具边界 ⇒ turn 终止。同函数已有正确范式（超时路径 `return { text: '用户暂未回答…请采用推荐项继续' }`）。修复即**照抄这条兜底**：非 abort 的内部错误改为 `return` 默认项文本（含推荐项 + 说明这是默认假设）；abort（`exec.signal.aborted` 或 `cause.name === 'AbortError'`）**照旧外抛，不吞**。
+- **涉及文件**：`src/host-tools.ts`（catch 分支 +9 行，棘轮 4711 → 4720 显式登记）、`tests/ask-user-choice-fallback.test.mjs`（新，3 例含真实故障路径与 abort 双向断言）。
+- **验证**：`yarn check` 全绿；文件大小守卫绿（棘轮已登记）。
+
+#### CV-433 · ML-10 改屏幕时间口径 + ML-04 往复豁免按可见幅度收紧（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：为消 ML-04（"动画长而位移小"），给 19 条轨挂 `scale 0.994↔1.006` 往复动画 —— `motion-lint.ts` 的 `cyclicTracks` 豁免被当成"万能钥匙"；最后 Agent 自己改回「ML-04 只是 warning，不值得为它牺牲观感」⇒ **为了一条主动放弃的 lint 付出了真实画面代价**。修复两处：① **ML-10 改屏幕时间口径**：分子 = `animate` ∪ `exit` ∪ `reveal` ∪ `video` 区间的**并集**，分母 = **整片时长**，阈值 0.3（删 `isResidentDecoration` / `isFullCanvasBackdrop` 两个含糊豁免）—— 设计性静物片不再误报；② **ML-04 往复豁免按可见幅度收紧**：`CYCLIC_MIN_VISIBLE_MAGNITUDE = 1`（x/y 1 画布百分点 / scale 2% / opacity 0.1 / rotation 3°）—— 1.2% 的微幅往复照报。
+- **涉及文件**：`src/remotion/motion-lint.ts`（新增 `unionLength` / `revealInterval`）、`tests/remotion-motion-lint.test.mjs`（+5 例）。
+- **验证**：候选口径矩阵实测选型（现状口径在「真·静物」上误报，屏幕时间口径四个约束全满足 0.083 / 0.835 / 0.193 / 0.475）；剥掉 40 段假呼吸后 ML-10 不再报；原英文版 ML-04 由 5 条增至 8 条（正确点名假呼吸轨）。
+
+#### CV-434 · 字幕卡排版预算按盒子算（2026-11-04，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：科普 0.1 成片像素实证 —— 带 `box` 的 `textCard` + `variant:'subtitle'` 轨**文字被裁**（不是叠字）：`"0° Equator"` 只剩 `"Equator"`、`"+23.5°N · Solstice"` 只剩 `"Solstice"`、两行字幕首行被削成一条横线。根因：旧实现把字号与行数预算一律按**画布**算（`maxWidthPx = canvasWidth*0.86-64` / `baseFontPx = 44` / `maxLines = 3`），而带 `box` 的卡片真实容器是**盒子**（常常只有画布 1/6 宽、1/10 高）⇒ **排版预算与真实容器不是同一个尺寸** ⇒ 溢出后被外层 `overflow: hidden` 一刀裁掉。修复：新纯函数 `src/remotion/subtitle-fit.ts`（`subtitleFitBudget`：带 box 时按盒子宽高定可用宽/高/基准字号/行数上限，字号下限 16px），`TextCard.tsx` 改用预算；**不带 `box` 的铺满卡走老参数，逐像素不变**。
+- **涉及文件**：`src/remotion/subtitle-fit.ts`（新）、`src/remotion/components/TextCard.tsx`、`tests/remotion-subtitle-fit.test.mjs`（新，6 例含三张事故卡片的「高度必须装得进盒子」断言）。
+- **验证**：6/6 绿；`yarn check` 全绿。

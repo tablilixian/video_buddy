@@ -29,7 +29,20 @@ import type { SpriteRect } from './sprite.js'
 import { validateSpriteRect } from './sprite.js'
 import { countSpokenChars } from './word-timing.js'
 import { collectAnchorIssues, KNOWN_ANCHOR_KEYS } from './anchor.js'
-import { isNonEmptyString, isRecord, validateCalloutTrack, validateChartTrack } from './manifest-track-validate.js'
+import {
+  ANIMATE_EASINGS,
+  isNonEmptyString,
+  isRecord,
+  validateAnimateWindows,
+  validateCalloutTrack,
+  validateChartTrack,
+  validateColorShift,
+  validateExitMotion,
+  validateNonNegativeInteger,
+  validateSpringConfig,
+  validateStartAfter,
+  validateVisualStateFields,
+} from './manifest-track-validate.js'
 import { validateReveal } from './reveal.js'
 import { lintZOrder } from './manifest-lint.js'
 
@@ -683,6 +696,31 @@ export interface TrackReveal {
   startFrame?: number
   /** spotlight 圆心（画布百分比，缺省 50/50）。 */
   center?: { x?: number; y?: number }
+  /** 退场擦除（2026-11-04）：内容朝某侧擦出去。缺省 = 无退场擦除（轨尾硬切）。 */
+  out?: TrackRevealOut
+}
+
+/**
+ * P2（2026-11-04）：**退场擦除**配置（`BaseTrack.reveal.out`，卡片级）。
+ *
+ * 长期缺口：`reveal.direction` 只描述**进场**揭示方向，而 `exit` 只支持
+ * opacity/scale/rotation/x/y —— **不支持 clip 退场** ⇒「朝某侧擦出去」没有表达手段。
+ * 科普 0.1 验收 A5 实测：右面板要"右 wipe 出"，实现里只能写 `direction:"right"`，
+ * 而那是**进场**方向 ⇒ 视觉正好相反（面板自左向右展开，而不是向右退去）。
+ *
+ * ⚠️ **方向语义与 `direction` 相反口径，勿混用**：
+ * - `direction`（进场）= 可见区**展开**的行进方向，隐藏侧 = 该方向；
+ * - `out.direction`（退场）= 内容**退去**的方向，隐藏侧 = 该方向的对侧。
+ *
+ * 区间锚定与 `exit` 同口径：`[轨长 - gapFrames - durationInFrames, 轨长 - gapFrames)`。
+ */
+export interface TrackRevealOut {
+  /** 退场擦除方向：内容朝该侧退去（缺省 `right`）。 */
+  direction: 'left' | 'right' | 'up' | 'down'
+  /** 退场擦除时长（帧，轨内相对；缺省 18）。 */
+  durationInFrames?: number
+  /** 距轨道末尾的提前量（帧，缺省 0 = 贴着轨道末尾擦出去）。 */
+  gapFrames?: number
 }
 
 /**
@@ -793,16 +831,6 @@ const EFFECTS = new Set([
   'zoomBlur', 'linearBlur', 'crossWarp',
 ])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
-/** CV-334：缓动白名单（三期 W2-1 扩档；与 `AnimateEasing` 同域，非法值报错而非静默回退）。 */
-const ANIMATE_EASINGS = new Set<string>([
-  'linear', 'easeIn', 'easeOut', 'easeInOut',
-  // 三期 W2-1
-  'easeInCubic', 'easeOutCubic', 'easeInOutCubic',
-  'easeOutQuart', 'easeOutExpo', 'easeOutCirc', 'easeInOutExpo',
-  'backOut',
-  // 三期 W2-2
-  'spring',
-])
 /** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。 */
 const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline'])
 /** 二期 A1：公转方向白名单。 */
@@ -894,7 +922,8 @@ const KNOWN_LOOK_KEYS = new Set(['contrast', 'saturation', 'brightness', 'temper
 const KNOWN_TEXT_ANIM_OPTIONS_KEYS = new Set(['wordDelayFrames', 'offsetY', 'blur'])
 const KNOWN_SPRING_KEYS = new Set(['stiffness', 'damping', 'mass'])
 /** P3：reveal 子键 / callout 锚点子键（unknown-fields 扫描用；两处都是 {x,y} 百分比点）。 */
-const KNOWN_REVEAL_KEYS = new Set(['kind', 'direction', 'durationInFrames', 'startFrame', 'center'])
+const KNOWN_REVEAL_KEYS = new Set(['kind', 'direction', 'durationInFrames', 'startFrame', 'center', 'out'])
+const KNOWN_REVEAL_OUT_KEYS = new Set(['direction', 'durationInFrames', 'gapFrames'])
 const KNOWN_PERCENT_POINT_KEYS = new Set(['x', 'y'])
 /** O-10：多轨旁白的条数上限（防一份 manifest 塞进上百条把渲染器音频层压垮）。 */
 const MAX_VOICE_OVER_CLIPS = 64
@@ -979,6 +1008,7 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
       if (isRecord(track.reveal)) {
         warnUnknownKeys(track.reveal, KNOWN_REVEAL_KEYS, `${at}.reveal`, found)
         warnUnknownKeys(track.reveal.center, KNOWN_PERCENT_POINT_KEYS, `${at}.reveal.center`, found)
+        warnUnknownKeys(track.reveal.out, KNOWN_REVEAL_OUT_KEYS, `${at}.reveal.out`, found)
       }
       if (isRecord(track.anchor)) {
         warnUnknownKeys(track.anchor, KNOWN_PERCENT_POINT_KEYS, `${at}.anchor`, found)
@@ -1031,31 +1061,6 @@ function warnAnimateKeys(value: unknown, at: string, sink: string[]): void {
 
 // ───────────────────────────── CV-334 · animate 校验 ─────────────────────────────
 
-/** 校验一个 `VisualState`（或 `Transform`）的字段取值；`allowOpacity=false` 时禁 `opacity`。 */
-function validateVisualStateFields(value: unknown, at: string, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${at} 必须是对象（如 {"x":50,"y":50,"scale":1}）`)
-    return
-  }
-  for (const key of ['x', 'y', 'rotation'] as const) {
-    const raw = value[key]
-    if (raw === undefined) continue
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) errors.push(`${at}.${key} 必须是有限数`)
-  }
-  const scale = value.scale
-  if (scale !== undefined) {
-    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
-      errors.push(`${at}.scale 必须是 > 0 的有限数`)
-    }
-  }
-  const opacity = value.opacity
-  if (opacity !== undefined) {
-    if (typeof opacity !== 'number' || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
-      errors.push(`${at}.opacity 必须是 0–1 的数值`)
-    }
-  }
-}
-
 function validateAnimateList(value: unknown, at: string, errors: string[]): void {
   if (value === undefined) return
   const list = Array.isArray(value) ? value : [value]
@@ -1088,21 +1093,6 @@ function validateAnimateList(value: unknown, at: string, errors: string[]): void
       errors.push(`${label}.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
     }
     if (item.spring !== undefined) validateSpringConfig(item.spring, `${label}.spring`, errors)
-  }
-}
-
-/** 三期 W2-2：`spring` 物理参数校验（缺省合法；非法值会让归一化时间算出 NaN）。 */
-function validateSpringConfig(value: unknown, at: string, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${at} 必须是对象（如 {"stiffness":170,"damping":18,"mass":1}）`)
-    return
-  }
-  for (const key of ['stiffness', 'damping', 'mass'] as const) {
-    const raw = value[key]
-    if (raw === undefined) continue
-    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
-      errors.push(`${at}.${key} 必须是 > 0 的有限数`)
-    }
   }
 }
 
@@ -1183,90 +1173,6 @@ function validateDrawMotion(value: unknown, at: string, trackDuration: unknown, 
 }
 
 // ───────────────────── 三期 · 编排 / 表现力字段校验（W1-1 / W1-2 / W2-3 / W2-5） ─────────────────────
-
-/** 正整数帧校验（缺省合法）。 */
-function validatePositiveInteger(value: unknown, at: string, errors: string[], label = '帧'): void {
-  if (value === undefined) return
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || !Number.isInteger(value)) {
-    errors.push(`${at} 必须是正整数（${label}）`)
-  }
-}
-
-/** 非负整数校验（缺省合法）。 */
-function validateNonNegativeInteger(value: unknown, at: string, errors: string[]): void {
-  if (value === undefined) return
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
-    errors.push(`${at} 必须是 >= 0 的整数`)
-  }
-}
-
-/**
- * 整数帧校验（**允许负值**，缺省合法）。
- *
- * O-08 专用：`startAfter.gapFrames` 的负值有明确语义（= 与引用轨重叠），不能套
- * `validateNonNegativeInteger`。下限不在这里判 —— 「解析出的起始帧不能为负」取决于
- * 引用轨的绝对起点，只有 `normalizeManifestTiming` 知道。
- */
-function validateInteger(value: unknown, at: string, errors: string[]): void {
-  if (value === undefined) return
-  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-    errors.push(`${at} 必须是整数（负数 = 与引用轨重叠的帧数）`)
-  }
-}
-
-/** 三期 W1-1：`exit` 校验。 */
-function validateExitMotion(value: unknown, at: string, trackDuration: unknown, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${at}.exit 必须是对象（如 {"to":{"opacity":0,"y":44},"durationInFrames":8}）`)
-    return
-  }
-  if (value.to === undefined) errors.push(`${at}.exit.to 缺失（退场终点必填，写 {} 表示"不覆盖"）`)
-  else validateVisualStateFields(value.to, `${at}.exit.to`, errors)
-  validatePositiveInteger(value.durationInFrames, `${at}.exit.durationInFrames`, errors)
-  validateNonNegativeInteger(value.gapFrames, `${at}.exit.gapFrames`, errors)
-  const easing = value.easing
-  if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
-    errors.push(`${at}.exit.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
-  }
-  const duration = value.durationInFrames
-  if (
-    typeof duration === 'number' && Number.isFinite(duration) && typeof trackDuration === 'number' &&
-    Number.isFinite(trackDuration) && duration > trackDuration
-  ) {
-    errors.push(`${at}.exit.durationInFrames ${duration} 超过轨道时长 ${trackDuration}`)
-  }
-}
-
-/** 三期 W1-2：`startAfter` 校验（引用存在性与顺序在归一化阶段判，这里只查形状）。 */
-function validateStartAfter(value: unknown, at: string, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${at}.startAfter 必须是对象（如 {"trackId":"t1","gapFrames":-10}）`)
-    return
-  }
-  if (!isNonEmptyString(value.trackId)) errors.push(`${at}.startAfter.trackId 必须是非空字符串`)
-  // O-08：负数合法（= 与引用轨重叠）；写 `-10` 表示与 10 帧转场对齐。
-  validateInteger(value.gapFrames, `${at}.startAfter.gapFrames`, errors)
-}
-
-/** 三期 W2-3：`colorShift` 校验。 */
-function validateColorShift(value: unknown, at: string, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${at}.colorShift 必须是对象（如 {"from":"#4f9cf9","to":"#ff7a59"}）`)
-    return
-  }
-  for (const key of ['from', 'to'] as const) {
-    const raw = value[key]
-    if (!isNonEmptyString(raw) || !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/u.test(raw)) {
-      errors.push(`${at}.colorShift.${key} 必须是 #rgb 或 #rrggbb 形式的颜色`)
-    }
-  }
-  validateNonNegativeInteger(value.startFrame, `${at}.colorShift.startFrame`, errors)
-  validatePositiveInteger(value.durationInFrames, `${at}.colorShift.durationInFrames`, errors)
-  const easing = value.easing
-  if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
-    errors.push(`${at}.colorShift.easing 非法（${String(easing)}）—— 白名单：${[...ANIMATE_EASINGS].join(' / ')}`)
-  }
-}
 
 /** 三期 W2-4：`meta.look` 校验（全部数值 + 取值域）。 */
 function validateLook(value: unknown, errors: string[]): void {
@@ -1509,6 +1415,7 @@ export function validateManifest(input: unknown): ManifestValidation {
     // CV-334：三处新增字段（5 种轨通用）—— 校验放在类型分支之前，避免各分支各写一遍。
     if (track.transform !== undefined) validateVisualStateFields(track.transform, `${at}.transform`, errors)
     validateAnimateList(track.animate, at, errors)
+    validateAnimateWindows(track, at, duration, errors, warnings)
     const fadeFrames = track.fadeFrames
     if (fadeFrames !== undefined) {
       if (typeof fadeFrames !== 'number' || !Number.isFinite(fadeFrames) || fadeFrames < 0 || !Number.isInteger(fadeFrames)) {
@@ -1558,7 +1465,8 @@ export function validateManifest(input: unknown): ManifestValidation {
 
     // P3（2026-11-03）：分区揭示 —— 校验主体在 reveal.ts（纯函数模块），这里只接线。
     if (track.reveal !== undefined) {
-      validateReveal(track.reveal, at, errors, warnings)
+      // 传 box 上下文：reveal.ts 据此判「揭示方向与本卡所在侧是否同向」（语义告警）。
+      validateReveal(track.reveal, at, errors, warnings, { box: isRecord(track.box) ? track.box : undefined })
       if (type === 'transition') {
         warnings.push(`${at} 是 transition 轨（自身不可见），reveal 不生效（已忽略）`)
       }

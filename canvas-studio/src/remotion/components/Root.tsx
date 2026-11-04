@@ -261,7 +261,7 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
         {manifest.tracks.filter(isContentTrack).map((track) => (
           <Sequence key={track.id} from={track.startFrame} durationInFrames={Math.max(1, track.durationInFrames)}>
             {/* P3：分区揭示壳在 TransitionShell 外 —— clip 按轨内容自身坐标系求值。 */}
-            <RevealShell reveal={track.reveal}>
+            <RevealShell reveal={track.reveal} trackDurationInFrames={track.durationInFrames}>
               <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
                 <TrackBody track={track} manifest={manifest} />
               </TransitionShell>

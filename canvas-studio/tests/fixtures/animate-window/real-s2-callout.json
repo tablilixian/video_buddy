@@ -1,0 +1,44 @@
+{
+  "_note": "反向变异靶：取自科普 0.1 英文重制版真实 manifest 的 s2_callout 轨（逐字未改）。该轨 animate 段 startFrame=31 + durationInFrames=1 配 32 帧轨 ⇒ 唯一命中帧 progress 恒 0 ⇒ 整层 opacity 恒 0（A4 事故）。改动本文件即破坏测试意图。",
+  "id": "comp-animate-window",
+  "meta": {
+    "title": "科普 0.1 · 真实事故轨",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 1350
+  },
+  "tracks": [
+    {
+      "id": "s2_callout",
+      "type": "callout",
+      "anchor": {
+        "x": 58.5,
+        "y": 39
+      },
+      "text": "23.5° axial tilt",
+      "box": {
+        "x": 22,
+        "y": 24,
+        "w": 24,
+        "h": 7.5
+      },
+      "line": "elbow",
+      "color": "#FFB454",
+      "labelBackground": "#1A1206EE",
+      "startFrame": 434,
+      "durationInFrames": 32,
+      "animate": {
+        "from": {
+          "opacity": 0
+        },
+        "to": {
+          "opacity": 1
+        },
+        "startFrame": 31,
+        "durationInFrames": 1,
+        "easing": "easeOutCubic"
+      }
+    }
+  ]
+}

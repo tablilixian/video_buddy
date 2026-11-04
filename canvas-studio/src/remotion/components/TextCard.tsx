@@ -3,6 +3,7 @@ import type React from 'react'
 import { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
+import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from '../subtitle-fit.js'
 import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
 import {
@@ -132,7 +133,7 @@ const AnimatedText: React.FC<{
 
 export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
-  const { width: canvasWidth } = useVideoConfig()
+  const { width: canvasWidth, height: canvasHeight } = useVideoConfig()
   // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
   const fontFamily = useFontFamilyStack()
   // 三期 W4-1：真实测量器（浏览器里才建；建不出来就回落估算）。
@@ -194,24 +195,40 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
 
   if (track.variant === 'subtitle') {
     // A5：字幕条可用宽度 = 86%（maxWidth）− 左右内边距 32×2；最多 3 行。
+    //
+    // 2026-11-04（科普 0.1 验收 P10b）**按盒子算预算**：
+    // 旧实现一律按**画布**宽算字号/行数，而带 `box` 的字幕卡实际容器是**盒子**
+    // （常常只有画布的 1/6 宽）⇒ 字号算得偏大、行数算得偏多 ⇒ 文字溢出，
+    // 被层的 `overflow:hidden` 一刀裁掉（实测："0° Equator" 只剩 "Equator"，
+    // "+23.5°N · Solstice" 只剩 "Solstice"，两行字幕只剩最后一行且首行被削成一条线）。
+    //
+    // 修法：带 box 时按**盒子的宽高**同时定「可用宽 / 可用高 / 基准字号 / 行数上限」，
+    // 排不下就**缩字号**（`fitTextPolicy` 的老规矩：不静默截断，截断要看得见）。
+    // 不带 box 的铺满卡走老参数 ⇒ 老 manifest 逐像素不变。
+    // 预算口径在 `subtitle-fit.ts`（纯函数，可单测）。
+    const budget = subtitleFitBudget({
+      box: box === undefined ? undefined : { w: box.w, h: box.h },
+      canvasWidth,
+      canvasHeight,
+    })
     const fitted = fitOrKeep(lines, {
-      maxWidthPx: Math.max(200, canvasWidth * 0.86 - 64),
-      baseFontPx: 44,
-      maxLines: 3,
+      maxWidthPx: budget.maxWidthPx,
+      baseFontPx: budget.baseFontPx,
+      maxLines: budget.maxLines,
       ...measureOptions,
     })
     return (
-      <AbsoluteFill style={{ ...layer, justifyContent: 'flex-end', alignItems: 'center', padding: 72 }}>
+      <AbsoluteFill style={{ ...layer, justifyContent: 'flex-end', alignItems: 'center', padding: budget.layerPad }}>
         <div
           style={{
-            maxWidth: '86%',
-            padding: '18px 32px',
+            maxWidth: box === undefined ? '86%' : '100%',
+            padding: `${budget.padY}px ${budget.padX}px`,
             borderRadius: 14,
             background: 'rgba(0,0,0,0.62)',
             color: '#f4f7fb',
             fontFamily,
             fontSize: fitted.fontSize,
-            lineHeight: 1.35,
+            lineHeight: SUBTITLE_LINE_HEIGHT,
             textAlign: 'center',
             whiteSpace: 'pre-line',
             ...textFx,

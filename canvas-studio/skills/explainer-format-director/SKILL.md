@@ -1,6 +1,6 @@
 ---
 name: explainer-format-director
-description: 科普讲解体裁的 L2 编排壳（format director）。凡「科普 / 讲解 / 知识视频 / 原理 / 科普短片 / explainer / science video」类需求，先用定向三问对齐（受众 / 记住哪一件事 / 时长画幅），再按链路路由表把任务分派给下游 executor（code-driven-explainer / papercraft-stop-motion-explainer / paper-collage-explainer-generator）。本 skill 只做定向与调度，不复述任何 executor 的手法与 manifest 细节；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：科普、讲解、知识视频、原理、科普短片、explainer、science video。
+description: 科普讲解体裁的 L2 编排壳（format director）。凡「科普 / 讲解 / 知识视频 / 原理 / 科普短片 / explainer / science video」类需求，先用定向三问对齐（受众 / 记住哪一件事 / 时长画幅），再按链路路由表把任务分派给下游 executor（code-driven-explainer / papercraft-stop-motion-explainer / paper-collage-explainer-generator）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「受众 / 记住哪一件事 / 时长画幅」三问。本 skill 只做定向与调度，不复述任何 executor 的手法与 manifest 细节；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：科普、讲解、知识视频、原理、科普短片、explainer、science video。
 ---
 
 # 科普讲解体裁编排（explainer-format-director）

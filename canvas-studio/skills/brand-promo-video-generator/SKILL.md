@@ -21,6 +21,10 @@ allowed-tools:
 
 # Brand Promo Video Generator
 
+> **上游体裁壳（必读）**：本 skill 是 `brand-format-director` 的**下游 executor**。
+> 用户点名本 skill 时**仍须先加载该壳**完成定向三问（素材现实 / 投放场景 / 时长画幅语言）——
+> 点名只决定「用哪条链」，不替代定向。
+
 品牌/产品宣传短片的**风格知识库**：素材真实性纪律、叙事骨架、节拍规划、运动语言与交付前核查。
 
 ## 立场声明

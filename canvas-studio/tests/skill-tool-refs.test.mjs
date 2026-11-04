@@ -35,7 +35,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -115,6 +115,10 @@ const EXEMPT = new Map(Object.entries({
   // ── 组 6：测试 fixture 里的**空断言**——断言「未调用过」的工具名，
   //         而它们从未注册，故该断言恒真。保留原样，记录此弱断言。
   'test-fixture-negative-assertions': ['storyboard_generate', 'storyboard_split'],
+  // ── 组 7：manifest 的**轨道 id**（pitfalls.md 引用的真实事故轨，不是工具）。
+  //         2026-11-04 科普 0.1 验收 P4：pitfalls.md §2 用真实事故轨 id 定位
+  //         「animate 段 durationInFrames=1 把整层钉死」的实证，读者需要能按 id 检索。
+  'manifest-track-ids': ['s2_callout'],
 }))
 
 /** 展开成词 → 理由的扁平表。 */
@@ -495,4 +499,94 @@ test('CV-404：反向豁免必须指向真实注册工具，且工具进 skill �
     stale, [],
     '以下反向豁免工具已在 skills/ 真实出现，豁免已过期请移除：\n' + stale.join('\n'),
   )
+})
+
+// ── 2026-11-04 · 科普 0.1 验收 P3：体裁壳的「点名消解」门禁 ─────────────────
+//
+// 事故（A1）：用户点名 `code-driven-explainer` 时，agent 主动**跳过**了
+// `explainer-format-director` 编排壳 —— 定向三问（受众 / 记住哪一件事 / 时长画幅）
+// 一项未问。第二步 reasoning 原文："User named the executor directly. I'll load
+// code-driven-explainer and its references." ⇒ 光靠会话行为约定无效，
+// **必须在描述层把两条规则的冲突消解掉**。
+//
+// 门禁钉两件事：
+// ① 6 个 format director 的 description 必须含「点名下游 executor 时本壳仍须先加载做定向」；
+// ② 每个 executor 必须**回指**自己的上游体裁壳 —— 点名 executor 时 agent 一定会读它，
+//    回指是唯一拦得住的那一环（A1 事故里 executor 侧对体裁壳**零提及**）。
+
+const FORMAT_DIRECTORS = [
+  'brand-format-director',
+  'data-viz-format-director',
+  'drama-format-director',
+  'explainer-format-director',
+  'product-format-director',
+  'social-ad-format-director',
+]
+
+/** executor → 它必须回指的上游体裁壳。 */
+const EXECUTOR_TO_SHELL = {
+  'code-driven-explainer': [
+    'explainer-format-director',
+    'data-viz-format-director',
+    'product-format-director',
+    'social-ad-format-director',
+  ],
+  'papercraft-stop-motion-explainer': ['explainer-format-director'],
+  'paper-collage-explainer-generator': ['explainer-format-director'],
+  'brand-promo-video-generator': ['brand-format-director'],
+  'minimalist-product-ad-generator': ['product-format-director'],
+  'viral-remake': ['social-ad-format-director'],
+  'drama-episode-executor': ['drama-format-director'],
+}
+
+function frontmatterDescription(skillName) {
+  const raw = readFileSync(join(SKILLS_DIR, skillName, 'SKILL.md'), 'utf8')
+  const m = /^description:\s*(.*)$/mu.exec(raw)
+  assert.ok(m !== null, `${skillName}: 没有 description`)
+  return m[1]
+}
+
+test('P3：每个体裁壳的 description 必须写明「点名 executor 也先过本壳做定向」', () => {
+  for (const shell of FORMAT_DIRECTORS) {
+    const description = frontmatterDescription(shell)
+    assert.match(
+      description,
+      /用户点名下游 executor 时本壳仍须先加载做定向/,
+      `${shell}: description 缺消解句 —— 点名 executor 时 agent 会直接跳壳（A1 事故）`,
+    )
+    assert.match(description, /不替代/, `${shell}: 消解句必须说明「点名不替代定向三问」`)
+    assert.ok(description.length <= 500, `${shell}: description 超 500 字符（${description.length}）`)
+  }
+})
+
+test('P3：每个 executor 必须回指上游体裁壳（点名 executor 时 agent 读的是它）', () => {
+  for (const [executor, shells] of Object.entries(EXECUTOR_TO_SHELL)) {
+    const raw = readFileSync(join(SKILLS_DIR, executor, 'SKILL.md'), 'utf8')
+    assert.match(raw, /上游体裁壳/, `${executor}: 缺「上游体裁壳」回指段`)
+    assert.match(raw, /仍须先加载/, `${executor}: 回指段必须写明「仍须先加载」`)
+    // 壳名可以写在 SKILL.md，也可以下沉到 references/（细则下沉优先）。
+    const refsDir = join(SKILLS_DIR, executor, 'references')
+    const refFiles = existsSync(refsDir)
+      ? readdirSync(refsDir).filter((f) => f.endsWith('.md'))
+      : []
+    const refBodies = refFiles.map((f) => readFileSync(join(refsDir, f), 'utf8')).join('\n')
+    for (const shell of shells) {
+      assert.ok(
+        raw.includes(shell) || refBodies.includes(shell),
+        `${executor}: 未回指上游壳 ${shell} —— A1 事故里 executor 侧对体裁壳零提及`,
+      )
+    }
+  }
+})
+
+test('P3：体裁壳与 executor 的双向引用不得成环（壳引 executor、executor 引壳）', () => {
+  for (const [executor, shells] of Object.entries(EXECUTOR_TO_SHELL)) {
+    for (const shell of shells) {
+      const shellRaw = readFileSync(join(SKILLS_DIR, shell, 'SKILL.md'), 'utf8')
+      assert.ok(
+        shellRaw.includes(executor),
+        `${shell}: description/正文未列出下游 executor ${executor} —— 路由表与回指对不上`,
+      )
+    }
+  }
 })

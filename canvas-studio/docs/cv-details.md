@@ -21,6 +21,8 @@
 - **涉及文件**：`src/host-tools.ts` / `tests/render-tool-contract.test.mjs`
 - **落地/验收**：提交 `6bf3e7ca4f`。守卫 3 条（每个抽帧 url + 帧号 + 张数 / report 六项 / 无字段时不冒空段）；**反向变异**（`frames` 置空 + report 不拼）⇒ 2 条真红。**真机验收通过**（2026-10-20）。
 
+> **〔2026-11-04 22:57 更正〕** 读图能力已于 CV-435 恢复：网关模型行补了 `input: [text, image]`，`read_image` 可直接读项目内本地图。本文中「不注册 read_image / 工具层硬拒 / 模型无视觉」等方案**已作废**，不再执行；后端 VLM 降级为**保底通道**（仅三种情况使用）。原结论保留为历史记录。（本注记原误插在「涉及文件」行中间截断了文件名，2026-11-05 归位。）
+
 #### CV-351 · ML-10 动效覆盖口径修正（素材驱动片恒误报）
 
 - **状态**：已完成·桌面验收通过（2026-10-20）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
@@ -1386,6 +1388,8 @@
 
 #### CV-068 · 主模型无视觉（qwen3.8-27b-mtp 等文本模型），agent 在生成…
 
+> **〔2026-11-04 更正〕** 本条前提已过时：CV-435 起网关模型行声明 `input: [text, image]`，`read_image` 可直接读项目内本地图，现行口径见 `toolchain.md` §7；image2vl 降级为保底通道。原结论保留为历史记录。
+
 - **状态**：（见 [STATUS.md](./STATUS.md) §2.1 索引表）
 
 - **缺陷追踪（§2.1）**：状态 **已完成·桌面验收通过** · 优先级 P1（权威见 [STATUS.md](./STATUS.md) §2.1 索引表）
@@ -2263,6 +2267,8 @@
 
 #### CV-431 · 三条流程纪律进 SKILL.md（负例闸门 / 画面判据取证 / 探针前置）（2026-11-04，待桌面验收）
 
+> **〔2026-11-04 22:57 纠偏〕** 本条三条中的「负例必发闸门」已撤销（B-0 批）：负例是验收阶段验证功能生效的**可选测试手段**，不进正常流程、不影响结案；SKILL.md 第 5 步改「交付前复述未决项」。画面判据取证与探针前置两条保留。现行口径见 `references/verification.md §3` 与执行计划 §6。
+
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：三条纪律此前只落在文档、没落进流程，靠人记得。① **负例必发闸门**（P5）：正例成片交付后必须发出负例提示词并验证拦截，**未执行不得结案**（0.1 批 A8 因漏发无法判定，卡住整批收口，续跑批人工补上 +245.7min）；② **画面类判据必须看图本身**（P8）：`inspect_image` 的 grid/bbox 只用于**定位疑点**，不能当「元素是否存在」的结论依据，**禁止拿 manifest 字段自证画面效果**（0.1 批 render #7 看的是 32×18 亮度网格，把地轴误认成引线；A4 正是凭 manifest 字段自证，漏检了整层不可见）；③ **首轮渲染即用 `spotFrames` 探针**（P9）：探针 ~1.5s vs 全片 ~25s（快 17 倍），逐条判据取代表帧；全片 draft 只用于交付前定稿（0.1 批前 6 次渲染全是全片 draft，第 7 次才首次用上探针）。
@@ -2300,3 +2306,27 @@
 - **详情**：真机 `read_image` 一直报 `model "deepseek-flash" does not declare image input`。2026-11-04 网关实测：`/v1/llm/chat/completions` 把它路由到 `deepseek-v4.1-flash`，带 `image_url` 的请求 HTTP 200，纯色图答 `Red`、会话 15 真实静帧能描述太阳/地球/弧线/文字 ⇒ **模型本来能看图**，缺的是能力声明。根因在 `src/gateway.ts` 的 `gatewayProfile()`：生成的 `llm-pi-ai` model 行只有 `{id,name,contextWindow,maxTokens}`，没有 `input` ⇒ 回落到 route 的 `defaultInput=[text]` ⇒ `tool-fs/read-image.ts` 严格能力闸拒收、`llm` 把消息里的图片投影成文本。且 `src/index.ts` 的 `applyGatewayConfig` 每次启动用该 profile **整体覆盖**网关行，所以只改本机 `cordis.patch.yml` 会被冲掉。修法：新增 `resolveModelInput`（目录 `capabilities.inputs` 优先，`GATEWAY_IMAGE_INPUT_OVERRIDES` 实测覆盖表兜底），model 行带 `input`，`gatewayFingerprint` 纳入它 ⇒ 能力变化会触发 reconcile。同步**成组反转**「无视觉」禁令：`toolchain.md` §7/8/10 ↔ `tests/skill-guardrail.test.mjs` ↔ `src/host-tools.ts` 的 image2vl 描述与抽帧文案（旧禁令改成 `doesNotMatch` 反向护栏，复活即红）；CV-431 的 P8「看图本身」在 `code-driven-explainer/SKILL.md` + `verification.md §2` 落成 `spotFrames → read_image(file_path=…) → 逐条判据` 的可执行路径；清掉 `image-matting` / `inspect-image` / `image-crop` / `host-tools-artifact` / `client/index.ts` / `canvas-studio-tools.md` 的旧假设注释。**数值自检、`inspect_image` 像素真值、`image2vl`「VLM 输出不可当事实」纪律一律保留**。
 - **涉及文件**：`src/gateway.ts`、`tests/gateway.test.mjs`、`tests/skill-guardrail.test.mjs`、`src/host-tools.ts`、`skills/canvas-studio-creation/references/toolchain.md`、`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/verification.md`、`src/image-matting.ts`、`src/inspect-image.ts`、`src/image-crop.ts`、`src/host-tools-artifact.ts`、`src/client/index.ts`、`docs/canvas-studio-tools.md`；运行时 `~/.videobuddy/profiles/desktop/cordis.patch.yml` 补 `input: [text, image]`（备份 `.bak-20261104-2016`）。
 - **验证**：`yarn build`（clean + tsdown + 双 tsc）与 `verify:loader` 通过；编译产物 `lib/gateway.js` / `lib/host-tools.js` 已核实为最新码。**全量 `test:smoke`、反向变异、重启 GUI 后 `read_image` 真机实证尚未执行**，执行时点由用户决定。**书面验收基线 = `6c131867f5` 工作区**，与 CV-427~434 合并验收。
+
+#### CV-436 · B-0 负例纪律纠偏：负例降级为验收可选测试手段（2026-11-05，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：v1 计划与 CV-431 把「交付前必须发负例 / 未执行不得结案」写成了流程纪律，属于把**测试手段**误装成**交付纪律**（0.1 批 A8 漏发负例 +245.7min 的教训被错误归因为「纪律没落实」，真问题是该纪律本身不该存在）。执行计划 §6 点名 10 处污染点一次纠偏：`code-driven-explainer/SKILL.md` 工作流第 5 步改「**交付前复述未决项**（体检告警逐条状态 / 未核源事实 / 能力边界）」；`verification.md §3` 改名「负例：验收阶段的可选测试手段」（不强制、不影响结案、附 22:57 纠偏注记）；`explainer-patterns.md` 纪律索引去负例项 + 自检清单改「验收批次若安排了负例测试（**可选**，不跑不算缺陷）」；`STATUS.md` §4.1 CV-431 标题与文件头描述同步改正；六体裁批量验收材料 §〇.5、问题修复计划 P5、问题清单 P-10/P-15、0.1 验收分析报告、英文重制分析、改动生效性评估 R5 全部加「已作废」注记（历史结论保留不改）；cv-details CV-431 与 changelog 加注。负例仍保留的唯一形态：C-4 验收批次可选补刀一次（D4 拍板）。
+- **涉及文件**：`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{verification,explainer-patterns}.md`、`docs/STATUS.md`、`docs/cv-details.md`、`docs/changelog.md`、`docs/plans/2026-11-04-六体裁批量验收材料.md`、`docs/2026-11-04-科普线问题修复计划.md`、`docs/2026-11-04-科普线问题清单与优先级.md`、`docs/2026-11-04-科普0.1验收分析报告.md`、`docs/2026-11-04-英文重制与A8补跑分析.md`、`docs/2026-11-04-科普线改动生效性评估.md`。
+- **验证**：全仓 grep「未执行不得结案 / 负例必发 / 交付前必须发负例」活跃面 = 0（残留全在历史台账且带注记）；skill 门禁 148·148 全绿（含 `skill-guardrail` / `skill-tool-refs` / `skill-discipline`）；SKILL.md 11,691 B ≤ 12 KB 闸。
+
+#### CV-437 · B-1 读图线整理：LLM 主读 / VLM 保底全仓对齐（2026-11-05，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：CV-435 只反转了禁令方向，B-1 把三层取证层级（① `read_image` 首选本地图 → ② `inspect_image` 精确数值 → ③ 后端 VLM 仅三种情况保底且文字不可当事实）铺满全部活跃面。**D6 便利层**（拍板：改回执、不动上游 harness）：`list_references` 回执逐条给「本地图 `assets/<文件名>`」提示 + 尾部一行读图路径说明，模型不再需要 `list_references` + `bash ls` 两步拼 `read_image` 路径（揽月湾实测多跑一趟的根因）；`video2vl` 描述补「本工具是保底通道：① 只有远端句柄 ② `read_image` 能力声明失效 ③ 需要第二意见，降级必须在交付明写『未做画面自检』」；`image_matting` 数值自检措辞改「判『抠干净没有』先看数值；需要目视再 `read_image` 本地产物」；`toolchain.md` §8 补「`@ref[id]` 找本地图的固定路径」三步法。历史台账只加「已作废」注记：cv-details CV-350（读图方案作废）、CV-068（前提过时）、伊甸园复盘、会话错误分布分析、backlog/archive。`skill-tool-refs` 门禁新增**组 8 豁免**：`read_image` 是 DSH 运行时原生工具不经本包注册，skill 层点名合法。
+- **涉及文件**：`src/host-tools.ts`（renderReferenceList + video2vl）、`src/host-tools-artifact.ts`、`skills/canvas-studio-creation/references/toolchain.md`、`tests/skill-tool-refs.test.mjs`、`docs/伊甸园会话复盘-20261029.md`、`docs/会话错误分布分析-2026-10-29.md`、`docs/cv-details.md`、`docs/canvas-ux-backlog.md`、`docs/archive-cv-completed.md`、`docs/canvas-studio-tools.md`、`docs/skill-features-inventory.md`、`docs/skill-quality-system-design-review-2026-10-23.md`、`docs/plans/REQ-036-复刻提效-真机复盘与开发计划-20261102.md`。
+- **验证**：旧「无视觉」措辞活跃面 = 0（残留全在历史台账且带注记）；skill 门禁 148·148 全绿；`render-tool-contract` F-16 与 `manifest-contract-doc` 断言保留通过（337·337）；双 tsc + build + verify:loader 绿。
+
+#### CV-438 · B-2 #11 运动口径统一：trackMotionFeatures 单源（2026-11-05，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：同一份 manifest 四处口径打架（B4 复盘：`trackIsAnimated` 布尔、`collectAnimationWindows` 字段清单、ML-10 帧区间并集、slideshow-risk 6 维评分，各自读字段，加动效能力时四处必漂移 —— P-18 的 13 条 lint 恒报正是 `reveal.out` 漏出白名单）。按已拍板**修正版**抽 `src/remotion/motion-features.ts`：`trackMotionFeatures(track)` 一次返回 `animated`（布尔）/ `windowKinds`（含 animate/exit/orbit/**reveal**/reveal.out/draw/anim/kenburns 等全量动效字段清单）/ `motionIntervalsFor`（帧区间）；四处全部改从它派生 —— `timing-segments.trackIsAnimated` 退化为 `features.animated`、`manifest.collectAnimationWindows` 的 kinds 取 `windowKinds`、`motion-lint` 的区间与种类同源、`slideshow-risk` 的「全程静态」改与渲染报告同一份判断（图文卡片型文案区分「静态占比偏高」与「全程静态」，不再自相矛盾）。顺带把 `reveal.out` 补进 ML-02 白名单（CV-428 漏项收尾）。
+- **涉及文件**：`src/remotion/motion-features.ts`（新）、`src/remotion/manifest.ts`、`src/remotion/motion-lint.ts`、`src/remotion/slideshow-risk.ts`、`src/timing-segments.ts`、`tests/remotion-motion-features.test.mjs`（新，3 条：四处一致性 / CV-428 漏项补齐 / 漂移靶对拍）。
+- **验证**：定向 `remotion-motion-features` 3/3 + motion 相邻 67 + remotion/manifest 全组 337·337 全绿；双 tsc --noEmit / build / verify:loader 绿；漂移靶反向变异（ML10_INTERVAL_KINDS 加未登记 kind ⇒ 红）实证。全量 smoke 按 P1 合并验证链在用户侧 smoke 时点执行。

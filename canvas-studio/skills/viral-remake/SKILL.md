@@ -152,3 +152,7 @@ description: 爆款复刻流程（Canvas Studio）。用户给一条参考视频
   流程无关。
 - **版权默认换掉**：参考片里的真人脸 / 品牌素材直接复用有风险，默认替换或让用户
   提供授权素材。
+
+## 画面判据取证（六体裁统一，2026-11-05）
+
+本地产物（抽帧 / 素材）的画面判据**首选 `read_image(file_path=…)` 看图本身**，禁拿 manifest 字段自证；精确数值用 `inspect_image`；`image2vl` / `video2vl` 是 VLM 文字转述，仅保底且**不可当事实**。全契约见 `canvas-studio-creation/references/toolchain.md` §7。

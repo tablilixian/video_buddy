@@ -58,3 +58,7 @@ description: 通用短剧单集执行手册（知识型 executor）。凡连续�
 - **不复述总纲流程与审批**：唯一权威 = `canvas-studio-creation`；本手册不设门不放行。
 - **不复述 episodic 存储口径**：`series.json` 方案见 `docs/plans/短剧episodic方案-20261104.md`；工具用法看工具描述。
 - **不做题材特化**：古装 / 圣经 / 悬疑等题材纪律见对应导演 skill（如 `bible-story-director`），本手册与题材导演**叠加使用**，不互替。
+
+## 画面判据取证（六体裁统一，2026-11-05）
+
+本地产物（抽帧 / 素材）的画面判据**首选 `read_image(file_path=…)` 看图本身**，禁拿 manifest 字段自证；精确数值用 `inspect_image`；`image2vl` / `video2vl` 是 VLM 文字转述，仅保底且**不可当事实**。全契约见 `canvas-studio-creation/references/toolchain.md` §7。

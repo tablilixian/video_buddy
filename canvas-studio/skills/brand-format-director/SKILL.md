@@ -51,3 +51,9 @@ description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品
 - **不复述素材真实性纪律**：来源优先级 / 授权口径 / 品牌事实表字段唯一权威 = `brand-promo-video-generator/references/intake-and-provenance.md`，本壳只给一句话指针。
 - **不替代总纲的审批语义**：覆盖层「确认落地」等门禁原样归 `canvas-studio-creation`，本壳不设门也不放行。
 - **没有授权素材不开工生成**：停下索要原件——这是 L3 底线，壳只负责把它带进定向第一问。
+
+## 工程纪律（六体裁统一，2026-11-05）
+
+- **画面判据取证层级**：本地图片（抽帧 / 素材）首选 `read_image(file_path=…)` **看图本身**；精确坐标 / 颜色 / alpha 用 `inspect_image`；`image2vl` / `video2vl` 是后端 VLM 文字转述，仅三种情况保底（只有远端句柄 / `read_image` 能力声明失效 / 要第二意见）且**不可当事实**，降级必须明写「未做画面自检」。全契约见 `canvas-studio-creation/references/toolchain.md` §7。
+- **交付前复述未决项**：渲染回执的体检告警逐条状态（回执「体检 N 条」段 + `build/lint-*.md` 落盘清单，修哪条读哪条）/ 未核源事实 / 模型能力边界 —— 没做的明说，不冒充结论。
+- **数据判据**（用到 chart / dataCard 时）：内联数值带 `dataSource`（数据集 + 可复核入口；自测写 `'observed'`，占位写 `'inline'`）与 `baseline`（口径 / 基线，**单一基准**）；storyboard `pending` 事实不得进成片。数字非编造是验收第一条。

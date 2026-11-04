@@ -67,3 +67,7 @@ description: MV 制作流程（Canvas Studio）。用户给一首歌（或一段
 - 节拍置信度低 → 自动降级为估算切点（见 §3），不要反复重跑分析；
 - 歌比成片长/短 > 30% → 回 §1 重定轴（重裁歌或增减镜头），不要硬凑淡入淡出；
 - 工具链问题一律按 canvas-studio-creation「遇错处理」。
+
+## 画面判据取证（六体裁统一，2026-11-05）
+
+本地产物（抽帧 / 素材）的画面判据**首选 `read_image(file_path=…)` 看图本身**，禁拿 manifest 字段自证；精确数值用 `inspect_image`；`image2vl` / `video2vl` 是 VLM 文字转述，仅保底且**不可当事实**。全契约见 `canvas-studio-creation/references/toolchain.md` §7。

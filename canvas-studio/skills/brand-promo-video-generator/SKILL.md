@@ -104,3 +104,7 @@ logo 与身份承载资产来自已验证或用户授权来源；产品名/功�
 ## 边界
 
 生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不提供工具参数、不设审批门。
+
+## 画面判据取证（六体裁统一，2026-11-05）
+
+本地产物（抽帧 / 素材）的画面判据**首选 `read_image(file_path=…)` 看图本身**，禁拿 manifest 字段自证；精确数值用 `inspect_image`；`image2vl` / `video2vl` 是 VLM 文字转述，仅保底且**不可当事实**。全契约见 `canvas-studio-creation/references/toolchain.md` §7。

@@ -74,7 +74,12 @@ export const FILE_WHITELIST = {
   // 核心判据就近放 backfill 旁）+ 工具描述扩行，+13（4692 → 4705）显式登记。
   // 科普 0.1 验收 P6（2026-11-04）：ask_user_choice 的 catch 分支加**失败兜底**
   // （非 abort 的内部错误不再外抛成 turn 终止，改回默认项继续），+9（4711 → 4720）显式登记。
-  'src/host-tools.ts': 4720,
+  // CV-435（2026-11-04）：image2vl 描述保底通道 + 抽帧文案反转，+8（4720 → 4728）补登。
+  // CV-437（2026-11-05）：B-1 list_references 本地图提示（D6）+ video2vl 保底描述，+2（4728 → 4730）补登。
+  // CV-439（2026-11-05）：B-3 体检回执消费端接线（lint message/lintPath schema + executor 落盘
+  // 调用 + 报告/spot 双渲染点 + 折叠行改指渲染报告），+22（4730 → 4752）显式登记；
+  // 核心在 lint-report.ts（新文件，65 行），此处只是接线。
+  'src/host-tools.ts': 4752,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,
@@ -97,7 +102,8 @@ export const FILE_WHITELIST = {
   'src/client/StudioFrame.tsx': 3261,
   // REQ-037（2026-11-03）：divertAttachments 改「暂存 + 占位说明」（附件不再发送时
   // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
-  'src/client/index.ts': 3008,
+  // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
+  'src/client/index.ts': 3010,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
   // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
@@ -160,7 +166,8 @@ export const FUNC_WHITELIST = {
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2844, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
-  'src/client/index.ts#studioClient': { lines: 2745, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26（2026-11-03）' },
+  // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
+  'src/client/index.ts#studioClient': { lines: 2747, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。

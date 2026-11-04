@@ -90,6 +90,7 @@ import { checkManifestResolution } from './remotion/resolution-check.js'
 import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
+import { lintReceiptLines, writeLintReport } from './lint-report.js'
 import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -190,10 +191,12 @@ const resultSchema = {
             properties: {
               code: { type: 'string' as const, description: '编排体检编号（ML-01 … ML-13）' },
               at: { type: 'string' as const, description: '定位（轨 id / 轨道序号 / 帧号）' },
+              message: { type: 'string' as const, description: '回执主文案（哪里 + 为什么不好）' },
             },
           },
-          description: '编排体检回执（与 warnings 里的文案同源；此处只留可计数的编号与定位）',
+          description: '编排体检回执（与 warnings 里的文案同源；返回文本已给前 5 条原文，此处是全量计数与定位）',
         },
+        lintPath: { type: 'string' as const, description: '编排体检完整清单的落盘路径（项目 build/ 下 markdown，含每条的建议）。落盘失败缺省' },
         loudnessLufs: { type: 'number' as const, description: '成片综合响度（LUFS，BS.1770）。无声片缺省。复刻场景用它和参考片对齐观感（差 3dB 以上听感明显不同）' },
       },
       description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数。用于判断「这条片花了多久、质量档是否生效」',
@@ -322,8 +325,10 @@ interface ComposeToolResult {
     audio?: { mutedVideoTracks: number; audibleSources: number }
     /** OPT-15：带动画轨的动画窗口表（QC 拿抽帧号对窗口，先看末帧再定论）。 */
     animationWindows?: { id: string; start: number; end: number; kinds: string[] }[]
-    /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位；详细文案在 `warnings` 里）。 */
-    lint?: { code: string; at: string }[]
+    /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位 + 主文案；B-3 起返回文本给前 5 条原文）。 */
+    lint?: { code: string; at: string; message: string }[]
+    /** B-3（CV-439）：体检完整清单落盘路径（项目 build/ 下）。落盘失败缺省。 */
+    lintPath?: string
     /** Q1 响度闸：成片综合响度（LUFS）。无声片缺省。 */
     loudnessLufs?: number
   }
@@ -604,7 +609,7 @@ export function collapseLintWarnings(warnings: readonly string[]): string[] {
   }
   const brief = [...counts.entries()].map(([code, n]) => (n > 1 ? `${code}×${n}` : code)).join(' / ')
   return [
-    `[编排体检] 命中 ${lint.length} 条：${brief}（逐条定位见 report.lint[]；文案已折叠以免挤占上下文）`,
+    `[编排体检] 命中 ${lint.length} 条：${brief}（前 5 条原文与完整清单落盘路径见下方渲染报告；文案已折叠以免挤占上下文）`,
     ...rest,
   ]
 }
@@ -699,6 +704,9 @@ function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): s
     const more = windows.length > 4 ? ` 等 ${String(windows.length)} 轨` : ''
     parts.push(`动画窗口=${brief}${more}（抽帧落在窗口内=动画飞行中，先看末帧再定论）`)
   }
+  // B-3（CV-439）：体检计数进统计行；前 N 条原文与落盘路径由 lintReceiptLines 单独成段
+  //（挤在这一行里可读性差）。lint 为空不占位。
+  if ((report.lint ?? []).length > 0) parts.push(`体检=${report.lint?.length} 条`)
   return `渲染报告：${parts.join(' · ')}`
 }
 
@@ -715,7 +723,10 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
       for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
     }
     for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
-    if (v.report !== undefined) lines.push(formatRenderReport(v.report))
+    if (v.report !== undefined) {
+      lines.push(formatRenderReport(v.report))
+      lines.push(...lintReceiptLines(v.report.lint ?? [], v.report.lintPath))
+    }
     if (v.job !== undefined) lines.push(formatRenderJobDiagnostics(v.job))
     return [{ type: 'text', text: lines.join('\n') }]
   }
@@ -753,7 +764,12 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     lines.push(`抽帧 ${listed.length} 张（**先逐张 read_image 看图**，对照判据逐条核对后再向用户汇报；未做要明说"未做画面自检"）：`)
     for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
   }
-  if (v.report !== undefined) lines.push(formatRenderReport(v.report))
+  if (v.report !== undefined) {
+    lines.push(formatRenderReport(v.report))
+    // B-3（CV-439）：折叠行的「计数」在这里接上「前 N 条原文 + 落盘路径」——
+    // 会话 15 实测折叠后 13 条定位没人读；要修哪条，看这里即可，不必翻结构化字段。
+    lines.push(...lintReceiptLines(v.report.lint ?? [], v.report.lintPath))
+  }
   if (v.job !== undefined) lines.push(formatRenderJobDiagnostics(v.job))
   return [{ type: 'text', text: lines.join('\n') }]
 }
@@ -3702,6 +3718,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // F-05：探针渲染跳过体检 —— 调试期的画面本来就不完整，体检只会生产噪声。
         // spot-check 同理：它验证的是目标帧画面，体检说的是全片编排。
         const lintIssues = probe || spot ? [] : lintMotion(renderManifest)
+        // B-3（CV-439）：折叠只留计数 ⇒ 完整清单落盘，前 N 条原文 + 路径进渲染报告
+        //（会话 15：13 条 report.lint[] 躺在结构化字段里没人读）。落盘失败不阻断渲染。
+        const lintPath = lintIssues.length > 0
+          ? writeLintReport(registry.projectDir(projectId), lintIssues, job.job?.id ?? String(Date.now()))
+          : null
         // OPT-15：动画窗口表 —— QC 抽帧号对窗口用，防止把动画中段当布局 bug 排查。
         const animationWindows = probe || spot ? [] : collectAnimationWindows(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
@@ -3751,8 +3772,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             ...job.report,
             ...(animationWindows.length > 0 ? { animationWindows } : {}),
             ...(lintIssues.length > 0
-              ? { lint: lintIssues.map((issue) => ({ code: issue.code, at: issue.at })) }
+              ? { lint: lintIssues.map((issue) => ({ code: issue.code, at: issue.at, message: issue.message })) }
               : {}),
+            ...(lintPath !== null ? { lintPath } : {}),
           },
         }
         return payload

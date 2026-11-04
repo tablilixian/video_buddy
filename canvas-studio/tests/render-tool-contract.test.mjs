@@ -11,6 +11,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { collapseLintWarnings, createStudioTools, relaxJsonSmartQuotes } from '../lib/host-tools.js'
+import { lintReceiptLines, lintReportMarkdown, writeLintReport } from '../lib/lint-report.js'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 function renderTool() {
   const tool = createStudioTools({}, 3000).find((entry) => entry.name === 'render_composition')
@@ -185,7 +189,7 @@ test('F-14：≥3 条体检告警折叠成一行计数，逐条定位留在 repo
   assert.match(out[0], /命中 3 条/u)
   assert.match(out[0], /ML-04×2/u, '同类要点出条数')
   assert.match(out[0], /ML-07/u)
-  assert.match(out[0], /report\.lint/u, '要告诉模型去哪拿逐条定位')
+  assert.match(out[0], /渲染报告/u, '要告诉模型去哪拿前 N 条原文与落盘路径（B-3 后的消费端）')
   assert.equal(out[1], '[分辨率] imgWatch 上采样约 1.4×', '非体检告警原样保留')
 })
 
@@ -208,4 +212,65 @@ test('F-16：image2vl 描述明确「不做像素级定位」并指向 inspect_i
   assert.ok(tool, 'image2vl 必须存在')
   assert.ok(tool.description.includes('不做像素级定位'), '必须写明不能定位（事故里被拿去量屏幕位置）')
   assert.ok(tool.description.includes('inspect_image'), '必须给出替代工具')
+})
+
+// ── CV-439 B-3：体检回执消费端（计数 + 前 5 条原文 + 落盘路径）──────────────
+// 会话 15 实测：13 条 report.lint[] 躺在结构化字段里没人读。回执必须把「前 N 条
+// 原文 + 落盘路径」放进模型可见文本，折叠行的计数在这里接上具体内容。
+
+/** 一条 MotionLintIssue 形状的样本（code/at/message/hint 与 motion-lint 一致）。 */
+const lintSample = (n) => ({
+  code: `ML-0${(n % 9) + 1}`,
+  at: `t${n} @ ${(n * 10)}s`,
+  message: `第 ${n} 条告警的完整文案（哪里 + 为什么不好）`,
+  hint: `第 ${n} 条的可执行建议`,
+})
+
+test('B-3：lint 非空 ⇒ 回执给计数 + 前 5 条原文 + 落盘路径', () => {
+  const issues = Array.from({ length: 3 }, (_, i) => lintSample(i + 1))
+  const lines = lintReceiptLines(issues, '/proj/build/lint-job-1.md')
+  assert.match(lines[0], /体检 3 条/u, '首行必须给总数（与折叠行计数对账）')
+  assert.match(lines[0], /前 3 条/u)
+  assert.equal(lines.filter((l) => l.startsWith('- ML-')).length, 3, '逐条原文行')
+  assert.ok(lines.some((l) => l.includes('第 3 条告警的完整文案')), 'message 原文可见')
+  assert.match(lines.at(-1), /完整清单已落盘：\/proj\/build\/lint-job-1\.md/u, '落盘路径必须可见')
+})
+
+test('B-3：超过 5 条只显前 5；落盘失败要有明示出口（不冒造路径）', () => {
+  const issues = Array.from({ length: 13 }, (_, i) => lintSample(i + 1))
+  const lines = lintReceiptLines(issues, undefined)
+  assert.match(lines[0], /体检 13 条/u)
+  assert.equal(lines.filter((l) => l.startsWith('- ML-')).length, 5, '只显前 5 条（全部进上下文 = 折叠前的老问题）')
+  assert.match(lines.at(-1), /落盘失败/u, '没有路径必须明说，不能假装落了盘')
+})
+
+test('B-3：lint 为空 ⇒ 回执一行都不出（探针 / spot / 干净成片不占上下文）', () => {
+  assert.deepEqual(lintReceiptLines([], '/proj/build/lint-x.md'), [])
+})
+
+test('B-3：writeLintReport 落盘 E2E —— 全文含每条 code / at / message / hint', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-lint-'))
+  try {
+    const issues = Array.from({ length: 13 }, (_, i) => lintSample(i + 1))
+    const path = writeLintReport(dir, issues, 'job-test-1')
+    assert.ok(path?.endsWith(join('build', 'lint-job-test-1.md')), `应落盘到 build/ 下，实际：${path}`)
+    const text = readFileSync(path, 'utf8')
+    assert.match(text, /编排体检完整清单（13 条）/u)
+    for (const n of [1, 5, 6, 13]) {
+      assert.ok(text.includes(`第 ${n} 条告警的完整文案`), `第 ${n} 条 message 必须在全文里`)
+      assert.ok(text.includes(`第 ${n} 条的可执行建议`), `第 ${n} 条 hint 必须在全文里`)
+      assert.ok(text.includes(`ML-0${(n % 9) + 1}`))
+    }
+    assert.ok(text.includes('@ t5 @') || text.includes('@ t5'), '定位（at）必须在全文里')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('B-3：render_composition 结果 schema 声明 lintPath（漏声明 = additionalProperties 下静默丢失）', () => {
+  const report = renderTool().output?.schema?.properties?.report
+  assert.ok(report, 'report 必须有内联结构')
+  assert.ok(Object.prototype.hasOwnProperty.call(report.properties ?? {}, 'lintPath'), 'report 缺 lintPath 字段')
+  const lintItems = report.properties?.lint?.items?.properties ?? {}
+  assert.ok(Object.prototype.hasOwnProperty.call(lintItems, 'message'), 'lint 条目缺 message（前 5 条原文的数据源）')
 })

@@ -2330,3 +2330,11 @@
 - **详情**：同一份 manifest 四处口径打架（B4 复盘：`trackIsAnimated` 布尔、`collectAnimationWindows` 字段清单、ML-10 帧区间并集、slideshow-risk 6 维评分，各自读字段，加动效能力时四处必漂移 —— P-18 的 13 条 lint 恒报正是 `reveal.out` 漏出白名单）。按已拍板**修正版**抽 `src/remotion/motion-features.ts`：`trackMotionFeatures(track)` 一次返回 `animated`（布尔）/ `windowKinds`（含 animate/exit/orbit/**reveal**/reveal.out/draw/anim/kenburns 等全量动效字段清单）/ `motionIntervalsFor`（帧区间）；四处全部改从它派生 —— `timing-segments.trackIsAnimated` 退化为 `features.animated`、`manifest.collectAnimationWindows` 的 kinds 取 `windowKinds`、`motion-lint` 的区间与种类同源、`slideshow-risk` 的「全程静态」改与渲染报告同一份判断（图文卡片型文案区分「静态占比偏高」与「全程静态」，不再自相矛盾）。顺带把 `reveal.out` 补进 ML-02 白名单（CV-428 漏项收尾）。
 - **涉及文件**：`src/remotion/motion-features.ts`（新）、`src/remotion/manifest.ts`、`src/remotion/motion-lint.ts`、`src/remotion/slideshow-risk.ts`、`src/timing-segments.ts`、`tests/remotion-motion-features.test.mjs`（新，3 条：四处一致性 / CV-428 漏项补齐 / 漂移靶对拍）。
 - **验证**：定向 `remotion-motion-features` 3/3 + motion 相邻 67 + remotion/manifest 全组 337·337 全绿；双 tsc --noEmit / build / verify:loader 绿；漂移靶反向变异（ML10_INTERVAL_KINDS 加未登记 kind ⇒ 红）实证。全量 smoke 按 P1 合并验证链在用户侧 smoke 时点执行。
+
+#### CV-439 · B-3 体检回执消费端：计数 + 前 5 条原文 + 落盘路径（2026-11-05，待桌面验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：B-3 纠偏后只剩体检消费端这一半（负例硬闸整条撤销，D2 选项 A）。会话 15 实测：F-14 折叠后 13 条 `report.lint[]` 躺在结构化字段里，agent 一次没读 —— 折叠治住了上下文膨胀，也把「看到具体问题」折没了。修法三件：① 新 `src/lint-report.ts`（65 行）：`writeLintReport` 把完整清单（编号 / 定位 / 文案 / 建议）落盘项目 `build/lint-<jobId>.md`（失败返回 null **不阻断渲染**）；`lintReceiptLines` 纯函数出「体检 N 条 + 前 5 条原文 + 落盘路径」段（落盘失败明示出口，不冒造路径）。② `render_composition` 回执：`report.lint` 条目补 `message`、新增 `report.lintPath`；渲染报告统计行加 `体检=N 条`；正文与 spot 两条渲染路径都接 `lintReceiptLines`；折叠行改指「见下方渲染报告」。③ 交付复述侧由 CV-436 的「交付前复述未决项（体检告警逐条状态）」覆盖，skill 零改动。
+- **涉及文件**：`src/lint-report.ts`（新）、`src/host-tools.ts`（schema / 类型 / executor / 双渲染点 / 折叠行）、`tests/render-tool-contract.test.mjs`（+6：前 5 条与路径 / 落盘失败出口 / 空不出行 / 落盘 E2E / schema 声明 / F-14 文案更新）、`tests/file-size-guard.test.mjs`（棘轮三处补登：host-tools 4720→4752、client/index 3008→3010、studioClient 2745→2747，其中两处是 CV-435/B-1 漏登的补账）。
+- **验证**：render-tool-contract **21·21 全绿**；棘轮 3/3 绿；反向变异实证（lib 删 lintPath 渲染 ⇒ 「落盘路径必须可见」红，还原 ⇒ 绿）；双 tsc + build + verify:loader 绿。全量 smoke 待用户侧基线（P2）。

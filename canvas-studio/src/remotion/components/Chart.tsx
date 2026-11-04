@@ -12,9 +12,11 @@
  */
 import React from 'react'
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
+import { donutSlicePath, gaugeDashArray, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
 import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
 import { resolveAnimatedStyle } from '../animated-style.js'
+import { countUpTextAt } from '../count-up.js'
 import { useFontFamilyStack } from './font-context.js'
 
 /** 数值标签格式：最多两位小数、去尾零（7.2666 → 7.27；8 → 8）。 */
@@ -29,6 +31,128 @@ function axisMax(values: readonly number[]): number {
 
 const DEFAULT_BAR_COLOR = '#4f9cf9'
 const DEFAULT_LINE_COLOR = '#ffb454'
+
+/**
+ * 4.1（2026-11-04）：pie / donut / gauge 渲染分支。
+ *
+ * 非等比护栏：SVG 用**缺省等比 meet** 缩放（绝不 `preserveAspectRatio="none"`），
+ * 路径全部来自 `chart-pie.ts` 的 0–100 正方形 viewBox —— 圆永远是圆。
+ * pie/donut：逐片错峰浮现（与柱状图 stagger 同参）+ 右侧图例（色点 + 类目 + 数值）；
+ * gauge：整圆 stroke-dasharray 扫描（0→45% 轨长），中心百分比复用 `countUpTextAt`
+ * （与 dataCard 数位滚动同语言），labels[0] 落环下说明位。
+ */
+const PieFamily: React.FC<{
+  track: ChartTrack
+  labels: readonly string[]
+  values: readonly number[]
+  unit: string
+  dur: number
+  frame: number
+  fontFamily: string
+  axisFont: number
+  valueFont: number
+}> = ({ track, labels, values, unit, dur, frame, fontFamily, axisFont, valueFont }) => {
+  const isGauge = track.variant === 'gauge'
+  const isDonut = track.variant === 'donut'
+  const fracs = sliceFractions(values)
+  const palette = track.palette !== undefined && track.palette.length > 0 ? track.palette : PIE_PALETTE
+  const color0 = track.color ?? palette[0] ?? DEFAULT_BAR_COLOR
+  const sliceColor = (i: number): string => (i === 0 ? color0 : palette[i % palette.length] ?? DEFAULT_BAR_COLOR)
+  const stagger = Math.min(8, Math.max(2, Math.round(dur * 0.02)))
+  const sum = values.reduce((acc, v) => acc + Math.max(0, v), 0)
+
+  if (isGauge) {
+    const max = track.gaugeMax ?? 100
+    const progress = Math.min(1, Math.max(0, (values[0] ?? 0) / max))
+    const sweep = interpolate(frame, [0, dur * 0.45], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    })
+    const dash = gaugeDashArray(progress * sweep)
+    const centerText = countUpTextAt(`${Math.round(progress * 100)}%`, frame, Math.max(1, Math.round(dur * 0.45)))
+    return (
+      <AbsoluteFill>
+        <svg viewBox="0 0 100 100" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}>
+          <circle cx={50} cy={50} r={46} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={9} />
+          <circle
+            cx={50}
+            cy={50}
+            r={46}
+            fill="none"
+            stroke={color0}
+            strokeWidth={9}
+            strokeLinecap="round"
+            strokeDasharray={dash}
+            transform="rotate(-90 50 50)"
+          />
+        </svg>
+        <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontFamily, fontSize: valueFont * 2.2, fontWeight: 600, color: '#e8eefc' }}>{centerText}</div>
+        </AbsoluteFill>
+        {labels[0] ? (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: '66%',
+              textAlign: 'center',
+              fontFamily,
+              fontSize: axisFont,
+              color: 'rgba(138,160,198,0.95)',
+            }}
+          >
+            {labels[0]}
+          </div>
+        ) : null}
+      </AbsoluteFill>
+    )
+  }
+
+  // pie / donut：图占左侧 64%，图例占右侧 36%（窄盒下图例仍在右，SVG 等比 meet 内缩）
+  let startFrac = 0
+  return (
+    <AbsoluteFill>
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '64%' }}>
+        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
+          {fracs.map((f, i) => {
+            const sliceStart = startFrac
+            startFrac += f
+            const appear = interpolate(frame, [i * stagger, i * stagger + 12], [0, 1], {
+              extrapolateLeft: 'clamp',
+              extrapolateRight: 'clamp',
+            })
+            if (appear <= 0 || f <= 0) return null
+            const d = isDonut ? donutSlicePath(f, sliceStart) : wedgePath(f, sliceStart)
+            return <path key={i} d={d} fill={sliceColor(i)} opacity={appear} />
+          })}
+        </svg>
+      </div>
+      <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '36%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: valueFont * 0.5 }}>
+        {values.map((v, i) => {
+          const appear = interpolate(frame, [i * stagger + 6, i * stagger + 18], [0, 1], {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          })
+          if (appear <= 0) return null
+          const pct = sum > 0 ? Math.round((Math.max(0, v) / sum) * 100) : 0
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: axisFont * 0.6, opacity: appear }}>
+              <span style={{ width: axisFont * 0.7, height: axisFont * 0.7, borderRadius: '50%', background: sliceColor(i), flex: 'none' }} />
+              <span style={{ fontFamily, fontSize: axisFont, color: 'rgba(138,160,198,0.95)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {labels[i] ?? `#${i + 1}`}
+              </span>
+              <span style={{ fontFamily, fontSize: valueFont, color: '#e8eefc', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                {formatValue(v)}
+                {unit} · {pct}%
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </AbsoluteFill>
+  )
+}
 
 export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineData | null | undefined }> = ({
   track,
@@ -92,8 +216,25 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
   return (
     <AbsoluteFill style={{ fontFamily, ...layer }}>
       <AbsoluteFill style={{ margin: `${plot.top}% ${plot.right}% ${plot.bottom}% ${plot.left}%` }}>
-        {/* 网格线 + 左轴（主序列）+ 右轴（副序列，仅 dual） */}
-        {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+        {/* 4.1：pie / donut / gauge 分支（无轴无网格，整域交给 PieFamily） */}
+        {track.variant === 'pie' || track.variant === 'donut' || track.variant === 'gauge' ? (
+          <PieFamily
+            track={track}
+            labels={labels}
+            values={values}
+            unit={unit}
+            dur={dur}
+            frame={frame}
+            fontFamily={fontFamily}
+            axisFont={axisFont}
+            valueFont={valueFont}
+          />
+        ) : null}
+
+        {/* 网格线 + 左轴（主序列）+ 右轴（副序列，仅 dual）；pie/donut/gauge 不铺 */}
+        {track.variant !== 'pie' && track.variant !== 'donut' && track.variant !== 'gauge' ? (
+          <React.Fragment>
+          {[0, 0.25, 0.5, 0.75, 1].map((t) => (
           <React.Fragment key={t}>
             <div
               style={{
@@ -337,6 +478,8 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
               </text>
             ) : null}
           </svg>
+        ) : null}
+          </React.Fragment>
         ) : null}
       </AbsoluteFill>
     </AbsoluteFill>

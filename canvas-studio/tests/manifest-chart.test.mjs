@@ -48,9 +48,9 @@ test('chart：合法 bars / dual 放行且零告警', () => {
 })
 
 test('chart：variant 非法拒收', () => {
-  const v = validateManifest(base({ tracks: [chart({ variant: 'pie' })] }))
+  const v = validateManifest(base({ tracks: [chart({ variant: 'treemap' })] }))
   assert.equal(v.ok, false)
-  assert.ok(v.errors.some((e) => e.includes('.variant 只允许 bars / dual')))
+  assert.ok(v.errors.some((e) => e.includes('.variant 只允许 bars / dual / line / pie / donut / gauge')))
 })
 
 test('chart：labels/values 形状与长度一致性', () => {

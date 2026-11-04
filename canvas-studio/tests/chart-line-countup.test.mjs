@@ -69,10 +69,10 @@ test('校验：variant line 合法且无契约告警', () => {
   assert.deepEqual(result.warnings.filter((w) => !w.startsWith('[编排体检 ')), [], result.warnings.join('；'))
 })
 
-test('校验：非法 variant 报错并列出三种合法值（守卫可反向变红）', () => {
-  const result = validateManifest(manifestWith([{ ...lineChart, variant: 'pie' }]))
+test('校验：非法 variant 报错并列出全部合法值（守卫可反向变红；4.1 起 pie 合法，样本换 treemap）', () => {
+  const result = validateManifest(manifestWith([{ ...lineChart, variant: 'treemap' }]))
   assert.equal(result.ok, false)
-  assert.ok(result.errors.some((e) => e.includes('bars / dual / line')), result.errors.join('；'))
+  assert.ok(result.errors.some((e) => e.includes('bars / dual / line / pie / donut / gauge')), result.errors.join('；'))
 })
 
 test('校验：line 变体写 lineValues → warning 不生效；dual 缺 lineValues → 报错', () => {

@@ -605,11 +605,14 @@ export interface ChartTrack extends BaseTrack {
    */
   source?: 'timeline'
   /**
-   * 图表形态（P2' 扩型，2026-11-03）：`bars` = 柱状图；`dual` = 柱状 + 折线双轴
-   * （`lineValues` 必填）；`line` = 独立折线图（主序列 `values` 直接画折线，左轴，
-   * 折线色用 `color`，30%→55% 从左往右揭示；不画柱子）。
+   * 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
+   * `dual` = 柱状 + 折线双轴（`lineValues` 必填）；`line` = 独立折线图（主序列
+   * `values` 直接画折线，左轴，折线色用 `color`，30%→55% 从左往右揭示；不画柱子）；
+   * `pie` = 饼图 / `donut` = 环形图（份额 = v/sum，逐片错峰浮现，右侧图例）；
+   * `gauge` = 进度环（`values` 恰 1 项 = 进度值，分母 `gaugeMax` 缺省 100，
+   * 中心百分比数位滚动）。
    */
-  variant: 'bars' | 'dual' | 'line'
+  variant: 'bars' | 'dual' | 'line' | 'pie' | 'donut' | 'gauge'
   /** 类目标签（与 `values` 一一对应；上限 32 项）。 */
   labels: string[]
   /** 主序列（柱，左轴；非负、有限，至少一个 > 0）。 */
@@ -626,6 +629,10 @@ export interface ChartTrack extends BaseTrack {
   color?: string
   /** 折线色（缺省琥珀 #ffb454）。 */
   lineColor?: string
+  /** `variant:'gauge'` 专用：进度分母（缺省 100；`values[0]` 不得大于它）。 */
+  gaugeMax?: number
+  /** 扇形配色（pie / donut 逐片取用，超出长度循环；缺省内置 8 色板）。 */
+  palette?: string[]
 }
 
 /**

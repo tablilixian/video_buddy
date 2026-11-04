@@ -372,13 +372,15 @@
 | 字段 | 缺省 | 说明 |
 | --- | --- | --- |
 | `source` | 内联数据 | `'timeline'` = 从 manifest 的 video 轨真值推导（按时间线排序，值 = ffprobe 校正后的每镜时长秒数；`dual` 折线 = 累计时长，labels 自动 `镜1..n`，单位秒）。**与内联 labels/values/lineValues 互斥**；无 video 轨拒收 |
-| `variant` | 必填 | `bars` 柱状图 / `dual` 柱状+折线双轴 / `line` 独立折线图（P2'） |
-| `labels` | 必填 | 类目标签数组（1–32 项，与 `values` 一一对应） |
-| `values` | 必填 | 柱数据（非负有限数，至少一个 > 0）；`line` 时 = 折线数据 |
-| `lineValues` | 无 | `dual` 必填：折线数据（长度同 `labels`；右轴量纲独立）。`bars` / `line` 下写了只收 warning 不生效 |
+| `variant` | 必填 | `bars` 柱状图 / `dual` 柱状+折线双轴 / `line` 独立折线图（P2'）/ `pie` 饼图 / `donut` 环形图 / `gauge` 进度环（4.1） |
+| `labels` | 必填 | 类目标签数组（1–32 项，与 `values` 一一对应）；`pie`/`donut` 进右侧图例，`gauge` 取第 1 项落环下 |
+| `values` | 必填 | 柱数据（非负有限数，至少一个 > 0）；`line` 时 = 折线数据；`pie`/`donut` 时 = 份额（v/sum）；**`gauge` 必须恰好 1 项**（进度值，不得大于 `gaugeMax`） |
+| `lineValues` | 无 | `dual` 必填：折线数据（长度同 `labels`；右轴量纲独立）。其余变体下写了只收 warning 不生效 |
 | `lineLabel` | 无 | 折线图例文案（`dual` 时显示在右上角） |
 | `unit` / `lineUnit` | 无 | 轴与数值标签的单位后缀（如 `s` / `%`） |
-| `color` / `lineColor` | 主题蓝 / 琥珀 | 柱色 / 折线色；`line` 的折线与左轴用 `color` |
+| `color` / `lineColor` | 主题蓝 / 琥珀 | 柱色 / 折线色；`line` 的折线与左轴用 `color`；`pie`/`donut`/`gauge` 的主色（第 0 片 / 环）用 `color` |
+| `gaugeMax` | 100 | `gauge` 专用：进度分母（正数；缺省 100 = 百分比环） |
+| `palette` | 内置 8 色板 | `pie`/`donut` 扇形配色（非空字符串数组，逐片取用、超出循环） |
 
 **`line`（P2' · 独立折线）**：主序列 `values` 直接画折线（左轴、折线色 `color`），不画柱子；
 同一 30%→55% 从左往右揭示动画，揭示波前扫过的点**依次弹出数值标签**。适合趋势 / 增长 /

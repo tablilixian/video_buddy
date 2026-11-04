@@ -15,6 +15,8 @@ export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+import { validatePieFamilyTrack } from './chart-pie.js'
+
 /**
  * chart 轨校验（自 manifest.ts `case 'chart'` **原样外提**，2026-10-31 能力基准 #04 /
  * A2 source:'timeline' / P2' variant:'line' 的语义逐字不变）。
@@ -30,8 +32,8 @@ export function validateChartTrack(
   hasVideoTrack: boolean,
 ): void {
   const variant = track.variant
-  if (variant !== 'bars' && variant !== 'dual' && variant !== 'line') {
-    errors.push(`${at}.variant 只允许 bars / dual / line（当前：${String(variant)}）`)
+  if (variant !== 'bars' && variant !== 'dual' && variant !== 'line' && variant !== 'pie' && variant !== 'donut' && variant !== 'gauge') {
+    errors.push(`${at}.variant 只允许 bars / dual / line / pie / donut / gauge（当前：${String(variant)}）`)
   }
   // A2（2026-10-31）：数据来源 —— 'timeline' 从 video 轨真值推导，与内联互斥。
   const timelineMode = track.source === 'timeline'
@@ -65,7 +67,7 @@ export function validateChartTrack(
       errors.push(`${at}.values 不能全为 0（至少一个 > 0，否则没有可缩放的量纲）`)
     }
     if (track.lineValues !== undefined) {
-      if (variant === 'bars' || variant === 'line') {
+      if (variant !== 'dual') {
         warnings.push(`${at} 是 variant:'${String(variant)}'，lineValues 只在 variant:'dual' 下生效（已忽略）`)
       } else {
         const lv = track.lineValues
@@ -88,6 +90,10 @@ export function validateChartTrack(
     if (track[key] !== undefined && !isNonEmptyString(track[key])) {
       errors.push(`${at}.${key} 必须是非空字符串`)
     }
+  }
+  // 4.1（2026-11-04）：pie / donut / gauge 专属语义（gauge 单值 / gaugeMax / palette）。
+  if (variant === 'pie' || variant === 'donut' || variant === 'gauge') {
+    validatePieFamilyTrack(track, at, errors)
   }
 }
 

@@ -111,7 +111,8 @@ export const FILE_WHITELIST = {
   // REQ-036 C4（2026-11-03）：相对锚定 —— KNOWN 键表 +anchor 三处 + anchor 子键扫描 +
   // collectAnchorIssues 集成（校验主体在 anchor.ts 新文件），+12（2175 → 2187）显式登记。
   // 六大体裁路线阶段 1.1：ManifestGlobal.logo 键 + JSDoc，+2（2187 → 2189）显式登记。
-  'src/remotion/manifest.ts': 2189,
+  // 六大体裁路线阶段 4.1：ChartTrack pie/donut/gauge 扩型（variant JSDoc + gaugeMax/palette），+7（2189 → 2196）显式登记。
+  'src/remotion/manifest.ts': 2196,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

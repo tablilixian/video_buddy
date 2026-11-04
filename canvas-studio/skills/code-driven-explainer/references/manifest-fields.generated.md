@@ -245,7 +245,7 @@
 
 - `type`: 'chart'
 - `source`?: 'timeline' — 数据来源（A2，2026-10-31）：
-- `variant`: 'bars' | 'dual' | 'line' — 图表形态（P2' 扩型，2026-11-03）：`bars` = 柱状图；`dual` = 柱状 + 折线双轴
+- `variant`: 'bars' | 'dual' | 'line' | 'pie' | 'donut' | 'gauge' — 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
 - `labels`: string[] — 类目标签（与 `values` 一一对应；上限 32 项）。
 - `values`: number[] — 主序列（柱，左轴；非负、有限，至少一个 > 0）。
 - `lineValues`?: number[] — `variant:'dual'` 专用：副序列（折线，右轴），长度必须与 `labels` 一致。
@@ -254,6 +254,8 @@
 - `lineUnit`?: string — 副序列单位后缀（缺省无）。
 - `color`?: string — 柱色（缺省主题蓝 #4f9cf9）。
 - `lineColor`?: string — 折线色（缺省琥珀 #ffb454）。
+- `gaugeMax`?: number — `variant:'gauge'` 专用：进度分母（缺省 100；`values[0]` 不得大于它）。
+- `palette`?: string[] — 扇形配色（pie / donut 逐片取用，超出长度循环；缺省内置 8 色板）。
 
 ## CaptionTrack (extends BaseTrack)
 > 能力基准 #05 收口（2026-10-31）：**词级字幕（karaoke）**轨 —— 单句一条轨。

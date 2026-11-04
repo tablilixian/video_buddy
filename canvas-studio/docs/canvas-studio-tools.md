@@ -235,6 +235,7 @@
 **端点**：`POST /api/v1/generate/image2vl`（`image` + `prompt` + `system_prompt`）。
 
 > ⚠️ 2026-11-04 起模型行已声明 `input: [text, image]`，可直接 `read_image(file_path=…)` 读项目内本地图；本工具走的是后端 VLM，文字转述只作辅助参考。产物 URL / filename 句柄**不是**本地图片路径，别塞给 `read_image`。
+> 📌 **保底通道，三种情况才用**：① 只有远端句柄 / 产物 URL、没有本地文件；② `read_image` 报 `does not declare image input`（能力声明失效）；③ 需要第二意见。降级时必须在交付里明写「未做画面自检」，且 VLM 文字**不可当事实**。
 > ⚠️ 跨请求脏状态：**不传图**时后端会返回陈旧缓存图的描述 → 不带图的 VL 结果不可信。
 
 ---

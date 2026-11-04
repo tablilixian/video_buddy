@@ -1130,7 +1130,7 @@ function clipNoteText(text: string): string {
 /** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
 function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as {
-    references: Array<{ id: string; kind?: string; title: string; role: string; strength: number; filename: string | null; status?: string }>
+    references: Array<{ id: string; kind?: string; title: string; role: string; strength: number; filename: string | null; url?: string; status?: string }>
     notes: CanvasNote[]
     assets: Array<{
       id: string
@@ -1173,9 +1173,17 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
       // 解析失败（揽月湾实测：agent 因标题截断不敢用 @ref，绕道 upload_image 多跑
       // 一趟）。补 id 作第二抓手，模型可用 `@ref[<节点 id>]` 稳定命中。
       // 写法对齐 `describeShotCards`（提交分镜后的回执同款）。
-      return `${i + 1}. [${r.role}] ${r.title}（id=${r.id}${badge}，强度 ${r.strength}，${name}）`
+      // D6（2026-11-04）：模型过去要 list_references + bash ls 两步才能把 @ref[id]
+      // 变成 read_image 的本地路径。url 里已带 assets 文件名，回执直接给出，省掉探测。
+      const urlParts = (r.url ?? '').split('/').filter(Boolean)
+      const assetIdx = urlParts.indexOf('assets')
+      const localFile = assetIdx >= 0 ? urlParts[assetIdx + 2] : urlParts.at(-1)
+      const localHint = localFile && /\.(png|jpe?g|webp|gif)$/i.test(localFile)
+        ? `，本地图 assets/${localFile}`
+        : ''
+      return `${i + 1}. [${r.role}] ${r.title}（id=${r.id}${badge}，强度 ${r.strength}，${name}${localHint}）`
     })
-    parts.push(`可用参考素材（${v.references.length}）：\n${lines.join('\n')}`)
+    parts.push(`可用参考素材（${v.references.length}）：\n${lines.join('\n')}\n读图：需要直接看某张本地图时，用 read_image(file_path=<会话 cwd>/assets/<上面「本地图」给的文件名>)，不必再 bash ls 探测；产物 URL / filename 句柄不是本地图片路径。`)
   }
   // REQ-001：全局资产库（跨项目四分类）。id 是 `lib:<uuid>` —— agent 拿到后在任意
   // filename / ref 参数里逐字写 `@ref[lib:<id>]`（或裸 `lib:<id>`），解析链自动
@@ -2818,6 +2826,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n\n**输入纪律**：`video` 必须是**句柄**——画布视频节点的 `@ref[显示名]`（Host 自动换名）或 `upload_image` 返回的文件名。⚠️ 生成工具结果里的**产物名不能直接传**（会被后端前置 500，2026-09-22 实测 0.1s 拒绝）；好在传 `@ref` 时 Host 会自愈换名，所以**优先用 `@ref`**。'
         + '\n\n⚠️ **与抽帧 ≠ 二选一**：拆帧图（右键「拆分视频」）给的是**可引用的参考图**，video2vl 给的是**文字描述**。要「参考画面」用帧图，要「参考运镜/节奏/时长分配」用 video2vl。两者都在时先读便签与帧图，别重复分析。'
         + '\n\n⚠️ **VLM 输出不可当事实**（同 image2vl）：描述有非平凡出错率，抽象维度（节奏 / 质感）与精确细节（色号 / 领口）容易判错。它是**辅助参考**，不要拿它的结论去做「确定无疑」的下游决策。'
+        + '\n\n📌 **本工具是保底通道**：视频没有本地可读帧时走这里；三种情况才用 —— ① 只有远端句柄 / 产物 URL；② `read_image` 报能力声明失效；③ 需要第二意见。降级时要在交付里明写「未做画面自检」。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         video: { type: 'string' as const, required: true, description: '视频句柄：画布视频节点的 `@ref[显示名]`，或 `upload_image` 的返回名。⚠️ 产物名（形如 MiniMax_H3_ref2va_00020_.mp4）不能直接传。' },

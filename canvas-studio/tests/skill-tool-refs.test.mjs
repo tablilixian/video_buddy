@@ -119,6 +119,10 @@ const EXEMPT = new Map(Object.entries({
   //         2026-11-04 科普 0.1 验收 P4：pitfalls.md §2 用真实事故轨 id 定位
   //         「animate 段 durationInFrames=1 把整层钉死」的实证，读者需要能按 id 检索。
   'manifest-track-ids': ['s2_callout'],
+  // ── 组 8：**运行时原生工具**（DSH harness 内置，不经本包 createStudioTools 注册）。
+  //         CV-435 读图能力恢复后 toolchain.md §7 与 code-driven-explainer 分册把
+  //         read_image 定为画面取证首选，skill 层必须能点名它；注册面在运行时，非本仓。
+  'runtime-native-tools': ['read_image'],
 }))
 
 /** 展开成词 → 理由的扁平表。 */

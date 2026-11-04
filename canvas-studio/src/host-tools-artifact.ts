@@ -42,7 +42,7 @@ export function defineArtifactTools(deps: ArtifactToolsDeps): ReturnType<typeof 
         '纯色底图抠透明底（alpha PNG，内置 ffmpeg colorkey）。把「白底/纯色底的产品图、logo、精灵图」转成真透明素材，供 render_composition 的 image 轨直接引用 —— 解决生图模型不吐 alpha 的缺口（甜品复刻会话实测：伪透明拼贴会在成片留棋盘格残边）。'
         + '用法：生图时提示词固定「纯白背景」（或绿底绿幕）→ 本工具抠掉底色 → 产物 `<原名>-alpha.png` 落同目录，image 轨 src 直接引用。'
         + '边界：抠的是**单一底色**（相似度阈值），毛发/透明玻璃等软边题材质量一般；复杂底用外部工具处理后 upload_image。key 色支持 white/black/green/magenta/#RRGGBB。'
-        + '\n\n**返回自带数值自检**（你不需要看图）：透明率 / 不透明区残留底色 / 四角 alpha / colorType，并直接给「通过 | 未通过 + 该怎么调」。判「抠干净没有」的正解是**残留底色**，不是四角 alpha —— 圆角白卡的角本来就该不透明，别用它判失败（复刻会话踩过的坑）。',
+        + '\n\n**返回自带数值自检**（判「抠干净没有」先看这组数值；需要目视整体效果时，本地产物直接 `read_image(file_path=…)`）：透明率 / 不透明区残留底色 / 四角 alpha / colorType，并直接给「通过 | 未通过 + 该怎么调」。判「抠干净没有」的正解是**残留底色**，不是四角 alpha —— 圆角白卡的角本来就该不透明，别用它判失败（复刻会话踩过的坑）。',
       parameters: {
         filePath: { type: 'string' as const, description: '源图绝对路径（png/jpg/webp；纯色底）' },
         key: { type: 'string' as const, description: '要抠掉的底色：white / black / green / magenta / #RRGGBB（生图白底场景缺省 white 可不传）' },

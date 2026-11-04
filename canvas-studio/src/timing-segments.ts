@@ -16,6 +16,7 @@
  * render-job 只做薄接线。
  */
 import { throwError } from './error-system.js'
+import { trackMotionFeatures } from './remotion/motion-features.js'
 import type { CompositionManifest } from './remotion/manifest.js'
 import type { TeardownSegment, TeardownVerifyResult } from './teardown-verify.js'
 
@@ -83,12 +84,7 @@ type AnyTrack = CompositionManifest['tracks'][number]
  * - video / chart / caption / audioViz 本身就是运动内容 ⇒ 算动。
  */
 export function trackIsAnimated(track: AnyTrack): boolean {
-  if (track.animate !== undefined || track.orbit !== undefined) return true
-  if (track.type === 'image') return track.fit === 'kenburns'
-  if (track.type === 'textCard') return track.anim !== undefined
-  if (track.type === 'shape') return track.draw !== undefined
-  if (track.type === 'transition') return false
-  return true
+  return trackMotionFeatures(track as CompositionManifest['tracks'][number]).animated
 }
 
 /** 一段的覆盖核对结论（animatedTracks < elements 才成立）。 */

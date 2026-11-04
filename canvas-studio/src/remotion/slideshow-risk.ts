@@ -6,6 +6,7 @@
  */
 
 import { hasVoiceOverAudio, type CompositionManifest, type CompositionTrack } from './manifest.js'
+import { trackMotionFeatures } from './motion-features.js'
 
 /** 评分维度；`weight` 之和为 100。 */
 export interface SlideshowRiskDimension {
@@ -179,8 +180,12 @@ export function scoreSlideshowRisk(manifest: CompositionManifest): SlideshowRisk
   // 文案必须给**方向正确**的建议：图文卡片型的解药是「让卡动起来」，不是「去生成视频片段」
   // —— 后者与本产品「零视频模型调用出片」的路线相反，而「实拍」在本产品根本没有入口
   // （2026-10-16 取证）。
+  // #11：是否「全程静态」用与渲染报告 / ML-10 同一份动效特征判断，
+  // 不再出现「报告说 35 轨在动、静态提示却说全程静态」的自相矛盾。
+  const hasMotion = manifest.tracks.some((track) => trackMotionFeatures(track).animated)
+  const staticPhrase = hasMotion ? '静态占比偏高（已有动效轨，并非全程静止）' : '画面全程静态'
   const warning = kind === 'card-based'
-    ? `成片为图文卡片型（全片无视频片段；命中：${hits}）。这条路线是合法的，但画面全程静态：`
+    ? `成片为图文卡片型（全片无视频片段；命中：${hits}）。这条路线是合法的，但${staticPhrase}：`
       + '可加卡内动画 / KenBurns 缓推 / 差异化转场削弱静态感；确需视频片段时再补 video 轨。'
     : `成片偏向幻灯片（${hits}）：静态画面占比过高、运动与镜头数不足。`
       + '建议增加视频片段 / KenBurns 缓推 / 卡内动画，并让转场多样化。'

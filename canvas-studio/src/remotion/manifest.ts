@@ -22,6 +22,7 @@
  */
 
 import type { StudioAudioComposition } from '../contracts/canvas.js'
+import { trackMotionFeatures } from './motion-features.js'
 import { compositionFromPresence, compositionFromTimeline } from '../audio-timeline.js'
 import { timelineFromManifestAudio } from '../audio-compose.js'
 import { formatMotionLint, lintMotion } from './motion-lint.js'
@@ -1871,10 +1872,8 @@ export interface TrackAnimationWindow {
 export function collectAnimationWindows(manifest: CompositionManifest): TrackAnimationWindow[] {
   const out: TrackAnimationWindow[] = []
   for (const track of manifest.tracks) {
-    const kinds: string[] = []
-    if (track.animate !== undefined) kinds.push('animate')
-    if (track.exit !== undefined) kinds.push('exit')
-    if (track.orbit !== undefined) kinds.push('orbit')
+    // #11：窗口种类统一取自动效特征 SSOT（含 CV-428 的 reveal.out），不再各自读字段。
+    const kinds = trackMotionFeatures(track).windowKinds
     if (kinds.length === 0) continue
     const start = track.startFrame
     out.push({ id: track.id, start, end: start + track.durationInFrames, kinds })

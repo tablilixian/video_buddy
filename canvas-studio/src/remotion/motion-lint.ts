@@ -15,8 +15,7 @@
 
 import type { CompositionManifest, CompositionTrack, TextCardTrack } from './manifest.js'
 import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
-import { exitWindow } from './timing.js'
-import { REVEAL_DEFAULT_DURATION_FRAMES } from './reveal.js'
+import { motionIntervalsFor, trackMotionFeatures } from './motion-features.js'
 
 export interface MotionLintIssue {
   /** `ML-01` … `ML-13`。 */
@@ -114,20 +113,6 @@ function sameState(a: Record<string, number>, b: Record<string, number>, toleran
 }
 
 /**
- * 一条轨的 `reveal` 擦除显现区间（绝对帧）；没有 reveal ⇒ `null`。
- *
- * 帘式擦除 / 聚光强调也是「画面在动」—— ML-10 的动效时间必须算它
- * （旧口径一个都不算，导致带 reveal 的片被算成静止）。
- */
-function revealInterval(track: CompositionTrack): { start: number; end: number } | null {
-  const reveal = (track as { reveal?: { startFrame?: number; durationInFrames?: number } }).reveal
-  if (reveal === undefined) return null
-  const start = numeric(reveal.startFrame) ?? 0
-  const duration = numeric(reveal.durationInFrames) ?? REVEAL_DEFAULT_DURATION_FRAMES
-  return { start: track.startFrame + start, end: track.startFrame + start + Math.max(0, duration) }
-}
-
-/**
  * 若干区间的**并集**长度（重叠只算一次），并裁剪到 `[lo, hi)`。
  *
  * ML-10 的「画面在动的时间」必须按并集算：三条轨同帧一起动是 1 帧，不是 3 帧。
@@ -210,6 +195,8 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   }
   for (const track of tracks) {
     if (track.exit !== undefined) continue
+    // CV-428 的 reveal.out（帘式退场 / 转场幕布）也是合法退场，不该报硬切（会话 15 恒报 11 条 ML-02 的根因）。
+    if (trackMotionFeatures(track).windowKinds.includes('revealOut')) continue
     const end = track.startFrame + track.durationInFrames
     if (end >= metaDuration - 1) continue
     if (transitionTouchingEnd.has(track.id)) continue
@@ -383,19 +370,12 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   // 被要求动效），而擦除显现 / 退场 / 素材播放都计入动效时间。
   //
   // 口径②已由「video 轨按自己就在动计入」覆盖（REQ-034 O-02），保留。
+  // #11：分子统一取自动效特征 SSOT —— video 全时长 + animate / exit / reveal /
+  // reveal.out / kenburns / anim / draw 的帧区间；旧口径四路手工收集全部收口到这里。
   const motionIntervals: Array<{ start: number; end: number }> = []
   for (const track of tracks) {
-    if (track.type === 'video') {
-      motionIntervals.push({ start: track.startFrame, end: track.startFrame + track.durationInFrames })
-    }
-    const reveal = revealInterval(track)
-    if (reveal !== null) motionIntervals.push(reveal)
-    const exit = exitWindow(track)
-    if (exit !== null) {
-      motionIntervals.push({ start: track.startFrame + exit.start, end: track.startFrame + exit.start + exit.duration })
-    }
+    for (const iv of motionIntervalsFor(track)) motionIntervals.push(iv)
   }
-  for (const segment of segments) motionIntervals.push({ start: segment.start, end: segment.end })
   const movingFrames = unionLength(motionIntervals, 0, metaDuration)
   const ratio = metaDuration > 0 ? Math.min(1, movingFrames / metaDuration) : 1
   if (metaDuration > 0 && ratio < 0.3) {

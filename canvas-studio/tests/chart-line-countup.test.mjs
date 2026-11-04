@@ -23,10 +23,12 @@ function manifestWith(tracks) {
   }
 }
 
-const lineChart = { id: 'c1', type: 'chart', variant: 'line', labels: ['一', '二', '三'], values: [2, 5, 9], startFrame: 0, durationInFrames: 120 }
+// B-4 观察期起内联数值的合法形态 = 带溯源字段；本文件测的是 line/countUp 语义，
+// 统一带全以免观察期 warning 混进断言。
+const lineChart = { id: 'c1', type: 'chart', variant: 'line', labels: ['一', '二', '三'], values: [2, 5, 9], dataSource: '构造样本（测试），https://example.test/fixture', baseline: '构造样本口径', startFrame: 0, durationInFrames: 120 }
 const dataCard = (extra = {}) => ({
   id: 'd1', type: 'textCard', variant: 'dataCard', text: '关键指标',
-  data: [{ k: '占比', v: '16%' }], startFrame: 0, durationInFrames: 120, ...extra,
+  data: [{ k: '占比', v: '16%' }], dataSource: 'observed', startFrame: 0, durationInFrames: 120, ...extra,
 })
 
 // ── countUpTextAt 纯函数 ──

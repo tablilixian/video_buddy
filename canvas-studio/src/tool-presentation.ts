@@ -81,6 +81,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   analyze_beats: { tier: 'A', title: '节拍分析', icon: '拍' },
   import_csv: { tier: 'A', title: 'CSV 导入', icon: '表' },
+  series_manage: { tier: 'A', title: '剧集管理', icon: '剧' },
+  episode_brief: { tier: 'A', title: '前情上下文', icon: '前' },
   snap_cuts_to_beats: { tier: 'A', title: '卡点吸附', icon: '切' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },

@@ -70,5 +70,5 @@ test('4.2 注册面：import_csv 进全量名单 + presentation A 档 + 零后�
   assert.match(presentation, /import_csv: \{ tier: 'A', title: 'CSV 导入', icon: '表' \}/)
   const toolchain = srcOf('skills/canvas-studio-creation/references/toolchain.md')
   assert.ok(toolchain.includes('| import_csv |'), 'toolchain.md 必须有 import_csv 行')
-  assert.ok(toolchain.includes('`import_csv`（`download_video`'), '不受约束清单必须含 import_csv')
+  assert.ok(toolchain.includes('`import_csv` / `series_manage` / `episode_brief`（`download_video`'), '不受约束清单必须含 import_csv')
 })

@@ -50,7 +50,7 @@ const SKILLS_DIR = join(ROOT, 'skills')
  *  host-tools-audio.ts —— analyze_beats/snap_cuts_to_beats 经 defineAudioTools 工厂展开注册
  *  （host-tools.ts:3030 只剩展开调用），名字只在该文件源文本出现；漏列时门禁表 41 vs 真实 43，
  *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'skills/placeholder-tools.ts']
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -108,6 +108,8 @@ const EXEMPT = new Map(Object.entries({
     'negative_prompt', 'job_id', 'repainting_start',
     'tts_cpm', 'style_transfer', 'image_generate_withtxt',
   ],
+  // ── 组 4b：工具 action 取值（schema 枚举值不是工具名；3.1 episodic 的 upsert_episode）
+  'tool-action-values': ['upsert_episode'],
   // ── 组 5：后端工作流 / 模型档位标识（配置名，不是工具）
   'backend-workflow-ids': ['txt2image_withtxt', 'qwen_4view_char_2step', 'krea2_edit', 'krea2_quadview', 'krea2_workflow'],
   // ── 组 6：测试 fixture 里的**空断言**——断言「未调用过」的工具名，

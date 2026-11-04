@@ -38,7 +38,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
    **首轮渲染就用 `spotFrames` 探针**（~1.5s vs 全片 ~25s）逐条判据取代表帧；全片 draft 只用于交付前定稿 → `references/verification.md`。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
-   **交付前必须发出负例**并验证拦截，**未执行不得结案** → `references/verification.md`。
+   **交付前复述未决项**：体检告警逐条状态 / 未核源事实 / 模型自身能力边界 → `references/verification.md`。
 
 ## 组装要点（细则已下沉分册）
 

@@ -304,6 +304,12 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   originalPath: '绝对路径（原片），execute 校验 startsWith(sep) 且由 ffmpeg 实测，无文本占位形态（与 videoPath 同判）',
   remakePath: '绝对路径（复刻片），同 originalPath',
   outPath: '可选绝对路径（对比片产物），非法值由 defaultCompareOutPath 回落复刻片同目录缺省',
+  // —— 骨架优先出片 P1-3（2026-11-05）scaffold_manifest({ writeTo }) ——
+  // 这是**写入目标**，不是读取句柄：它不指向「别处已产出的真实对象」，所以没有
+  // 「placeholder2 顶上去、下游解析失败」那种贯穿形态（换成本守卫最怕的坏习惯也不成立）。
+  // 真风险是路径逃逸 / 写坏项目目录，由 `manifest-file.ts` 的包含校验拒收
+  // （`..` 逃逸、同前缀兄弟目录、指向目录本身一律 CS-USER-ERR）。
+  writeTo: '写入路径（相对项目根或绝对路径），不是读取句柄；合法性由 manifest-file.ts 的目录包含校验拒收',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

@@ -1,6 +1,6 @@
 ---
 name: code-driven-explainer
-description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → list_shots / list_references 取素材真值 → 组装 manifest → ask_user_choice 给轨道时序预览 → render_composition。边界：不改写总纲的流程与审批语义；词级卡拉OK走 `caption` 轨（句级硬切仍走 textCard）；纯片段顺序拼接仍走 compose_video，不用本工具。
+description: 代码驱动科普成片规范（canvas-studio 的 render_composition，Remotion 客户端渲染）。凡要把知识 / 数据 / 观点做成带字幕卡、数据卡、转场的解说短片时加载：时间轴由 CompositionManifest（JSON）显式声明，客户端的 Remotion 渲染器按它出 H.264 成片，宿主只做校验、落盘、探测与混音。触发词：科普、教育、讲解、知识短片、数据可视化、带字幕卡 / 数据卡的视频、代码合成。流程：确认拍摄定稿已落地 → **先 scaffold_manifest 出骨架并立刻 draft 出片（M1：落地后 20 分钟内必须有成片）** → 再按 R1–R6 一轮加一层丰富 → 定稿。边界：不改写总纲的流程与审批语义；词级卡拉OK走 `caption` 轨（句级硬切仍走 textCard）；纯片段顺序拼接仍走 compose_video，不用本工具。
 ---
 
 # 代码驱动科普成片（code-driven-explainer）
@@ -35,10 +35,29 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 单镜头动效从 `references/shot-cards.md` 挑卡填参。
 手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（九种轨型）+ 可选 `audio`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
-4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
+4. **先出片，再丰富**（下节 R0–R6）：拿到骨架就渲一版 `quality:"draft"`，之后每轮只加一层、每轮都出片 → 见下一节。**不要等 manifest 写完才渲**。
+5. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
    **首轮渲染就用 `spotFrames` 探针**（~1.5s vs 全片 ~25s）逐条判据取代表帧；全片 draft 只用于交付前定稿 → `references/verification.md`。
-5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
+6. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
    **交付前复述未决项**：体检告警逐条状态 / 未核源事实 / 模型自身能力边界 → `references/verification.md`。
+
+## 先出片，再丰富（R0–R6；M1 硬线 = 故事板落地后 20 分钟）
+
+把「造一条完整的片子」改成「先造一条能播的，再一轮加一层」。**每轮结束必须渲一次 `quality:"draft"`**（落画布节点，不是 probe —— probe 用户看不见 = 锚点不存在）。**>12 轨一律用 `assets/manifest-builder.mjs`**（内容表 → manifest，段边界冻结）→ `references/manifest-builder.md`。
+
+| 轮 | 只推一个维度 | 工具序列 | 通过判据 |
+|---|---|---|---|
+| R0 | 结构可渲 | `scaffold_manifest(recipe)` → `write` → `render(draft)` | 有 url、时长 = 目标 |
+| R1 | 真文案（**M1**） | `write(spec)` → `bash(生成+自检)` → `render(draft)` → `spotFrames` → `read_image` | 字幕是真实句子、不溢出 |
+| R2/R3 | 视觉主体 | 改 spec → `bash` → `render(draft)` → `spotFrames` | 数据卡不超框、数字与源一致 |
+| R4 | 运动 | spec 补 animate / kenBurns / transition → `render(draft)` | 帧间有变化、无闪背景 |
+| R5 | 声音 | `tts` 真值 → spec.audio → `render(standard)` | 句起点误差 ≤1 帧 |
+| R6 | 定稿 | `render(high)` → `spotFrames` ×6 → `read_image` | 未决项已复述 |
+
+- **M1 合格线（三条全中）**：① 字幕是真文案（不是 recipe 占位「【开场提问】…」）；② 段边界来自旁白**真值**；③ `quality:"draft"` 且非 probe。
+- **单轮 ≤8 次工具调用、≤3 轨**；超了就降级收尾保住当前版本，不许「再做一点」。
+- **时钟行**：每次工具返回尾部会带 `⏱ M1 剩余 Nmin / 已达成`。超线就照它给的三条命令先出片，不要再美化。
+- **锚点**：每版成片自动落 `build/PROGRESS.md` + `build/versions/vN.json`。压缩 / 换会话后**先读它**再动手，不要重推整片。
 
 ## 组装要点（细则已下沉分册）
 
@@ -70,6 +89,9 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 纪律
 
+- **禁止用 bash 读 `src/remotion/**` 推契约**：真机实测一次会话读了 304 次（34 文件、重复率 88.8%），每读一处就「发现」一条新校验、把上一版设计推翻一次。契约只认 `references/`，字段只认 `references/manifest-fields.generated.md`。
+- **禁止在推理里手排整片帧号**：帧窗由 builder / 脚本算，改一处只改内容表里那一条。
+- **禁止未出 M1 就做美化**（出图 / 量像素 / 调色 / 读源码）：先让用户看到一条能播的。
 - **一句一条字幕卡**：字数与展示时长匹配，不把长段落塞进一张卡。**卡的首尾必须相接**——`durationInFrames` 是屏上时长，每句延伸到下一句 `startFrame`（末句到总帧），句间不留空白帧；字幕卡由组件层硬切，别指望淡入淡出 → `references/subtitle-timing.md`。
 - **血缘**：video / image 轨的 `id` 必须填该素材的**画布节点 id**（宿主据此画制作链）；纯呈现轨（textCard / shape / transition）用本地 id。
 - **素材引用**：`src` 只接受 `/canvas-studio/assets/...` 同源 URL，或**本项目资产目录内**的绝对路径（宿主会自动物化成同源 URL），**禁一切外链**。

@@ -1,3 +1,4 @@
+import { askConfirm } from '../confirm.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import type { AudioTimeline } from '../../audio-timeline.js'
@@ -194,7 +195,14 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
       estSeconds: composeEstSeconds,
       hasAnyAudioNode: audioNodes.length > 0,
     })
-    if (precheck.level === 'confirm' && precheck.message !== undefined && !window.confirm(precheck.message)) return
+    if (precheck.level === 'confirm' && precheck.message !== undefined) {
+      void askConfirm({
+        title: '音频预检提示',
+        body: precheck.message,
+        confirmLabel: '继续合成',
+      }).then((confirmed) => { if (confirmed) void onCompose() })
+      return
+    }
     void onCompose()
   }
 

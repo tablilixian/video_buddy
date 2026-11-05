@@ -26,6 +26,7 @@ import type { SkillCategoryId, SkillIconId } from './skill-catalog.js'
 import { SKILL_CATEGORY_IDS, SKILL_ICON_IDS } from './skill-catalog.js'
 import {
   bodyAdvisories,
+  IMPORT_FILE_COUNT_LIMIT,
   isValidSlug,
   parseSkillFrontmatter,
   validateUpload,
@@ -53,8 +54,8 @@ export const IMPORT_LIMITS = {
   fileBytes: 256 * 1024,
   /** 本次导入总字节上限。 */
   totalBytes: 2 * 1024 * 1024,
-  /** 文件数（含被跳过的）上限。 */
-  fileCount: 50,
+  /** 文件数（含被跳过的）上限。与前端预览共用 `IMPORT_FILE_COUNT_LIMIT`。 */
+  fileCount: IMPORT_FILE_COUNT_LIMIT,
   /** `references/` 之类的子目录深度上限。 */
   depth: 3,
 } as const

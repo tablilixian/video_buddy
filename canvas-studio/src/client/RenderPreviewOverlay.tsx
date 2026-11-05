@@ -74,6 +74,13 @@ export function RenderPreviewOverlay() {
   useEffect(() => {
     if (jobId === null) return
     const onKeyDown = (event: KeyboardEvent): void => {
+      // Esc 与「取消渲染」同义：渲染是十分钟量级工单，零成本退出不能缺。
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        resolveRenderPreview(jobId, false)
+        return
+      }
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       const player = playerRef.current
       if (player === null) return
@@ -139,7 +146,11 @@ export function RenderPreviewOverlay() {
   }
 
   return (
-    <div className="csModalBackdrop csRenderPreviewBackdrop" role="presentation">
+    <div
+      className="csModalBackdrop csRenderPreviewBackdrop"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) resolveRenderPreview(request.jobId, false) }}
+    >
       <div
         className="csModal csRenderPreviewCard"
         role="dialog"

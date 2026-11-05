@@ -1,3 +1,4 @@
+import { useModalFocusTrap } from './modal-focus.js'
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -13,7 +14,9 @@ import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
 import { AutoTestPanel } from './AutoTestPanel.js'
 import { ModeSwitch } from './ModeSwitch.js'
-import { ConfirmDialog } from './ConfirmDialog.js'
+import { ConfirmDialog, ConfirmHost } from './ConfirmDialog.js'
+// UI-01：破坏性操作的统一确认闸门（任意深度子组件 await askConfirm 即可）。
+import { askConfirm } from './confirm.js'
 // CV-334 · B3.3：渲染前只读预览的闸门状态（轻量模块 —— 播放器本体在
 // `RenderPreviewOverlay.tsx` 里惰性加载，不进主 bundle）。
 import { getRenderPreviewSnapshot, subscribeRenderPreview } from './render-preview.js'
@@ -754,6 +757,14 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-015：非阻塞 toast（替代 window.alert —— 原生弹窗阻塞渲染且打断拖拽流程）。
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const toastSeq = useRef(0)
+  const toastTimers = useRef(new Map<number, number>())
+  // UI-10：全局模态焦点陷阱，应用根挂一次，覆盖全部 aria-modal 弹窗（含新增的）。
+  useModalFocusTrap()
+  // UI-08：卸载时清掉所有 toast 计时器。
+  useEffect(() => () => {
+    for (const timer of toastTimers.current.values()) window.clearTimeout(timer)
+    toastTimers.current.clear()
+  }, [])
   const viewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fitPendingRef = useRef(false)
   const fittedProjectRef = useRef<string | null>(null)
@@ -927,10 +938,17 @@ export function StudioFrame(props: StudioFrameProps) {
   // 渲染进程、打断拖拽/合成流程）。
   const pushToast = (text: string, kind: ToastItem['kind'] = 'info'): void => {
     const id = ++toastSeq.current
-    setToasts(prev => [...prev, { id, kind, text }])
-    setTimeout(() => {
+    setToasts((prev) => {
+      // 同文案去重：合成 warnings 循环里同一条会被连发多次。
+      if (prev.some(entry => entry.text === text && entry.kind === kind)) return prev
+      const next = [...prev, { id, kind, text }]
+      return next.length > 4 ? next.slice(next.length - 4) : next
+    })
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(id)
       setToasts(prev => prev.filter(entry => entry.id !== id))
     }, TOAST_MS[kind])
+    toastTimers.current.set(id, timer)
   }
   /**
    * CV-185：适配视野不再为了「全塞进屏幕」一路缩到看不清 —— 缩到可读下限就停，
@@ -1505,9 +1523,15 @@ export function StudioFrame(props: StudioFrameProps) {
     const message = referencing.length > 0
       ? `即将彻底删除（不可撤销）。以下 ${referencing.length} 个节点的参考将断链：${names}。确定删除？`
       : '彻底删除（不可撤销）？'
-    if (!window.confirm(message)) return
-    persistAfter(() => actions.removeNodes(projectId, ids))
-    setDetailNodeId(null)
+    void askConfirm({
+      title: '彻底删除这些节点？',
+      body: message,
+      confirmLabel: '彻底删除',
+    }).then((confirmed) => {
+      if (!confirmed) return
+      persistAfter(() => actions.removeNodes(projectId, ids))
+      setDetailNodeId(null)
+    })
   }, [projectId, actions, persistAfter, nodes])
   const handleToggleVisibility = (id: string): void => {
     if (projectId === null) return
@@ -3256,6 +3280,8 @@ export function StudioFrame(props: StudioFrameProps) {
       )}
       {/* 二期 1b：成片渲染进度角标（模块级状态，只有真在渲时才渲染 DOM）。 */}
       <RenderProgressBadge />
+      {/* UI-01：破坏性操作的统一确认出口。放最后，保证与 z 70 浮层同层时压在最上。 */}
+      <ConfirmHost />
     </div>
   )
 }

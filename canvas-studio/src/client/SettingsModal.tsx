@@ -22,6 +22,7 @@
  * 密钥走凭据域（credentials.set），不落明文。订阅方式照搬 dsh-plugin-desktop 的
  * DesktopSettingsSection.useScope（useSyncExternalStore）。
  */
+import { DraftField } from './DraftField.js'
 import {
   useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement,
 } from 'react'
@@ -159,12 +160,11 @@ function GeneralSection(props: {
     return <div className="csField">加载中…</div>
   }
 
-  const onBase = (v: string): void => { void scope.set('dramaApiBase', v) }
   const onSeconds = (v: string): void => {
     // CR-050：清空输入（'' → Number 为 0）跳过，不把 maxVideoSeconds 写成 0。
     if (v.trim().length === 0) return
     const n = Number(v)
-    if (Number.isFinite(n)) void scope.set('maxVideoSeconds', n)
+    if (Number.isFinite(n)) void scope.set('maxVideoSeconds', Math.min(15, Math.max(1, Math.round(n))))
   }
   const onSaveKey = async (): Promise<void> => {
     if (keyInput.length === 0) return
@@ -178,7 +178,7 @@ function GeneralSection(props: {
       setKeyInput('')
       setCredState({ configured: true, writable: true })
       setDramaSaved(true)
-      window.setTimeout(() => setDramaSaved(false), 2500)
+      scheduleFeedback(() => { setDramaSaved(false) })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '密钥保存失败')
     } finally {
@@ -198,7 +198,7 @@ function GeneralSection(props: {
       setTinyfishInput('')
       setTinyfishCred({ configured: true, writable: true })
       setTinyfishSaved(true)
-      window.setTimeout(() => setTinyfishSaved(false), 2500)
+      scheduleFeedback(() => { setTinyfishSaved(false) })
     } catch (cause) {
       setTinyfishError(cause instanceof Error ? cause.message : 'TinyFish key 保存失败')
     } finally {
@@ -219,7 +219,7 @@ function GeneralSection(props: {
       setFalKeyInput('')
       setFalCred({ configured: true, writable: true })
       setFalSaved(true)
-      window.setTimeout(() => setFalSaved(false), 2500)
+      scheduleFeedback(() => { setFalSaved(false) })
     } catch (cause) {
       setFalError(cause instanceof Error ? cause.message : 'fal key 保存失败')
     } finally {
@@ -231,12 +231,10 @@ function GeneralSection(props: {
     <>
       <label className="csField">
         <span className="csFieldLabel">Drama API 基址</span>
-        <input
-          className="csFieldInput"
+        <DraftField
           value={value.dramaApiBase}
           placeholder={base?.dramaApiBase}
-          spellCheck={false}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => onBase(event.target.value)}
+          onCommit={(next) => { void scope.set('dramaApiBase', next) }}
         />
       </label>
       <label className="csField">
@@ -506,12 +504,10 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
       </label>
       <label className="csField">
         <span className="csFieldLabel">导出目录 <span className="csReserved">待接入</span></span>
-        <input
-          className="csFieldInput"
+        <DraftField
           value={value.exportDir}
           placeholder="留空=项目默认目录"
-          spellCheck={false}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('exportDir', event.target.value)}
+          onCommit={(next) => { void scope.set('exportDir', next) }}
         />
       </label>
       <label className="csField">
@@ -545,7 +541,7 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
     // CR-050：清空输入跳过，不把 maxParallel 写成 0。
     if (raw.trim().length === 0) return
     const n = Number(raw)
-    if (Number.isFinite(n)) void scope.set('maxParallel', n)
+    if (Number.isFinite(n)) void scope.set('maxParallel', Math.min(8, Math.max(1, Math.round(n))))
   }
   return (
     <>
@@ -616,7 +612,7 @@ function StorageSection(props: {
     // CR-050：清空输入跳过，不把 autoSaveInterval 写成 0。
     if (raw.trim().length === 0) return
     const n = Number(raw)
-    if (Number.isFinite(n)) void scope.set('autoSaveInterval', n)
+    if (Number.isFinite(n)) void scope.set('autoSaveInterval', Math.min(600, Math.max(5, Math.round(n))))
   }
   // dsh 官方 pickDirectory() 全平台走宿主原生 chooser（macOS→osascript /
   // Linux→Zenity、KDialog / Windows→IFileOpenDialog），返回的路径 Host 端已
@@ -645,12 +641,10 @@ function StorageSection(props: {
       <label className="csField">
         <span className="csFieldLabel">资产库位置 <span className="csReserved">已接入</span></span>
         <div className="csFieldRow">
-          <input
-            className="csFieldInput"
+          <DraftField
             value={value.assetDir}
             placeholder="留空=默认 ($DSH_HOME/canvas-studio)"
-            spellCheck={false}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('assetDir', event.target.value)}
+            onCommit={(next) => { void scope.set('assetDir', next) }}
           />
           <button
             type="button"
@@ -719,6 +713,7 @@ function StorageInfoBlock(): ReactElement {
     if (result.ok) {
       setCopyError(null)
       setCopiedPath(path)
+      scheduleFeedback(() => { setCopiedPath(null) }, 2000)
       return
     }
     setCopiedPath(null)
@@ -870,9 +865,17 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [onClose])
+  // UI-11：卸载时清掉所有瞬时反馈计时器。
+  useEffect(() => clearFeedbackTimers, [])
 
   return (
-    <div className="csSettingsBackdrop" role="presentation" onClick={onClose}>
+    // 遮罩关闭按「按下起点」判定：拖选文本越过边界松手时 click 会落在遮罩上，
+    // 用 onClick 会误关弹窗。与 ConfirmDialog 同一套词汇。
+    <div
+      className="csSettingsBackdrop"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}
+    >
       <div
         className="csSettingsModal"
         role="dialog"
@@ -924,4 +927,21 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
       </div>
     </div>
   )
+}
+
+
+/**
+ * UI-11：所有「已保存 / 已复制」这类瞬时反馈共用一个计时器集合，
+ * 设置弹窗卸载时统一清掉 —— 不再出现弹窗关了定时器还在 fire 的残留。
+ */
+const FEEDBACK_TIMERS = new Set<number>()
+
+function scheduleFeedback(fn: () => void, ms = 2500): void {
+  const id = window.setTimeout(() => { FEEDBACK_TIMERS.delete(id); fn() }, ms)
+  FEEDBACK_TIMERS.add(id)
+}
+
+function clearFeedbackTimers(): void {
+  for (const id of FEEDBACK_TIMERS) window.clearTimeout(id)
+  FEEDBACK_TIMERS.clear()
 }

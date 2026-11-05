@@ -36,7 +36,7 @@
 import { useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { ImportSkillResult, UploadAdvisory } from '../contracts/skill.js'
-import { advisoryText } from '../skill-upload-contract.js'
+import { advisoryText, IMPORT_FILE_COUNT_LIMIT } from '../skill-upload-contract.js'
 import { RichText } from './rich-text.js'
 import { importUserSkill } from './api.js'
 import { copyTextQuietly } from './copy-text.js'
@@ -44,8 +44,6 @@ import { copyTextQuietly } from './copy-text.js'
 /** 只上传文本内容（D6）；其余按名登记、不上传内容。 */
 const TEXT_EXTENSIONS: readonly string[] = ['.md', '.txt', '.json', '.yaml', '.yml']
 
-/** 单次导入的展示上限（与 Host 侧 `IMPORT_LIMITS.fileCount` 同口径，仅用于提示）。 */
-const FILE_COUNT_HINT = 50
 
 export interface SkillImportWizardProps {
   /** 关闭向导（不触发列表刷新）。 */
@@ -119,6 +117,7 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
     }
     setPending(collected)
     setSource(label)
+    setOverwrite(false)
     setError(null)
     setVerdict(null)
     setStep(2)
@@ -154,7 +153,10 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
   const skipped = pending.filter(file => file.text === undefined)
 
   return (
-    <div className="csSkillImportBackdrop" onClick={onClose}>
+    <div
+      className="csSkillImportBackdrop"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}
+    >
       <div
         className="csSkillImport"
         role="dialog"
@@ -166,7 +168,7 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
           <h3 className="csSkillImportTitle">导入技能</h3>
           <span className="csSkillImportStep">第 {step} / 3 步</span>
           <span className="csSkillMarketSpacer" />
-          <button type="button" className="csSkillDetailClose" onClick={onClose}>关闭</button>
+          <button type="button" className="csSkillDetailClose" disabled={busy} onClick={onClose}>关闭</button>
         </header>
 
         <div className="csSkillImportBody">
@@ -241,13 +243,18 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
                   <dt>落点</dt><dd><code>{skillsRoot}</code></dd>
                 </dl>
                 <ul className="csSkillImportFiles">
-                  {pending.slice(0, FILE_COUNT_HINT).map(file => (
+                  {pending.slice(0, IMPORT_FILE_COUNT_LIMIT).map(file => (
                     <li key={file.path}>
                       <code>{file.path}</code>
                       <span className="csSkillImportSize">{Math.max(1, Math.round(file.bytes / 1024))}KB</span>
                     </li>
                   ))}
                 </ul>
+                {pending.length > IMPORT_FILE_COUNT_LIMIT && (
+                  <p className="csSkillImportSkip">
+                    还有 {pending.length - IMPORT_FILE_COUNT_LIMIT} 个未列出；文件数超过上限 {IMPORT_FILE_COUNT_LIMIT} 个，请先精简来源再导入。
+                  </p>
+                )}
                 {skipped.length > 0 && (
                   <p className="csSkillImportSkip">
                     非文本文件已跳过（{skipped.length} 个）：{skipped.map(file => file.path).join('、')}
@@ -299,13 +306,13 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
           {step === 1 && <span className="csSkillImportFootHint">选好来源后进入校验</span>}
           {step === 2 && (
             <>
-              <button type="button" className="csSkillImportBack" onClick={() => { setStep(1); setError(null) }}>
+              <button type="button" className="csSkillImportBack" onClick={() => { setStep(1); setError(null); setOverwrite(false) }}>
                 上一步
               </button>
               <button
                 type="button"
                 className="csSkillImportGo"
-                disabled={busy || pending.length === 0}
+                disabled={busy || pending.length === 0 || pending.length > IMPORT_FILE_COUNT_LIMIT}
                 onClick={() => { void runImport() }}
               >
                 {busy ? '导入中…' : overwrite ? '覆盖并导入' : '开始导入'}

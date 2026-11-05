@@ -22,6 +22,7 @@
  *   3. 自动刷新：监听画布 url 集合签名（拖动不改 url ⇒ 不重拉；生成完成 / 上传 /
  *      删除节点都改变 url 集合 ⇒ 立即重拉），打开时也拉一次。
  */
+import { askConfirm } from '../confirm.js'
 import { useEffect, useMemo, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { deleteStudioAssetHistory, getStudioAssetHistory, pruneRetiredStudioAssets } from '../api.js'
@@ -196,7 +197,11 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate, onCanvasRel
       // 物理删，不可撤销）。取消则把原因留在错误条上。
       if (force !== true && Array.isArray(result.direct) && result.direct.length > 0) {
         const names = result.direct.map((entry) => entry.title || entry.id).join('、')
-        if (window.confirm(`该产物仍被 ${result.direct.length} 个画布节点引用（${names}）。彻底删除将一并移除这些节点并断开引用，不可撤销。确定？`)) {
+        if (await askConfirm({
+          title: '彻底删除被引用产物？',
+          body: `该产物仍被 ${result.direct.length} 个画布节点引用（${names}）。彻底删除将一并移除这些节点并断开引用，不可撤销。`,
+          confirmLabel: '彻底删除',
+        })) {
           await handleDelete(file, true)
           return
         }

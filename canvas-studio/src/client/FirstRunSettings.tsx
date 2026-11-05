@@ -11,6 +11,7 @@
  * - 开始使用：当前三项已随输入即时回写作用域，这里只置 flag 收尾。
  * - 稍后再说：仅置 flag，不改任何值（等同 schema 默认）。
  */
+import { DraftField } from './DraftField.js'
 import { useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -58,6 +59,16 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
       <div className="csModalBackdrop" role="presentation">
         <div className="csModal" role="dialog" aria-modal="true" aria-labelledby="cs-firstrun-title">
           <div className="csModalBody">加载中…</div>
+          {/* UI-13：settings 迟迟不 ready 时也要有退出路径，不能把用户锁在「加载中」。 */}
+          <footer className="csModalFooter">
+            <button
+              type="button"
+              className="csModalBtnSecondary"
+              onClick={() => { markCanvasStudioOnboarded(); onComplete() }}
+            >
+              稍后再说
+            </button>
+          </footer>
         </div>
       </div>
     )
@@ -115,12 +126,10 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
           <label className="csField">
             <span className="csFieldLabel">项目保存路径（资产库位置）</span>
             <div className="csFieldRow">
-              <input
-                className="csFieldInput"
+              <DraftField
                 value={value.assetDir}
                 placeholder="留空=默认 ($DSH_HOME/canvas-studio)"
-                spellCheck={false}
-                onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('assetDir', event.target.value)}
+                onCommit={(next) => { void scope.set('assetDir', next) }}
               />
               <button
                 type="button"

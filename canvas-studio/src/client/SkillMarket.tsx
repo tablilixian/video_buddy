@@ -24,6 +24,7 @@
  * 轮询放在本组件内而不是 `client/index.ts`：那是个共享大文件，而这里能拿到
  * 最精确的生命周期（`useEffect` 的 mount/unmount 就是「广场开着」的定义）。
  */
+import { askConfirm } from './confirm.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import {
@@ -179,11 +180,11 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
 
   /** 删除一条用户技能（移入回收站；如实告知有多少项目装载过它）。 */
   const removeUserSkill = useCallback(async (slug: string, name: string): Promise<void> => {
-    const confirmed = window.confirm(
-      `把「${name}」移入技能回收站？\n\n`
-      + '它不会再出现在模型可用列表里。装载过它的项目不会被自动清理，'
-      + 'skill 清单里可能留下一条已失效的项。回收站里的内容可以手工恢复。',
-    )
+    const confirmed = await askConfirm({
+      title: '移入技能回收站？',
+      body: `「${name}」不会再出现在模型可用列表里。装载过它的项目不会被自动清理，skill 清单里可能留下一条已失效的项。回收站里的内容可以手工恢复。`,
+      confirmLabel: '移入回收站',
+    })
     if (!confirmed) return
     try {
       const result = await deleteUserSkill(slug)

@@ -1763,7 +1763,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
                 <svg className="csAudioFnCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 9l7 7 7-7" /></svg>
               </button>
               {openPop === 'fn' && (
-                <div className="csAudioFnPop" role="menu">
+                <div className="csAudioFnPop" role="group" aria-label="音频功能选择">
                   {AUDIO_FNS.map(item => (
                     <button
                       key={item.k}

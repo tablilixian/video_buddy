@@ -19,6 +19,18 @@ const STUDIO_STYLES = `
  * 命名空间仍是「语义」而非「色值」：换预设或换明暗主题时令牌自己变，本文件
  * 不出现任何十六进制或 rgb() 字面量。Never hardcode colors or use currentColor. */
 
+/* UI-09：浮层层级阶梯令牌（唯一阶梯表）。新浮层只准用这里的档位，不再写魔法值。
+   存量 57 处 z-index 渐进归并，本批先接 .csToasts —— 顺带解 UI-06（拍摄定稿
+   覆盖层 z 200 盖住 toast 80，展开态里所有失败提示都看不见）。 */
+:root {
+  --cs-z-node: 10;
+  --cs-z-canvas-float: 50;
+  --cs-z-modal: 70;
+  --cs-z-storyboard: 90;
+  --cs-z-fullpage: 200;
+  --cs-z-toast: 210;
+}
+
 .csFrame {
   display: grid;
   /* C9（Q4 拍板：不做断点，改最小窗 + 窄窗降级）：三栏全部弹性化 ——
@@ -5003,7 +5015,7 @@ button.csNodeHeadAlert:hover {
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
-  z-index: 80;
+  z-index: var(--cs-z-toast, 210);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5021,6 +5033,9 @@ button.csNodeHeadAlert:hover {
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-line;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
   box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
   /* DD-05：入场动效接动效令牌（行进语义 csToastIn，白名单已归位）。 */
   animation: csToastIn var(--cs-duration-fast, 120ms) var(--cs-ease, ease);

@@ -14,7 +14,8 @@
  * 3. **确认按钮不涂红**：本组件服务的场景（切放手跑）不是破坏性动作，红色会把它
  *    误导成「删除」。真需要警示语义时由调用方在 `body` 里说清代价。
  */
-import { useEffect, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useSyncExternalStore, type ReactElement, type ReactNode } from 'react'
+import { getConfirmSnapshot, resolveConfirm, subscribeConfirm } from './confirm.js'
 
 export interface ConfirmDialogProps {
   /** 标题（同时作为 `aria-label`，所以它得能独立说清这是什么弹窗）。 */
@@ -63,5 +64,27 @@ export function ConfirmDialog(props: ConfirmDialogProps): ReactElement {
         </footer>
       </div>
     </div>
+  )
+}
+
+/**
+ * `askConfirm()` 的唯一渲染出口（UI-01）。
+ *
+ * 挂在应用根部一次即可：任意深度的子组件调 `askConfirm` → 这里订阅到请求 →
+ * 复用同一个 `ConfirmDialog`（同样的取消键自动聚焦 / Esc / 遮罩拖选安全）。
+ * 放在组件树靠后的位置，保证与其它 z 70 浮层同层时它压在最上。
+ */
+export function ConfirmHost(): ReactElement | null {
+  const request = useSyncExternalStore(subscribeConfirm, getConfirmSnapshot, getConfirmSnapshot)
+  if (request === null) return null
+  return (
+    <ConfirmDialog
+      key={request.id}
+      title={request.title}
+      confirmLabel={request.confirmLabel}
+      body={request.body}
+      onConfirm={() => { resolveConfirm(request.id, true) }}
+      onCancel={() => { resolveConfirm(request.id, false) }}
+    />
   )
 }

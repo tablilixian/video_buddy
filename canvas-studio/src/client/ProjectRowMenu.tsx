@@ -30,6 +30,7 @@
  * 参与排序，不依赖任何祖先链的假设。样式经 installStudioStyles 全局注入，portal
  * 不影响 .csContextMenu 命中。
  */
+import { askConfirm } from './confirm.js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactElement } from 'react'
@@ -115,7 +116,7 @@ export function ProjectRowMenu(props: ProjectRowMenuProps): ReactElement {
     <div
       ref={menuRef}
       className="csContextMenu"
-      role="menu"
+      role="group"
       aria-label={`项目「${project.name}」的操作`}
       style={{ left: pos.left, top: pos.top }}
     >
@@ -128,9 +129,11 @@ export function ProjectRowMenu(props: ProjectRowMenuProps): ReactElement {
         disabled={creating}
         onClick={() => {
           onClose()
-          if (window.confirm(`确定删除项目「${project.name}」？该操作会同时删除其目录与画布，不可恢复。`)) {
-            onDelete(project.id)
-          }
+          void askConfirm({
+            title: '删除这个项目？',
+            body: `「${project.name}」的目录与画布会一并删除，不可恢复。`,
+            confirmLabel: '删除项目',
+          }).then((confirmed) => { if (confirmed) onDelete(project.id) })
         }}
       >
         <span>删除项目</span>

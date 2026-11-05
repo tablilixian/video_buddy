@@ -1,3 +1,4 @@
+import { askConfirm } from './confirm.js'
 import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
@@ -497,9 +498,11 @@ function ProjectListInner(props: ProjectListProps) {
                 title="删除分组（组内项目回落未分组）"
                 disabled={creating}
                 onClick={() => {
-                  if (window.confirm(`删除分组「${title}」？组内项目将移至「未分组」，分组本身不可恢复。`)) {
-                    void onDeleteGroup(key)
-                  }
+                  void askConfirm({
+                    title: '删除这个分组？',
+                    body: `「${title}」删除后组内项目会移至「未分组」，分组本身不可恢复。`,
+                    confirmLabel: '删除分组',
+                  }).then((confirmed) => { if (confirmed) void onDeleteGroup(key) })
                 }}
               >
                 ×

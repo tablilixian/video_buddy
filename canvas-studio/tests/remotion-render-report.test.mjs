@@ -27,6 +27,13 @@ import { pickSampleFrames } from '../lib/remotion/timing.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import '../lib/errors/catalog.js'
 
+/**
+ * 工单预算（本文件专用）：原为 5_000，全量冒烟（几十个测试进程并发）时偶发 `timedOut` 假红
+ * —— 5s 是**空载**下的期望，满载时墙钟不可靠属于环境属性、不是被测行为（与 `withProject`
+ * 注释里「清理失败不判红」同一取向）。放宽到 30s 仍远小于生产缺省超时，真卡死照样红。
+ */
+const JOB_BUDGET_MS = 30_000
+
 function minimalManifest(meta = {}) {
   return {
     id: 'm-report',
@@ -57,7 +64,7 @@ async function withProject(run) {
 test('工单视图透传 quality / realDurations / sampleFrames（缺省 standard + 自动抽帧位置）', async () => {
   await withProject(async ({ project }) => {
     const manifest = minimalManifest()
-    const pending = runRenderJob({ projectId: project.id, manifest, timeoutMs: 5_000 })
+    const pending = runRenderJob({ projectId: project.id, manifest, timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
 
     assert.equal(view.quality, 'standard', '缺省质量档必须是 standard（= 今天全部默认值）')
@@ -78,7 +85,7 @@ test('工单视图：显式入参优先，manifest.meta.quality 次之', async (
       quality: 'high',
       realDurations: { '/canvas-studio/assets/p/a.mp4': 12.5 },
       sampleFrames: [0, 40],
-      timeoutMs: 5_000,
+      timeoutMs: JOB_BUDGET_MS,
     })
     const view = pendingRenderJobFor(project.id)
     assert.equal(view.quality, 'high', '显式参数覆盖 meta')
@@ -87,7 +94,7 @@ test('工单视图：显式入参优先，manifest.meta.quality 次之', async (
     cancelRenderJob(view.jobId, {})
     await assert.rejects(() => explicit, (err) => err.code === 'CS-GEN-207')
 
-    const fromMeta = runRenderJob({ projectId: project.id, manifest: minimalManifest({ quality: 'draft' }), timeoutMs: 5_000 })
+    const fromMeta = runRenderJob({ projectId: project.id, manifest: minimalManifest({ quality: 'draft' }), timeoutMs: JOB_BUDGET_MS })
     assert.equal(pendingRenderJobFor(project.id).quality, 'draft', 'manifest.meta.quality 应作为兜底')
     const view2 = pendingRenderJobFor(project.id)
     cancelRenderJob(view2.jobId, {})
@@ -97,7 +104,7 @@ test('工单视图：显式入参优先，manifest.meta.quality 次之', async (
 
 test('recordRenderSample：落盘 PNG 并按帧号排序进结算产物', async () => {
   await withProject(async ({ registry, project }) => {
-    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: 5_000 })
+    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
 
     // 故意乱序回写：结算产物必须按帧号排（预览 / 报告都依赖稳定顺序）
@@ -122,7 +129,7 @@ test('recordRenderSample：未知 jobId / 空字节 ⇒ null（路由据此回 2
   await withProject(async ({ registry, project }) => {
     assert.equal(await recordRenderSample(registry, 'rj-does-not-exist', 0, FAKE_PNG), null)
 
-    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: 5_000 })
+    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
     assert.equal(await recordRenderSample(registry, view.jobId, 0, new Uint8Array(0)), null, '空字节不该落盘')
     assert.equal(await recordRenderSample(registry, view.jobId, -5, FAKE_PNG) !== null, true, '负帧号收敛到 0 而不是拒收')
@@ -143,7 +150,7 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
       projectId: project.id,
       manifest: minimalManifest(),
       quality: 'draft',
-      timeoutMs: 5_000,
+      timeoutMs: JOB_BUDGET_MS,
     })
     const view = pendingRenderJobFor(project.id)
 
@@ -178,7 +185,7 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
 
 test('渲染报告：客户端没上报时全部兜底为 0（不产生 NaN / undefined）', async () => {
   await withProject(async ({ registry, project }) => {
-    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: 5_000 })
+    const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
     await commitRenderJob(registry, view.jobId, { bytes: FAKE_MP4 })
     const outcome = await pending

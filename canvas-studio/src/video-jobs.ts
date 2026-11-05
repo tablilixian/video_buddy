@@ -271,6 +271,8 @@ async function watchDramaJob(
       } catch {
         snapshot = { status: 0, json: null }
       }
+      // 请求期间被 stop()：此后不再写台账 —— stop 的语义是「停」，不是「继续跑一拍」。
+      if (signal.aborted) return
       if (snapshot.status === 404) {
         await updateDramaJobStatus(deps.registry, record.projectId, jobId, 'failed', {
           executionError: '后端不存在该任务（404，可能因后端重启被清空）。',
@@ -297,6 +299,7 @@ async function watchDramaJob(
         }
         const payload = result.status === 200 ? resultPayloadOf(result.json) : null
         if (payload !== null) {
+          if (signal.aborted) return
           await updateDramaJobStatus(deps.registry, record.projectId, jobId, 'completed', { result: payload })
           try {
             await deps.settle({ ...record, status: 'completed', result: payload }, payload)
@@ -320,34 +323,46 @@ async function watchDramaJob(
  * 循环。**扫描即快照**——之后新提交的任务由该次工具调用自己负责，不再入册。
  *
  * 返回停止函数：`stop()` 会 **abort 全部在跑循环**（AR-05 修正）+ 清掉尚未启动的
- * 定时器。生产路径（`host-tools.ts` 装配处）丢弃返回值、随 Host 生命周期存续；
- * 该函数的主要用户是测试（跨用例不留野外定时器与轮询）。
+ * 定时器，并**等它们真正退出后才 resolve**。
+ *
+ * 为什么要等（2026-11-05 实测）：`stop()` 原先 fire-and-forget 立即返回，但
+ * `watchDramaJob` 的 `activeResumeJobIds` 是模块级集合 —— 同一 jobId 的上一条循环
+ * 若还没从 `finally` 里摘掉，紧接着启动的新 watcher 会在扫描阶段被 `continue` 跳过，
+ * 于是「新 watcher 在等一个永远不会写自己目录的旧循环」→ 测试在全量并发的墙钟压力下
+ * 偶发超时（表现为 `恢复轮询：failed 落终态` 这类假红）。生产侧同一 jobId 不会二次
+ * 启动，所以只有在测试里暴露；但语义上「stop 之后还继续写台账」本身就是 bug。
  */
-export function startDramaJobResumeWatcher(deps: DramaJobResumeDeps): { stop: () => void } {
+export function startDramaJobResumeWatcher(deps: DramaJobResumeDeps): { stop: () => Promise<void> } {
   const controller = new AbortController()
   const timers = new Set<ReturnType<typeof setTimeout>>()
-  void pendingDramaJobs(deps.registry)
-    .then((jobs) => {
-      if (controller.signal.aborted) return
-      for (const record of jobs) {
-        if (activeResumeJobIds.has(record.jobId)) continue
-        const timer = setTimeout(() => {
-          timers.delete(timer)
-          if (controller.signal.aborted) return
-          void watchDramaJob(record, deps, controller.signal).catch(() => {
-            // 单任务恢复失败不影响其余任务；终态由下一轮扫描（重启）兜底。
-          })
-        }, 0)
-        timers.add(timer)
-      }
-    })
-    .catch(() => { /* 扫描失败（registry 不可读）：本次不恢复，任务仍留台账 */ })
+  /** 在跑的循环 + 尚未跑完的首次扫描：`stop()` 等它们全部落地。 */
+  const inflight = new Set<Promise<void>>()
+  const track = (task: Promise<void>): void => {
+    // 单任务恢复失败不影响其余任务；终态由下一轮扫描（重启）兜底。扫描失败同理。
+    const guarded = task.catch(() => {})
+    inflight.add(guarded)
+    void guarded.then(() => inflight.delete(guarded))
+  }
+  track(pendingDramaJobs(deps.registry).then((jobs) => {
+    if (controller.signal.aborted) return
+    for (const record of jobs) {
+      if (activeResumeJobIds.has(record.jobId)) continue
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        if (controller.signal.aborted) return
+        track(watchDramaJob(record, deps, controller.signal))
+      }, 0)
+      timers.add(timer)
+    }
+  }))
   return {
-    stop: () => {
+    stop: async () => {
       // 先 abort（让已进入循环的任务在下一次检查点退出），再清未启动的定时器。
       controller.abort()
       for (const timer of timers) clearTimeout(timer)
       timers.clear()
+      // abort 后不会再有新任务入册（定时器回调与扫描都先查 signal），循环必然收敛。
+      while (inflight.size > 0) await Promise.all([...inflight])
     },
   }
 }

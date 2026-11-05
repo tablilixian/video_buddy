@@ -30,8 +30,27 @@ function stubRegistry(rootDir, projectIds = ['p1']) {
   }
 }
 
+/**
+ * 轮询墙面预算：原为 3_000。全量冒烟（几十个测试进程并发 + 磁盘写台账）时偶发假红 ——
+ * 3s 是空载期望，满载墙钟不可靠属于环境属性、不是被测行为。放宽到 15s，真卡死照样红。
+ */
+const WAIT_BUDGET_MS = 15_000
+
+/**
+ * 清理临时目录 —— **失败不许判红**：本机沙箱会拒绝递归删除 `$TMPDIR` 下的目录
+ * （实测 EPERM，连测试自己刚建的目录都删不掉）。那是环境属性、不是被测行为，
+ * 与 `remotion-render-report.test.mjs` 的 `withProject` 同一取向。
+ */
+async function cleanup(dir) {
+  try {
+    await rm(dir, { recursive: true, force: true })
+  } catch {
+    /* 环境拒绝删除：忽略（残留由系统临时目录自己回收） */
+  }
+}
+
 /** 轮询等待条件成立（watcher 是异步定时器链，不能用同步断言）。 */
-async function waitFor(condition, timeoutMs = 3000, label = 'condition') {
+async function waitFor(condition, timeoutMs = WAIT_BUDGET_MS, label = 'condition') {
   const started = Date.now()
   for (;;) {
     if (await condition()) return
@@ -81,7 +100,7 @@ test('台账：提交即落地（pending），重复提交幂等；文件结构�
     const document = JSON.parse(await readFile(dramaJobsFileOf(registry, 'p1'), 'utf8'))
     assert.equal(document.version, DRAMA_JOBS_VERSION)
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -106,7 +125,7 @@ test('台账：状态回写流转 pending → in_progress → completed（带 re
     await updateDramaJobStatus(registry, 'p1', 'job-unknown', 'failed')
     assert.equal((await readDramaJobs(registry, 'p1')).length, 1)
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -124,7 +143,7 @@ test('台账：failed 记录 execution_error；isTerminalJobPhase 覆盖 failed/
     assert.equal(isTerminalJobPhase('settled'), true)
     assert.equal(isTerminalJobPhase('in_progress'), false)
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -138,7 +157,7 @@ test('扫描：pendingDramaJobs 汇总多项目非终态任务，跳过损坏文
     const pending = await pendingDramaJobs(registry)
     assert.deepEqual(pending.map((entry) => entry.jobId), ['job-1'], 'settled 不再入恢复扫描')
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -157,14 +176,14 @@ test('恢复轮询：completed → 取 result → settle 回调；台账随状�
       },
       pollIntervalMs: 5,
     })
-    await waitFor(() => settled.length === 1, 3000, 'settle 被回调')
-    watcher.stop()
+    await waitFor(() => settled.length === 1, WAIT_BUDGET_MS, 'settle 被回调')
+    await watcher.stop()
     const jobs = await readDramaJobs(registry, 'p1')
     assert.equal(jobs[0].status, 'completed', 'watcher 只到 completed；settled 由结算方（generate.ts）回写')
     assert.equal(jobs[0].result?.fullUrl, 'https://media.example/out.mp4')
     assert.ok(calls.some((c) => c.path.endsWith('/result')), 'completed 后取了 result')
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -176,16 +195,16 @@ test('恢复轮询：failed 落终态（带错误详情），404 判任务消失
     await recordDramaJobSubmitted(registry, 'p1', RECORD)
     const failed = makeRequest({ statusSequence: ['failed'] })
     let watcher = startDramaJobResumeWatcher({ registry, request: failed.request, settle: async () => {}, pollIntervalMs: 5 })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'failed', 3000, 'failed 落终态')
-    watcher.stop()
+    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'failed', WAIT_BUDGET_MS, 'failed 落终态')
+    await watcher.stop()
     assert.equal((await readDramaJobs(registry, 'p1'))[0].executionError, 'boom')
 
     // —— 404（任务消失）
     await recordDramaJobSubmitted(registry, 'p1', { ...RECORD, jobId: 'job-2' })
     const missing = { request: async (_method, path) => ({ status: 404, json: { detail: 'Job not found' } }), calls: [] }
     watcher = startDramaJobResumeWatcher({ registry, request: missing.request, settle: async () => {}, pollIntervalMs: 5 })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1')).find((entry) => entry.jobId === 'job-2')?.status === 'failed', 3000, '404 落 failed')
-    watcher.stop()
+    await waitFor(async () => (await readDramaJobs(registry, 'p1')).find((entry) => entry.jobId === 'job-2')?.status === 'failed', WAIT_BUDGET_MS, '404 落 failed')
+    await watcher.stop()
     assert.match((await readDramaJobs(registry, 'p1')).find((entry) => entry.jobId === 'job-2').executionError, /404/)
 
     // —— 瞬时错误容忍：先失败两拍，再 completed，settle 仍被回调
@@ -193,10 +212,10 @@ test('恢复轮询：failed 落终态（带错误详情），404 判任务消失
     const transient = makeRequest({ statusSequence: ['completed'], failFirst: 2 })
     const settled = []
     watcher = startDramaJobResumeWatcher({ registry, request: transient.request, settle: async (record, result) => { settled.push(result.filename) }, pollIntervalMs: 5 })
-    await waitFor(() => settled.length === 1, 3000, '瞬时错误后仍能结算')
-    watcher.stop()
+    await waitFor(() => settled.length === 1, WAIT_BUDGET_MS, '瞬时错误后仍能结算')
+    await watcher.stop()
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
   }
 })
 
@@ -212,8 +231,8 @@ test('恢复轮询：cancelled 落终态；settle 抛错时保持 completed（�
       settle: async () => {},
       pollIntervalMs: 5,
     })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'cancelled', 3000, 'cancelled 落终态')
-    watcher.stop()
+    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'cancelled', WAIT_BUDGET_MS, 'cancelled 落终态')
+    await watcher.stop()
 
     // —— settle 抛错：台账留在 completed，settle 会被再次调用
     await recordDramaJobSubmitted(registry, 'p1', { ...RECORD, jobId: 'job-4' })
@@ -227,9 +246,64 @@ test('恢复轮询：cancelled 落终态；settle 抛错时保持 completed（�
       },
       pollIntervalMs: 5,
     })
-    await waitFor(() => attempts >= 2, 3000, 'settle 失败后重试')
-    watcher.stop()
+    await waitFor(() => attempts >= 2, WAIT_BUDGET_MS, 'settle 失败后重试')
+    await watcher.stop()
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await cleanup(dir)
+  }
+})
+
+/**
+ * 回归（2026-11-05 全量冒烟唯一红）：`stop()` 必须等到循环真正退出才 resolve。
+ *
+ * 旧实现 fire-and-forget：`stop()` 立刻返回，但上一条循环还在 `activeResumeJobIds`
+ * 里，紧接着用**同一 jobId** 启动的新 watcher 会在扫描阶段被 `continue` 跳过 ——
+ * 于是新 watcher 空等一个只写旧目录的循环，15s 后假红。生产侧同一 jobId 不会二次
+ * 启动，所以只有测试吃到；但「stop 之后还继续写台账」本身就该修。
+ *
+ * 这条用例在旧实现上必红：A 的循环还在跑时 B 拿不到 job-1。
+ */
+test('stop 会等循环退出：同一 jobId 紧接着重新启动能立刻接管', async () => {
+  const dirA = await mkdtemp(join(tmpdir(), 'cs-videojobs-a-'))
+  const dirB = await mkdtemp(join(tmpdir(), 'cs-videojobs-b-'))
+  try {
+    // A：每次状态请求都慢一拍，好让 stop() 时它一定还在 in-flight 里。
+    const registryA = stubRegistry(dirA)
+    await recordDramaJobSubmitted(registryA, 'p1', RECORD)
+    const slow = makeRequest({ statusSequence: ['in_progress'] })
+    let inFlight = 0
+    const slowRequest = async (method, path) => {
+      inFlight += 1
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return slow.request(method, path)
+    }
+    const watcherA = startDramaJobResumeWatcher({
+      registry: registryA,
+      request: slowRequest,
+      settle: async () => {},
+      pollIntervalMs: 5,
+    })
+    // 必须等到 A **已经进入一次请求内部**（而不是两次轮询的间隙）再停 ——
+    // 否则 stop 落在 sleep 里，A 会立刻退出，测不出「没 drain」。
+    await waitFor(() => inFlight >= 1, WAIT_BUDGET_MS, 'A 已进入请求')
+    await watcherA.stop()
+
+    // B：同一 jobId（job-1），不同目录；A 若没退干净，B 会被 activeResumeJobIds 挡掉。
+    const registryB = stubRegistry(dirB)
+    await recordDramaJobSubmitted(registryB, 'p1', RECORD)
+    const settledB = []
+    const watcherB = startDramaJobResumeWatcher({
+      registry: registryB,
+      request: makeRequest({ statusSequence: ['completed'] }).request,
+      settle: async (record, result) => { settledB.push(result.filename) },
+      pollIntervalMs: 5,
+    })
+    await waitFor(() => settledB.length === 1, 5_000, 'B 接管同一 jobId')
+    await watcherB.stop()
+    assert.equal(settledB[0], 'out.mp4')
+  } finally {
+    // A 已被 stop；这里只管清目录。
+    await cleanup(dirA)
+    await cleanup(dirB)
   }
 })

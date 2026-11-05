@@ -96,6 +96,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   list_library_assets: { tier: 'B', title: '查资产库', icon: '库' },
   add_to_library: { tier: 'B', title: '存入资产库', icon: '库' },
   ask_user_choice: { tier: 'A', title: '向你提问', icon: '?' },
+  // 阶段一一次性字段级意图卡（35→5 轮次预算）。
+  confirm_intent_card: { tier: 'A', title: '核对意图卡', icon: '意' },
   // REQ-022：下面三个工具已下线（剧本门/分镜门随「拍摄定稿」删除）。
   // **条目刻意保留** —— 历史 `tool/call` 记录与旧画布节点仍带这些 toolName，
   // 删掉会让回看历史时那一行回落成英文通用行（显示层不该随功能下线而变丑）。

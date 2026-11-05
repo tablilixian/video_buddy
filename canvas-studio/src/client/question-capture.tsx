@@ -19,6 +19,7 @@ import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { autoAnswerSummary, extractResultNote } from '../question-result.js'
+import type { StudioIntentField } from '../contracts/project.js'
 import { getSkillEntry } from '../skill-catalog.js'
 import { shouldRenderStyleGrid, styleDemoSkill } from '../style-grid.js'
 
@@ -46,6 +47,8 @@ export interface StudioQuestionChatData {
   autoAnswered: boolean
   /** 结算说明（用户作答 / 超时 / 被清除 / 出错 / 放手跑自动取值），有值即视为已结算。 */
   note: string | null
+  /** confirm_intent_card 的字段级意图卡；null = 普通单题点选。 */
+  fields: StudioIntentField[] | null
 }
 
 // 0.2.1：`ChatNodeDataMap`（`ChatNodeKind` 的来源）已随 Chat 渲染层搬到 ui-chat；
@@ -65,6 +68,29 @@ export interface QuestionCaptureHooks {
 }
 
 /** 从 tool/call 参数解析问题（arguments 是 JSON 字符串）。 */
+function parseIntentFields(raw: unknown): StudioIntentField[] | null {
+  let parsed: unknown = raw
+  try {
+    if (typeof raw === 'string') parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+  const fields = (parsed as Record<string, unknown>[]).map((item) => {
+    const f = (item ?? {}) as Record<string, unknown>
+    return {
+      key: String(f.key ?? ''),
+      label: String(f.label ?? ''),
+      value: String(f.value ?? ''),
+      source: String(f.source ?? 'defaults'),
+      ...(typeof f.reason === 'string' ? { reason: f.reason } : {}),
+      ...(typeof f.confidence === 'string' ? { confidence: f.confidence } : {}),
+      ...(typeof f.kind === 'string' ? { kind: f.kind } : {}),
+    }
+  }).filter(field => field.key !== '')
+  return fields.length > 0 ? fields : null
+}
+
 function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'autoAnswered' | 'note'> {
   let parsed: unknown
   try {
@@ -78,8 +104,83 @@ function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'aut
     options: Array.isArray(record.options) ? record.options.map(String) : [],
     allowFreeText: record.allowFreeText !== false,
     multiSelect: record.multiSelect === true,
+    fields: parseIntentFields(record.fields),
   }
 }
+
+/** 意图卡五段分区的展示名与顺序（与 intent-card.md §2 一致）。 */
+const INTENT_SECTIONS: readonly (readonly [string, string])[] = [
+  ['explicit', '用户明确指定'],
+  ['inferred', '推断 · 默认，可改'],
+  ['conflict', '冲突 · 已裁决'],
+  ['needsUser', '需要你确认'],
+  ['defaults', '采用的缺省值'],
+]
+
+/** 字段级可编辑意图卡：逐项核对、一次提交，绝不做整包「同意 / 不同意」。 */
+export const IntentCardView = memo(function IntentCardView(props: {
+  question: string
+  fields: StudioIntentField[]
+  note: string | null
+  onAnswer(value: string): void
+}) {
+  const [values, setValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(props.fields.map(field => [field.key, field.value])),
+  )
+  const [submitted, setSubmitted] = useState(false)
+  const settled = props.note !== null || submitted
+  const submit = (): void => {
+    if (settled) return
+    props.onAnswer(JSON.stringify(values))
+    setSubmitted(true)
+  }
+  const known = new Set(INTENT_SECTIONS.map(([key]) => key))
+  const others = props.fields.filter(field => !known.has(field.source))
+  const renderRow = (field: StudioIntentField) => (
+    <label className="csIntentRow" key={field.key}>
+      <span className="csIntentKey">{field.label}</span>
+      <input
+        className="csFieldInput"
+        value={values[field.key] ?? ''}
+        disabled={settled || field.kind === 'readonly'}
+        onChange={event => {
+          setValues(prev => ({ ...prev, [field.key]: event.target.value }))
+        }}
+      />
+      {field.reason !== undefined && <em className="csIntentReason">{field.reason}</em>}
+      {field.confidence !== undefined && <em className="csIntentConfidence">{field.confidence}</em>}
+    </label>
+  )
+  return (
+    <div className="csQuestionCard csIntentCard">
+      <span className="csQuestionLabel">
+        <em className="csQuestionIcon">✦</em>
+        {props.question}
+        <i className="csQuestionHint">逐字段核对，一次提交</i>
+      </span>
+      {INTENT_SECTIONS.map(([key, title]) => {
+        const rows = props.fields.filter(field => field.source === key)
+        if (rows.length === 0) return null
+        return (
+          <div className="csIntentSection" key={key}>
+            <div className="csIntentSectionTitle">{title}</div>
+            {rows.map(renderRow)}
+          </div>
+        )
+      })}
+      {others.length > 0 && (
+        <div className="csIntentSection">
+          <div className="csIntentSectionTitle">其它</div>
+          {others.map(renderRow)}
+        </div>
+      )}
+      <button type="button" className="csQuestionConfirm" disabled={settled} onClick={submit}>
+        {settled ? '已提交' : '按卡片继续'}
+      </button>
+      {props.note !== null && <span className="csWorkflowState">{props.note}</span>}
+    </div>
+  )
+})
 
 /**
  * 放手跑降级窄条（CV-216）：Host 本回合**根本没问用户**（`autoAnswerFor` 短路），
@@ -130,6 +231,17 @@ export const QuestionNodeView = memo(function QuestionNodeView(
     if (settled) return
     const projectId = hooks.getSelectedProjectId()
     if (projectId !== null) hooks.onAnswer(projectId, value)
+  }
+  // 意图卡分叉必须晚于所有 hooks（CV-216），且独立于单题点选的渲染路径。
+  if (data.fields !== null && data.fields.length > 0) {
+    return (
+      <IntentCardView
+        question={data.question}
+        fields={data.fields}
+        note={data.note}
+        onAnswer={handleAnswer}
+      />
+    )
   }
   const handleOptionClick = (option: string): void => {
     if (settled) return
@@ -267,7 +379,9 @@ export function createQuestionCaptureDefinition():
     match(event: ConversationMatch['event']): { id: string; role: 'start' | 'update' } | null {
       if (event.type === 'tool/call') {
         const data = event.data as { callId: unknown; name: string }
-        if (data.name === 'ask_user_choice') return { id: String(data.callId), role: 'start' }
+        if (data.name === 'ask_user_choice' || data.name === 'confirm_intent_card') {
+          return { id: String(data.callId), role: 'start' }
+        }
         return null
       }
       if (event.type === 'tool/result') {

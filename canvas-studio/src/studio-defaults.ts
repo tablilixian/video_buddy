@@ -237,6 +237,28 @@ export interface AutoAnswerInput {
  * 卡片（实测仍在弹，见 STATUS.md CV-216）。真正的拦截是客户端读到
  * `AUTO_ANSWER_MARKER` 后把卡片降级为不可交互窄条。①仍要做，但理由是工作流状态。
  */
+export interface IntentCardFieldLike {
+  readonly key: string
+  readonly value: string
+}
+
+/**
+ * 放手跑下的意图卡自动应答（confirm_intent_card 专用）。
+ * 与 `autoAnswerFor` 并列，保证「是否问用户」的判定只在 studio-defaults 有一份；
+ * confirm 返回 null = 需要真的弹卡。生成侧必须带 `AUTO_ANSWER_MARKER`，
+ * 且措辞要命中 `AUTO_ANSWER_OPTION_PATTERN`（客户端窄条要摘出默认值）。
+ */
+export function autoIntentCardAnswerFor(input: {
+  readonly mode: StudioWorkflowMode
+  readonly fields: readonly IntentCardFieldLike[]
+}): string | null {
+  if (input.mode !== 'auto') return null
+  const answers = Object.fromEntries(input.fields.map(field => [field.key, field.value]))
+  return `${AUTO_ANSWER_MARKER}本回合不等待用户作答，「意图卡」已直接按默认值取 「全部采用默认假设」。\n`
+    + `用户核对后的意图卡（JSON）：${JSON.stringify(answers)}\n`
+    + '不要再向用户提出任何问题；把上面的假设清单用 write_note 落成画布便签后直接继续。'
+}
+
 export function autoAnswerFor(input: AutoAnswerInput): string | null {
   if (input.mode !== 'auto') return null
   const recommended = recommendedOptionOf(input.options)

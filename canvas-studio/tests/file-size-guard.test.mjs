@@ -64,7 +64,8 @@ export const FILE_WHITELIST = {
   // 11000 → 11067 显式登记。消化路径同上：按域拆 CSS 时随托盘/待落段外提。
   // CV-444（2026-11-05，UI-06/08/09）:root 六档 z-index 令牌 + toast 去重/队列/断行
   // +15，11067 → 11082 补登（CV-444 提交时 test:smoke 未跑成，本批统一验证补登）。
-  'src/client/styles.ts': 11082,
+  // 故事板提速 B1（2026-11-05）：字段级意图卡样式 +39（11082 → 11121）显式登记。
+  'src/client/styles.ts': 11125,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
@@ -90,7 +91,9 @@ export const FILE_WHITELIST = {
   // 落盘校验与预览在 manifest-file.ts 新文件）+ render_composition 段边界提示接线，
   // +44（4810 → 4854）显式登记。消化路径：随「scaffold 与 render 工具壳拆分」批
   // 外提到 host-tools-remotion.ts（与既有 host-tools-artifact / -data / -series 同路）。
-  'src/host-tools.ts': 4854,
+  // 故事板提速 B1（2026-11-05）：+confirm_intent_card 工具定义 +99（4854 → 4953）显式登记；
+  // 消化路径随既有「工具壳拆分」批外提到 host-tools-workflow.ts。
+  'src/host-tools.ts': 4958,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,
@@ -173,7 +176,7 @@ export const FILE_WHITELIST = {
 export const FUNC_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：素材托盘四分区 + 待落画布条样式 +67（10983 → 11050）。
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 11065, note: '整文件 CSS 模板字面量；CV-444 +15 补登；阶段 6 拆分时本条随之消失' },
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 11110, note: '整文件 CSS 模板字面量；CV-444 +15 补登；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
   'src/routes.ts#registerStudioRoutes': { lines: 2969, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）' },
@@ -187,7 +190,7 @@ export const FUNC_WHITELIST = {
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2771, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771' },
+  'src/host-tools.ts#createStudioTools': { lines: 2875, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

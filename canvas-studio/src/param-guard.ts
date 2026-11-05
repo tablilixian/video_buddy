@@ -147,6 +147,8 @@ const PROSE_PARAMS: readonly string[] = [
   'name',
   'summary',
   'question',
+  // 一次性意图卡：模型自撰的字段 JSON 正文（execute 内解析并逐字段校验）。
+  'fields',
   // REQ-022：片名（模型自撰的短文本，同样会整串塞占位词）
   'title',
   // CV-445（S3）：plan_generation_units 的全片统一风格句（模型自撰，逐单元拼进提示词）。

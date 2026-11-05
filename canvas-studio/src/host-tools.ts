@@ -40,7 +40,7 @@ import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from
 // （读法 `touchedStoryboard` 同处，见 tool-result-text.ts）。
 import { renderTextResult, storyboardTouchedNote } from './tool-result-text.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
-import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
+import { autoAnswerFor, autoIntentCardAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
@@ -3044,6 +3044,105 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // 决策不因一次工具故障卡死。
           const recommended = recommendedOptionOf(options) ?? ''
           return { text: `提问失败（内部错误），未能收到用户作答。已改用默认项继续：「${recommended}」，并在回复中说明该选择采用了默认假设。` }
+        }
+      },
+    }),
+    defineTool({
+      name: 'confirm_intent_card',
+      description:
+        '阶段一需求澄清的**一次性字段级意图卡**：把 explicit / inferred / conflict / needsUser / defaults 五段字段一次提交，'
+        + '卡片内联在对话区，用户逐字段核对、改完一次提交（**不是**整包「同意 / 不同意」）。这是 confirm 模式下阶段一唯一允许的一次打断；'
+        + '逐项 ask_user_choice 仅作降级路径。放手跑（auto）下本工具**不弹卡、不等待**，直接返回按默认值组装的意图卡。'
+        + '用户答案以 JSON 字符串回流（{key: value}）；超时 / 内部错误按默认值继续，不把 turn 带崩。',
+      parameters: {
+        fields: {
+          type: 'string' as const,
+          required: true,
+          description: 'JSON 字符串：意图卡字段数组，每项 {key,label,value,source,reason?,confidence?,kind?}；source 取 explicit|inferred|conflict|needsUser|defaults，kind 取 choice|text|readonly。1–12 项、key 唯一',
+        },
+        question: { type: 'string' as const, description: '卡片标题，缺省「请核对本次制作的意图与假设」' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '用户核对后的意图卡 JSON / 默认值说明' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { fields: string; question?: string }
+        let parsedFields: unknown
+        try {
+          parsedFields = JSON.parse(a.fields)
+        } catch {
+          throwError('CS-USER-ERR', { message: 'fields 必须是合法 JSON 数组字符串' })
+        }
+        if (!Array.isArray(parsedFields)) throwError('CS-USER-ERR', { message: 'fields 必须是数组' })
+        const fields = (parsedFields as Record<string, unknown>[]).map((raw) => ({
+          key: String(raw?.key ?? ''),
+          label: String(raw?.label ?? ''),
+          value: String(raw?.value ?? ''),
+          source: String(raw?.source ?? 'inferred'),
+          ...(typeof raw?.reason === 'string' ? { reason: raw.reason } : {}),
+          ...(typeof raw?.confidence === 'string' ? { confidence: raw.confidence } : {}),
+          ...(typeof raw?.kind === 'string' ? { kind: raw.kind } : {}),
+        }))
+        if (fields.length === 0 || fields.length > 12) throwError('CS-USER-ERR', { message: 'fields 需要 1–12 项' })
+        if (fields.some(field => field.key.trim() === '' || field.label.trim() === '')) {
+          throwError('CS-USER-ERR', { message: '每个字段都要有 key 与 label' })
+        }
+        if (new Set(fields.map(field => field.key)).size !== fields.length) {
+          throwError('CS-USER-ERR', { message: 'fields 的 key 不能重复' })
+        }
+        const question = (a.question ?? '').trim() || '请核对本次制作的意图与假设'
+        const defaultAnswers = Object.fromEntries(fields.map(field => [field.key, field.value]))
+        const defaultJson = JSON.stringify(defaultAnswers)
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        // 判定只在 studio-defaults 有一份；auto 下不落盘、不轮询、把默认值明确回给模型。
+        const autoText = autoIntentCardAnswerFor({ mode: workflow.mode, fields })
+        if (autoText !== null) return { text: autoText }
+        // 复用 pendingQuestion 落盘 / 轮询通道：答案仍走既有 answer 动作（JSON 字符串），
+        // 不为一张卡片新增契约字段、路由与 API。
+        const pending = {
+          id: randomUUID(),
+          question,
+          options: ['按卡片继续（推荐）', '全部改用默认值'],
+          fields,
+        }
+        try {
+          await registry.setPendingQuestion(projectId, pending)
+        } catch (first) {
+          if (!isTransientFsError(first)) throw first
+          await sleep(120)
+          await registry.setPendingQuestion(projectId, pending)
+        }
+        const conclude = (answers: string, prefix: string): { text: string } => ({
+          text: `${prefix}（JSON）：${answers}\n请按此执行：explicit 项锁定不改，inferred 项带默认依据，`
+            + 'conflict 项按裁决结果；把假设清单用 write_note 落便签，然后直接写故事板，不要重新规划。',
+        })
+        try {
+          const deadline = Date.now() + QUESTION_WAIT_MS
+          while (Date.now() < deadline) {
+            if (exec.signal.aborted) throw exec.signal.reason ?? new DOMException('aborted', 'AbortError')
+            const current = normalizeWorkflow((await registry.getProject(projectId))?.workflow).pendingQuestion
+            if (current === null || current === undefined) return conclude(defaultJson, '意图卡已被清除，全部采用默认值')
+            if (current.id === pending.id && typeof current.answer === 'string') {
+              await registry.setPendingQuestion(projectId, null)
+              const answer = current.answer.trim()
+              return conclude(answer.startsWith('{') ? answer : defaultJson, '用户核对后的意图卡')
+            }
+            await sleep(1500)
+          }
+          return conclude(defaultJson, '用户暂未核对（超过等待上限），意图卡全部采用默认值')
+        } catch (cause) {
+          await registry.setPendingQuestion(projectId, null).catch(() => {})
+          const causeName = (cause as { name?: string } | null)?.name ?? ''
+          if (exec.signal.aborted || causeName === 'AbortError') throw cause
+          return conclude(defaultJson, '意图卡提交失败（内部错误），全部采用默认值')
         }
       },
     }),

@@ -16,6 +16,14 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 **不适用**：只把已有视频片段按顺序拼接 → 用总纲的 `compose_video`；只要风格化 B-roll 而非卡片叙事 → 走对应风格 skill。
 
+## 阶段一：事实一旦定死（本 skill 的上游）
+
+故事板阶段**不联网反复核数**。数值口径走 `references/facts.md`：一次 `facts-builder.mjs`
+生成 `<projectDir>/build/fact-snapshot.json` → 一次写入 `write_storyboard` 的 `facts` 节；
+裁决序 `用户原话 > 项目预置 > 快照 > 联网值`，落选值记脚注，`pending` 交 CV-440 事实桥点名。
+阶段一轮次预算（≤5 步、第 3 轮一次性出全片计划）见
+`canvas-studio-creation/references/intent-card.md`。
+
 ## 前置（缺一不可）
 
 1. `write_storyboard` 的拍摄定稿已落地（脚本 / 分镜已在画布）。
@@ -24,10 +32,11 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 工作流
 
-0. **先问清（confirm 模式）**：开工前用 `ask_user_choice`（一次一个问题，≤3 问）确认**只有用户能答**的项——
-   **音轨**（纯 BGM / 要旁白 / 不要声音；要旁白就连**音色人格**问一次——未指定**不得**自行从资产库挑，审美归用户，缺省用 tts 缺省锚并交付时说明）、**时长与画幅**（用户没明说时）、**素材来源**（用哪张图 / 要不要先生成）。
-   实测有会话拖到第 33 步才问，答案一变全返工。
-   **auto 模式不问**（`autoAnswerFor` 直接给默认，见工具描述）；这是需求澄清，**不是审批门**。
+0. **先问清（confirm 模式）**：**只打断用户一次**——把「只有用户能答」的项合并进总纲的
+   一次性意图卡（`canvas-studio-creation/references/intent-card.md`）。**音色人格**是科普片最常见的一项
+   （未指定**不得**自行从资产库挑，审美归用户，缺省用 tts 缺省锚并交付时说明）。
+   逐项 `ask_user_choice` 仅为降级路径（≤3 问）。实测有会话拖到第 33 步才问，答案一变全返工。
+   **auto 模式不问也不弹卡**（按默认值继续、假设写进 `write_note`）；这是需求澄清，**不是审批门**。
 
 1. **取真值**：`list_shots` 读每个视频片段的**真实时长**（素材轨时长的唯一合法来源）；`list_references` 取角色 / 风格资产卡与图片。有旁白时以 `tts_voiceover` 结果里的真值时长为准。
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的

@@ -101,6 +101,21 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
       ...(question.allowFreeText === false ? { allowFreeText: false } : {}),
       ...(question.multiSelect === true ? { multiSelect: true } : {}),
       ...(typeof question.answer === 'string' ? { answer: question.answer } : {}),
+      // 意图卡字段（confirm_intent_card）：逐字段宽松降级，脏数据不许带崩工作流状态。
+      ...(Array.isArray(question.fields) ? {
+        fields: (question.fields as unknown[]).map((raw) => {
+          const f = (raw ?? {}) as Record<string, unknown>
+          return {
+            key: typeof f.key === 'string' ? f.key : '',
+            label: typeof f.label === 'string' ? f.label : '',
+            value: typeof f.value === 'string' ? f.value : '',
+            source: typeof f.source === 'string' ? f.source : 'inferred',
+            ...(typeof f.reason === 'string' ? { reason: f.reason } : {}),
+            ...(typeof f.confidence === 'string' ? { confidence: f.confidence } : {}),
+            ...(typeof f.kind === 'string' ? { kind: f.kind } : {}),
+          }
+        }),
+      } : {}),
     }
   }
   return workflow
@@ -248,6 +263,22 @@ export interface StudioProjectGroup {
 }
 
 /**
+ * 一次性意图卡的一个字段（confirm_intent_card 落盘到 pendingQuestion.fields）。
+ * 五段分区见 skills/canvas-studio-creation/references/intent-card.md。
+ */
+export interface StudioIntentField {
+  key: string
+  label: string
+  value: string
+  /** explicit | inferred | conflict | needsUser | defaults */
+  source: string
+  reason?: string
+  confidence?: string
+  /** choice | text | readonly —— 客户端据此决定字段是否可编辑 */
+  kind?: string
+}
+
+/**
  * 一条待回答的选择题（ask_user_choice 工具落盘，画布端渲染成点选卡片）。
  * 用户点击后 answer 被写入，Host 工具轮询读到即回传给模型并清空本条。
  */
@@ -261,4 +292,6 @@ export interface StudioPendingQuestion {
   multiSelect?: boolean
   /** 用户的选择（选项原文或自由输入），由 workflow 路由的 answer 动作写入。 */
   answer?: string
+  /** 意图卡字段；有值时客户端渲染字段级可编辑卡片，答案以 JSON 字符串回流。 */
+  fields?: StudioIntentField[]
 }

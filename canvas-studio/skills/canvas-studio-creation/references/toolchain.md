@@ -76,6 +76,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | 工具 | 用途 | 关键参数 |
 | --- | --- | --- |
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
+| confirm_intent_card | **一次性字段级意图卡**（2026-11-05，阶段一唯一打断；细则见 `references/intent-card.md`） | `fields`（JSON 字符串，1–12 项：key/label/value/source/reason?/confidence?/kind?）、`question?`；五段分区 explicit / inferred / conflict / needsUser / defaults，卡片逐字段可编辑、一次提交。答案以 JSON 字符串回流；放手跑不弹卡、超时按默认值继续 |
 | submit_keyframes_for_approval | 关键帧提交确认（**REQ-022 后唯一的对话流审批门**）（**条件门**：仅当本镜逐镜出图（按需、默认不出）实际产出过关键帧时才提交；一张都没出则跳过直接进第 9 步） | summary? |
 | image_generate | 文生图 / 图生图（单或多参考）；画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役）；**模型路由 R-P1-03：Host 逐次现算端点——prompt 含要显示到画面的文字（引号框住）自动走 Qwen 文字渲染，无字自动走 Krea2，你不必为选端点纠结**；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt（画风描述写在这里）、aspectRatio、resolution?、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡）、autoFixText?（默认 true） |
 | image_generate_withtxt | **文字渲染特化**（CV-270，Qwen Image 2.1）：prompt 含**要显示到画面上的文字**（片名字幕卡/海报标题/标语招牌/封面）时用，中文可逐字正确（探针实测）；与 image_generate 在纯文生图上**等价**（路由按提示词改道，无字图会自动降级 Krea2）；**纯文生无参考图入参**（要参考已有图 → image_generate；已出图文错了 → image_fix）。**要渲染的文字逐字写清**（内容+位置/字体/排版，如「片名《剑归江湖》用大字竖排在画面右侧」） | prompt（含要渲染的文字规格）、aspectRatio、resolution?、replaces?（被取代图片节点 id）、sourceUrls?、shotRefs?（带字幕/招牌等文字的关键帧应传） |

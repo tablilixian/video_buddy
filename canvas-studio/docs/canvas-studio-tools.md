@@ -51,7 +51,7 @@
 
 ## 工具总览
 
-注册给模型的工具**共 48 个** = **47 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48）。
+注册给模型的工具**共 49 个** = **48 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48；2026-11-05 故事板提速 B1：48 → 49）。
 
 ### A. 后端生成 / 分析类（14 个）
 
@@ -98,6 +98,7 @@
 | `list_library_assets` | **列资产库**（P1-2，2026-10-26，只读）：拿 `lib:<id>` 句柄。复用角色定妆照 / 场景图 / **音色锚**前先调它；`category?`（character / scene / prop / group / voice）、`q?`、`limit?`（截断时 `truncated=true`） |
 | `add_to_library` | **画布节点入库**（P1-2，2026-10-26）：把音频 / 图片节点存成资产条目（媒体真拷贝进库目录）。音色锚的标准落地：`add_to_library(nodeId, category="voice", name="音色锚 · 女主")` → 之后 `refaudio: "lib:<id>"`。视频不能入库 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
+| `confirm_intent_card` | **一次性字段级意图卡**（提速方案 B1）：阶段一 confirm 模式唯一一次打断。五段分区（explicit / inferred / conflict / needsUser / defaults）逐字段可编辑、一次提交，答案以 JSON 字符串经既有 `answer` 路由回流；auto 模式不弹卡不等待，直接返回默认值意图卡并要求把假设写进 `write_note`。细则见 `skills/canvas-studio-creation/references/intent-card.md` |
 | `submit_screenplay_for_approval` | 剧本审批门禁 |
 | `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |
 | `submit_keyframes_for_approval` | 关键帧审批门禁 |

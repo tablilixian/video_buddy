@@ -43,7 +43,7 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // 六大体裁路线 3.1（2026-11-04）：+series_manage / +episode_brief（短剧 episodic），44 → 46。
 // CV-445 S3（2026-11-05，rea-video A4 吸收）：+plan_generation_units（生成单元规划），46 → 47。
 // CV-445 S4（2026-11-05，rea-video A6 吸收）：+make_compare（原片｜复刻并排对比片），47 → 48。
-const EXPECTED_TOOL_COUNT = 48
+const EXPECTED_TOOL_COUNT = 49
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -52,6 +52,8 @@ const EXPECTED_TOOL_NAMES = [
   'ask_user_choice',
   'character_generate',
   'character_sheet',
+  // 2026-11-05：阶段一一次性意图卡（提速方案 B1），48 → 49。
+  'confirm_intent_card',
   'compose_video',
   'cut_audio',
   'extract_last_frame',

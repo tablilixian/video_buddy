@@ -596,6 +596,45 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
 }
 
+/* 一次性字段级意图卡（confirm_intent_card）：五段分区、逐字段可编辑、一次提交。 */
+.csIntentCard { gap: 6px; }
+
+.csIntentSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.csIntentSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csIntentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.csIntentKey {
+  min-width: 96px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csIntentRow .csFieldInput { flex: 1 1 auto; min-width: 0; }
+
+.csIntentReason,
+.csIntentConfidence { font-size: 10px; font-style: normal; opacity: 0.65; }
+
+.csIntentConfidence { margin-left: auto; }
+
 /* P7 点选式澄清卡片：ask_user_choice 弹出的选择题。 */
 .csQuestionCard {
   display: flex;

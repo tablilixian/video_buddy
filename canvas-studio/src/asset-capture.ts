@@ -109,6 +109,7 @@ export function isStudioTool(name: string): name is keyof typeof STUDIO_TOOL_KIN
 export const WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
   'submit_keyframes_for_approval',
   'ask_user_choice',
+  'confirm_intent_card',
   // 剧本 / 文案工具：虽非审批门禁，但会落文本节点到画布（appendCanvasNode），
   // 结算时同样需要 reloadCanvas 让节点即时出现；refreshWorkflow 幂等无害。
   'write_script',

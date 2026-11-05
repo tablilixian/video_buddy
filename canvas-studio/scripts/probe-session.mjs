@@ -13,6 +13,7 @@
  * 输出包含：会话元数据、时间线、调用-结果配对、关键回执摘录、错误与告警计数。
  * 零外部依赖（只用 node: 内置模块）。
  */
+import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 
@@ -32,7 +33,26 @@ const asJson = args.includes('--json')
 const outPath = args.find((a) => !a.startsWith('--') && a !== input)
   ?? `/tmp/session-probe-${basename(input).replace(/[^a-zA-Z0-9.-]/g, '_')}.md`
 
-const lines = readFileSync(input, 'utf8').split('\n').filter((l) => l.trim())
+// 真机落盘的会话全部是 session.v4.jsonl.zstd（2026-11-05 自检实测：1379/1379）。
+// .zstd 走系统 zstd -dc 流式解压（零 npm 依赖；二进制缺失时给可执行的指引）。
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+function loadLines(path) {
+  if (path.endsWith('.zstd')) return decompressZstd(path)
+  const buf = readFileSync(path)
+  if (buf.subarray(0, 4).equals(ZSTD_MAGIC)) return decompressZstd(path) // 扩展名骗人时按魔数兜底
+  return buf.toString('utf8').split('\n')
+}
+function decompressZstd(path) {
+  const run = spawnSync('zstd', ['-dc', path], { maxBuffer: 512 * 1024 * 1024 })
+  if (run.error !== undefined || run.status !== 0) {
+    const why = run.error?.message ?? run.stderr?.toString().slice(0, 200) ?? '未知错误'
+    console.error(`zstd 解压失败（${path}）：${why}\n若未安装：brew install zstd；或先手动 zstd -d 后传 .jsonl 路径。`)
+    process.exit(3)
+  }
+  return run.stdout.toString('utf8').split('\n')
+}
+
+const lines = loadLines(input).filter((l) => l.trim())
 const events = []
 for (let i = 0; i < lines.length; i += 1) {
   try { events.push(JSON.parse(lines[i])) } catch { /* 跳过坏行，不因一行毁掉整份取证 */ }
@@ -105,7 +125,9 @@ for (const e of events) {
     pairs.push({ time: stamp(call?.time ?? e.time), name, args: String(call?.args ?? '').slice(0, 260), result: txt.slice(0, 1600), isError: m.isError === true })
     if (m.isError === true) errors.push({ name, text: txt.slice(0, 600) })
     for (const [key, re] of KEY_PATTERNS) {
-      if (re.test(txt)) hits[key].push({ time: stamp(call?.time ?? e.time), name, text: txt.slice(0, 900) })
+      // 命中面 = 工具名 + 回执文本：read_image 的**失败回执**同样要归档（自检实证：
+      // 能力闸报错时正文里没有 "read_image" 字样，只看文本会漏掉整类取证）。
+      if (re.test(`${name}\n${txt}`)) hits[key].push({ time: stamp(call?.time ?? e.time), name, text: txt.slice(0, 900) })
     }
   }
 }

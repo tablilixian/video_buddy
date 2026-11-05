@@ -2122,6 +2122,34 @@
 - **测试**：`tests/remotion-anchor.test.mjs` 12 条 —— 分句分组/显式与包络双路/resolveAnchor 全分支（start/end × 整句/单词 × 正负 offset × 越界）/validateManifest 五类硬失败（互斥/ref 缺/无 src/phrase 越/word 越）/applyAnchorResolution 折算与零拷贝 + **双版 manifest 断言**（同一 anchor 结构 + 5 字 vs 11 字两套文案 → 事件均落对应词窗口 ±2 帧内，REQ §4.4 验收的 node 层等价，走与浏览器同一条 applyAnchorResolution 管线）。**偏差登记**：真 TTS 双版渲染的 bench 探针 = 真机验收项（两条 TTS 资产需真机自产录制）。
 - **棘轮**：manifest.ts 2175→2187 显式登记（+12：KNOWN 键表与集成，校验主体在新文件 anchor.ts）。
 
+#### CV-401 · TOOL_SOURCES 拆雷：补 host-tools-audio.ts（2026-11-03，已验收）
+
+- **状态**：已完成（skill 覆盖审计修复批；权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：skill-tool-refs 的 TOOL_SOURCES 漏列 `host-tools-audio.ts`（analyze_beats / snap_cuts_to_beats 经 defineAudioTools 工厂展开注册）⇒ 门禁工具表 41 vs 注册面真实 43，且任何 skill 正确引用这两个节拍工具都会被误判幽灵引用——修复批往 skill 写工具名之前必须先拆这颗雷。顺手补 STATUS §3.4 工具清单指针（审计 E1）。
+- **验证**：门禁表 43 = 注册面 43；与 CV-404 反向断言同批 53/53 绿。
+
+#### CV-402 · viral-remake 联动补交付（REQ-036 账实不符收口）（2026-11-03，已验收）
+
+- **状态**：已完成（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：skill 覆盖审计抓出的**账实不符**——REQ-036 批三处账本（STATUS 头注 / tracking.md / commit message）记「SKILL §0/§1 联动已交付」，实际只落了 manifest-contract §anchor（1/4）。本条补齐真实交付：viral-remake §0 链接→`download_video` 白名单口径（保留「不支持登录态/直播流」边界）、§1 拆解改三层分工（`media_probe`+`evidence_grid` 出时间骨架与切点、`video2vl` 出内容语义、`inspect_image` 降级单点定位）、§4 响度对齐点名 `media_probe` 双端对账；remake-mapping §1 同步；toolchain.md 工具表补 3 行。
+- **验证**：审计文档「三处反向文本」全部消解；skill 门禁绿。
+
+#### CV-403 · 节拍工具入册（2026-11-03，已验收）
+
+- **状态**：已完成（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P0
+- **详情**：`analyze_beats` / `snap_cuts_to_beats` 是 beats 字段的**唯一生产者**，但没有任何 skill 教模型调它 ⇒ mv-production 的降级条款被自己的文档触发（「不引入新工具」+ 找不到节拍数据 ⇒ 卡点路线默认降级为未做精确卡点）。修法：mv-production description 收编两工具并删「不引入新工具」、§2 行首对时改 lyricsTimeline 口径、§3 补节拍生产步（analyze_beats → confidence 判定 → snap_cuts_to_beats → 重算 durationInFrames）；beat-editing.md 前提段与失败判据改「节点字段 beats」（不是 beats.json 文件）；audio-first.md 路线 A 补 analyze_beats 步；toolchain.md 补 2 行。
+- **验证**：CV-404 反向断言（每工具必须在 skills 出现）绿。
+
+#### CV-404 · 反向对账门禁：注册面 ↔ skills 全覆盖（2026-11-03，已验收）
+
+- **状态**：已完成（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：skill-tool-refs 新增两条断言：① 注册面每个工具名必须在 skills/**（md/txt/yaml）出现 ≥1 次（词边界口径，不复用 snake_case 扫描器——实测漏 video2vl / image2vl 这类无下划线名）；② REVERSE_EXEMPT 豁免表自清洁断言。与既有「幽灵引用」正断言合起来，工具 ↔ skill 两向都被机器闸钉死；依赖 CV-401（否则门禁表失真误红）。
+- **验证**：变异验证（单点删 adopt_canvas_as_storyboard → 精确变红）；6 门禁文件 53/53 绿。
+
 #### CV-405 · download_video 标参考 + §07 用户参考登记纪律（REQ-037 R2/R5）（2026-11-03，待桌面验收）
 
 - **详情**：REQ-037 批次 1。**R2**：`download_video` 产物节点自动 `isReference:true` + `referenceRole:'source'`（新增角色，`contracts/canvas.ts` 联合类型扩展）——链接下载的参考视频不标身份就进不了素材托盘与 §07 引用链（立项痛点：首页发视频链接，画布/故事板均无处回看）；工具回执与描述同步「已标为参考素材」。**R5**：`write_storyboard` 的 assets 段口径与参数描述补「**用户提供的参考素材必须登记** `source:"user"` + `ref:{kind:"canvasNode",id}` + `status:"ready"`，漏登 = 用户找不到自己给的素材；口述文字参考先落便签节点再引用」；总纲第 4 步补一行指针；`toolchain.md` 新增 §「参考素材登记」三条口径（§07 是引用不是副本、节点已标身份直接引用、登记必写 source:user）。

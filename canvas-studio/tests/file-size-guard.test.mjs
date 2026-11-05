@@ -86,7 +86,11 @@ export const FILE_WHITELIST = {
   // 骨架优先出片（2026-11-05）：render_composition 成功后落出片锚点（PROGRESS + 版本快照）
   // + M1 首次成片时刻，+52（4758 → 4810）显式登记；核心在 render-anchor.ts（新文件），
   // 这里只是接线 + 一行可见回执。消化路径：随「渲染工具壳拆分」批外提结算段。
-  'src/host-tools.ts': 4810,
+  // P1-3 / P1-4（2026-11-05）：scaffold_manifest 落盘分支（writeTo 参数 + hints 复用，
+  // 落盘校验与预览在 manifest-file.ts 新文件）+ render_composition 段边界提示接线，
+  // +44（4810 → 4854）显式登记。消化路径：随「scaffold 与 render 工具壳拆分」批
+  // 外提到 host-tools-remotion.ts（与既有 host-tools-artifact / -data / -series 同路）。
+  'src/host-tools.ts': 4854,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,
@@ -183,7 +187,7 @@ export const FUNC_WHITELIST = {
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2729, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729' },
+  'src/host-tools.ts#createStudioTools': { lines: 2771, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

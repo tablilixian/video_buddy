@@ -29,7 +29,9 @@ import { layoutTableToManifestSnippet, loadLayoutFile, normalizeLayoutTable, sav
 import { expandGroups } from './remotion/groups.js'
 // 骨架优先出片（2026-11-05）：真成片落锚点（build/PROGRESS.md + 版本快照）。
 // 核心逻辑在 render-anchor.ts —— 这里只是接线，省掉本文件的行数棘轮压力。
-import { writeRenderAnchor } from './render-anchor.js'
+import { segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
+// P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
+import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
 import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
@@ -3755,6 +3757,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // facts[].status 与 manifest 之间此前无任何桥（pending 照样变成图表数字）。
         // 观察期只点名不阻断；探针 / spot 不出（它们不交付，提醒是噪声）。
         const pendingFactNote = probe || spot ? '' : readPendingFactWarning(registry.storyboardFile(projectId))
+        // P1-4（2026-11-05）：段边界相对 v1 变化 —— 只报告不拒收。重排有时合法（旁白重合成），
+        // 拒收会把合法返工挡死；但模型改了 8 次帧表一次都没说，所以这里让它变成可见的事实。
+        const segmentDrift = probe || spot ? '' : segmentDriftNote(registry.projectDir(projectId), renderManifest)
         const warnings = [
           ...validation.warnings,
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
@@ -3765,6 +3770,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...checkManifestResolution(renderManifest, pre.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
           ...(pendingFactNote !== '' ? [pendingFactNote] : []),
+          ...(segmentDrift !== '' ? [segmentDrift] : []),
           ...coverageWarnings,
           ...job.warnings,
         ]
@@ -4284,10 +4290,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
         + '时机字段提示（REQ-036 C4）：animate / draw / colorShift 的 `startFrame` 可改用 `anchor`（锚 caption 轨的句/词窗口），'
         + '批量换文案时时机自动跟对不漂移 —— 字段语义见 manifest-contract.md §anchor；与 startFrame 互斥，同时写会被校验拒收。'
-        + '本工具只产出 JSON：不落盘、不渲染、不动画布。',
+        + '**强烈建议传 `writeTo`**（相对项目根或绝对路径，须在项目内）：直接把骨架落盘到 build/manifest.json，'
+        + '返回路径 + 轨数 + 字节数，只回显前 40 行 —— 省掉「60KB JSON 回显 + 模型抄一遍写盘」这一步，而那正是抄错括号与截断的主要来源。'
+        + '落了盘就用 `render_composition({ manifestPath })` 出片，别再内联整份。'
+        + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, required: true, description: '片名（写进 meta.title 与片头卡文案）' },
         durationSeconds: { type: 'number' as const, required: true, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧' },
+        // P1-3（2026-11-05）：生成即落盘。真机事故里 205 步全在绕 build/manifest.json 这一个文件。
+        writeTo: {
+          type: 'string' as const,
+          description: '可选：落盘路径 —— 建议直接 `build/manifest.json`（相对项目根）。必须落在本项目目录内，'
+            + '跨项目/跨仓/`..` 逃逸一律 CS-USER-ERR 拒收且零副作用；给了它就不再回显完整 JSON（只给前 40 行核对）',
+        },
         fps: { type: 'number' as const, description: '可选：24 / 25 / 30 / 60，缺省 30' },
         aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1280×720 / 720×1280 / 720×720）' },
         theme: {
@@ -4311,8 +4326,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         },
         render: renderTextResult,
       },
-      async execute(args) {
-        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown; recipe?: unknown }
+      async execute(args, exec) {
+        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown; recipe?: unknown; writeTo?: unknown }
         const title = typeof a.title === 'string' ? a.title.trim() : ''
         if (title.length === 0) throwError('CS-USER-ERR', { message: 'title 不能为空' })
         const seconds = typeof a.durationSeconds === 'number' && Number.isFinite(a.durationSeconds) ? a.durationSeconds : 0
@@ -4394,23 +4409,52 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           throwError('CS-DEV-ERR', { message: `骨架生成后校验失败（这是产品缺陷，请报给开发）：${check.errors.join('；')}` })
         }
         const json = JSON.stringify(manifest, null, 2)
+        // 主题/配方说明两处共用：落盘分支与回显分支都要给（模型拿到路径后仍要知道素材清单）。
+        const hints = [
+          ...(fellBack ? [`⚠️ 没找到主题 \`${String(a.theme)}\`，已回落到 ${theme.id}（可选：${Object.keys(THEMES).join(' / ')}）`] : []),
+          themeGuidance(theme),
+          ...(plan === undefined || recipe === undefined ? [] : [
+            `**配方 ${recipe.id}**（${recipe.title}）段结构与时间轴：`,
+            ...plan.timeline.map((slot) =>
+              `· ${slot.id}「${slot.label}」（${slot.card}）帧 ${String(slot.startFrame)}–${String(slot.startFrame + slot.durationInFrames - 1)}`),
+            `素材清单（**先备齐再动手**：status 为 "pending" 会阻断落地）：\n${recipeAssetsJson(recipe)}`,
+            recipe.note,
+          ]),
+        ]
+        const writeTo = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
+        if (writeTo !== '') {
+          // P1-3：生成即落盘。校验/包含判定全在 writeManifestFile 里（拒收零副作用）。
+          const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+          const written = writeManifestFile({
+            projectDir: registry.projectDir(projectId),
+            writeTo,
+            json,
+            trackCount: (manifest.tracks as unknown[]).length,
+          })
+          return {
+            text: [
+              `已写入 ${written.path}（${written.trackCount} 轨 · ${written.bytes.toLocaleString('en-US')} 字节），已通过 validateManifest；`
+                + '本轮**不回显完整 JSON**（它就是刚写进去的那份）。',
+              `前 ${MANIFEST_PREVIEW_LINES} 行供核对结构（**不要据此重传整份**）：`,
+              '```json',
+              written.preview,
+              '```',
+              ...hints,
+              `下一步：直接 \`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片 —— 不要先美化、不要先读源码。`,
+              `改文案/加轨请改这个小文件；改末尾轨时长仍要同步 \`meta.durationInFrames\`（当前 ${String(total)}，必须始终 = 最大结束帧）。`,
+            ].join('\n'),
+          }
+        }
         return {
           text: [
             `已生成 ${size.width}×${size.height} @${fps}fps · ${total} 帧（${seconds}s · ${aspect}）的骨架，已通过 validateManifest：`,
             '```json',
             json,
             '```',
-            ...(fellBack ? [`⚠️ 没找到主题 \`${String(a.theme)}\`，已回落到 ${theme.id}（可选：${Object.keys(THEMES).join(' / ')}）`] : []),
-            themeGuidance(theme),
-            ...(plan === undefined || recipe === undefined ? [] : [
-              `**配方 ${recipe.id}**（${recipe.title}）段结构与时间轴：`,
-              ...plan.timeline.map((slot) =>
-                `· ${slot.id}「${slot.label}」（${slot.card}）帧 ${String(slot.startFrame)}–${String(slot.startFrame + slot.durationInFrames - 1)}`),
-              `素材清单（**先备齐再动手**：status 为 "pending" 会阻断落地）：\n${recipeAssetsJson(recipe)}`,
-              recipe.note,
-            ]),
+            ...hints,
             '下一步：① 改 `text` 文案；② 往 `tracks` 追加你的轨（每轨需要唯一 id、startFrame、durationInFrames）；',
             `③ **任何改动末尾轨时长的操作都要同步 meta.durationInFrames**（当前 ${total}，必须始终 = 最大结束帧），否则会被尾部完整性校验拒收。`,
+            '提示：下次传 `writeTo: "build/manifest.json"` 可直接落盘，省掉「回显 + 抄写」这一步。',
           ].join('\n'),
         }
       },

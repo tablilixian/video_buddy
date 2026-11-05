@@ -335,3 +335,93 @@ export function formatMilestoneClock(input: MilestoneClockInput): string {
   return `⏱ **已超 M1 硬线**（T+${String(elapsedMin)}min 仍无成片）：停止美化与读源码，立刻 `
     + '`scaffold_manifest` → 写 `build/manifest.json` → `render_composition({quality:"draft"})`'
 }
+
+/* ───────────────────────── P1-4 · 段边界 diff ───────────────────────── */
+
+/**
+ * 段边界差异（**只报告，不拒收**）。
+ *
+ * 为什么只报不拒：重排有时是合法的（旁白重新合成、整片节奏推翻重来）。拒收会把
+ * 合法返工挡死；报告能让「重排」从静默变成可见 —— 今天的事故里模型改了 8 次帧表
+ * 却一次都没说，我们只能靠肉眼比对成片。
+ */
+export interface SegmentDiff {
+  changed: boolean
+  baselineCount: number
+  currentCount: number
+  added: string[]
+  removed: string[]
+  shifted: Array<{ id: string; from: number; to: number }>
+}
+
+/** 按 id 对齐比较（id 是段边界的唯一身份；位置漂移另算）。 */
+export function diffSegments(
+  baseline: readonly AnchorSegment[],
+  current: readonly AnchorSegment[],
+): SegmentDiff {
+  const before = new Map(baseline.map((seg) => [seg.id, seg.startFrame]))
+  const after = new Map(current.map((seg) => [seg.id, seg.startFrame]))
+  const added = current.filter((seg) => !before.has(seg.id)).map((seg) => seg.id)
+  const removed = baseline.filter((seg) => !after.has(seg.id)).map((seg) => seg.id)
+  const shifted: SegmentDiff['shifted'] = []
+  for (const [id, from] of before) {
+    const to = after.get(id)
+    if (to !== undefined && to !== from) shifted.push({ id, from, to })
+  }
+  return {
+    changed: added.length > 0 || removed.length > 0 || shifted.length > 0
+      || baseline.length !== current.length,
+    baselineCount: baseline.length,
+    currentCount: current.length,
+    added,
+    removed,
+    shifted,
+  }
+}
+
+/** 提示里最多点名几个段：三条足够定位，再多就把一行提示写成一段报告。 */
+const MAX_NAMED_SEGMENTS = 3
+
+function nameList(ids: readonly string[], prefix: string): string {
+  const head = ids.slice(0, MAX_NAMED_SEGMENTS)
+  return `${prefix}${head.join('、')}${ids.length > head.length ? ` 等 ${String(ids.length)} 个` : ''}`
+}
+
+/**
+ * 基准 v1 的段边界：优先取 `anchor-state.json`（落盘时已算过 `segments`），
+ * 老项目没有该字段时退回读 `build/versions/v1.json` 自己切一遍。
+ */
+function baselineSegments(projectDir: string): AnchorSegment[] | null {
+  const fromState = readAnchorState(projectDir).versions.find((v) => v.version === 1)
+  if (fromState !== undefined && fromState.segments.length > 0) return fromState.segments
+  const file = join(projectDir, BUILD_DIR, VERSIONS_DIR, 'v1.json')
+  if (!existsSync(file)) return null
+  try {
+    return segmentsOf(JSON.parse(readFileSync(file, 'utf8')))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 给 `render_composition` 的 warnings 用的那一行；不该说话时返回空串。
+ *
+ * 三种「不说」：还没有基准（第一次出片不该告警自己）、读不到基准、边界没变。
+ */
+export function segmentDriftNote(projectDir: string, manifest: unknown): string {
+  const baseline = baselineSegments(projectDir)
+  if (baseline === null || baseline.length === 0) return ''
+  const diff = diffSegments(baseline, segmentsOf(manifest))
+  if (!diff.changed) return ''
+  const parts = [`${String(diff.baselineCount)} 段 → ${String(diff.currentCount)} 段`]
+  if (diff.added.length > 0) parts.push(nameList(diff.added, '新增 '))
+  if (diff.removed.length > 0) parts.push(nameList(diff.removed, '删掉 '))
+  if (diff.shifted.length > 0) {
+    parts.push(diff.shifted
+      .slice(0, MAX_NAMED_SEGMENTS)
+      .map((seg) => `${seg.id} 起点 ${String(seg.from)} → ${String(seg.to)}`)
+      .join('；'))
+  }
+  return `段边界相对 v1 变了（${parts.join('；')}）：如果是**重排**，请在汇报里说明改了什么；`
+    + '如果不是重排，说明帧表被改坏了 —— 回 `build/versions/v1.json` 对一遍再继续。'
+}

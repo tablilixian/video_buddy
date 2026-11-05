@@ -8,6 +8,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import '../lib/errors/catalog.js'
 
 function tool() {
@@ -62,4 +65,49 @@ test('B2-3：title 为空 / durationSeconds 非正数时拒收（不生成非法
   await assert.rejects(() => tool().execute({ title: '   ', durationSeconds: 5 }, exec), (err) => err.code === 'CS-USER-ERR')
   await assert.rejects(() => tool().execute({ title: 'x', durationSeconds: 0 }, exec), (err) => err.code === 'CS-USER-ERR')
   await assert.rejects(() => tool().execute({ title: 'x', durationSeconds: 5000 }, exec), (err) => err.code === 'CS-USER-ERR')
+})
+
+/* ───────── P1-3（2026-11-05）：writeTo 落盘 ───────── */
+
+/** 带项目目录的注册表桩：resolveProjectId 走 list() 的 dir 前缀匹配，projectDir 直接给。 */
+function projectHarness(dir) {
+  const registry = {
+    list: async () => [{ id: 'p1', dir }],
+    projectDir: () => dir,
+  }
+  const entry = createStudioTools(registry, 3000).find((t) => t.name === 'scaffold_manifest')
+  assert.ok(entry, 'scaffold_manifest 必须已注册')
+  return { entry, exec: { agent: { session: { header: { cwd: dir } } } } }
+}
+
+test('P1-3：writeTo 直接落盘，返回路径/轨数/字节数，且不再回显完整 JSON', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-scaffold-write-'))
+  try {
+    const { entry, exec: execWithCwd } = projectHarness(dir)
+    const out = await entry.execute({ title: '落盘片', durationSeconds: 12, writeTo: 'build/manifest.json' }, execWithCwd)
+    const text = out.text ?? ''
+    const path = join(dir, 'build', 'manifest.json')
+    assert.ok(text.includes(path), `返回里要点名落盘路径，实际：\n${text.slice(0, 300)}`)
+    const json = JSON.parse(readFileSync(path, 'utf8'))
+    assert.deepEqual(validateManifest(json).errors, [], '落盘的那份必须自己过校验')
+    // 只回显前 40 行：完整 12s 骨架 JSON 远长于此。
+    assert.ok(text.length < 12_000, `不能把整份 JSON 回显回来（实际 ${String(text.length)} 字符）`)
+    assert.ok(text.includes('render_composition'), '必须给出下一步：用它出片')
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* 沙箱可能拦删除 */ }
+  }
+})
+
+test('P1-3：writeTo 逃出项目目录 → CS-USER-ERR 拒收，零副作用', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-scaffold-out-'))
+  try {
+    const { entry, exec: execWithCwd } = projectHarness(dir)
+    const error = await entry
+      .execute({ title: '逃逸', durationSeconds: 5, writeTo: '../escape.json' }, execWithCwd)
+      .then(() => undefined, (cause) => cause)
+    assert.equal(error?.code, 'CS-USER-ERR')
+    assert.equal(existsSync(join(dir, '..', 'escape.json')), false)
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* 同上 */ }
+  }
 })

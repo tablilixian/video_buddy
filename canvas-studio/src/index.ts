@@ -45,6 +45,8 @@ import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './too
 // 的可见性来源。每次 canvas 工具返回都会带一行 T+ / 剩余分钟 / 当前最佳版本。
 import { normalizeWorkflow } from './contracts/project.js'
 import { formatMilestoneClock, readAnchorState } from './render-anchor.js'
+// P2-1（2026-11-05）：max-tokens 兜底 —— 宿主观察落 build/NEXT.md + 下一轮一次性提醒。
+import { budgetGuardLine, renderBudgetNote, writeBudgetNote } from './budget-note.js'
 import { emptyGuardCounters, guardNote, noteGuardCall, type GuardCounters } from './milestone-guard.js'
 import './errors/catalog.js'
 import {
@@ -366,9 +368,16 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 落地前的素材准备是正常前置工作，不该被算成空转（M1 的时钟也是从落地那刻起算的）。
   let clockCache: { at: number; cwd: string; landed: boolean; line: string | null } | undefined
   const guards = new Map<string, GuardCounters>()
+  // P2-1（2026-11-05）：max-tokens 兜底的状态 —— 按 cwd 记「本轮工具调用数 / 被掐断次数 /
+  // 待消费的一次性提醒」。全部内存态：它只服务「这一轮死了、下一轮别再死」，不跨进程。
+  const turnCalls = new Map<string, number>()
+  const strikes = new Map<string, number>()
+  const budgetNotes = new Map<string, string>()
   registerStudioToolErrorBoundary(ctx, async ({ name, cwd, args, studio, isError }) => {
     const key = cwd ?? ''
     const now = Date.now()
+    // 本轮调用数：turn/end 时读它判「这一步是不是一步没落地就死了」。
+    turnCalls.set(key, (turnCalls.get(key) ?? 0) + 1)
 
     // ① 落地状态与时钟行：5 秒缓存（bash 风暴下不能每次都读注册表）。
     let entry = clockCache
@@ -413,8 +422,49 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     }
 
     // ③ 组装：时钟只给本插件工具（bash 返回里贴进度条纯属噪声），告警任何工具都给。
-    const lines = [studio ? entry.line : null, note].filter((text): text is string => text !== null && text !== '')
+    //    P2-1 的「上一轮被掐断」提醒读一次即消费 —— 每轮只提一次，不能变成常驻横幅。
+    const budget = budgetNotes.get(key)
+    if (budget !== undefined) budgetNotes.delete(key)
+    const lines = [studio ? entry.line : null, note, budget ?? null]
+      .filter((text): text is string => text !== null && text !== '')
     return lines.length === 0 ? null : lines.join('\n')
+  })
+  // P2-1（2026-11-05）：max-tokens 兜底（降级版，不 steer）。
+  //
+  // 事故形状：11-05 第 2、3 个 turn 的 `turn/end.reason.kind` 都是 max-tokens 且该轮
+  // 0 次工具调用 —— 预算全烧在思考里，一步没落地。这里做两件确定的事：
+  //   ① 落 `build/NEXT.md`（磁盘事实，压缩不会丢）；
+  //   ② 下一轮第一次工具返回挂一行提醒（模型一定会读到的地方）。
+  // 为什么不 steer：计划在模型脑子里，宿主逼它写会改变 turn 语义，且只能真机验、失败没法回滚。
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'turn/end') return
+    const key = session.header.cwd ?? ''
+    const calls = turnCalls.get(key) ?? 0
+    turnCalls.delete(key)
+    if (event.data.reason.kind !== 'max-tokens') return
+    const count = (strikes.get(key) ?? 0) + 1
+    strikes.set(key, count)
+    budgetNotes.set(key, budgetGuardLine({ toolCalls: calls, strikes: count }))
+    // 落盘要读注册表（异步），失败静默：turn 已经在收尾，不该再抛一个错误出来。
+    void (async () => {
+      try {
+        const projectId = await resolveProjectId(registry, key)
+        const projectDir = registry.projectDir(projectId)
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const best = readAnchorState(projectDir).versions.at(-1)
+        writeBudgetNote(projectDir, renderBudgetNote({
+          now: Date.now(),
+          landedAt: workflow.landedAt,
+          ...(best === undefined
+            ? {}
+            : { best: { version: best.version, durationSec: best.durationSec, trackCount: best.trackCount } }),
+          toolCalls: calls,
+          strikes: count,
+        }))
+      } catch {
+        // 首页态 / 非本项目 cwd 时 resolveProjectId 会抛 —— 属正常路径，不记错。
+      }
+    })()
   })
   ctx.effect(() => {
     const disposers = createStudioTools(registry, () => ctx.webServer.port, cfg, library)

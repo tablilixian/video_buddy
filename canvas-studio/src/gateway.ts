@@ -34,6 +34,19 @@ export const GATEWAY_DEFAULT_CONTEXT_WINDOW = 262_144
  * 压缩请求的输出上限由 cordis.patch.yml 里 compaction-basic 的 `maxTokens` 显式管住。
  */
 export const GATEWAY_MAX_OUTPUT_TOKENS = 32_768
+/**
+ * DramaServer `/v1/llm` 的**整体请求体**上限实测为 4 MiB（2026-11-05 探测：
+ * `content-length ≤ 4194304` 进应用层返回 400 解析错误，`4194305` 返回
+ * `413 {"code":"invalid_argument","message":"request body is too large"}`，
+ * 与真机会话三连败的错误体逐字节一致；再大直接 reset 连接）。
+ *
+ * 本字段是 llm-pi-ai 的**仅图片字节**预算（不含文本历史/schema），超预算抛
+ * `IMAGE_OFFLOAD_REQUIRED` → `compaction-image-offload` 自动用占位文本替换最老
+ * 图片并重试。harness 默认 20 MiB 远超网关 4 MiB 整包上限，导致本地检查通过
+ * 而网关 413，自愈路径永远没机会触发（413 归类 INVALID_REQUEST 终态，重发必败）。
+ * 故取 2 MiB：必须小于 4 MiB 且给文本历史留 ≥2 MiB 头部空间。
+ */
+export const GATEWAY_MAX_REQUEST_IMAGE_BYTES = 2 * 1024 * 1024
 
 /**
  * 已实测支持图像输入、但服务端目录未声明的网关模型。
@@ -89,6 +102,8 @@ export interface GatewayProviderProfile {
   apiKeyEnv: string
   api: string
   baseURL: string
+  /** llm-pi-ai provider 级字段：图片字节预算，超出即抛 IMAGE_OFFLOAD_REQUIRED 触发自动 offload。 */
+  maxRequestImageBytes?: number
   models: { id: string; name: string; contextWindow: number; maxTokens: number; input: GatewayInputModality[] }[]
 }
 
@@ -98,6 +113,7 @@ export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
     apiKeyEnv: GATEWAY_CREDENTIAL_REF,
     api: 'openai-completions',
     baseURL: `${gateway.apiBaseUrl.replace(/\/+$/, '')}/v1/llm`,
+    maxRequestImageBytes: GATEWAY_MAX_REQUEST_IMAGE_BYTES,
     models: gateway.models.map((model) => ({
       id: model.code,
       name: model.displayName,
@@ -189,6 +205,8 @@ export function gatewayFingerprint(gateway: GatewayRow | null): string {
   if (gateway === null) return ''
   return JSON.stringify({
     apiBaseUrl: gateway.apiBaseUrl,
+    // 纳入指纹：常量调整后下一次 reconcile 即命中形状差异重写网关行，不等重启。
+    maxRequestImageBytes: GATEWAY_MAX_REQUEST_IMAGE_BYTES,
     models: gateway.models.map((model) => [model.code, model.displayName, model.input]),
   })
 }

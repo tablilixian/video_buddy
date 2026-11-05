@@ -55,9 +55,9 @@
 ## §一、缺陷追踪（Bug）
 
 
-### 索引表（BUG-001~056）
+### 索引表（BUG-001~057）
 
-<!-- GENERATED:INDEX:BUG-001~056 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
+<!-- GENERATED:INDEX:BUG-001~057 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
 | 编号 | 标题 | 严重度 | 状态(资料库) | 资料库别名 | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|---|
 | BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建（待同步资料库为「已关闭」） | A-1 | **已解决**（CV-155 引用自愈 + CV-238 裸值校验 + **CV-242 写者语义与句柄断链根治**，2026-09-27 真机验收通过）。**2026-10-02 重开复核（别名 A-1）**：仍有三个口子拼出同症状——① 自愈换名后 `generationPrompt` 与画布血缘三份记录漂移；② `@ref[标题]` 匹配池不过滤节点类型；③ 模式读数只按图片张数算。**三口子均已落码·待桌面验收**（槽位媒体类型过滤 + 指名道姓报错 + 模式读数真值 `cdfe097bd9`；自愈换名记账同步 + supersede/覆盖下游改写 `267c32c6e2` / 批 F）。 | Host 工具层（`src/host-tools.ts` 的引用解析）/ 生成链路（`src/generate.ts` 的引用修复）/ 前端详情面板（`NodeDetailDrawer`）/ 画布保存（`projects.ts` `writeCanvas`） | CV-155+CV-238+CV-242 + 10-02/03 批 |
@@ -116,9 +116,10 @@
 | BUG-054 | 自定义 provider 填 opencode 参数后执行报错（别名 — · 严重 · 资料：新建/1.0.1） | 严重 | 新建（2026-10-07/08 资料库新增行；「编号」列空，无别名） | — | **未开始**（待运行时取证——用户提供自定义 provider 配置 + 执行日志） | Host provider 接入（`src/host-tools.ts` 的 provider 解析/执行链路） | — |
 | BUG-055 | 生图失败提示与错误节点应屏蔽（别名 — · 一般 · 资料：新建/1.0.1） | 一般 | 新建（2026-10-08 资料库新增行；「编号」列空，无别名） | — | **未开始**（与 BUG-045 / BUG-029 同源，建议合并处理——本条目侧重「屏蔽」而非「删除/不落卡」） | Client 生成回执 / 错误系统（`src/host-tools.ts` 预检 / 错误节点渲染） | — |
 | BUG-056 | Krea2 prompt 过长应限 500 字符内 | 一般 | 新建（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **未开始** | 模型路由 / 提示词呈现（`src/model-route.ts` / `src/host-tools.ts`） | — |
-<!-- GENERATED:INDEX:BUG-001~056 END -->
+| BUG-057 | 读图后会话三连败 413 请求体超限（永久卡死，重试必败） | 严重 | —（本仓自立，2026-11-05 真机事故；待登资料库） | — | **已修复·待桌面验收**（2026-11-05 P0 落码：网关 `maxRequestImageBytes=2MiB` 对齐实测 4 MiB 上限；P1 上游 spill-policy 定价兜底 / P2 服务端上限待做） | LLM 网关（`canvas-studio/src/gateway.ts`）/ 上游 `spill-policy`、`llm-pi-ai`（子模块） | CV-446 |
+<!-- GENERATED:INDEX:BUG-001~057 END -->
 
-> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §一；本表含全量 56 行（索引行自 2026-10-13 起手工维护）。
+> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §一；本表含全量 57 行（索引行自 2026-10-13 起手工维护）。
 
 > 注：BUG-023~052 为 2026-10-06 合并续编（原 A-x/B-x/C-x/D-x/E-x 别名），条目正文为底稿精编；逐 bug 修复方案详档见 `bug-analysis/`。
 
@@ -720,6 +721,26 @@
 - **修复方案/计划**：未开始——评估两点：① Krea2 通道加 prompt 长度护栏（≤500 字符；超限处理策略待拍板：截断 / 拒绝 / 改道）；② 需长段信息的场景由 `model-route.ts` 自动改走 Qwen image API（与 REQ-025 提示词语言呈现与模型路由同源）。
 - **验收标准**：Krea2 收到的 prompt 不超过 500 字符且无信息截断；需长段描述的场景由路由自动改用 Qwen image API。
 - **资料库来源**：Bug 表 行 44（2026-10-13 增）。｜ **图证**：无。
+
+---
+
+### BUG-057 ｜ 读图后会话三连败 413 请求体超限（永久卡死，重试必败）（别名 — · 严重 · 资料：本仓自立、待登资料库）
+
+- **严重度**：严重（会话级不可用：读图后任何重试都失败，只能开新会话）
+- **状态(资料库)**：—（2026-11-05 真机事故本仓自立，待登资料库）
+- **当前落地状态**：**已修复·待桌面验收**（2026-11-05 P0 落码；P1/P2 分层方案已定待排期）
+- **归属模块**：LLM 网关（`canvas-studio/src/gateway.ts`）/ 上游子模块 `spill-policy`、`llm-pi-ai`（禁在桌面分支改）
+- **关联 CV**：CV-446（P0 止血）
+- **现象**：成片检查阶段连续 `read_image` 15+ 张后，每轮请求都失败 `413: INVALID_REQUEST {"code":"invalid_argument","message":"request body is too large"}`，点「继续」仍败（错误被归类为「重发也不会成功」的终态），会话彻底卡死。
+- **关联代码**：`canvas-studio/src/gateway.ts`（`gatewayProfile` / `gatewayFingerprint`）；上游 `packages/llm/llm-pi-ai/src/stream.ts:48`（413→INVALID_REQUEST）、`packages/llm/llm-pi-ai/src/config.ts:58,173,345`（`maxRequestImageBytes` 默认 20 MiB）、`packages/spill/spill-policy/src/index.ts:66,127-130`（无图片定价器抛错被吞）；日志 `~/Library/Application Support/VideoBuddy/logs/dsh-2026-11-05.error.log`（`no image token calculator` 14:38 起刷屏）。
+- **根因（已实测取证，2026-11-05）**：三环叠加——① **spill-policy 永不截断带图工具结果**：`llm-pi-ai` 适配器未 override `imageRequestPricing`（只有 `llm-deepseek` 有），spill-policy 拿不到定价器即抛错、被 catch 吞掉只打告警，`maxInlineTokens: 12500` 对图片完全失效；② **本地预算与网关上限错位**：pi-ai `maxRequestImageBytes` 默认 20 MiB **仅计 base64 图片字节**，而 DramaServer `/v1/llm` 整包上限**实测精确 4194304 B（4 MiB）**（裸 socket 二分：`4194305` 即 413、错误体与事故逐字节一致）⇒ 本地检查通过、网关拒收，`IMAGE_OFFLOAD_REQUIRED` 自愈（image-offload 替换最老图片并重试）在 413 前永不触发；③ **413 无恢复**：归类 INVALID_REQUEST 终态，`compaction-image-offload` 只认 `IMAGE_OFFLOAD_REQUIRED`。
+- **修复方案/计划**：
+  - **P0（✅ 2026-11-05 落码，待桌面验收）**：`gateway.ts` 新增 `GATEWAY_MAX_REQUEST_IMAGE_BYTES = 2 MiB`（< 4 MiB、给文本历史留 ≥2 MiB）写进 `gatewayProfile()` + 纳入 `gatewayFingerprint`（改值即触发 reconcile 热重写，不等重启）；回归单测 1 例。
+  - **P1（待排期，上游子模块轨道，独立提交 + pin 更新分离）**：spill-policy 在无定价器时改用中性估算兜底，或 `PiAiAdapter` 补 `imageRequestPricing` override —— 从源头消除图片无限堆积。
+  - **P2（待反馈服务端）**：放大 `/v1/llm` 请求体上限；413 错误体带 `limit` 字段便于客户端对齐。
+  - **用户侧绕行**（修复发布前）：开新会话 / 优先 contact sheet 少逐张读图 / 别反复点「继续」。
+- **验收标准**：新会话连续读 15+ 张图不再 413，日志出现 `image/offload` 事件、最老图片转占位文本、会话继续（P0）；`no image token calculator` 告警归零、带图工具结果超 `maxInlineTokens` 被截断（P1）。
+- **资料库来源**：本仓自立（真机会话事故 + 根仓分析 `docs/2026-11-05-请求体413根因分析与修复方案.md`）。｜ **图证**：无（413 错误体已逐字节比对留档）。
 
 ---
 

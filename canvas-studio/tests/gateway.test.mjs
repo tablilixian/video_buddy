@@ -15,7 +15,8 @@ import { join } from 'node:path'
 import {
   gatewayCatalogPath, gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
   publishGatewayCredential, readGatewayCatalog, resolveModelInput, writeGatewayCatalog,
-  GATEWAY_CREDENTIAL_REF, GATEWAY_IMAGE_INPUT_OVERRIDES, GATEWAY_MAX_OUTPUT_TOKENS, GATEWAY_ROUTE_NAME,
+  GATEWAY_CREDENTIAL_REF, GATEWAY_IMAGE_INPUT_OVERRIDES, GATEWAY_MAX_OUTPUT_TOKENS,
+  GATEWAY_MAX_REQUEST_IMAGE_BYTES, GATEWAY_ROUTE_NAME,
 } from '../lib/gateway.js'
 
 const catalogOf = (models) => ({ apiBaseUrl: 'http://business.test', models, updatedAt: '2026-10-22T00:00:00Z' })
@@ -47,6 +48,7 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
     apiKeyEnv: GATEWAY_CREDENTIAL_REF,
     api: 'openai-completions',
     baseURL: 'http://business.test/v1/llm',
+    maxRequestImageBytes: 2 * 1024 * 1024,
     models: [
       { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768, input: ['text', 'image'] },
       { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144, maxTokens: 32_768, input: ['text'] },
@@ -88,6 +90,21 @@ test('模型行必须带 maxTokens=32768（DramaServer 输出上限，压缩压�
     assert.equal(model.maxTokens, GATEWAY_MAX_OUTPUT_TOKENS)
     assert.ok(model.maxTokens < 65_536, '必须低于 compaction 默认 headroom（65536），否则压缩请求 400')
   }
+})
+
+test('网关 provider 必须带 maxRequestImageBytes < 网关 4 MiB 整包上限（413 事故回归）', () => {
+  // 2026-11-05 实测：DramaServer /v1/llm 请求体上限精确 4194304 B，超出即
+  // 413 INVALID_REQUEST（终态，image-offload 不接管 → 会话永久卡死）。
+  // 本地图片预算必须先于网关触发 IMAGE_OFFLOAD_REQUIRED 自愈。
+  const profile = gatewayProfile(gatewayRow(catalogOf([modelOf('deepseek-flash')])))
+  assert.equal(GATEWAY_MAX_REQUEST_IMAGE_BYTES, 2 * 1024 * 1024)
+  assert.equal(profile.maxRequestImageBytes, GATEWAY_MAX_REQUEST_IMAGE_BYTES)
+  assert.ok(
+    profile.maxRequestImageBytes < 4 * 1024 * 1024,
+    '图片预算必须低于网关 4 MiB 整体请求体上限',
+  )
+  // 常量变化必须反映到指纹，否则 reconcile 门挡住、老安装不重写网关行。
+  assert.ok(gatewayFingerprint(gatewayRow(catalogOf([modelOf('deepseek-flash')]))).includes('"maxRequestImageBytes":'))
 })
 
 test('gatewayProviderOf + 指纹：无变化不写的判据', () => {

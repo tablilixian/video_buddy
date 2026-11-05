@@ -51,7 +51,7 @@
 
 ## 工具总览
 
-注册给模型的工具**共 26 个** = **25 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。
+注册给模型的工具**共 48 个** = **47 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48）。
 
 ### A. 后端生成 / 分析类（14 个）
 
@@ -110,7 +110,7 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
-### C2. 本地媒体 / 复刻工具（9 个，不调后端）
+### C2. 本地媒体 / 复刻工具（11 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -123,9 +123,11 @@
 | `verify_teardown` | **拆解回核**（REQ-036 复刻提效批三，B3）：ffmpeg 低帧率抽帧（2fps、16×16 均色）实测参考视频的画面切换点，与拆解表段起点 ±tolerance 秒贪心匹配。三态：matched（报实测切换时刻与偏差，>0.3s 提示校准起点）/ unmatched（窗口内无切换，边界可疑）/ extraSwitches（实测有切换但表里没有，疑似漏段/漏镜）。算法纯函数层在 `src/teardown-verify.ts`（与 IO 分离可单测）。纪律：拆解表落定后、进映射前必须过一遍，unmatched 不进映射 —— 甜品会话 v2 拆解自标 verified 但归段错误整片返工的教训 |
 | `teardown_store` | **拆解落库**（REQ-036 复刻提效批四，C4 后半）：把回核通过的拆解表按参考视频**指纹**（sha1(文件名\|字节数) 前 12 位，同文件跨项目指纹不变）存进宿主级跨项目目录 `dshHomePath('canvas-studio')/teardowns/`。三动作 `save` / `load` / `list`；实现层 `src/teardown-store.ts`（root 可注入可单测）。治「换会话 / 换 project dir 知识蒸发」：甜品会话 v1 的拆解/拟合结论随项目目录蒸发，v2 全部重拆还拆错。复用不等于盲用：取回后仍要 verify_teardown 对版。配套：`render_composition` 新增 `timingSegments`（Q2 成片时序回核 + Q3 元素覆盖核对，双闸只警告不阻断） |
 | `scaffold_manifest` | **生成结构合法的 Manifest 骨架**（REQ-035 B2-3）：传 `title` + `durationSeconds`（可选 `fps` / `aspect` / **`theme`** / **`recipe`**）→ 返回合法 JSON。`theme` 四选一（cold-tech / ink-press / warm-ember / neon-data）展开成底色 + 背景层 + 强调色 + 动效基线建议（**manifest 只存颜色值、不存 themeId**）。`recipe` 三选一（explainer-cards 零素材 / product-walkthrough 需 1 张产品图 / story-arc 需 2 张场景图）→ **接管 tracks 骨架**：按段出占位卡 + 给时间轴 + 给可直接填 §07 的素材清单。存在理由：手写 manifest 最易死在时长自洽（`meta.durationInFrames` 必须 = 最大结束帧、`exit.durationInFrames` ≤ 轨道时长）——一次算对。只产 JSON，不落盘/不渲染/不动画布 |
-| `evidence_grid` | **证据网格**（REQ-036 C2，第 40 号工具）：参考视频**一次调用**产出「时间标注网格图 + 结构化清单 + 实测画面切换点」。`select` 自适应采样保**实测帧 PTS**（fps 滤镜会重写 pts 故弃用），ffmpeg 滤镜链拼网格（`tile` + `drawtext` 烧时间戳/词标签 + `drawbox` 切点红框），`-vsync 0` 防 image2 CFR 复制首页。宽窄两级采样：缺省整片概览 1s/格，密集段二次调用传 `passes` + interval 0.1–0.3。`transcriptPath`（ASR 词级转写，可选）提供时每格叠加台词词标签（词用【】+ 前 8 字上下文），不传即纯时间戳网格 —— 与后台 ASR 上线互不等待。切点检测**复用 teardown-verify 同一函数**（不许复制实现）；产物落跨项目证据目录（`dshHomePath('canvas-studio')/evidence/<指纹>/`，teardown_store 同源指纹）。随包新增全量 Noto Sans SC TTF（drawtext 需实体字体，woff2 不适用）。实现层 `src/evidence-grid.ts`（纯函数与 IO 分离） |
+| `evidence_grid` | **证据网格**（REQ-036 C2，第 40 号工具）：参考视频**一次调用**产出「时间标注网格图 + 结构化清单 + 实测画面切换点」。`select` 自适应采样保**实测帧 PTS**（fps 滤镜会重写 pts 故弃用），ffmpeg 滤镜链拼网格（`tile` + `drawtext` 烧时间戳/词标签 + `drawbox` 切点红框），`-vsync 0` 防 image2 CFR 复制首页。宽窄两级采样：缺省整片概览 1s/格，密集段二次调用传 `passes` + interval 0.1–0.3。`transcriptPath`（ASR 词级转写，可选）提供时每格叠加台词词标签（词用【】+ 前 8 字上下文），不传即纯时间戳网格 —— 与后台 ASR 上线互不等待。切点检测**复用 `src/shot-detect.ts` 自适应检测**（CV-445 S1 升级：HSV 直方图 + 像素差分合成、局部自适应阈值、变化面积门限；原生帧率采样；`detector:'legacy'` 可退回旧 2fps 口径，不许复制实现）；产物落跨项目证据目录（`dshHomePath('canvas-studio')/evidence/<指纹>/`，teardown_store 同源指纹）。随包新增全量 Noto Sans SC TTF（drawtext 需实体字体，woff2 不适用）。实现层 `src/evidence-grid.ts`（纯函数与 IO 分离） |
 | `download_video` | **视频页链接落盘**（REQ-036 C1，第 41 号工具）：抖音 / B站 / YouTube（v1 白名单）链接 → yt-dlp 下载 → 探测 → **画布素材区**（项目资产 + 画布视频节点，`saveLocalAssetBytes` 唯一入口）。yt-dlp 二进制**运行时按需下载**到 `dshHomePath('canvas-studio')/bin/yt-dlp/<版本>/`（版本钉死 + sha256 校验，不进安装包），缓存命中也过 checksum；下载失败给手动放置路径指引。`expectedDurationSec?` 产物校验（容差 max(2s, 20%)，防错下成图集/预告）。边界：不带登录态（会员内容报错）、不做直播/合集。实现层 `src/video-download.ts`（白名单/错误分类/argv 纯函数 + IO 分离，ytDlpPath 可注入桩测） |
 | `media_probe` | **媒体探针**（REQ-036 C3，第 39 号工具）：本地媒体文件一条命令摸清**时长（秒）/ 分辨率 / fps / 音轨数 / 容器 / 综合响度（LUFS）**。实现：`ffmpeg -i` stderr 解析（`src/media-probe.ts` 纯函数层，与 CV-188 同源口径 —— 随包分发只有 ffmpeg 没有 ffprobe，不引入 ffprobe 依赖）+ ebur128 复用 `probeLoudnessLufs`（同一份实现不复制）。响度只在有音轨时测，失败不阻塞（`audioLoudnessLufs: null` + 原因）。用途：① 拆解表头部真值（别拿声明时长当真值，H3 实测请求 5s 出 5.167s）；② **响度对齐**（成片 vs 参考片差值 >2 LUFS 调 BGM/旁白音量重渲）——替代临场拼 ffmpeg 命令 |
+| `plan_generation_units` | **生成单元规划**（CV-445 S3，rea-video A4 吸收，第 47 号工具）：把带「制作方式」列的拆解表变成**最少调用次数的生成单元计划**——同场景 + 硬切相连的 AI 镜头合并为一次连续生成（剪辑时再按硬切切开），插入的代码/录屏/静镜不打断分组；单镜超 15s 在动作停顿处切段（后段用前段尾帧 `shotTransition:'chain'` 衔接）；相邻单元同场景无缝硬切自动给尾帧衔接说明。场景相似度 = 首尾帧 HSV 直方图距离（≤0.5 同景，镜头 >60 降级只按硬切合并）；上限按 `video_composite` 真实规格校验（图 ≤9 / 视频 ≤3 / 音频 ≤3 / 合计 ≤12 / 单次 ≤15s）。**只出计划不代执行**（付费生成先人工确认）：返回 Markdown 计划 + 逐单元可贴 `video_composite` 的提示词。实现层 `src/plan-generation-units.ts`（DP 求最少单元，纯函数可单测） |
+| `make_compare` | **对比片**（CV-445 S4，rea-video A6 吸收，第 48 号工具）：原片｜复刻片**左右并排**合成一条 `compare.mp4`（各缩放 640×360 信箱居中不拉伸、烧录「原片/复刻」标签、音频取复刻片、时长对齐较短者），产物缺省落复刻片同目录。零模型费用，仅本地 ffmpeg。验收用法：对照 viral-remake 五项判据逐项看（节奏 ≤0.2s / 转场 / 字幕 / 信息卡 / 整体+响度）——「哪一秒没对齐」变成看得见的错位。实现层 `src/compare-video.ts`（argv 纯函数 + IO 分离） |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 

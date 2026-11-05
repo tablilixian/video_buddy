@@ -41,7 +41,9 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // +download_video（视频页链接落盘），42 → 43。
 // 六大体裁路线 4.2（2026-11-04）：+import_csv（CSV → chart 数据卡），43 → 44。
 // 六大体裁路线 3.1（2026-11-04）：+series_manage / +episode_brief（短剧 episodic），44 → 46。
-const EXPECTED_TOOL_COUNT = 46
+// CV-445 S3（2026-11-05，rea-video A4 吸收）：+plan_generation_units（生成单元规划），46 → 47。
+// CV-445 S4（2026-11-05，rea-video A6 吸收）：+make_compare（原片｜复刻并排对比片），47 → 48。
+const EXPECTED_TOOL_COUNT = 48
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -79,6 +81,10 @@ const EXPECTED_TOOL_NAMES = [
   'evidence_grid',
   // REQ-036 C1（2026-11-03）：视频页链接 → 参考视频落盘（抖音/B站/YouTube 白名单）。
   'download_video',
+  // CV-445 S3（2026-11-05，rea-video A4）：生成单元规划（拆解表 → 最少调用次数的单元计划）。
+  'plan_generation_units',
+  // CV-445 S4（2026-11-05，rea-video A6）：原片｜复刻并排对比片（验收产物）。
+  'make_compare',
   // S5（2026-10-28）：节拍分析 / 卡点吸附（CV-040 收口）。
   'analyze_beats',
   'snap_cuts_to_beats',

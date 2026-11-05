@@ -11,6 +11,11 @@
  *   → 突变峰提取（阈值 = max(绝对下限, 中位数×倍数)，局部最大合并）→ 与拆解表每段
  *   起点做 ±tolerance 秒贪心最近匹配。
  *
+ * CV-445（S1，rea-video A3 吸收）：新增 **adaptive 检测器**（`shot-detect.ts`，缺省）——
+ * HSV 直方图⊕像素差分合成分 + 局部自适应阈值 + 变化面积门限，治「静态版式文字弹出
+ * 误判切镜」与固定阈值光变误报；legacy 路径原样保留可回退。三态语义（matched /
+ * unmatched / extraSwitches）与匹配纯函数两个检测器共用，不变。
+ *
  * 结果三态：matched（报实测切换时刻与偏差）/ unmatched（窗口内无切换 —— 边界可疑）/
  * extraSwitches（实测有切换但表里没有 —— 漏段候选）。ok = 全部 matched 且无 extra。
  *
@@ -19,6 +24,7 @@
 import { spawn } from 'node:child_process'
 import { throwError } from './error-system.js'
 import { resolveFfmpegPath, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
+import { detectCutPointsForVideo, SHOT_SAMPLE_FPS } from './shot-detect.js'
 
 /** 拆解表的一段（与 viral-remake 拆解表的一镜同构）。 */
 export interface TeardownSegment {
@@ -34,8 +40,10 @@ export interface TeardownSegment {
 export interface TeardownSwitchPoint {
   /** 切换时刻（秒，抽帧精度 = 1/sampleFps）。 */
   timeSec: number
-  /** 该帧与前一帧的平均色距（0–441 欧氏）。 */
+  /** 该帧与前一帧的平均色距（0–441 欧氏）；adaptive 检测器下为合成分（0–1）。 */
   magnitude: number
+  /** adaptive 检测器的边界类型（legacy 无此字段）。 */
+  kind?: 'cut' | 'fade'
 }
 
 /** 单个表边界的核对结论。 */
@@ -290,6 +298,8 @@ export async function verifyTeardown(options: {
   segments: readonly TeardownSegment[]
   sampleFps?: number
   toleranceSec?: number
+  /** 切点检测器：`adaptive`（缺省，shot-detect 三条件）或 `legacy`（2fps 均色距，回退用）。 */
+  detector?: 'legacy' | 'adaptive'
   ffmpegPath?: string
   signal?: AbortSignal
 }): Promise<TeardownVerifyResult> {
@@ -303,17 +313,39 @@ export async function verifyTeardown(options: {
       throwError('CS-USER-ERR', { message: `拆解表段「${segment.label}」起止非法（${segment.startSec}–${segment.endSec}）。`, detail: 'invalid segment range' })
     }
   }
-  const sampleFps = options.sampleFps ?? TEARDOWN_SAMPLE_FPS
-  const colors = await extractFrameColors(videoPath, sampleFps, options.ffmpegPath, options.signal)
-  if (colors.length < 4) {
-    throwError('CS-USER-ERR', { message: `视频抽帧不足（${colors.length} 帧，抽样 ${sampleFps}fps）—— 文件损坏或不是视频。`, detail: 'insufficient frames' })
+  const detector = options.detector ?? 'adaptive'
+  const legacyFps = options.sampleFps ?? TEARDOWN_SAMPLE_FPS
+  let switches: TeardownSwitchPoint[]
+  let sampleFps: number
+  let frameCount: number
+  if (detector === 'legacy') {
+    const colors = await extractFrameColors(videoPath, legacyFps, options.ffmpegPath, options.signal)
+    if (colors.length < 4) {
+      throwError('CS-USER-ERR', { message: `视频抽帧不足（${colors.length} 帧，抽样 ${legacyFps}fps）—— 文件损坏或不是视频。`, detail: 'insufficient frames' })
+    }
+    sampleFps = legacyFps
+    frameCount = colors.length
+    switches = findSwitchPoints(colorDistances(colors), legacyFps)
+  } else {
+    const adaptiveFps = options.sampleFps ?? SHOT_SAMPLE_FPS
+    const detected = await detectCutPointsForVideo({
+      videoPath,
+      sampleFps: adaptiveFps,
+      ...(options.ffmpegPath !== undefined ? { ffmpegPath: options.ffmpegPath } : {}),
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    })
+    if (detected.frameCount < 4) {
+      throwError('CS-USER-ERR', { message: `视频抽帧不足（${detected.frameCount} 帧，抽样 ${adaptiveFps}fps）—— 文件损坏或不是视频。`, detail: 'insufficient frames' })
+    }
+    sampleFps = detected.fps
+    frameCount = detected.frameCount
+    switches = detected.switches
   }
-  const switches = findSwitchPoints(colorDistances(colors), sampleFps)
   const { boundaries, extraSwitches } = matchBoundaries(segments, switches, options.toleranceSec !== undefined ? { toleranceSec: options.toleranceSec } : {})
   return {
     sampleFps,
-    frameCount: colors.length,
-    coveredSec: colors.length / sampleFps,
+    frameCount,
+    coveredSec: frameCount / sampleFps,
     boundaries,
     extraSwitches,
     ok: boundaries.every((b) => b.status === 'matched') && extraSwitches.length === 0,

@@ -149,6 +149,11 @@ const PROSE_PARAMS: readonly string[] = [
   'question',
   // REQ-022：片名（模型自撰的短文本，同样会整串塞占位词）
   'title',
+  // CV-445（S3）：plan_generation_units 的全片统一风格句（模型自撰，逐单元拼进提示词）。
+  'styleLine',
+  // CV-445（S4）：make_compare 的对比片左右标签（模型自撰短文本，烧录进画面）。
+  'leftLabel',
+  'rightLabel',
 ]
 
 /**
@@ -288,6 +293,17 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   key: '枚举字符串（white/black/green/magenta/#RRGGBB），非法值由 normalizeKeyColor 拒收；不指向别处产物，无占位形态',
   similarity: '数值（抠取宽度 0–1），越界由 clampUnit 钳制',
   blend: '数值（边缘羽化 0–1），越界由 clampUnit 钳制',
+  // —— CV-445（S3）plan_generation_units ——
+  shots: '对象数组（拆解表逐镜：index/startSec/endSec/productionMethod/description），逐项字段由 execute 显式拒收（startSec<endSec、productionMethod 非空），容器本身无占位形态',
+  referenceAssets: '对象数组（{kind 枚举 image/video/audio, what 说明}），非法项由 execute 过滤，不指向别处产出的对象 id',
+  maxUnitSec: '数值（秒，>0 才采纳），非法/越界回落出厂缺省 15（对齐 maxVideoSeconds）',
+  minUnitSec: '数值（秒，>0 才采纳），非法/越界回落出厂缺省 4',
+  preferSec: '数值（秒，>0 才采纳），非法/越界回落出厂缺省 8',
+  sameSceneDistance: '数值（HSV 距离，>0 才采纳），非法/越界回落出厂缺省 0.5',
+  // —— CV-445（S4）make_compare ——
+  originalPath: '绝对路径（原片），execute 校验 startsWith(sep) 且由 ffmpeg 实测，无文本占位形态（与 videoPath 同判）',
+  remakePath: '绝对路径（复刻片），同 originalPath',
+  outPath: '可选绝对路径（对比片产物），非法值由 defaultCompareOutPath 回落复刻片同目录缺省',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

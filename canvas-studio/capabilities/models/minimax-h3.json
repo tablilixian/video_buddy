@@ -1,0 +1,31 @@
+{
+  "id": "minimax-h3",
+  "name": "MiniMax H3",
+  "status": "ga",
+  "channels": ["drama", "fal"],
+  "primitives": [
+    "video.text2video",
+    "video.i2v_first_frame",
+    "video.i2v_first_last_frame",
+    "video.multi_reference",
+    "video.reference_video",
+    "audio.reference_audio",
+    "video.native_audio"
+  ],
+  "limits": {
+    "duration": { "min": 5, "max": 15, "default": 10, "note": "fal 通道下限 5s（更短钳到 5 并提示）；上限 = maxVideoSeconds 出厂 15（设置可改）" },
+    "resolution": { "tiers": ["480p", "720p", "1080p"], "note": "0.4/1.0/2.0MP（唯一源 resolution-tiers.ts：864×480 / 1376×768 / 1920×1088）" },
+    "refs": { "images": 9, "videos": 3, "audios": 3, "totalFiles": 12, "note": "第 N 张图即 <Picture N>；<Video N> 顺序即引用序；跨模态合计 ≤12（video-reference.ts 预检）" }
+  },
+  "capabilities": {
+    "multi_shot": false,
+    "note": "H3 单次只出一段连续视频，没有原生 multi_shot primitive —— 「一次多镜头」靠 plan_generation_units 规划成连续片段后剪辑切开"
+  },
+  "cost": { "currency": "cny", "note": "按后端 drama-api 计费口径，未在此登记单价（后端变化频繁，写死会失真）" },
+  "license": "proprietary API（MiniMax 官方，经 drama-api / fal 转发）",
+  "verified": {
+    "basis": "docs/canvas-studio-tools.md §A8/A9 硬规格表 + src/generate.ts clampDuration/maxVideoSeconds + src/video-reference.ts 预检",
+    "date": "2026-11-05",
+    "confidence": "high"
+  }
+}

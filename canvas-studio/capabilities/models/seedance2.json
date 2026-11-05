@@ -1,0 +1,22 @@
+{
+  "id": "seedance2",
+  "name": "Seedance 2.0",
+  "status": "placeholder",
+  "channels": [],
+  "primitives": [],
+  "limits": {
+    "duration": { "min": null, "max": null, "note": "未接入，规格未实测 —— 接入前必须先实测回填（尤其单次时长与 multi_shot 是否原生支持）" },
+    "refs": { "note": "未接入" }
+  },
+  "capabilities": {
+    "multi_shot": null,
+    "note": "rea-video 侧信息称 seedance2.0 支持 multi_shot（单次 ≤10s）—— 未经本仓实测，不得当采购依据（能力对照表 §1.4：自评数字存疑）"
+  },
+  "cost": { "note": "未接入" },
+  "license": "proprietary API（待接入时确认）",
+  "verified": {
+    "basis": "src/generate.ts:177 model 占坑参数 + generate.ts:2046 占坑提示文案（传入被忽略并回 warning）",
+    "date": "2026-11-05",
+    "confidence": "low"
+  }
+}

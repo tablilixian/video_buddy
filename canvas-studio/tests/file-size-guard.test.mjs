@@ -62,7 +62,9 @@ export const FILE_WHITELIST = {
   // 同批外提，不在本次新立拆分批。
   // REQ-037（2026-11-03）：素材托盘四分区样式（分组/文本展开）+ 待落画布条样式 +67，
   // 11000 → 11067 显式登记。消化路径同上：按域拆 CSS 时随托盘/待落段外提。
-  'src/client/styles.ts': 11067,
+  // CV-444（2026-11-05，UI-06/08/09）:root 六档 z-index 令牌 + toast 去重/队列/断行
+  // +15，11067 → 11082 补登（CV-444 提交时 test:smoke 未跑成，本批统一验证补登）。
+  'src/client/styles.ts': 11082,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
@@ -101,7 +103,9 @@ export const FILE_WHITELIST = {
   // +65，3168 → 3233。消化路径：随既有「显示外提 → 抽 hooks」第二阶段一起外提。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 JSX + 查看回调 +28，3233 → 3261
   // 显式登记。消化路径同上。
-  'src/client/StudioFrame.tsx': 3261,
+  // CV-444（2026-11-05）：UI-01 ConfirmHost 末尾唯一出口 + UI-13 加载态/计时器接线
+  // +26，3261 → 3287 补登（同上，统一验证批补登）。
+  'src/client/StudioFrame.tsx': 3287,
   // REQ-037（2026-11-03）：divertAttachments 改「暂存 + 占位说明」（附件不再发送时
   // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
   // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
@@ -159,14 +163,14 @@ export const FILE_WHITELIST = {
 export const FUNC_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：素材托盘四分区 + 待落画布条样式 +67（10983 → 11050）。
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 11050, note: '整文件 CSS 模板字面量；阶段 6 拆分时本条随之消失' },
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 11065, note: '整文件 CSS 模板字面量；CV-444 +15 补登；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
   'src/routes.ts#registerStudioRoutes': { lines: 2969, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2844, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行' },
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2867, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
   // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
   'src/client/index.ts#studioClient': { lines: 2747, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2' },

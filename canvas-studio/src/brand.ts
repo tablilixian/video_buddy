@@ -172,6 +172,10 @@ const NON_COLOR_TOKENS: readonly (readonly [string, string])[] = [
   ['--cs-node-opacity', '1'],
   ['--cs-node-state', '1'],
   ['--cs-node-dim', '1'],
+  // CV-445 补登（CV-444 UI-06 遗留）：toast 层叠档。styles.ts :root 六档 z-index
+  // 中只有 --cs-z-toast 被 var() 引用（styles.ts toast 规则体），按幽灵令牌守卫
+  // 必须在本文件有定义；其余五档无 var() 引用，不触发守卫。
+  ['--cs-z-toast', '210'],
   // C10：--cs-chip-bg / --cs-chip-line / --cs-chip-fg 已删除。
   // C2 造这三个是**被迫**的：角标压在画面上，底和字必须自带，否则亮画面上的
   // 深字会消失。C10 把角标收进卡片的头/脚两行之后，底下就是节点面 ——

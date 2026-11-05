@@ -73,6 +73,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   media_probe: { tier: 'A', title: '媒体探针', icon: '探' },
   evidence_grid: { tier: 'A', title: '证据网格', icon: '证' },
   download_video: { tier: 'A', title: '视频下载', icon: '载' },
+  // CV-445（S3/S4，rea-video 吸收批）：生成单元规划 / 自动对比片。
+  plan_generation_units: { tier: 'A', title: '生成单元规划', icon: '划' },
+  make_compare: { tier: 'A', title: '对比片', icon: '比' },
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
   // 故事板强约束 L4（2026-10-25）：老项目迁移，从画布已有分镜卡反推故事板骨架。
   adopt_canvas_as_storyboard: { tier: 'A', title: '反推故事板', icon: '溯' },

@@ -20,8 +20,8 @@
  *     -vsync 0                          ← image2 缺省 CFR 会把首页复制到每页，必须透传
  *     page-%04d.jpg
  *
- * 切点检测**复用 teardown-verify 的同一份纯函数**（findSwitchPoints，不许复制实现），
- * 与 verify_teardown 口径天然一致。
+ * 切点检测**与 verify_teardown 共用同一份检测器**（CV-445 起 = `shot-detect.ts` 自适应
+ * 三条件，不许复制实现），口径天然一致。
  *
  * 纯函数（采样展开 / 分页 / 词标签 / 滤镜链构造 / showinfo 解析）与 ffmpeg IO 分离，
  * 前者直接单测，后者走真 ffmpeg E2E。
@@ -34,11 +34,12 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 // AR-03：JSON 状态档一律原子写（裸 writeFile 中断会留半截 JSON）。
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import {
-  colorDistances,
-  extractFrameColors,
-  findSwitchPoints,
-  TEARDOWN_SAMPLE_FPS,
-} from './teardown-verify.js'
+  detectShotBoundaries,
+  extractFrameTrack,
+  SHOT_SAMPLE_FPS,
+  type FrameTrack,
+} from './shot-detect.js'
+import { collectMethodEvidence, type MethodEvidence } from './method-evidence.js'
 import { teardownFingerprintOf } from './teardown-store.js'
 import { probeMediaDuration, resolveFfmpegPath, runFfmpeg, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { throwError } from './error-system.js'
@@ -393,8 +394,10 @@ export interface EvidenceGridResult {
   pages: EvidencePage[]
   /** 每页产物文件名（含页码与时间范围，与 pages 同序）。 */
   files: string[]
-  /** 实测画面切换点（秒，与 verify_teardown 同一份检测函数）。 */
+  /** 实测画面切换点（秒，与 verify_teardown 同一份检测器）。 */
   cutPoints: number[]
+  /** 确定性取证三项（CV-445 S2）：AIGC 元数据 / 帧率指纹 / 冻结帧。 */
+  methodEvidence: MethodEvidence
   /** 结构化清单 JSON 的落盘文件名。 */
   manifestFile: string
   transcriptUsed: boolean
@@ -456,13 +459,17 @@ export async function generateEvidenceGrid(options: EvidenceGridOptions): Promis
     transcript = parseTranscript(await readFile(transcriptPath, 'utf8'))
   }
 
-  // ③ 切点预扫描：与 verify_teardown 同一份检测函数（2fps + 16×16 均色）
+  // ③ 帧轨迹一次抽取（6fps 全片）→ 切点预扫描与冻结帧/取证共用；
+  //    抽不到不阻塞网格主路径（切点为空、取证降级）
+  let fullTrack: FrameTrack | undefined
   let cutPoints: number[] = []
-  if (markCuts) {
-    const colors = await extractFrameColors(videoPath, TEARDOWN_SAMPLE_FPS, ffmpeg, options.signal)
-    if (colors.length >= 4) {
-      cutPoints = findSwitchPoints(colorDistances(colors), TEARDOWN_SAMPLE_FPS).map((s) => Math.round(s.timeSec * 100) / 100)
+  try {
+    fullTrack = await extractFrameTrack(videoPath, SHOT_SAMPLE_FPS, options.ffmpegPath, options.signal)
+    if (markCuts && fullTrack.luma.length >= 4) {
+      cutPoints = detectShotBoundaries(fullTrack).map((b) => Math.round(b.timeSec * 100) / 100)
     }
+  } catch {
+    fullTrack = undefined
   }
 
   // ④ 证据目录：teardown_store 同源指纹 → evidence/<key>/
@@ -527,10 +534,19 @@ export async function generateEvidenceGrid(options: EvidenceGridOptions): Promis
     const hit = wordAt(transcript, cell.timestampSec)
     if (hit !== null) cell.label = labelOfWord(hit)
   }
+
+  // ⑦ 确定性取证三项（CV-445 S2）：AIGC 元数据 / 帧率指纹 / 冻结帧 —— 绝不抛错
+  const methodEvidence = await collectMethodEvidence({
+    videoPath,
+    ...(options.ffmpegPath !== undefined ? { ffmpegPath: options.ffmpegPath } : {}),
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+    ...(fullTrack !== undefined ? { fullTrack } : {}),
+  })
+
   const manifestFile = 'evidence-grid.json'
   await writeFileAtomic(
     join(dir, manifestFile),
-    `${JSON.stringify({ key, videoPath, cutPoints, columns, rows, cellPx, pages, cells }, null, 2)}\n`,
+    `${JSON.stringify({ key, videoPath, cutPoints, methodEvidence, columns, rows, cellPx, pages, cells }, null, 2)}\n`,
     { mode: 0o600, dirMode: 0o700 },
   )
 
@@ -541,6 +557,7 @@ export async function generateEvidenceGrid(options: EvidenceGridOptions): Promis
     pages,
     files,
     cutPoints,
+    methodEvidence,
     manifestFile,
     transcriptUsed: transcript !== undefined,
   }

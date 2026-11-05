@@ -14,7 +14,8 @@
  *
  * ## 本门禁怎么工作（四条）
  *
- * 1. **入口体积上限**：除总纲外的每个 SKILL.md ≤ 12 KB，超了就是"细则没下沉"。
+ * 1. **入口体积上限**：除总纲外的每个 SKILL.md ≤ 15 KB，超了就是"细则没下沉"。
+    2026-11-05 用户拍板由 12 KB 放宽到 15 KB（与总纲同口径，为 A1 分册腾出正文空间）。
  *    总纲由 `skill-catalog.test.mjs` 的 CV-121 体积断言单独管，本文件**不**纳入，
  *    免得两处阈值互相打架。
  * 2. **渐进披露真实性（分层，不重复造轮子）**：`minimax-skill.test.mjs` 已守
@@ -40,7 +41,7 @@ const SKILLS_DIR = join(ROOT, 'skills')
  * 入口体积上限。总纲（路由 + 审批语义 + 安全协议）体量天然更大，另由
  * skill-catalog.test.mjs 的 CV-121 断言管辖，此处排除。
  */
-const ENTRY_LIMIT = 12 * 1024
+const ENTRY_LIMIT = 15 * 1024
 const ORCHESTRATOR = 'canvas-studio-creation'
 
 /**
@@ -116,7 +117,7 @@ test('CV-322：扫描面有效（skills/ 非空且能读到正文，否则下面
   assert.ok(entries.every((e) => e.body.length > 0), '存在空 SKILL.md')
 })
 
-test('CV-322：SKILL.md 是入口级文件（体积上限 12 KB），细则必须下沉到 references/', () => {
+test('CV-322：SKILL.md 是入口级文件（体积上限 15 KB），细则必须下沉到 references/', () => {
   const overweight = skillEntries()
     .filter((e) => e.name !== ORCHESTRATOR)
     .map((e) => ({ ...e, bytes: Buffer.byteLength(e.body) }))

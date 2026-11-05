@@ -1,7 +1,7 @@
 /**
  * viral-remake（爆款复刻）skill 守卫（CV-391，REQ-036 R-1）。
  *
- * 结构门禁（catalog 双向 / platform.yaml 深等 / 12KB 上限 / 审批让位 / 工具引用
+ * 结构门禁（catalog 双向 / platform.yaml 深等 / 15KB 上限 / 审批让位 / 工具引用
  * 真实性）由 skill-catalog / skill-platform-meta / skill-progressive-disclosure /
  * skill-tool-refs 四道既有门覆盖，本文件只守「文档 ↔ 源码」对齐这一层——
  * 这个 skill 本质是一份映射手册，引擎枚举一变它就在撒谎：

@@ -57,9 +57,9 @@ test('B-6 数据体裁壳：dataSource / baseline / pending 三判据在位', ()
   }
 })
 
-test('B-6 体积闸：六壳 + 五 executor 全部 ≤ 12KB（纪律节不得把分册撑爆）', () => {
+test('B-6 体积闸：六壳 + 五 executor 全部 ≤ 15KB（纪律节不得把分册撑爆；2026-11-05 随入口级闸统一放宽）', () => {
   for (const name of [...SHELLS, ...EXECUTORS]) {
     const size = Buffer.byteLength(read(`${name}/SKILL.md`))
-    assert.ok(size <= 12 * 1024, `${name}/SKILL.md ${size}B > 12KB 闸`)
+    assert.ok(size <= 15 * 1024, `${name}/SKILL.md ${size}B > 15KB 闸`)
   }
 })

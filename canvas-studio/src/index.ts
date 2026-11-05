@@ -14,7 +14,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { ProjectRegistry } from './projects.js'
 import { AssetLibrary } from './asset-library.js'
 import { registerStudioRoutes } from './routes.js'
-import { createStudioTools } from './host-tools.js'
+import { createStudioTools, resolveProjectId } from './host-tools.js'
 import { registerMinimaxSkills } from './skills/minimax-skills.js'
 import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
@@ -41,6 +41,11 @@ import {
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
 import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
+// 骨架优先出片（2026-11-05）：里程碑时钟 —— 「故事板落地后 20 分钟内必须有一条成片」
+// 的可见性来源。每次 canvas 工具返回都会带一行 T+ / 剩余分钟 / 当前最佳版本。
+import { normalizeWorkflow } from './contracts/project.js'
+import { formatMilestoneClock, readAnchorState } from './render-anchor.js'
+import { emptyGuardCounters, guardNote, noteGuardCall, type GuardCounters } from './milestone-guard.js'
 import './errors/catalog.js'
 import {
   CanvasStudioConfig,
@@ -352,7 +357,65 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 统一错误系统（设计文档 §9）：每条工具定义先过 wrapStudioToolDefinition ——
   // 裸异常在此收敛为 CanvasStudioError 并暂存错误码；registerStudioToolErrorBoundary
   // 再经 `tools/execute` 中间件把码写进结果，使其能穿过 tool/result 抵达客户端。
-  registerStudioToolErrorBoundary(ctx)
+  // 里程碑时钟 + 空转告警（骨架优先出片，2026-11-05）：一次算好一行，挂在工具返回上。
+  // 5 秒缓存 + cwd 维度：同一轮连续调用不必反复读 registry 与锚点文件；换了会话/项目重算。
+  // 失败一律静默（返回 null）—— 时钟是辅助设施，不能让工具结果陪葬。
+  //
+  // 空转告警（P1-2 / P2-3）**对每个工具都计**：`tools/execute` 对所有工具触发，
+  // bash 250 次 / 渲染 0 次这种事只有在这里才看得见。计数只在「已落地」之后推进 ——
+  // 落地前的素材准备是正常前置工作，不该被算成空转（M1 的时钟也是从落地那刻起算的）。
+  let clockCache: { at: number; cwd: string; landed: boolean; line: string | null } | undefined
+  const guards = new Map<string, GuardCounters>()
+  registerStudioToolErrorBoundary(ctx, async ({ name, cwd, args, studio, isError }) => {
+    const key = cwd ?? ''
+    const now = Date.now()
+
+    // ① 落地状态与时钟行：5 秒缓存（bash 风暴下不能每次都读注册表）。
+    let entry = clockCache
+    if (entry === undefined || entry.cwd !== key || now - entry.at >= 5000) {
+      let landed = false
+      let line: string | null = null
+      try {
+        const projectId = await resolveProjectId(registry, cwd)
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        landed = workflow.landedAt !== undefined
+        if (workflow.landedAt !== undefined) {
+          const best = readAnchorState(registry.projectDir(projectId)).versions.at(-1)
+          const text = formatMilestoneClock({
+            landedAt: workflow.landedAt,
+            ...(workflow.firstDraftAt === undefined ? {} : { firstDraftAt: workflow.firstDraftAt }),
+            now,
+            ...(best === undefined ? {} : { best }),
+          })
+          line = text === '' ? null : text
+        }
+      } catch {
+        landed = false
+        line = null
+      }
+      entry = { at: now, cwd: key, landed, line }
+      clockCache = entry
+    }
+
+    // ② 空转计数：每次调用都推进（不受 5 秒缓存影响 —— 它是逐次累加的）。
+    //    「探针 / 快验不算成片」的判定在 `noteGuardCall` 内部（单一事实源）。
+    let note: string | null = null
+    if (entry.landed) {
+      const counted = noteGuardCall(guards.get(key) ?? emptyGuardCounters(), { name, arguments: args, isError })
+      const judged = guardNote(counted)
+      guards.set(key, judged.state)
+      note = judged.text
+      // 上限 8 个 cwd：会话/项目切换不该让这张表无限长；超出丢最早入表的。
+      if (guards.size > 8) {
+        const oldest = guards.keys().next()
+        if (!oldest.done && oldest.value !== key) guards.delete(oldest.value)
+      }
+    }
+
+    // ③ 组装：时钟只给本插件工具（bash 返回里贴进度条纯属噪声），告警任何工具都给。
+    const lines = [studio ? entry.line : null, note].filter((text): text is string => text !== null && text !== '')
+    return lines.length === 0 ? null : lines.join('\n')
+  })
   ctx.effect(() => {
     const disposers = createStudioTools(registry, () => ctx.webServer.port, cfg, library)
       .map((definition) => wrapStudioToolDefinition(definition))

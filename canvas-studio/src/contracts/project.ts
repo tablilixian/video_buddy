@@ -34,6 +34,16 @@ export interface StudioWorkflow {
   state: StudioWorkflowState
   /** 进行中的点选问题（ask_user_choice）；无问题时缺省。 */
   pendingQuestion?: StudioPendingQuestion | null
+  /**
+   * 故事板落地的时刻（epoch ms）—— M1 里程碑的计时起点。
+   *
+   * 为什么记在这里而不是 storyboard.json：落地会改 `state`，而「T+0」必须与
+   * 状态迁移同一次落盘，否则会出现「已退出 storyboarding 但起点未知」的空窗，
+   * 时钟就永远拿不到基准。本批新增字段，老项目缺省 ⇒ 时钟不显示（不误报）。
+   */
+  landedAt?: number
+  /** 首次渲出**非探针**成片的时刻（draft 也算）—— M1 达成时刻。 */
+  firstDraftAt?: number
 }
 
 /** 旧记录 / 新建项目的默认工作流。REQ-022：新建项目直接进「拍摄定稿」。 */
@@ -68,6 +78,12 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
     state: record.state === 'keyframe_review' || record.state === 'executing'
       ? record.state
       : 'storyboarding',
+  }
+  // 里程碑时间戳（骨架优先出片）：只认正数毫秒；非法 / 缺失一律不写字段，
+  // 让「没有基准」与「基准是 0」在类型上不可区分 —— 时钟据此直接静默。
+  for (const key of ['landedAt', 'firstDraftAt'] as const) {
+    const value = record[key]
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) workflow[key] = value
   }
   const pending = record.pendingQuestion
   if (pending !== null && pending !== undefined && typeof pending === 'object' && !Array.isArray(pending)) {

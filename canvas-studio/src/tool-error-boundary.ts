@@ -24,7 +24,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type { ToolExecutionResult, ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
@@ -48,6 +49,43 @@ export interface PendingFailure {
  * `WeakMap` 保证随 exec 一起回收，不累积。
  */
 const PENDING = new WeakMap<object, PendingFailure>()
+
+/**
+ * 经 {@link wrapStudioToolDefinition} 包装过的工具名（= 本插件的全部工具）。
+ *
+ * 为什么需要它：里程碑时钟要挂在**每一次 canvas 工具返回**上，而 `tools/execute`
+ * 中间件对所有工具（含 dsh 自带）都会触发。没有这份名单，桌面端的 `bash` / `read`
+ * 也会被贴上本项目的进度行 —— 那既误导又越界。
+ */
+const STUDIO_TOOL_NAMES = new Set<string>()
+
+/** 时钟上下文：中间件能拿到的全部事实（工具名 + 会话工作区）。 */
+export interface StudioToolClockContext {
+  /** 工具名（含 dsh 自带工具：`bash` / `read` / `write` …）。 */
+  name: string
+  cwd: string | undefined
+  /** 解析后的参数（形状未知 —— 只有工具自己拥有 schema，提供者按需探测）。 */
+  args: unknown
+  /** 本次调用是否失败。 */
+  isError: boolean
+  /** 是否本插件自己的工具（`STUDIO_TOOL_NAMES`）。 */
+  studio: boolean
+}
+
+/**
+ * 里程碑行提供者：返回要追加到结果末尾的一行（可含换行）；空串 / null 表示不追加。
+ *
+ * **对所有工具都会被调用**（不只本插件工具）—— 空转的燃料恰恰是 dsh 自带的
+ * `bash` / `read`，只挂本插件工具等于在最需要它的时刻看不见（见 `milestone-guard.ts`）。
+ * 由提供者自己决定「这个工具名要不要说话」。
+ */
+export type StudioToolClock = (context: StudioToolClockContext) => Promise<string | null>
+
+/** 把时钟行追加到成功结果的末尾（纯函数，便于单测）。 */
+export function appendClockLine(result: ToolExecutionSuccess, line: string): ToolExecutionSuccess {
+  const block: ContentBlock = { type: 'text', text: line }
+  return { ...result, content: [...result.content, block] }
+}
 
 /**
  * 归类一次工具失败：统一收敛为 `CanvasStudioError`、暂存错误码、返回**可直接抛出**的
@@ -91,6 +129,7 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
     execute(args: unknown, exec: unknown): Promise<unknown>
   } & Record<string, unknown>
   const original = source.execute
+  if (typeof source.name === 'string') STUDIO_TOOL_NAMES.add(source.name)
   const wrapped: Record<string, unknown> = withPlaceholderParamRule({ ...source }) as Record<string, unknown>
   wrapped.execute = async (args: unknown, exec: unknown): Promise<unknown> => {
     try {
@@ -115,7 +154,7 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
  * 只对**经 {@link wrapStudioToolDefinition} 包装过**的调用生效（没暂存记录就直接放行），
  * 因此不会碰别人注册的工具。
  */
-export function registerStudioToolErrorBoundary(ctx: Context): void {
+export function registerStudioToolErrorBoundary(ctx: Context, clock?: StudioToolClock): void {
   // ⚠️ 必须挂在 **root** 上，**不能**写 `ctx.on`。
   //
   // 框架派发这个事件时用的 carrier 是 `scopeTarget(this, exec.agent)`
@@ -142,9 +181,32 @@ export function registerStudioToolErrorBoundary(ctx: Context): void {
     () => ctx.root.on('tools/execute', async (exec, next) => {
       const result = await next()
       const pending = takePending(exec)
-      if (pending === undefined) return result
-      ctx.logger.warn(`[canvas-studio][${pending.code}] ${pending.devDetail}`)
-      return decorateStudioToolResult(result, pending.code)
+      if (pending !== undefined) {
+        ctx.logger.warn(`[canvas-studio][${pending.code}] ${pending.devDetail}`)
+        return decorateStudioToolResult(result, pending.code)
+      }
+      // 里程碑时钟 + 空转告警（骨架优先出片，2026-11-05）：**每个工具**都过一遍提供者。
+      //
+      // 只挂本插件工具是错的：真机事故里 205 步全在读源码、一次渲染都没发起，
+      // 「只挂在渲染返回上」的提示恰好在最需要它的时刻看不见。于是判定权下放给
+      // 提供者（`index.ts`）—— 它知道哪个工具名该说什么、什么时候闭嘴。
+      // 失败不追加 —— 报错本身已足够吸引注意，再叠一行只是噪声。
+      if (clock !== undefined && !result.isError) {
+        try {
+          const line = await clock({
+            name: exec.name,
+            cwd: exec.agent?.session.header.cwd,
+            args: exec.arguments,
+            isError: false,
+            studio: STUDIO_TOOL_NAMES.has(exec.name),
+          })
+          if (line !== null && line !== '') return appendClockLine(result, line)
+        } catch (cause) {
+          // 时钟是辅助设施：读失败绝不影响工具本身的成功结果。
+          ctx.logger.warn(`[canvas-studio] 里程碑时钟读取失败（已忽略）: ${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+      }
+      return result
     }),
     'canvas-studio: tool error boundary',
   )

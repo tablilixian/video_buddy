@@ -27,6 +27,9 @@ import { assertStoryboardLanded, enforceAssetReadinessEnabled, withStoryboardGat
 import { sectionsFromShotCards } from './storyboard-adopt.js'
 import { layoutTableToManifestSnippet, loadLayoutFile, normalizeLayoutTable, saveLayoutFile } from './layout-table.js'
 import { expandGroups } from './remotion/groups.js'
+// 骨架优先出片（2026-11-05）：真成片落锚点（build/PROGRESS.md + 版本快照）。
+// 核心逻辑在 render-anchor.ts —— 这里只是接线，省掉本文件的行数棘轮压力。
+import { writeRenderAnchor } from './render-anchor.js'
 import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
 import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
@@ -221,6 +224,18 @@ const resultSchema = {
     },
     probe: { type: 'boolean' as const, description: '本次为探针渲染（未落画布节点、未抽帧、跳过体检）' },
     spot: { type: 'boolean' as const, description: '本次为 spot-check（只渲指定帧的静帧，无成片 URL；用 frames[] 看画面）。改一处验证一处时用它，别整片重渲' },
+    // 骨架优先出片（2026-11-05）：每次真成片都落一版锚点。压缩丢上下文后，
+    // 模型靠它（和 build/PROGRESS.md）续做，而不是回去重读源码、重推整片。
+    anchor: {
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: {
+        version: { type: 'integer' as const, description: '本次成片的版本号（对应 build/versions/vN.json 快照）' },
+        progressPath: { type: 'string' as const, description: '锚点文件绝对路径（build/PROGRESS.md：当前最佳成片 / 版本时间线 / 下一步）' },
+        trackCount: { type: 'integer' as const, description: '本版轨道数' },
+      },
+      description: '出片锚点：本次成片已存成第 N 版快照。要接着改，读 progressPath 或该版快照，不要重推整片',
+    },
   },
 }
 
@@ -351,6 +366,8 @@ interface ComposeToolResult {
   probe?: boolean
   /** V1：本次是 spot-check（只渲指定帧静帧，无成片 URL；画面看 frames[]）。 */
   spot?: boolean
+  /** 骨架优先出片：本次成片已落的锚点版本（probe / spot 缺省）。 */
+  anchor?: { version: number; progressPath: string; trackCount: number }
 }
 
 /** 校验用：取 schema 已声明的属性名。 */
@@ -741,6 +758,7 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     report?: ComposeToolResult['report']
     job?: ComposeToolResult['job']
     probe?: boolean
+    anchor?: ComposeToolResult['anchor']
   }
   if (v.clipCount === undefined) return blocks
   const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`
@@ -772,6 +790,12 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     lines.push(...lintReceiptLines(v.report.lint ?? [], v.report.lintPath))
   }
   if (v.job !== undefined) lines.push(formatRenderJobDiagnostics(v.job))
+  // 骨架优先出片：锚点是「下一轮从哪儿接着改」的唯一答案 —— 必须进可见文本，
+  // 否则模型只看到 report.job 里的结构化字段，仍会回去重推整片（CV-108 同款教训）。
+  if (v.anchor !== undefined) {
+    lines.push(`锚点 v${String(v.anchor.version)} · ${String(v.anchor.trackCount)} 轨 · 已写入 ${v.anchor.progressPath}`
+      + '（下一轮读它或该版快照续做，**不要重推整片**）')
+  }
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
@@ -1276,7 +1300,7 @@ function autoLandStoryboardEnabled(): boolean {
  * 项目的工作区目录即 `project.dir`；精确匹配优先，否则取最长前缀匹配
  * （会话 cwd 落在项目目录内的子路径时也能命中）。
  */
-async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefined): Promise<string> {
+export async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefined): Promise<string> {
   if (!cwd) {
     throwError('CS-USER-ERR', { message: '当前会话未绑定工作区，请先在左侧打开或创建一个 Canvas Studio 项目' })
   }
@@ -3750,6 +3774,33 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const effectiveWarnings = probe
           ? warnings.filter((w) => !w.startsWith('[编排体检'))
           : collapseLintWarnings(warnings)
+        // 骨架优先出片（2026-11-05）：每次真成片落一版锚点 —— 压缩丢上下文后，
+        // 「当前最好的是哪一版」由磁盘回答，不由模型的记忆回答（今天 8 次压缩后
+        // 模型回读源码重推整片，正是因为这个答案原本不存在）。
+        // 两条不写规则：probe / spot 不是成片；写盘失败不阻断渲染（辅助设施不陪葬）。
+        let anchor: ComposeToolResult['anchor']
+        if (!probe && !spot) {
+          try {
+            const written = writeRenderAnchor({
+              projectDir: registry.projectDir(projectId),
+              manifest: renderManifest,
+              quality: job.quality ?? quality ?? 'standard',
+              durationSec: job.duration ?? 0,
+              ...(job.width === undefined ? {} : { width: job.width }),
+              ...(job.height === undefined ? {} : { height: job.height }),
+              trackCount: renderManifest.tracks.length,
+              sampledFrames: job.frames.map((sample) => sample.frame),
+            })
+            anchor = { version: written.version, progressPath: written.progressPath, trackCount: written.trackCount }
+            // M1 达成时刻只记一次：每版都刷新会让「首片 T+Nmin」永远显示成 0。
+            const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+            if (workflow.firstDraftAt === undefined) {
+              await registry.updateWorkflow(projectId, { firstDraftAt: Date.now() })
+            }
+          } catch (cause) {
+            console.info('[canvas-studio] 出片锚点写入失败（不影响成片）', cause)
+          }
+        }
         const payload: ComposeToolResult = {
           // spot-check 无成片：这三个字段缺省（渲染文案走 spot 专用分支）。
           ...(job.spot === true ? {} : {
@@ -3766,6 +3817,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           job: jobDiagnosticsPayload(job.job),
           ...(probe ? { probe: true } : {}),
           ...(job.spot === true ? { spot: true } : {}),
+          ...(anchor === undefined ? {} : { anchor }),
           ...(effectiveWarnings.length > 0 ? { warnings: effectiveWarnings } : {}),
           ...(job.frames.length > 0
             ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }

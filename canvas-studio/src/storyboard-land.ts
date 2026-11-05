@@ -39,7 +39,7 @@
  */
 import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { BRIEF_NODE_TOOL, hasSeedAnchor } from './contracts/canvas.js'
-import type { StudioProject, StudioWorkflow, StudioWorkflowState } from './contracts/project.js'
+import { normalizeWorkflow, type StudioProject, type StudioWorkflow, type StudioWorkflowState } from './contracts/project.js'
 import type { StoryboardBinding, StoryboardDocument } from './contracts/storyboard.js'
 import { validateForSeed } from './contracts/storyboard.js'
 import type { StoryboardSeedPlan } from './storyboard-seed.js'
@@ -241,7 +241,9 @@ async function landFirstTime(
   }))
 
   // ── 第四步：推状态（覆盖层据此让位给画布） ──
-  await registry.updateWorkflow(projectId, { state: 'executing' })
+  // `landedAt` 与状态迁移同一次落盘：M1 里程碑的计时起点就是「画布可开工」这一刻，
+  // 分两次写会留下「已退出 storyboarding、起点未知」的空窗，时钟就失去基准。
+  await registry.updateWorkflow(projectId, { state: 'executing', landedAt: Date.now() })
 
   return {
     shots: plan.shotNumbers.length,
@@ -278,8 +280,14 @@ async function resumeLanding(
     ...current,
     bindings: { ...current.bindings, ...bindingsFrom(canvasAfter.nodes, canvasAfter.assets ?? []) },
   }))
-  if (state !== 'executing') {
-    await registry.updateWorkflow(projectId, { state: 'executing' })
+  // 续做时只在**缺失**时补起点：`landedAt` 是「第一次可开工」的时刻，重试不该把它
+  // 往后推（否则 M1 的计时会被一次次重试无限续期，时钟变成自我安慰）。
+  const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+  if (state !== 'executing' || workflow.landedAt === undefined) {
+    await registry.updateWorkflow(projectId, {
+      state: 'executing',
+      ...(workflow.landedAt === undefined ? { landedAt: Date.now() } : {}),
+    })
   }
 
   return {

@@ -35,6 +35,7 @@
 import { throwError } from './error-system.js'
 import { loadStoryboard } from './storyboard-store.js'
 import type { ProjectRegistry } from './projects.js'
+import { normalizeWorkflow } from './contracts/project.js'
 
 /**
  * 要挂「故事板已落地」前置的工具（产出类）。
@@ -156,6 +157,12 @@ export async function healStoryboardState(
   if (!enforceStoryboardLandedEnabled()) return false
   const loaded = await loadStoryboard(registry, projectId)
   if (loaded.status !== 'ok' || loaded.document.landed === null) return false
-  await registry.updateWorkflow(projectId, { state: 'executing' })
+  // 补状态这条路同样要补计时起点：M1 的 T+0 定义是「画布可开工」，而这里正是
+  // 「已落地但状态没推」的自愈点。缺了它，走自愈路径的项目时钟永远不显示。
+  const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+  await registry.updateWorkflow(projectId, {
+    state: 'executing',
+    ...(workflow.landedAt === undefined ? { landedAt: Date.now() } : {}),
+  })
   return true
 }

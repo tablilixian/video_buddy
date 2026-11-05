@@ -18,8 +18,9 @@
 - **落表的数据来源（CV-402 三层分工）**：表头真值（片长 / fps / 音轨 / 参考片 LUFS）
   用 `media_probe` 探；段边界（起–止秒）以 `evidence_grid` 的实测切点为骨架（缺省
   1s/格概览 → 红框密集段二次 `passes` 密采）；镜内内容语义由 `video2vl`（缺省
-  shot-breakdown）逐镜补。网格页图是给用户看的证据，agent 填表靠结构化清单 + 切点 +
-  video2vl 描述——不要试图「看」网格图，也不要用 inspect_image 逐帧轮询找切点。
+  shot-breakdown）逐镜补。网格页图落在本地产物里，要核对某格画面时 `read_image(file_path=…)`
+  看图即可（读图给语义）；但**切点定位一律以实测切点为准**——不要用 inspect_image 逐帧
+  轮询找切点，也不要靠「看一眼网格图」定段边界。
 - 时长 0.1s 精度；**镜序即轨道接续顺序**，也是 transition 轨
   `fromTrackId → toTrackId` 的连接顺序。
 - **「元素与动效」列是灵魂**：逐元素回答「什么在动 / 怎么动 / 什么曲线 / 和谁

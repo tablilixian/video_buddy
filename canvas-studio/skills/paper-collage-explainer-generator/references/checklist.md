@@ -1,5 +1,7 @@
 # 分册：质检 · 交付 · 失败处理（paper-collage-explainer-generator）
 
+> 画面判据取证层级（全契约见 `canvas-studio-creation/references/toolchain.md` §7）：静帧 / 片段抽帧都是本地图，**逐条核对先 `read_image(file_path=…)` 看图本身**；精确数值用 `inspect_image`；`image2vl` 文字转述仅保底且**不可当事实**。
+
 ## 1. 质检标准
 
 对静帧与片段逐条核对：

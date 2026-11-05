@@ -86,3 +86,5 @@ description: 东方异境视觉导演：从一个主题、诗句、纹样、情�
 6. **STYLE LOCK**：大块形体、空气有厚度、半液态材质、边缘软化、古典体积光是否都在？
 
 最高原则：**纹样不是被画在世界上，而是世界按照纹样生长。**
+
+**出图后复核（取证层级见 `canvas-studio-creation/references/toolchain.md` §7）**：成图已落本地，逐张 `read_image(file_path=…)` 对照上面 6 条 + STYLE LOCK 核对（纹样是否贴图化、尺度、材质、东方秩序）；精确数值用 `inspect_image`，`image2vl` 文字转述仅保底且不可当事实。

@@ -64,6 +64,8 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace and MiniMax H3 g
 
 ### 失败修复
 
+> **取证口径**：确认图与修复产物都是本地图，错字 / 乱码 / 身份漂移等画面判定**先 `read_image(file_path=…)` 看图本身**（精确坐标用 `inspect_image`；`image2vl` 仅保底不可当事实——全契约见 `canvas-studio-creation/references/toolchain.md` §7）。
+
 - 文字不可读：减少画面内文字量。
 - 身份互换：强化姓名、位置与颜色区分。
 - 人脸漂移：复用上传的参考图并显式保留身份锚点、发型与服装锚，同时让脸仍渲染在所选视觉风格里。

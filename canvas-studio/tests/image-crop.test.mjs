@@ -5,7 +5,8 @@
  * 少算一格就裁掉 2px 内容）与**越界判据**（ffmpeg 的 crop 会把超界矩形静默收进画面，
  * 产物「成功」但内容是错的，所以必须在调 ffmpeg 之前严格拒收）。
  *
- * 另含 `summarizeCrop` 自证：模型看不见图，判断「裁对没有」全靠这几个数字。
+ * 另含 `summarizeCrop` 自证：模型已能 read_image 直接读图（语义给 read_image），
+ * 「裁对了没有」仍以这几个可复算数字为准（CV-435 拍板：数值自检不随能力恢复而删）。
  *
  * 直连 Host tsc 编译产物 `lib/image-crop.js`（先 build 再跑；全量走 test:smoke）。
  */

@@ -110,7 +110,7 @@ export function defineArtifactTools(deps: ArtifactToolsDeps): ReturnType<typeof 
         + '① `grid` —— 按行列均分（rows×cols，row/col **从 1 起**），拼贴图首选，不用自己算像素；'
         + '② `rect` —— 像素矩形（x/y 是**左上角**，w/h 是宽高）。'
         + '\n⚠️ `rect` 与 `inspect_image` 的 `region` **不是同一套坐标**：region 是画布百分比中心语义（结果直接填 render 轨 transform），rect 是图片像素左上角语义（裁的是物理像素）。'
-        + '\n\n**返回带自证数字**（你看不见图，靠这些判断裁对没有）：产物尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图。四边接近 #FFFFFF = 白底产品区；某边明显偏暗 = 格子边界切到相邻内容，改 row/col 或 rect 重裁。'
+        + '\n\n**返回带自证数字**（读图给语义，数字给可复算的「裁对了没有」判据：语义用 read_image 看产物图，像素边界以这组数字复核——不要靠「看一眼」下裁切结论）：产物尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图。四边接近 #FFFFFF = 白底产品区；某边明显偏暗 = 格子边界切到相邻内容，改 row/col 或 rect 重裁。'
         + '\n\n越界不会静默修正：rect 超出源图会直接报错并给出**源图尺寸与当前 x/y 下的最大 w/h**，按数字改一次即可。',
       parameters: {
         source: { type: 'string' as const, required: true, description: '源图：项目资产目录内的**绝对路径**，或画布资产 URL（/canvas-studio/assets/...）。跨项目素材先导入本项目' },

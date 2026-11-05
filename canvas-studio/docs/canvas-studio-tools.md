@@ -115,7 +115,7 @@
 | 工具名 | 用途 |
 |--------|------|
 | `inspect_image` | **像素级图像分析**（CV-362，零外部依赖，只支持 PNG）：`mode:"profile"`（尺寸/位深/色彩类型）/ `mode:"bbox-dark"\|"bbox-bright"`（亮度阈值包围盒，返回像素范围 + **画布百分比中心与宽高**，与 `render_composition` 的 box 同口径）/ `mode:"colors"`（量化主色 top-N）。实现：`src/inspect-image.ts` 纯函数层（node:zlib 手解 PNG：colorType 0/2/3/4/6、bitDepth 1/2/4/8/16、行滤波 0-4；JPG/WEBP/隔行显式报错）。背景：真机复盘发现环境无 PIL/ImageMagick、agent 手写 8 个 PNG 解码脚本烧 25 分钟（session-postmortem-2026-10-23）——本工具是**唯一像素真值来源**，禁止再手写解码脚本 |
-| `image_crop` | **拼贴/精灵图裁切**（REQ-036 复刻提效批二）：从整图裁出子图落为**项目资产**（返回 `assetFile` + 绝对路径 + 资产 URL）。`grid`（rows/cols/row/col，**从 1 起**，拼贴首选）与 `rect`（x/y 是**左上角**像素 + w/h）二选一；越界**显式报错**并给源尺寸与最大可用宽高（ffmpeg 的 crop 会静默收进画面，产物「成功」但内容是错的）。返回自带**自证数字**：尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图 —— 模型看不见图也能判断裁对没有。治「拼贴图每格都要独立素材」：上一轮模型自写 52 次 PIL 脚本（占 28% 模型时间）且产物无血缘 |
+| `image_crop` | **拼贴/精灵图裁切**（REQ-036 复刻提效批二）：从整图裁出子图落为**项目资产**（返回 `assetFile` + 绝对路径 + 资产 URL）。`grid`（rows/cols/row/col，**从 1 起**，拼贴首选）与 `rect`（x/y 是**左上角**像素 + w/h）二选一；越界**显式报错**并给源尺寸与最大可用宽高（ffmpeg 的 crop 会静默收进画面，产物「成功」但内容是错的）。返回自带**自证数字**：尺寸 / 四边平均色 / 主色 top3 / 8×4 亮度字符图 —— 读图给语义（`read_image` 看产物图），「裁对了没有」以这组可复算数字为准（语义看图只判内容，不判像素边界）。治「拼贴图每格都要独立素材」：上一轮模型自写 52 次 PIL 脚本（占 28% 模型时间）且产物无血缘 |
 | `image_matting` | **纯色底抠透明底**（CV-394，REQ-036 复刻复盘批，内置 ffmpeg colorkey）：把白底/纯色底的产品图、logo、精灵图转成**真 alpha PNG**（产物 `<原名>-alpha.png` 落同目录，image 轨直接引用）。参数：`filePath`（源图绝对路径）+ `key`（white/black/green/magenta/#RRGGBB，缺省 white）+ `similarity`（抠取宽度 0–1，缺省 0.28）+ `blend`（边缘羽化 0–1，缺省 0.12）。标准链路：生图提示词固定「纯白背景」→ 本工具 → inspect_image `mode:"profile"` 核对 colorType=6。背景：生图模型不吐 alpha、伪透明拼贴在成片留棋盘格残边（甜品复刻会话实测）；边界 = 只抠**单一底色**，毛发级软边等后端 matting 端点 |
 | `import_csv` | **CSV 导入**（4.2，六大体裁路线）：CSV 文本 → chart 轨可用的 `{labels, values}` 建议。分隔符自动嗅探（`,` / `;` / Tab）、RFC4180-lite 引号包裹、混用行界；数值收口认千分位与 `%`（按比例 ÷100），**文本列不会被猜成数字**。返回行数 / 表头 / 每列数值占比 / 建议 label·value 列与数组，原样写进 chart 轨（超 32 行先截断或聚合）。纯本地解析零后端槽位；只做结构化不加工数据 |
 | `series_manage` | **剧集管理**（3.1，六大体裁路线）：系列登记与集绑定（`series.json`，与 groups.json 同款独立文件）。**集 = 项目**：一集就是一个普通项目，本工具只存有序索引 + 每集 recap（≤2000 字）。`create` / `list` / `upsert_episode`（绑定当前项目，episodeNo 系列内唯一） |
@@ -426,6 +426,7 @@
 - **与「拆分视频」（抽帧 + 风格归纳）不是二选一**：帧图给的是**可引用的参考图**，`video2vl` 给的是**文字描述**。要参考画面用帧图，要参考运镜 / 节奏 / 时长分配用 `video2vl`。
 - **不产生画布节点**（纯文本结果）⇒ 不参与节点重放；**不在审批门禁内**（分析不产生产物、不改画布，与 `image2vl` / `qc_shot` 同）。
 - ⚠️ **输出不可当事实**（同 `image2vl` 的 CV-214 警告）：VLM 描述有非平凡出错率，抽象维度（节奏 / 质感）与精确细节（色号 / 领口）容易判错，只作辅助参考。
+- 🔑 **本工具是保底通道**（与 `image2vl` 同一套三条件，B-1/CV-437 口径）：① 只有远端句柄（本地图一律 `read_image(file_path=…)` 直读）② `read_image` 报能力声明失效 ③ 需要第二意见——降级必须在交付明写「未做画面自检」。
 
 ---
 
@@ -937,7 +938,7 @@ corepack yarn workspace canvas-studio test:smoke     # node --test tests/*.test.
 | 1 | `image_generate(prompt="一只猫")` | 画布出现图片，文件落盘 |
 | 2 | `upload_image(imageUrl=产物URL)` | 返回 `filename` |
 | 3 | `image_generate(prompt=..., filename=...)` | 图生图产物落盘 |
-| 5 | `image2vl(filename=..., prompt="描述画面")` | 返回画面分析文本 |
+| 5 | 本地产物 `read_image(file_path=…)` 看图；只有远端句柄才 `image2vl(filename=..., prompt="描述画面")` | 画面分析（自己看图为首选证据；VLM 文字转述仅辅助参考，toolchain §7） |
 | 6 | `character_sheet(filename=设计图, name="女主", lockedPrompt=...)` | 返回 `assetId` + 拼图 filename，`list_references` 的 `assets` 可见 |
 | 7 | `qc_shot(filename=镜头图, shotRefs=["分镜 1 · 特写"])` | 返回 PASS/FAIL/WARN，结论写回节点 |
 | 8 | `video_generate(prompt=..., filename=首帧图)` | 视频落盘可播放，端点命中 `image2videofl2va` |

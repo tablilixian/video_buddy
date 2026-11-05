@@ -47,6 +47,10 @@ export const GATEWAY_MAX_OUTPUT_TOKENS = 32_768
  * 于是 tool-fs/read-image.ts 的严格能力闸拒收 read_image，llm 还会把消息里的
  * 图片投影成文本。目录不是能力 SSOT 期间用本表兜底；后端把
  * `capabilities.inputs` 补成 `["text","image"]` 后删除本表即可。
+ *
+ * ⚠️ 换默认网关模型前的操作规程：确认新模型在 DramaServer 目录里的 `input`
+ * 声明（目录未声明而模型实际支持图像时，把它的 code 加进本表再切）——否则
+ * read_image 会被严格闸拒收，会话静默降级回 image2vl 文字转述。
  */
 export const GATEWAY_IMAGE_INPUT_OVERRIDES: ReadonlySet<string> = new Set(['deepseek-flash'])
 

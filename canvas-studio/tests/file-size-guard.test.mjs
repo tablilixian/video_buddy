@@ -83,7 +83,10 @@ export const FILE_WHITELIST = {
   // 核心在 lint-report.ts（新文件，65 行），此处只是接线。
   // CV-440（2026-11-05）：B-4 storyboard pending 事实桥 —— 回执 warnings 点名 pending
   // 事实（判据在 data-provenance.ts 新文件），+6（4752 → 4758）显式登记。
-  'src/host-tools.ts': 4758,
+  // 骨架优先出片（2026-11-05）：render_composition 成功后落出片锚点（PROGRESS + 版本快照）
+  // + M1 首次成片时刻，+52（4758 → 4810）显式登记；核心在 render-anchor.ts（新文件），
+  // 这里只是接线 + 一行可见回执。消化路径：随「渲染工具壳拆分」批外提结算段。
+  'src/host-tools.ts': 4810,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   'src/generate.ts': 3620,
@@ -105,7 +108,10 @@ export const FILE_WHITELIST = {
   // 显式登记。消化路径同上。
   // CV-444（2026-11-05）：UI-01 ConfirmHost 末尾唯一出口 + UI-13 加载态/计时器接线
   // +26，3261 → 3287 补登（同上，统一验证批补登）。
-  'src/client/StudioFrame.tsx': 3287,
+  // P1-1（2026-11-05）：里程碑状态行接线 +6（import 2 + 工作条内 JSX 4，
+  // 判定与配色全在 MilestoneBar/milestone-clock 新文件里），棘轮 3287 → 3293 显式登记。
+  // 消化路径同上：随「显示外提 → 抽 hooks」第二阶段一起外提。
+  'src/client/StudioFrame.tsx': 3293,
   // REQ-037（2026-11-03）：divertAttachments 改「暂存 + 占位说明」（附件不再发送时
   // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
   // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
@@ -170,14 +176,14 @@ export const FUNC_WHITELIST = {
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2867, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登' },
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2871, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登；P1-1 里程碑行 +4（2867 → 2871）' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
   // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
   'src/client/index.ts#studioClient': { lines: 2747, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2712, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712' },
+  'src/host-tools.ts#createStudioTools': { lines: 2729, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

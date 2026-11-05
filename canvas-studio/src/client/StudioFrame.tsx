@@ -22,6 +22,8 @@ import { askConfirm } from './confirm.js'
 import { getRenderPreviewSnapshot, subscribeRenderPreview } from './render-preview.js'
 // 二期 1b：渲染进度角标（模块级 store，不进项目 store —— 高频短命状态不该牵动整棵树）。
 import { RenderProgressBadge } from './RenderProgressBadge.js'
+// P1-1（骨架优先出片）：里程碑状态行 —— **内部验收件**，默认不渲染（开关见组件头注释）。
+import { MilestoneBar } from './MilestoneBar.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
@@ -2719,6 +2721,10 @@ export function StudioFrame(props: StudioFrameProps) {
                 .reduce((sum, n) => sum + n, 0)} 个节点 · 阶段 {WORKFLOW_STAGE_LABELS[workflowStages.stage]}
             </span>
           )}
+          {/* P1-1：里程碑状态行。挂在工作条里而不是独立浮层 —— 让「已产出 N 个节点」
+              和「距 M1 剩多少」并排，同一件事的产出维度与时间维度。组件内部自判 debug
+              开关，关闭时返回 null，这里不写条件。 */}
+          <MilestoneBar workflow={workflow} />
           {workflow?.state === 'keyframe_review' && (
             <div className="csWorkflowApproval">
               {clapIcon}

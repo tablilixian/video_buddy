@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>里程碑看板预览 · P1-1</title>
+<style>
+  /* ── 令牌：与 src/client/styles.ts 同源（accent #6c5ce7 / gold #e8b45a / error 语义） ── */
+  [data-theme="dark"]{
+    --bg:#0d0f13; --panel:#14171d; --panel2:#181c23; --line:#262b34; --line2:#323844;
+    --text:#e7eaf0; --muted:#8d95a3; --faint:#5f6876;
+    --accent:#6c5ce7; --gold:#e8b45a; --danger:#e5484d; --ok:#3fbf7f;
+    --node:#1b1f27; --shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  [data-theme="light"]{
+    --bg:#f4f5f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e3e6ec; --line2:#d3d8e0;
+    --text:#1a1e26; --muted:#6b7383; --faint:#98a0ae;
+    --accent:#5b4bd6; --gold:#b8791b; --danger:#d1363b; --ok:#1f9254;
+    --node:#f1f3f7; --shadow:0 6px 18px rgba(20,25,40,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:13px/1.5 -apple-system,"SF Pro Text","PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px; margin:0 auto; padding:22px 20px 40px}
+
+  /* ── 顶部控制条 ── */
+  .toolbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px}
+  .title{font-size:13px; font-weight:600; letter-spacing:.2px}
+  .title em{font-style:normal; color:var(--faint); font-weight:400; margin-left:8px}
+  .spacer{flex:1}
+  .tabs{display:flex; gap:4px; padding:3px; background:var(--panel); border:1px solid var(--line); border-radius:9px}
+  .tab{
+    appearance:none; border:0; background:transparent; color:var(--muted);
+    font:inherit; font-size:12px; padding:5px 10px; border-radius:6px; cursor:pointer;
+  }
+  .tab:hover{color:var(--text)}
+  .tab[aria-selected="true"]{background:var(--panel2); color:var(--text); box-shadow:inset 0 0 0 1px var(--line2)}
+  .btn{
+    appearance:none; cursor:pointer; font:inherit; font-size:12px;
+    color:var(--text); background:var(--panel); border:1px solid var(--line2);
+    border-radius:8px; padding:6px 12px;
+  }
+  .btn:hover{border-color:var(--accent)}
+  .btn:disabled{opacity:.55; cursor:default}
+  .switch{display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); cursor:pointer; user-select:none}
+  .switch input{appearance:none; width:30px; height:17px; border-radius:999px; background:var(--line2); position:relative; cursor:pointer; transition:background .15s}
+  .switch input::after{content:""; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:999px; background:#fff; transition:transform .15s}
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{transform:translateX(13px)}
+
+  /* ── 画布面板（真实位置：StudioFrame 中栏顶部，读数带之下、画布之上） ── */
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    overflow:hidden; box-shadow:var(--shadow);
+  }
+  .panelHead{
+    display:flex; align-items:center; gap:8px; height:38px; padding:0 12px;
+    border-bottom:1px solid var(--line); background:var(--panel2);
+    font-size:12px; color:var(--muted);
+  }
+  .panelHead .pdot{width:7px; height:7px; border-radius:999px; background:var(--accent); flex:0 0 auto}
+  .panelHead b{color:var(--text); font-weight:500; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 8px;
+    border:1px solid var(--line2); border-radius:999px; background:var(--panel);
+    font-size:11px; color:var(--muted);
+  }
+  .chip i{width:6px; height:6px; border-radius:999px; background:var(--accent); display:block}
+
+  /* ── 里程碑条：本次要长出来的东西 ── */
+  .msBar{
+    display:flex; align-items:center; gap:8px;
+    height:34px; padding:0 12px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(90deg, color-mix(in srgb, var(--tone) 7%, transparent), transparent 62%);
+    font-size:12px; font-variant-numeric:tabular-nums;
+    transition:background .2s;
+  }
+  .msBar .msDot{
+    width:7px; height:7px; border-radius:999px; background:var(--tone); flex:0 0 auto;
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--tone) 18%, transparent);
+  }
+  .msBar.pulse .msDot{animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 3px color-mix(in srgb, var(--tone) 18%, transparent)}
+    50%{box-shadow:0 0 0 6px color-mix(in srgb, var(--tone) 4%, transparent)}
+  }
+  .msClock{color:var(--text); font-weight:500; letter-spacing:.2px}
+  .msSep{color:var(--faint)}
+  .msState{color:var(--tone); font-weight:500}
+  .msState.plain{color:var(--text); font-weight:400}
+  .msTrack{
+    position:relative; width:132px; height:4px; border-radius:999px; overflow:hidden;
+    background:color-mix(in srgb, var(--line2) 80%, transparent); flex:0 0 auto;
+  }
+  .msTrack > i{
+    position:absolute; inset:0 auto 0 0; border-radius:999px; background:var(--tone);
+    transition:width .12s linear;
+  }
+  .msTrack > u{ /* 8 分钟「骨架线」刻度 */
+    position:absolute; top:-2px; bottom:-2px; left:40%; width:1px;
+    background:color-mix(in srgb, var(--text) 40%, transparent);
+  }
+  .msHair{flex:1}
+  .msBest{color:var(--muted); font-size:11px}
+  .msBest b{color:var(--text); font-weight:500}
+  .msCta{
+    appearance:none; border:1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+    background:color-mix(in srgb, var(--tone) 14%, transparent);
+    color:var(--tone); font:inherit; font-size:11px; padding:3px 9px; border-radius:999px; cursor:pointer;
+  }
+
+  /* ── 空转告警：同一批（P1-2），紧贴里程碑条下方 ── */
+  .idle{
+    display:flex; align-items:center; gap:8px; padding:7px 12px;
+    border-bottom:1px solid var(--line);
+    background:color-mix(in srgb, var(--gold) 10%, transparent);
+    border-left:3px solid var(--gold);
+    font-size:12px; color:color-mix(in srgb, var(--gold) 78%, var(--text));
+  }
+  .idle b{font-weight:600}
+  .idle code{
+    font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+    padding:2px 5px; border-radius:4px;
+    background:color-mix(in srgb, var(--gold) 16%, transparent);
+  }
+  .idle[hidden]{display:none}
+
+  /* ── 画布区（只为给读数一个真实上下文） ── */
+  .canvas{
+    position:relative; height:220px; padding:18px;
+    background-image:radial-gradient(color-mix(in srgb, var(--line) 75%, transparent) 1px, transparent 1px);
+    background-size:16px 16px; background-position:-1px -1px;
+    display:flex; gap:14px; align-items:flex-start;
+  }
+  .node{
+    width:186px; border:1px solid var(--line2); border-radius:10px; background:var(--node);
+    overflow:hidden; flex:0 0 auto;
+  }
+  .node.best{border-color:color-mix(in srgb, var(--ok) 55%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--ok) 22%, transparent)}
+  .thumb{height:104px; position:relative; display:flex; align-items:center; justify-content:center}
+  .n1 .thumb{background:linear-gradient(135deg,#22303f,#2f4152 45%,#3a2f46)}
+  .n2 .thumb{background:linear-gradient(135deg,#2a2f3d,#3a3140 60%,#40323a)}
+  .n3 .thumb{background:linear-gradient(135deg,#26313a,#2d3a3f)}
+  .play{
+    width:26px; height:26px; border-radius:999px; background:rgba(255,255,255,.9);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
+  }
+  .play::after{content:""; width:0; height:0; border-left:8px solid #1a1e26; border-top:5px solid transparent; border-bottom:5px solid transparent; margin-left:2px}
+  .badge{
+    position:absolute; top:7px; left:7px; font-size:10px; padding:2px 6px; border-radius:999px;
+    background:rgba(0,0,0,.55); color:#f2f4f8; letter-spacing:.3px;
+  }
+  .badge.ok{background:color-mix(in srgb, var(--ok) 82%, black); color:#fff}
+  .nodeFoot{padding:7px 9px; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; gap:8px}
+  .nodeFoot b{color:var(--text); font-weight:500}
+  .ghostNode{
+    width:186px; height:144px; border:1px dashed var(--line2); border-radius:10px;
+    display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:11px;
+    flex:0 0 auto;
+  }
+
+  /* ── 四态对照 ── */
+  .compare{margin-top:22px}
+  .compare h2{font-size:12px; font-weight:600; color:var(--muted); margin:0 0 10px; letter-spacing:.4px; text-transform:uppercase}
+  .stack{display:flex; flex-direction:column; gap:8px}
+  .row{display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:9px; overflow:hidden}
+  .rowTag{width:74px; flex:0 0 auto; padding:0 10px; font-size:11px; color:var(--faint); border-right:1px solid var(--line); align-self:stretch; display:flex; align-items:center}
+  .row .msBar{border-bottom:0; background:transparent; flex:1}
+
+  /* ── 说明 ── */
+  .notes{margin-top:22px; display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+  .card h3{margin:0 0 8px; font-size:12px; color:var(--text); font-weight:600}
+  .card ul{margin:0; padding-left:16px; color:var(--muted); font-size:12px}
+  .card li{margin:4px 0}
+  .card code{font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--text); background:var(--panel2); padding:1px 4px; border-radius:4px}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:12px; color:var(--muted)}
+  .kv span:nth-child(odd){color:var(--faint)}
+  @media (max-width:760px){
+    .notes{grid-template-columns:1fr}
+    .msTrack{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <div class="title">里程碑看板预览 <em>P1-1 · 画布顶条读数</em></div>
+    <div class="spacer"></div>
+    <div class="tabs" role="tablist" id="tabs">
+      <button class="tab" role="tab" data-s="run" aria-selected="true">正常推进</button>
+      <button class="tab" role="tab" data-s="tight" aria-selected="false">临近硬线</button>
+      <button class="tab" role="tab" data-s="over" aria-selected="false">已超线</button>
+      <button class="tab" role="tab" data-s="done" aria-selected="false">已达成</button>
+    </div>
+    <label class="switch"><input type="checkbox" id="idleToggle" checked /> 空转告警行</label>
+    <button class="btn" id="playBtn">▶ 播放 20 分钟</button>
+    <button class="btn" id="themeBtn">明 / 暗</button>
+  </div>
+
+  <!-- 画布面板 -->
+  <div class="panel" id="panel">
+    <div class="panelHead">
+      <span class="pdot"></span>
+      <b>帮我制作一段科普视频：玻璃为什么是透明的</b>
+      <span class="chip"><i></i>分镜 2/6 · 放手跑</span>
+      <div class="spacer"></div>
+      <span style="color:var(--faint)">画布 100%</span>
+    </div>
+
+    <!-- 里程碑条 -->
+    <div class="msBar" id="msBar" style="--tone:var(--accent)">
+      <span class="msDot"></span>
+      <span class="msClock" id="clock">T+0:00</span>
+      <span class="msSep">·</span>
+      <span class="msState" id="stateText">尚无成片</span>
+      <span class="msSep">·</span>
+      <span class="msState plain" id="budgetText">M1 剩 20:00</span>
+      <div class="msTrack"><i id="trackFill" style="width:0%"></i><u title="M0 骨架线 8 分钟"></u></div>
+      <div class="msHair"></div>
+      <span class="msBest" id="bestText">尚无版本快照</span>
+      <button class="msCta" id="cta" hidden>出骨架片</button>
+    </div>
+
+    <!-- 空转告警（P1-2，同批） -->
+    <div class="idle" id="idle">
+      <b>已 46 次工具调用、0 次出片</b>
+      <span>· 其中 12 次在读 <code>src/remotion/**</code></span>
+      <div class="spacer"></div>
+      <span>建议：<code>scaffold_manifest</code> → <code>render_composition(draft)</code></span>
+    </div>
+
+    <!-- 画布内容（上下文示意） -->
+    <div class="canvas">
+      <div class="node n1 best">
+        <div class="thumb"><span class="badge ok">成片 v3</span><div class="play"></div></div>
+        <div class="nodeFoot"><span>玻璃为什么是透明的</span><b>45.0s</b></div>
+      </div>
+      <div class="node n2">
+        <div class="thumb"><span class="badge">成片 v2</span><div class="play"></div></div>
+        <div class="nodeFoot"><span>草稿 · 字幕对齐</span><b>45.0s</b></div>
+      </div>
+      <div class="node n3">
+        <div class="thumb"><span class="badge">镜头 3</span></div>
+        <div class="nodeFoot"><span>光线穿过的路径</span><b>8s</b></div>
+      </div>
+      <div class="ghostNode">待生成</div>
+    </div>
+  </div>
+
+  <!-- 四态对照 -->
+  <div class="compare">
+    <h2>四种状态对照</h2>
+    <div class="stack">
+      <div class="row">
+        <div class="rowTag">正常推进</div>
+        <div class="msBar" style="--tone:var(--accent)">
+          <span class="msDot"></span><span class="msClock">T+13:24</span><span class="msSep">·</span>
+          <span class="msState">尚无成片</span><span class="msSep">·</span>
+          <span class="msState plain">M1 剩 6:36</span>
+          <div class="msTrack"><i style="width:67%"></i><u></u></div>
+          <div class="msHair"></div>
+          <span class="msBest">尚无版本快照</span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="rowTag">临近硬线</div>
+        <div class="msBar" style="--tone:var(--gold)">
+          <span class="msDot"></span><span class="msClock">T+17:50</span><span class="msSep">·</span>
+          <span class="msState">尚无成片</span><span class="msSep">·</span>
+          <span class="msState plain">M1 剩 2:10</span>
+          <div class="msTrack"><i style="width:89%"></i><u></u></div>
+          <div class="msHair"></div>
+          <span class="msBest">尚无版本快照</span>
+          <button class="msCta">出骨架片</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="rowTag">已超线</div>
+        <div class="msBar" style="--tone:var(--danger)">
+          <span class="msDot"></span><span class="msClock">T+32:06</span><span class="msSep">·</span>
+          <span class="msState">已超 M1 硬线 12:06</span>
+          <div class="msTrack"><i style="width:100%"></i><u></u></div>
+          <div class="msHair"></div>
+          <span class="msBest">尚无版本快照</span>
+          <button class="msCta">出骨架片</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="rowTag">已达成</div>
+        <div class="msBar" style="--tone:var(--ok)">
+          <span class="msDot"></span><span class="msClock">T+48:10</span><span class="msSep">·</span>
+          <span class="msState">已达成 · M1 用时 14:02</span>
+          <div class="msTrack"><i style="width:100%"></i><u></u></div>
+          <div class="msHair"></div>
+          <span class="msBest">最佳 <b>v3</b> · 45.0s · 78 轨 · 4 分钟前</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 说明 -->
+  <div class="notes">
+    <div class="card">
+      <h3>读数规则（全部由宿主算，模型不参与）</h3>
+      <ul>
+        <li><code>T+</code> = 从 <code>workflow.landedAt</code>（故事板落地）起算</li>
+        <li><code>M1 剩 N</code> = 20 分钟硬线 − 已用；&lt; 3 分钟转 gold</li>
+        <li>超线后换成 <code>已超 M1 硬线 X</code>，整条转红并给「出骨架片」入口</li>
+        <li>首次非 probe <code>draft</code> 落节点 → 记 <code>firstDraftAt</code>，转绿并冻结用时</li>
+        <li>右侧「最佳 vN · 时长 · 轨数」读 <code>build/PROGRESS.md</code> 的版本快照</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>为什么值得做</h3>
+      <ul>
+        <li>今天那次事故的真实曲线：<code>T+217min</code> 仍为零成片 → 这条会红整整 3 小时</li>
+        <li>现在时钟只出现在工具返回里，<b>用户看不见</b>；看不见就只能等会话结束复盘</li>
+        <li>有这条，你 20 分钟内就能当场叫停，而不是 3 小时后才发现</li>
+        <li>与下方空转告警同批交付：一个给时间，一个给「在干什么」</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const MIN = 60;            // 秒
+  const M0 = 8 * MIN;        // 骨架线
+  const M1 = 20 * MIN;       // 首片硬线
+  const el = id => document.getElementById(id);
+  const bar = el('msBar');
+  let state = 'run';
+  let elapsed = 13 * MIN + 24;   // 秒
+  let firstDraft = null;         // 秒（播放模式下 11:00 自动到达）
+  let playing = false;
+  let timer = null;
+
+  const mmss = s => {
+    s = Math.max(0, Math.round(s));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  };
+
+  function best() {
+    if (firstDraft === null) {
+      return { v: null, text: elapsed > 30 * MIN ? '尚无版本快照' : '尚无版本快照' };
+    }
+    const v = elapsed > 40 * MIN ? 3 : (elapsed > 24 * MIN ? 2 : 1);
+    const tracks = v === 1 ? 5 : (v === 2 ? 42 : 78);
+    return { v, tracks };
+  }
+
+  function render() {
+    let tone = 'var(--accent)';
+    let stateText = '尚无成片';
+    let budget = '';
+    let fill = Math.min(100, elapsed / M1 * 100);
+    let cta = false;
+
+    if (state === 'done' || (firstDraft !== null)) {
+      tone = 'var(--ok)';
+      stateText = '已达成 · M1 用时 ' + mmss(firstDraft ?? 0);
+      budget = '';
+      fill = 100;
+    } else if (state === 'over' || elapsed > M1) {
+      tone = 'var(--danger)';
+      stateText = '已超 M1 硬线 ' + mmss(elapsed - M1);
+      budget = '';
+      cta = elapsed > M1;
+    } else if (state === 'tight' || elapsed > M1 - 3 * MIN) {
+      tone = 'var(--gold)';
+      budget = 'M1 剩 ' + mmss(M1 - elapsed);
+      cta = true;   // 只剩 3 分钟：此刻唯一该做的事就是先出一条片
+    } else {
+      budget = 'M1 剩 ' + mmss(M1 - elapsed);
+    }
+
+    bar.style.setProperty('--tone', tone);
+    bar.classList.toggle('pulse', stateText.indexOf('已超') === 0 || (state !== 'done' && elapsed > M1));
+    el('clock').textContent = 'T+' + mmss(elapsed);
+    el('stateText').textContent = stateText;
+    // 尚无成片 = 中性事实，不该染色；inline 会压过 .plain 类，所以这里必须给空串。
+    const isPlain = stateText.indexOf('尚无成片') === 0;
+    el('stateText').classList.toggle('plain', isPlain);
+    el('stateText').style.color = isPlain ? '' : tone;
+    const b = el('budgetText');
+    b.textContent = budget;
+    b.style.display = budget === '' ? 'none' : '';
+    // 分隔点跟随预算段显隐
+    b.previousElementSibling.style.display = budget === '' ? 'none' : '';
+    el('trackFill').style.width = fill + '%';
+
+    const info = best();
+    el('bestText').innerHTML = info.v === null
+      ? '尚无版本快照'
+      : '最佳 <b>v' + info.v + '</b> · 45.0s · ' + info.tracks + ' 轨';
+    el('cta').hidden = !cta;
+  }
+
+  // 状态页签：进入时给一个与语义相符的时间点
+  const presets = {
+    run:   { elapsed: 13 * MIN + 24, firstDraft: null },
+    tight: { elapsed: 17 * MIN + 50, firstDraft: null },
+    over:  { elapsed: 32 * MIN + 6,  firstDraft: null },
+    done:  { elapsed: 48 * MIN + 10, firstDraft: 14 * MIN + 2 }
+  };
+
+  function setState(next) {
+    state = next;
+    stop();
+    const p = presets[next];
+    elapsed = p.elapsed;
+    firstDraft = p.firstDraft;
+    for (const t of document.querySelectorAll('.tab')) {
+      t.setAttribute('aria-selected', String(t.dataset.s === next));
+    }
+    render();
+  }
+
+  function stop() {
+    playing = false;
+    if (timer !== null) { clearInterval(timer); timer = null; }
+    el('playBtn').textContent = '▶ 播放 20 分钟';
+  }
+
+  el('tabs').addEventListener('click', e => {
+    const t = e.target.closest('.tab');
+    if (t) setState(t.dataset.s);
+  });
+
+  el('playBtn').addEventListener('click', () => {
+    if (playing) { stop(); return; }
+    // 起点 0:00；11:00 渲出 v1（骨架→真文案），24:00 v2，40:00 v3
+    state = 'run';
+    elapsed = 0;
+    firstDraft = null;
+    for (const t of document.querySelectorAll('.tab')) t.setAttribute('aria-selected', 'false');
+    playing = true;
+    el('playBtn').textContent = '⏸ 暂停';
+    // 先立刻渲染一次：否则点击后要等首个 interval（60ms）才看到 T+0:00，
+    // 观感上像「点了没反应、时钟还是旧值」。
+    render();
+    let jump = 0;
+    timer = setInterval(() => {
+      if (!playing) return;
+      elapsed += 12;            // 每 60ms 前进 12s ⇒ 20 分钟约 10 秒跑完
+      jump += 12;
+      if (firstDraft === null && elapsed >= 11 * MIN) firstDraft = 11 * MIN;
+      if (elapsed > 46 * MIN) { stop(); return; }
+      render();
+    }, 60);
+  });
+
+  el('idleToggle').addEventListener('change', e => {
+    el('idle').hidden = !e.target.checked;
+  });
+
+  el('themeBtn').addEventListener('click', () => {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  });
+
+  el('cta').addEventListener('click', () => {
+    el('cta').textContent = '骨架已建 · 渲染中';
+    setTimeout(() => { el('cta').textContent = '出骨架片'; }, 1400);
+  });
+
+  setState('run');
+})();
+</script>
+</body>
+</html>

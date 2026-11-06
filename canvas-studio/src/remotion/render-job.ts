@@ -958,7 +958,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         // agent 只能看到一句"超时"，于是把执行器故障误判成画面太复杂。
         // CV-447（P0-B）：再加已渲帧数估算 —— 「进度 55%」对模型是抽象百分比，
         // 「已渲约 742/1350 帧」才能对上 spotFrames/时长语义；顺带说明同参重试
-        // 是合法动作（帧缓存跨次累积），与反重复 guard 的豁免配置（CV-448）配套。
+        // 是合法动作（帧缓存跨次累积），与反重复 guard 的豁免配置（CV-447）配套。
         const totalFrames = spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames
         const renderedFrames = Math.max(0, Math.round(diag.maxProgress * totalFrames))
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {

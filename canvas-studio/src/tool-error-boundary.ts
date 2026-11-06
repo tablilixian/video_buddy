@@ -138,7 +138,8 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 更误导的结论 ——「缺 manifestPath」其实是因为它写成了 manifestPATH）。
       // 文案里直接给合法字段清单 + 最小可用调用 + 纠错猜测 = 省掉「读源码定契约」。
       assertKnownToolParams(source as ToolShapeForParams, args)
-      // CV-447（T1-A4）：阶段二轮次硬闸 —— 探针第 4 次直接拒收（见 render-probe-budget.ts）。
+      // CV-447（T1-A4）：阶段二轮次硬闸 —— probe:true 与 spotFrames 共用 3 次预算，
+      // 成片后只放行 1 次批注（见 render-probe-budget.ts）。删掉本行即失去守卫。
       guardProbeBudget(typeof source.name === 'string' ? source.name : '', args)
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。

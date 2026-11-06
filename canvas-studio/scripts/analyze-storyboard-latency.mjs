@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 故事板阶段耗时归因（B4 埋点侧：只读会话日志，不改产品代码）。
+ * 会话耗时归因（B4 / CV-447 A9 埋点侧：只读会话日志，不改产品代码）。
  *
  * 事件时间戳本就落在 session.jsonl 里，不需要在 Host 侧再加计时埋点：
  *   step/start → assistant/message  = LLM 推理
@@ -9,7 +9,8 @@
  * 用法：
  *   node scripts/analyze-storyboard-latency.mjs <session.jsonl> [--turn 1] [--json]
  *
- * 输出：分段耗时表 + 分类汇总（P95 而非均值）+ 轮次预算判定（≤5 步 / 禁复述）。
+ * 输出：分段耗时表 + 分类汇总（P95 而非均值）+ 轮次预算判定（≤5 步 / 禁复述）
+ *       + 阶段二渲染轮次 / 每帧成本 / 图片上下文 / 中断信号（A9）。
  * 退出码：0 = 分析完成（不判定优劣）；1 = 参数或解析错误。
  */
 import { readFileSync } from 'node:fs'
@@ -51,6 +52,13 @@ function category(name) {
   return '本地工具'
 }
 
+/** 从工具回执里取 `report.msPerFrame`（回执形状随宿主版本变，按文本兜底）。 */
+function msPerFrameOf(resultRow) {
+  const text = JSON.stringify(resultRow?.data ?? {})
+  const m = /"msPerFrame"\s*:\s*([0-9.]+)/.exec(text)
+  return m === null ? null : Number(m[1])
+}
+
 const steps = new Map()
 for (const row of rows) {
   const data = row.data ?? {}
@@ -84,21 +92,32 @@ for (const [step, events] of [...steps].sort((a, b) => a[0] - b[0])) {
     const key = category(name)
     byCategory[key] = (byCategory[key] ?? 0) + duration
   }
-  // CV-447（T1-A9）：渲染轮次埋点 —— 探针 / 草稿 / spotFrames 帧数与耗时。
-  // 没有这组数，事后无法回答「这轮到底烧在探针还是全片」。
+  // CV-447（A9）：渲染轮次埋点。口径与 Host 硬闸一致 —— `probe:true` 与
+  // `spotFrames:[...]` 都算探针类，两者共占出片前 3 次额度；全片渲染不计数。
   const renders = []
   for (const [i, call] of calls.entries()) {
     if ((call.data?.name ?? '') !== 'render_composition') continue
     const input = call.data?.args ?? call.data?.arguments ?? call.data?.input ?? {}
     const matched = results[i]
+    const probeOnly = input.probe === true
+    const hasSpot = Array.isArray(input.spotFrames) && input.spotFrames.length > 0
     renders.push({
-      probe: input.probe === true,
+      probe: probeOnly,
+      probeLike: probeOnly || hasSpot,
       quality: typeof input.quality === 'string' ? input.quality : 'standard',
-      spotFrames: Array.isArray(input.spotFrames) ? input.spotFrames.length : 0,
+      spotFrames: hasSpot ? input.spotFrames.length : 0,
       rejected: (matched?.data?.error?.code ?? matched?.data?.code) === 'CS-USER-ERR',
       seconds: matched ? (timeOf(matched) - timeOf(call)) / 1000 : 0,
+      msPerFrame: msPerFrameOf(matched),
     })
   }
+  // A9：上下文膨胀与中断信号（阶段二 P2-03 / P2-04 的判据来源）。
+  // 按**事件**计数而不是按字符串出现次数：同一次 offload 会同时落在 tool/result
+  // 与 assistant/attempt 上。基线口径（方案 §1）取 `assistant/attempt.code`，故排除 tool/result。
+  const eventTexts = events.map(e => JSON.stringify(e.data ?? {}))
+  const offloads = events.filter((e, i) => e.type !== 'tool/result' && eventTexts[i].includes('IMAGE_OFFLOAD_REQUIRED')).length
+  const compactions = events.filter(e => String(e.type ?? '').startsWith('compaction')).length
+  const authFailures = eventTexts.filter(text => /unauthenticated|invalid access token/.test(text)).length
   result.push({
     step,
     start: timeOf(start),
@@ -109,6 +128,9 @@ for (const [step, events] of [...steps].sort((a, b) => a[0] - b[0])) {
     tools: calls.map(c => c.data?.name ?? '?'),
     resultBytes: results.reduce((n, r) => n + JSON.stringify(r.data ?? {}).length, 0),
     renders,
+    offloads,
+    compactions,
+    authFailures,
   })
 }
 
@@ -124,14 +146,45 @@ const wall = (result.at(-1).start + result.at(-1).wall * 1000 - result[0].start)
 const reasonTotal = result.reduce((n, r) => n + r.reasonChars, 0)
 const replanSteps = result.slice(3).filter(r => r.reasonChars > 5000).map(r => r.step)
 const allRenders = result.flatMap(r => r.renders)
+const msPerFrameValues = allRenders.map(r => r.msPerFrame).filter(v => typeof v === 'number' && Number.isFinite(v))
+const byQuality = {}
+for (const r of allRenders) (byQuality[r.quality] ??= []).push(r.seconds)
+const qualityP95 = Object.fromEntries(
+  Object.entries(byQuality).map(([quality, values]) => [quality, Number(percentile(values, 0.95).toFixed(1))]),
+)
+/** 按调用顺序重放硬闸状态机（含被拒收的调用，与 guardProbeBudget 同口径）。 */
+const budget = { preDeliveryProbes: 0, annotations: 0, delivered: false, pass: true }
+for (const r of allRenders) {
+  if (!r.probeLike) {
+    budget.delivered = true
+    continue
+  }
+  if (budget.delivered) {
+    budget.annotations += 1
+    if (budget.annotations > 1) budget.pass = false
+  } else {
+    budget.preDeliveryProbes += 1
+    if (budget.preDeliveryProbes > 3) budget.pass = false
+  }
+}
 const renderSummary = {
   total: allRenders.length,
-  probes: allRenders.filter(r => r.probe).length,
+  probes: allRenders.filter(r => r.probeLike).length,
+  probeTrue: allRenders.filter(r => r.probe).length,
   drafts: allRenders.filter(r => r.quality === 'draft').length,
   rejected: allRenders.filter(r => r.rejected).length,
   spotFrames: allRenders.reduce((n, r) => n + r.spotFrames, 0),
   seconds: Number(allRenders.reduce((n, r) => n + r.seconds, 0).toFixed(1)),
-  probeRulePass: allRenders.filter(r => r.probe).length <= 3,
+  msPerFrameP95: msPerFrameValues.length === 0 ? null : Number(percentile(msPerFrameValues, 0.95).toFixed(1)),
+  qualityP95,
+  probeRulePass: budget.pass,
+  budget,
+}
+const contextSummary = {
+  offloads: result.reduce((n, r) => n + r.offloads, 0),
+  compactions: result.reduce((n, r) => n + r.compactions, 0),
+  authFailures: result.reduce((n, r) => n + r.authFailures, 0),
+  p95StepResultKb: Number((percentile(result.map(r => r.resultBytes), 0.95) / 1024).toFixed(1)),
 }
 const summary = {
   turn: turnFilter,
@@ -144,6 +197,7 @@ const summary = {
   p95LlmSeconds: Number(percentile(result.map(r => r.llm), 0.95).toFixed(1)),
   cumulativeResultKb: Number((result.reduce((n, r) => n + r.resultBytes, 0) / 1024).toFixed(1)),
   renders: renderSummary,
+  context: contextSummary,
   stepsDetail: result.map(r => ({
     step: r.step,
     wall: Number(r.wall.toFixed(1)),
@@ -177,7 +231,10 @@ if (asJson) {
   console.log('\n## 轮次预算判定')
   console.log(`  step ${result.length} / ≤5 ⇒ ${summary.budget.pass ? 'PASS' : 'FAIL'}`)
   console.log(`  第 3 轮之后 reasoning>5k 的重新规划步: ${replanSteps.length === 0 ? '0（PASS）' : replanSteps.join(', ') + '（FAIL）'}`)
-  console.log('\n## 渲染轮次（CV-447）')
-  console.log(`  共 ${renderSummary.total} 次 · 探针 ${renderSummary.probes} · draft ${renderSummary.drafts} · 被硬闸拒收 ${renderSummary.rejected} · spot 帧 ${renderSummary.spotFrames} · ${human(renderSummary.seconds)}`)
-  console.log(`  探针 ≤3 ⇒ ${renderSummary.probeRulePass ? 'PASS' : 'FAIL（规则 T0-A3 / 机器闸 T1-A4）'}`)
+  console.log('\n## 渲染轮次（CV-447 A9）')
+  console.log(`  共 ${renderSummary.total} 次 · 探针类 ${renderSummary.probes}（其中 probe:true ${renderSummary.probeTrue}）· draft ${renderSummary.drafts} · 被硬闸拒收 ${renderSummary.rejected} · spot 帧 ${renderSummary.spotFrames} · ${human(renderSummary.seconds)}`)
+  console.log(`  msPerFrame P95 ${renderSummary.msPerFrameP95 ?? 'n/a'} · 档位墙钟 P95 ${JSON.stringify(renderSummary.qualityP95)}`)
+  console.log(`  出片前探针 ${budget.preDeliveryProbes}/3 · 成片后批注 ${budget.annotations}/1 ⇒ ${budget.pass ? 'PASS' : 'FAIL（规则 T0-A3 / 机器闸 T1-A4）'}`)
+  console.log('\n## 上下文与中断（A9）')
+  console.log(`  IMAGE_OFFLOAD_REQUIRED ${contextSummary.offloads} · compaction ${contextSummary.compactions} · AUTH/401 ${contextSummary.authFailures} · 单步 tool/result P95 ${contextSummary.p95StepResultKb} KB`)
 }

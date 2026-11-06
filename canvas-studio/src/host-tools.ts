@@ -3611,7 +3611,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '入参两条通道：`manifest`（内联 JSON 字符串）或 `manifestPath`（manifest 文件的**绝对路径**，与 manifest 二选一）。'
         + '长片必须走 manifestPath —— 内联超 ~30KB 会被入参截断，「尾部完整性校验」当场拒收（meta.durationInFrames 必须等于全部轨道的最大结束帧，缩水即拒收），白烧一轮。'
         + '渲染前宿主会校验结构 + 核对素材（缺失或外链直接硬失败），再过审批门（同 compose_video）。'
-        + '执行者是宿主内置的**隐藏渲染窗口**（Electron + Remotion Web 渲染器）：切窗口、最小化都不影响；**关掉整个 App 会中断渲染**。'
+        + '执行者优先用宿主内置的**隐藏渲染窗口**（Electron + Remotion Web 渲染器）；未就绪时回退**画布页**，回退原因会写进 `工单：…` 诊断行。渲染在飞时宿主窗口会临时放开后台节流，切窗口 / 最小化通常不影响；**关掉整个 App 会中断渲染**。'
         + '硬边界（**组装细节一律看 skill 的 `code-driven-explainer/references/manifest-contract.md`，本描述不重复，避免两处漂移**；声音规划（人声/旁白/BGM 时长）见 canvas-studio-creation 第 2d 步与 references/audio-first.md）：'
         + '① meta.durationInFrames 必须等于全部轨道的最大结束帧；'
         + '② `src` 只接同源 `/canvas-studio/assets/...` 或本项目资产目录内的绝对路径，外链一律拒收；'

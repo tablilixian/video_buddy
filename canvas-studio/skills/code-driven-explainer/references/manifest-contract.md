@@ -641,8 +641,10 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
 
 `render_composition` 的结果里：
 
-- `frames: [{ frame, url }]` —— 4 张均匀抽帧 + 每个转场中点（上限 8）。**先看这几张图再向用户汇报**：
-  字压边、元素出画、转场叠影只能在这上面看出来；
+- `frames: [{ frame, url }]` —— **结构帧**（0 / 末帧 / 各轨起止 ±2）∪ spot-check 请求帧，
+  再补 4 张均匀抽帧 + 转场中点，总计上限 8（CV-447 P1-C：结构帧优先，防漏检「双地球」「0 帧空画面」）。
+  图片是 **JPEG q0.85**（CV-447 P1-B；同预算可多回灌 4 倍张数），判据类看它、像素级精读走 `image_crop`（PNG）。
+  **先看这几张图再向用户汇报**：字压边、元素出画、转场叠影只能在这上面看出来；
 - `report: { quality, frames, totalMs, msPerFrame, encodeMs, bytes, bitrateKbps, width, height, sampledFrames, warm, lint }`
   —— 这条片花了多久、质量档是否生效、哪几条 lint 命中。慢得离谱时先看 `msPerFrame` 与 `encodeMs` 的占比。
 

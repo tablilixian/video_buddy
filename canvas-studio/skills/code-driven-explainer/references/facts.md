@@ -44,6 +44,9 @@ node <skill>/assets/facts-builder.mjs build/fact-spec.json
 
 - 只在「用户没给数值、快照里也没有」时才联网，且**整阶段最多一次**、总时限 20s。
 - 失败 / 超时不改任何数值，只把该条标 `pending` 并在交付时说明。
+- **状态变更必须落盘**（CV-447 P1-D）：说「已核实」不算数——改完 `status` 要写回故事板，
+  并重跑 `assets/facts-builder.mjs` 生成 `build/fact-snapshot.json`。交付 lint 优先读快照，
+  只在口头"已 verified"却没落盘时照旧点名 pending。
 - **禁止**为了「多一个佐证」抓第二个站点，禁止把网页正文整篇读进上下文。
 
 ## 5. 与故事板契约的衔接

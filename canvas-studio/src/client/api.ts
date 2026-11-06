@@ -1205,21 +1205,21 @@ export async function commitStudioRenderJob(
 }
 
 /**
- * 三期 W6-1：回写一张抽帧（PNG 原始字节）。宿主落盘后返回同源 URL；
- * 工单已结算时 `url` 为 `null`（幂等）。
+ * 三期 W6-1：回写一张抽帧（JPEG 原始字节；CV-447 P1-B 起不再传 PNG）。宿主落盘后返回
+ * 同源 URL；工单已结算时 `url` 为 `null`（幂等）。
  */
 export async function uploadStudioRenderSample(
   jobId: string,
   frame: number,
-  png: Uint8Array,
+  bytes: Uint8Array,
   signal?: AbortSignal,
 ): Promise<string | null> {
   const query = new URLSearchParams({ jobId, frame: String(Math.max(0, Math.round(frame))) })
   const response = await readJson<{ ok: boolean; url: string | null }>(
     await fetch(`/canvas-studio/remotion/sample?${query.toString()}`, {
       method: 'POST',
-      headers: { 'content-type': 'image/png' },
-      body: png as unknown as BodyInit,
+      headers: { 'content-type': 'image/jpeg' },
+      body: bytes as unknown as BodyInit,
       ...(signal === undefined ? {} : { signal }),
     }),
   )

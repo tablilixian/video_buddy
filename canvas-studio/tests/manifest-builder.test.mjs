@@ -92,6 +92,33 @@ test('captions 带 src → 走 caption 轨（自播旁白），不再生成 text
   }
 })
 
+test('CV-447 T0-A1：captions[].words 原样透传到 caption 轨（缺省则不写）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
+  try {
+    const words = [
+      { text: '第', from: 0, to: 12 },
+      { text: '一', from: 12, to: 24 },
+      { text: '句', from: 24, to: 60 },
+    ]
+    const result = run({
+      title: 't',
+      captions: [
+        { id: 'V1', text: '第一句', frames: 60, src: '/canvas-studio/assets/a.mp3', words },
+        { id: 'V2', text: '第二句', frames: 60, src: '/canvas-studio/assets/b.mp3' },
+      ],
+    }, dir)
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    const manifest = readManifest(dir)
+    const captions = manifest.tracks.filter((t) => t.type === 'caption')
+    assert.deepEqual(captions[0].words, words, '词级时间戳必须原样透传（卡拉 OK 字幕依赖它）')
+    assert.equal(captions[1].words, undefined, '没给 words 就不要凭空造（让渲染层走能量谷兜底）')
+    const check = validateManifest(manifest)
+    assert.equal(check.ok, true, check.errors.join('；'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('narration（秒）通道：按 fps 折算，且帧数累计等于总时长', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
   try {

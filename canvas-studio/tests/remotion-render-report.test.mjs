@@ -4,7 +4,7 @@
  * 覆盖三件事：
  *   1. 工单视图把 `quality` / `realDurations` / `sampleFrames` 透传给客户端
  *      （少传一个，客户端就会重复探测 / 拉错质量档 / 抽错帧，而且**没有任何报错**）；
- *   2. `recordRenderSample` 落盘 PNG 并按帧号排序进结算产物（幂等、坏入参返回 null）；
+ *   2. `recordRenderSample` 落盘 JPEG 并按帧号排序进结算产物（幂等、坏入参返回 null）；
  *   3. `commitRenderJob` 的报告里，**宿主测得到的字段优先**（质量档 / 帧数 / 字节数 /
  *      抽帧数），客户端上报只补宿主测不到的耗时与码率。
  *
@@ -45,7 +45,7 @@ function minimalManifest(meta = {}) {
 }
 
 const FAKE_MP4 = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
-const FAKE_PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const FAKE_IMAGE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 async function withProject(run) {
   const dir = await mkdtemp(join(tmpdir(), 'cs-render-report-'))
@@ -102,21 +102,21 @@ test('工单视图：显式入参优先，manifest.meta.quality 次之', async (
   })
 })
 
-test('recordRenderSample：落盘 PNG 并按帧号排序进结算产物', async () => {
+test('记录抽帧：落盘 JPEG 并按帧号排序进结算产物', async () => {
   await withProject(async ({ registry, project }) => {
     const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
 
     // 故意乱序回写：结算产物必须按帧号排（预览 / 报告都依赖稳定顺序）
-    const late = await recordRenderSample(registry, view.jobId, 90, FAKE_PNG)
-    const early = await recordRenderSample(registry, view.jobId, 10, FAKE_PNG)
+    const late = await recordRenderSample(registry, view.jobId, 90, FAKE_IMAGE)
+    const early = await recordRenderSample(registry, view.jobId, 10, FAKE_IMAGE)
     assert.notEqual(late, null)
     assert.notEqual(early, null)
     assert.match(late.url, new RegExp(`^/canvas-studio/assets/${project.id}/`))
-    assert.match(late.url, /\.png$/)
+    assert.match(late.url, /\.jpg$/)
     // ⚠️ 落盘名由 `saveLocalAssetBytes` 生成（帧号**不**进文件名）；帧号的真值只在
     // `frames[].frame` 里 —— 这条断言就是防止有人回头去猜文件名里的帧号。
-    assert.doesNotMatch(late.url, /-f0090\.png$/, '不要把帧号编码进文件名：落盘名由共享助手决定')
+    assert.doesNotMatch(late.url, /-f0090\.jpg$/, '不要把帧号编码进文件名：落盘名由共享助手决定')
 
     await commitRenderJob(registry, view.jobId, { bytes: FAKE_MP4 })
     const outcome = await pending
@@ -127,20 +127,20 @@ test('recordRenderSample：落盘 PNG 并按帧号排序进结算产物', async 
 
 test('recordRenderSample：未知 jobId / 空字节 ⇒ null（路由据此回 200 幂等）', async () => {
   await withProject(async ({ registry, project }) => {
-    assert.equal(await recordRenderSample(registry, 'rj-does-not-exist', 0, FAKE_PNG), null)
+    assert.equal(await recordRenderSample(registry, 'rj-does-not-exist', 0, FAKE_IMAGE), null)
 
     const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: JOB_BUDGET_MS })
     const view = pendingRenderJobFor(project.id)
     assert.equal(await recordRenderSample(registry, view.jobId, 0, new Uint8Array(0)), null, '空字节不该落盘')
-    assert.equal(await recordRenderSample(registry, view.jobId, -5, FAKE_PNG) !== null, true, '负帧号收敛到 0 而不是拒收')
+    assert.equal(await recordRenderSample(registry, view.jobId, -5, FAKE_IMAGE) !== null, true, '负帧号收敛到 0 而不是拒收')
 
-    const clamped = await recordRenderSample(registry, view.jobId, Number.NaN, FAKE_PNG)
+    const clamped = await recordRenderSample(registry, view.jobId, Number.NaN, FAKE_IMAGE)
     assert.equal(clamped.frame, 0)
 
     cancelRenderJob(view.jobId, {})
     await assert.rejects(() => pending, (err) => err.code === 'CS-GEN-207')
     // 已结算的工单再来一张抽帧 ⇒ null（不写脏文件）
-    assert.equal(await recordRenderSample(registry, view.jobId, 5, FAKE_PNG), null)
+    assert.equal(await recordRenderSample(registry, view.jobId, 5, FAKE_IMAGE), null)
   })
 })
 

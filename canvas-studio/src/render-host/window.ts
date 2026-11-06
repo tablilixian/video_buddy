@@ -149,6 +149,44 @@ function borrowHostSession(
 }
 
 /**
+ * CV-447（P0-A）：渲染在飞时**临时放开宿主窗口的后台节流**；单结算即恢复。
+ *
+ * 为什么存在：client 执行器跑在用户主窗口的页面上，Chromium 对被遮挡/切走的窗口
+ * 节流 rAF 与定时器（2026-11-06 会话实测：整片渲染从 209ms/帧膨胀到 ≈445ms/帧，
+ * 自适应超时三连超）。render-host 窗口在建窗参数里已永久 `backgroundThrottling:false`；
+ * 主窗口是桌面宿主的窗口，canvas-studio 不改它的建窗参数（P0-5 借 session 同款边界），
+ * 改用运行时 `webContents.setBackgroundThrottling(false)` 只在渲染在飞时放开。
+ *
+ * 为什么动态而非常开：常开 = 主窗口后台时 rAF 全速跑（电耗/CPU 代价常驻）；
+ * 渲染只在有单时发生，动态开关把代价限制在渲染窗口期内。
+ *
+ * 窗口甄别：跳过 render-host 自己的窗口（URL 含 `/render-host`，已永久放开）与
+ * 已销毁窗口；其余宿主窗口统一处理——开关是幂等的，多碰一个非渲染窗口无正确性影响。
+ * 失败只记日志不抛：节流放开失败的最坏结果 = 回到超时轮盘（旧行为），绝不连累渲染。
+ */
+export function setMainWindowRenderThrottling(enabled: boolean, log?: (message: string) => void): void {
+  try {
+    const resolved = resolveElectron()
+    const windows = resolved?.electron.BrowserWindow?.getAllWindows?.() ?? []
+    let touched = 0
+    for (const win of windows) {
+      if (win === undefined || win === null) continue
+      if (typeof win.isDestroyed === 'function' && win.isDestroyed()) continue
+      const url = typeof win.webContents?.getURL === 'function' ? win.webContents.getURL() : ''
+      if (url.includes('/render-host')) continue
+      if (typeof win.webContents?.setBackgroundThrottling !== 'function') continue
+      win.webContents.setBackgroundThrottling(enabled)
+      touched += 1
+    }
+    if (touched > 0) {
+      log?.(`[canvas-studio] 已${enabled ? '恢复' : '放开'} ${touched} 个宿主窗口的后台节流（渲染${enabled ? '已结算' : '在飞'}）`)
+    }
+  } catch (cause) {
+    log?.(`[canvas-studio] 切换宿主窗口后台节流失败（继续，不阻断渲染）：${cause instanceof Error ? cause.message : String(cause)}`)
+  }
+}
+
+/**
  * 保证隐藏渲染窗口存在（幂等）。
  * @returns 窗口句柄；取不到 electron（例如纯 CLI 宿主）时返回 undefined —— 调用方应回退到
  *          现有客户端轮询（方案 O-06「保底」）。

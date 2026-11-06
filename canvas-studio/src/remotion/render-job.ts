@@ -33,6 +33,8 @@ import {
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
+import { describeDiagnostics, diagHint } from './render-diagnostics.js'
+import type { RenderExecutor, RenderJobDiagnostics } from './render-diagnostics.js'
 import { summarizeManifestAudio, type ManifestAudioSummary } from './manifest.js'
 import {
   listRenderJobs,
@@ -47,6 +49,7 @@ import {
   markRenderHostServedJob,
   recycleRenderHostIfServed,
   resetRenderHostAfterFailure,
+  toggleHostWindowThrottling,
 } from '../render-host/dispatch.js'
 import { pickSampleFrames, renderTimeoutMs } from './timing.js'
 
@@ -54,7 +57,7 @@ import { pickSampleFrames, renderTimeoutMs } from './timing.js'
  * 工单超时**下限**（毫秒）。
  *
  * 二期 1b 起不再是固定值：真实超时 = `renderTimeoutMs(帧数)`
- * （`clamp(帧数 × 200ms + 60s, 90s, 20min)`，见 `timing.ts`；REQ-034 O-06 改口径）。
+ * （`clamp(帧数 × 240ms × 档位系数 + 60s, 90s, 20min)`，见 `render-budget.ts`；REQ-034 O-06 改口径）。
  * 保留这个常量是因为它仍是下限，且外部（测试 / 文档）按「一分钟半量级」理解这条工单。
  */
 export const RENDER_JOB_TIMEOUT_MS = 90_000
@@ -75,7 +78,7 @@ export const RENDER_JOB_TIMEOUT_MS = 90_000
  * 连客户端看都没看过一眼（从未被 claim），允许隐藏窗口在就绪后**接管**——它从头渲，
  * 与「页面中途切走导致重渲」的代价一致，而收益是把必然超时变成必然成功。
  */
-export type RenderExecutor = 'render-host' | 'client'
+export type { RenderExecutor, RenderJobDiagnostics } from './render-diagnostics.js'
 
 /** 客户端轮询看到的工单视图（不含宿主内部结算 handle）。 */
 export interface PendingRenderJob {
@@ -141,54 +144,6 @@ export interface RenderJobReport {
    * 与拆解段起点的逐边界比对结论（漂移超窗报 warnings，细节看这里逐段校准）。
    */
   timingCheck?: TimingCheckSummary
-}
-
-/**
- * REQ-035 F-01：工单生命周期快照。
- *
- * 2026-10-24 事故的 39 次超时里，agent 只能看到"超时"这一句，无法区分
- * 「没人取单」「取了没开渲」「渲到一半停了」—— 三种情况的修法完全不同。
- * 这份快照成功与失败都会带回，并拼进超时文案，让排障不再靠猜。
- */
-export interface RenderJobDiagnostics {
-  id: string
-  /** 谁在渲：隐藏渲染窗口 or 用户画布页。 */
-  path: RenderExecutor
-  /** 被认领的时刻；`null` = 从未被认领。 */
-  claimedAt: number | null
-  /** 第一帧进度上报的时刻；`null` = 一帧都没出过。 */
-  firstFrameAt: number | null
-  settled: 'ok' | 'failed' | 'timeout' | 'cancelled'
-  /** 是否发生过滞留改派（画布页卡住 → 窗口接管）。 */
-  takeover: boolean
-  /** 从派发到结算的毫秒数。 */
-  waitedMs: number
-  /** 到过的最大进度（0–1）。 */
-  maxProgress: number
-}
-
-/** 把诊断快照压成一句人读文本（进超时文案与日志）。 */
-export function describeDiagnostics(d: RenderJobDiagnostics): string {
-  const who = d.path === 'render-host' ? '隐藏渲染窗口' : '画布页'
-  const waited = Math.round(d.waitedMs / 1000)
-  if (d.claimedAt === null) return `${who}从未取走这张工单（等 ${waited}s）`
-  if (d.firstFrameAt === null) return `${who}已取单但 ${waited}s 内一帧都没渲染`
-  return `${who}已渲染 ${waited}s，进度 ${Math.round(d.maxProgress * 100)}%${d.takeover ? '（曾发生过改派）' : ''}`
-}
-
-/**
- * 把诊断快照压成**拼在正文末尾**的一行（P0-1）。
- *
- * 为什么直接拼进 `message` 而不是另开一个模板参数（`{hint}`）：
- * - `detail` 只进 `devMessage`，而 `routeError` 在 `devMode=false`（桌面端默认）时只交
- *   `userMessage`、`recordStudioToolFailure` 也只记 `action.message` ⇒ **两边都到不了**。
- *   本机 4 个会话 34 次 `CS-RENDER-002` 里模型看到的全是「请重试」，`job` 快照一个字都没
- *   露过面，于是它唯一的处置就是 sleep + 重试（最坏 28 分钟 37 次连败）。
- * - 这个码的正文本来就由**调用方**填（`{message}`，客户端撤单时填的是渲染器原话），
- *   诊断属于同一类信息，拼在一起不需要动错误码表（`catalog.ts#SPECS` 有只减不增的行数棘轮）。
- */
-function diagHint(diag: RenderJobDiagnostics): string {
-  return `\n工单：${describeDiagnostics(diag)}`
 }
 
 /**
@@ -325,6 +280,8 @@ interface ActiveRenderJob {
   samples: RenderSampleResult[]
   /** O-06：这张单归谁渲（建单时定）。 */
   executor: RenderExecutor
+  /** CV-447（P0-B）：执行器为画布页时的回退原因（为什么没派给隐藏窗口）；render-host 单缺省。 */
+  fallbackReason?: string
   /** O-06：最近一次进度上报（心跳看门狗把它也算作「活着」的证据）。 */
   lastProgressAt: number
   /**
@@ -392,7 +349,12 @@ export function claimRenderJobFor(
     if (job.executor !== owner) continue
     // 滞留改派的判据打点：画布页「看过」这张单的第一拍。只记第一次即可，
     // 轮询每秒都会再来，重复打点无害。
-    if (owner === 'client' && job.clientClaimedAt === undefined) job.clientClaimedAt = now
+    if (owner === 'client' && job.clientClaimedAt === undefined) {
+      job.clientClaimedAt = now
+      // CV-447（P0-A）：渲染在飞，放开宿主窗口后台节流（结算时恢复）。
+      // 遮挡态 rAF/定时器被节流曾把整片渲染从 209ms/帧膨胀到 ≈445ms/帧，三连超时。
+      toggleHostWindowThrottling(false)
+    }
     // 诊断用（F-01）：任意执行者的首次认领时刻。
     if (job.claimedAt === undefined) job.claimedAt = now
     return {
@@ -661,6 +623,7 @@ function diagnosticsOf(job: ActiveRenderJob, settled: RenderJobDiagnostics['sett
     takeover: job.takenOverAt !== undefined,
     waitedMs: Math.max(0, Date.now() - since),
     maxProgress: job.maxProgress,
+    ...(job.fallbackReason !== undefined ? { fallbackReason: job.fallbackReason } : {}),
   }
 }
 
@@ -670,6 +633,9 @@ function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | '
     job.watchdog = null
   }
   if (job.onAbort !== undefined) job.signal?.removeEventListener('abort', job.onAbort)
+  // CV-447（P0-A）：单已结算（成功/失败/超时/撤单），恢复宿主窗口后台节流。
+  // 无条件恢复（幂等）：即使本单是 render-host 渲的，恢复一次也无害。
+  toggleHostWindowThrottling(true)
   // 这扇窗已经用过了：下一次派单会换新的（见 `recycleServedRenderHost`）。
   if (job.executor === 'render-host') markRenderHostServedJob()
   activeJobs.delete(job.jobId)
@@ -898,8 +864,12 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
   const fps = options.fps ?? manifest.meta.fps
   // V1：spot-check 目标帧收口；超时按「实际要渲的帧数」计（spot 只渲 N 帧，不编码整片）。
   const spotFrames = normalizeSpotFrames(options.spotFrames, manifest.meta.durationInFrames)
-  // 二期 1b（D-04）：超时按片长自适应；REQ-034 O-06 改按帧数。
-  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames)
+  // 二期 1b（D-04）：超时按片长自适应；REQ-034 O-06 改按帧数；CV-447 加分档系数。
+  const jobQuality = options.quality ?? manifest.meta.quality ?? 'standard'
+  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(
+    spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames,
+    jobQuality,
+  )
   const { signal } = options
   if (signal?.aborted === true) {
     throw makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' })
@@ -921,8 +891,12 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
   // P0-3①：把「为什么没派给隐藏窗口」写进宿主日志。此前这个决定**完全没有留痕** ——
   // 日志里只有「RenderHost 已创建」，然后 28s 后报「画布页取单后一直没开始渲染」，
   // 中间的派单理由一个字都没有，真机上只能靠推。
-  if (executor === 'client') {
-    logRenderHost(`[canvas-studio] 渲染工单 ${jobId} 交给画布页（${executorFallbackReason(options, fastExecutor)}）`)
+  // CV-447（P0-B）：同一句话再存进工单诊断 —— 超时/失败回执、模型可见的 job 快照
+  // 都从这里取。模型此前只能看到「画布页已渲染 330s，进度 55%」，不知道为什么在
+  // 画布页，也不知道该查执行器还是改画面（2026-11-06 会话 3 次同参盲试的教训）。
+  const fallbackReason = executor === 'client' ? executorFallbackReason(options, fastExecutor) : undefined
+  if (fallbackReason !== undefined) {
+    logRenderHost(`[canvas-studio] 渲染工单 ${jobId} 交给画布页（${fallbackReason}）`)
   }
   // 入队 + 尝试派发（同步入表 ⇒ 客户端当拍可见；并发 = 1 ⇒ 第二单要等前一单结算）。
   const slot = reserveRenderSlot(
@@ -943,6 +917,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       timingSegments: options.timingSegments ?? [],
       samples: [],
       executor,
+      ...(fallbackReason !== undefined ? { fallbackReason } : {}),
       lastProgressAt: Date.now(),
       maxProgress: 0,
       watchdog: null,
@@ -981,9 +956,14 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         if (diag.path === 'render-host') resetRenderHostAfterFailure(`render timeout ${Math.round(timeoutMs / 1000)}s`)
         // F-01/F-03：把「谁认领了 / 有没有出首帧」直接写进文案 —— 39 次超时里
         // agent 只能看到一句"超时"，于是把执行器故障误判成画面太复杂。
+        // CV-447（P0-B）：再加已渲帧数估算 —— 「进度 55%」对模型是抽象百分比，
+        // 「已渲约 742/1350 帧」才能对上 spotFrames/时长语义；顺带说明同参重试
+        // 是合法动作（帧缓存跨次累积），与反重复 guard 的豁免配置（CV-448）配套。
+        const totalFrames = spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames
+        const renderedFrames = Math.max(0, Math.round(diag.maxProgress * totalFrames))
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {
           seconds: Math.round(timeoutMs / 1000),
-          diagnosis: describeDiagnostics(diag),
+          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧。若执行器为画布页且回退原因非调用方指定，先查宿主日志 render-host 行再决定重试`,
           job: diag,
         }))
       }, timeoutMs)
@@ -1017,7 +997,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
 }
 
 /**
- * 三期 W6-1：客户端回写一张抽帧（PNG 字节 → 项目资产目录）。
+ * 三期 W6-1：客户端回写一张抽帧（JPEG 字节 → 项目资产目录；CV-447 P1-B 起改 JPEG）。
  *
  * @returns 落盘后的同源 URL；工单不存在 / 已结算返回 `null`（路由据此回 200 幂等）。
  */
@@ -1025,19 +1005,19 @@ export async function recordRenderSample(
   registry: ProjectRegistry,
   jobId: string,
   frame: number,
-  png: Uint8Array,
+  bytes: Uint8Array,
 ): Promise<RenderSampleResult | null> {
   const job = activeJobs.get(jobId)
-  if (job === undefined || job.settled || png.length === 0) return null
+  if (job === undefined || job.settled || bytes.length === 0) return null
   const safeFrame = Number.isFinite(frame) ? Math.max(0, Math.round(frame)) : 0
-  // ⚠️ `saveLocalAssetBytes` 只按**扩展名**分类，落盘名由它自己生成（`<assetId>.png`）——
+  // ⚠️ `saveLocalAssetBytes` 只按**扩展名**分类，落盘名由它自己生成（`<assetId>.jpg`）——
   // 这里传的 name 不进文件名。帧号的真值在 `job.samples` / 结算产物的 `frames[].frame` 里，
   // **不要**让任何调用方依赖文件名里的帧号（会静默对不上）。
   const saved = await saveLocalAssetBytes(
     registry,
     job.projectId,
-    `remotion-sample-${newAssetId()}.png`,
-    png,
+    `remotion-sample-${newAssetId()}.jpg`,
+    bytes,
   )
   // F-17：抽帧天生是中间产物 —— 登记进 `.transient-assets.json`，让 GC 能**单独报**出来
   // （不自动删；要清必须显式 purgeTransient）。

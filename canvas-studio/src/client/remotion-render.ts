@@ -92,10 +92,10 @@ export const QUALITY_PRESETS: Readonly<Record<RenderQuality, QualityPreset>> = {
   },
 }
 
-/** 一期抽帧结果（PNG 字节 + 帧号）。 */
+/** 一期抽帧结果（JPEG 字节 + 帧号；`image_crop` 精查仍落 PNG）。 */
 export interface RenderSample {
   frame: number
-  png: Uint8Array
+  bytes: Uint8Array
 }
 
 /** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量都可复盘）。 */
@@ -173,8 +173,15 @@ export class WebRenderError extends Error {
  */
 export { pickSampleFrames } from '../remotion/timing.js'
 
-/** 把一帧 `VideoFrame` 画进 `OffscreenCanvas` 并编码成 PNG（异步，但不阻塞取帧）。 */
-async function frameToPng(frame: VideoFrame): Promise<Uint8Array | null> {
+/**
+ * 把一帧 `VideoFrame` 画进 `OffscreenCanvas` 并编码成 **JPEG q0.85**（异步，但不阻塞取帧）。
+ *
+ * CV-447（P1-B）：此前是 PNG —— 1280×720 单帧 ≈500KB，base64 后 ≈670KB，2MiB 的图片
+ * 回灌预算只装得下 3 张，探针循环每轮 2–5 张就撞 `IMAGE_OFFLOAD_REQUIRED`（真机 51 次
+ * read_image → 39 次失败重试）。JPEG q0.85 单帧 ≈170KB，同样预算装 12 张；判据类结论
+ * （元素存在 / 字号 / 位置）足够，像素级精读走 `image_crop`（它输出仍是 PNG）。
+ */
+async function frameToImage(frame: VideoFrame): Promise<Uint8Array | null> {
   try {
     const width = Math.max(1, frame.displayWidth)
     const height = Math.max(1, frame.displayHeight)
@@ -182,7 +189,7 @@ async function frameToPng(frame: VideoFrame): Promise<Uint8Array | null> {
     const context = canvas.getContext('2d')
     if (context === null) return null
     context.drawImage(frame, 0, 0, width, height)
-    const blob = await canvas.convertToBlob({ type: 'image/png' })
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 })
     return new Uint8Array(await blob.arrayBuffer())
   } catch {
     return null
@@ -267,7 +274,7 @@ export async function renderManifestOnWeb(
         const index = frameIndex
         frameIndex += 1
         if (sampleSet.has(index)) {
-          pendingSamples.push({ frame: index, promise: frameToPng(frame) })
+          pendingSamples.push({ frame: index, promise: frameToImage(frame) })
         }
         return frame
       },
@@ -288,8 +295,8 @@ export async function renderManifestOnWeb(
   if (bytes.length === 0) throw new WebRenderError('渲染产物为空（编码器未产出字节），请重试。')
   const samples: RenderSample[] = []
   for (const entry of pendingSamples) {
-    const png = await entry.promise
-    if (png !== null && png.length > 0) samples.push({ frame: entry.frame, png })
+    const image = await entry.promise
+    if (image !== null && image.length > 0) samples.push({ frame: entry.frame, bytes: image })
   }
   samples.sort((a, b) => a.frame - b.frame)
   const totalMs = Date.now() - startedAt
@@ -377,9 +384,9 @@ export async function renderSpotFramesOnWeb(
       scale: preset.scale,
       ...(signal === undefined ? {} : { signal }),
     })
-    const blob = await still.blob({ format: 'png' })
-    const png = new Uint8Array(await blob.arrayBuffer())
-    if (png.length > 0) samples.push({ frame, png })
+    const blob = await still.blob({ format: 'jpeg', quality: 0.85 })
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    if (bytes.length > 0) samples.push({ frame, bytes })
     frameIndex += 1
     options.onProgress?.(frameIndex / total)
   }

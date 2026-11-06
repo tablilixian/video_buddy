@@ -49,15 +49,29 @@ export function pendingFactWarning(facts: unknown): string {
     .filter((c) => c.length > 0)
     .slice(0, 2)
   const preview = claims.length > 0 ? `：${claims.join('；')}${pending.length > 2 ? ' 等' : ''}` : ''
-  return `数据溯源：storyboard 有 ${pending.length} 条 pending（未核源）事实${preview}。pending 事实不得进成片（P-17）——若本片图表 / 数据卡引用了这些数字，先核源升级 verified，或补 dataSource:'observed' 说明（B-4 观察期提醒）`
+  return `数据溯源：事实表有 ${pending.length} 条 pending（未核源）事实${preview}。pending 事实不得进成片（P-17）——若本片图表 / 数据卡引用了这些数字，先核源升级 verified 并重跑 facts-builder 落盘，或补 dataSource:'observed' 说明（B-4 观察期提醒）`
 }
 
 /**
- * 读本项目 storyboard 的 pending 事实并出提醒文案。读不到 / 损坏 ⇒ 空串
- * （storyboard 是可选前置，没有它不该挡渲染；损坏场景由 storyboard 自身的
- * corrupt 处理负责，这里不重复报错）。
+ * 读本项目的事实表 pending 事实并出提醒文案（CV-447 P1-D）。
+ *
+ * 优先读 `build/fact-snapshot.json`（B2 事实快照，agent 用 `facts-builder.mjs` 落盘）；
+ * 快照不存在时回落到 storyboard `01_facts`。读不到 / 损坏 ⇒ 空串
+ * （事实表是可选前置，没有它不该挡渲染）。
+ *
+ * 为什么优先快照：真机事故里 agent 口头"已标 verified"但没写任何文件 ⇒ storyboard 仍是
+ * pending，交付 lint 连续两次报假警报。快照是**落盘真值**，纪律也写死了状态变更必须重跑
+ * `facts-builder`（叙述式更新不算数）。
  */
-export function readPendingFactWarning(storyboardPath: string): string {
+export function readPendingFactWarning(projectDir: string, storyboardPath: string): string {
+  try {
+    const snapshot = JSON.parse(readFileSync(`${projectDir}/build/fact-snapshot.json`, 'utf8')) as {
+      facts?: unknown
+    }
+    return pendingFactWarning(snapshot.facts)
+  } catch {
+    // 快照缺失 / 坏 JSON：回落到 storyboard（老项目路径）。
+  }
   try {
     const doc = JSON.parse(readFileSync(storyboardPath, 'utf8')) as {
       sections?: { '01_facts'?: { facts?: unknown } }

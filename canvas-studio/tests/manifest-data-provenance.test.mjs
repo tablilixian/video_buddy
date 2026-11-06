@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { validateManifest } from '../lib/remotion/manifest.js'
 import { validateChartTrack, validateDataCardProvenance } from '../lib/remotion/manifest-track-validate.js'
 import { looksLikeNumericFact, pendingFactWarning, readPendingFactWarning } from '../lib/data-provenance.js'
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -144,15 +144,31 @@ test('B-4 桥：全 verified / 空 / 坏形状 ⇒ 空串（不噪声）', () =>
   assert.equal(pendingFactWarning('oops'), '')
 })
 
-test('B-4 桥 E2E：readPendingFactWarning 读真实 storyboard.json（tmp 构造）', () => {
+test('B-4 桥 E2E：readPendingFactWarning 回落读 storyboard.json（快照缺失时）', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cs-prov-'))
   try {
     const path = join(dir, 'storyboard.json')
     writeFileSync(path, JSON.stringify({ sections: { '01_facts': { facts: [{ claim: '逐年小数未复核', status: 'pending' }] } } }))
-    assert.match(readPendingFactWarning(path), /1 条 pending/)
-    assert.equal(readPendingFactWarning(join(dir, 'missing.json')), '', '缺失文件 = 无提醒，不挡渲染')
+    assert.match(readPendingFactWarning(dir, path), /1 条 pending/)
+    assert.equal(readPendingFactWarning(dir, join(dir, 'missing.json')), '', '缺失文件 = 无提醒，不挡渲染')
     writeFileSync(path, '{broken')
-    assert.equal(readPendingFactWarning(path), '', '坏 JSON 容错')
+    assert.equal(readPendingFactWarning(dir, path), '', '坏 JSON 容错')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-447 P1-D：build/fact-snapshot.json 优先于 storyboard（落盘真值覆盖叙述式更新）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-prov-'))
+  try {
+    mkdirSync(join(dir, 'build'), { recursive: true })
+    // 事故签名：agent 口头说"已核实"，storyboard 仍是 pending；快照是真值。
+    const storyboard = join(dir, 'storyboard.json')
+    writeFileSync(storyboard, JSON.stringify({ sections: { '01_facts': { facts: [{ claim: '未核源', status: 'pending' }] } } }))
+    writeFileSync(join(dir, 'build', 'fact-snapshot.json'), JSON.stringify({ facts: [{ claim: '已核源', status: 'verified' }] }))
+    assert.equal(readPendingFactWarning(dir, storyboard), '', '快照 verified ⇒ 不再报假警报')
+    writeFileSync(join(dir, 'build', 'fact-snapshot.json'), JSON.stringify({ facts: [{ claim: '新发现', status: 'pending' }] }))
+    assert.match(readPendingFactWarning(dir, storyboard), /1 条 pending/, '快照 pending ⇒ 照常点名')
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

@@ -224,26 +224,38 @@ test('waveformBars：offset 指定窗口起点，负索引也安全回绕', () =
 // 旧口径（二期 D-04）= clamp(2×秒数 + 120s, 10min, 30min)。真机暴露两个问题：
 // ① 高 fps 片子按「秒」算被平白砍半（600 帧 60fps 只有 10s，预算比 30fps 少一半，
 //    而软编成本只跟帧数走）；② 下限 10 分钟意味着挂死时要等满 10 分钟（评审 P1-5）。
-// 新口径 = clamp(帧数 × 200ms + 60s, 90s, 20min)。
+// 新口径 = clamp(帧数 × 240ms × 分档系数 + 60s, 90s, 20min)。
+// CV-447：200ms 是按 render-host 58ms/帧标定的「3.4× 余量」，对画布页执行器实测
+// 209.2ms/帧裕度只剩 -4%（45s/1350 帧成功那次贴着 330s 上限过去）；240ms 给 15%。
 
 test('renderTimeoutMs：clamp 在 90s–20min，随帧数线性增长（与 fps 无关）', () => {
   assert.equal(RENDER_TIMEOUT_MIN_MS, 90_000, '下限 90 秒')
   assert.equal(RENDER_TIMEOUT_MAX_MS, 1_200_000, '上限 20 分钟')
-  assert.equal(RENDER_TIMEOUT_PER_FRAME_MS, 200, '每帧预算 200ms')
+  assert.equal(RENDER_TIMEOUT_PER_FRAME_MS, 240, '每帧预算 240ms（画布页实测 209.2 + 15% 裕度）')
 
-  // 30 帧：30×200 + 60000 = 66000 < 90000 ⇒ 下限
+  // 30 帧：30×240 + 60000 = 67200 < 90000 ⇒ 下限
   assert.equal(renderTimeoutMs(30), RENDER_TIMEOUT_MIN_MS, '短片夹到下限')
   assert.equal(renderTimeoutMs(0), RENDER_TIMEOUT_MIN_MS, '零帧 ⇒ 下限兜底')
   assert.equal(renderTimeoutMs(Number.NaN), RENDER_TIMEOUT_MIN_MS, 'NaN 帧数 ⇒ 下限兜底')
 
-  // 600 帧（20s @30fps，真机 standard 实测 35s）：600×200 + 60000 = 180000
-  assert.equal(renderTimeoutMs(600), 180_000, '600 帧 ⇒ 3 分钟（实测 35s，3.4× 余量）')
-  // 6000 帧：6000×200 + 60000 = 1260000 > 上限 ⇒ 夹到 20 分钟
+  // 600 帧（20s @30fps）：600×240 + 60000 = 204000
+  assert.equal(renderTimeoutMs(600), 204_000, '600 帧 ⇒ 3.4 分钟')
+  // 6000 帧：6000×240 + 60000 = 1500000 > 上限 ⇒ 夹到 20 分钟
   assert.equal(renderTimeoutMs(6000), RENDER_TIMEOUT_MAX_MS, '超长片夹到上限')
   // 单调不减
   assert.ok(renderTimeoutMs(9000) >= renderTimeoutMs(6000))
   // 只看帧数：调用方少传 fps 也不会变（幂等签名）
   assert.equal(renderTimeoutMs(600), renderTimeoutMs(600))
+})
+
+// CV-447：分档系数 —— high 与 standard 同 scale（同帧成本）只留 15% 码率/编码器余量；
+// draft 实测 131.9ms/帧，0.7× 覆盖。45s/1350 帧：standard 384s、high 432s、draft 287s。
+test('renderTimeoutMs：分档系数（CV-447）', () => {
+  assert.equal(renderTimeoutMs(1350, 'standard'), 384_000, '1350 帧 standard = 384s（实测 282.4s + 36% 裕度）')
+  assert.equal(renderTimeoutMs(1350, 'high'), Math.round(1350 * 240 * 1.15 + 60000), 'high = standard × 1.15')
+  assert.equal(renderTimeoutMs(1350, 'draft'), 286_800, 'draft = standard × 0.7（实测 179.6s）')
+  assert.ok(renderTimeoutMs(1350, 'high') > renderTimeoutMs(1350, 'standard'), 'high > standard')
+  assert.ok(renderTimeoutMs(1350, 'draft') < renderTimeoutMs(1350, 'standard'), 'draft < standard')
 })
 
 // ───────────────────────── A4：转场（新增四种，全部按帧求值） ─────────────────────────
@@ -347,11 +359,11 @@ test('transitionOverride：老四种效果语义不变（窗口外恒等）', ()
 // Phase 0 结论：39 次超时**不是**预算问题（工单压根没被取走）。但公式本身是
 // 「基线 + 帧×单价」的正确形态，必须有守卫钉住，别被下一次"以为预算是问题"改回去。
 
-test('B2-1：预算 = 帧数 × 200ms + 60s，clamp 在 [90s, 20min]', () => {
+test('B2-1：预算 = 帧数 × 240ms + 60s，clamp 在 [90s, 20min]', () => {
   assert.equal(renderTimeoutMs(0), 90_000, '下限 90s：短片不该被压到 60s 以下')
-  assert.equal(renderTimeoutMs(150), 90_000, '150 帧理论 90s，正好压线')
-  assert.equal(renderTimeoutMs(450), 150_000, '450 帧 ⇒ 150s（事故里就是这个数）')
-  assert.equal(renderTimeoutMs(1800), 420_000, '1800 帧 ⇒ 420s（独立工程实测 129–182s，3.2× 余量）')
+  assert.equal(renderTimeoutMs(150), 96_000, '150 帧 ⇒ 96s（CV-447 起单价 240ms）')
+  assert.equal(renderTimeoutMs(450), 168_000, '450 帧 ⇒ 168s')
+  assert.equal(renderTimeoutMs(1800), 492_000, '1800 帧 ⇒ 492s（实测 282s，1.7× 余量）')
   assert.equal(renderTimeoutMs(100_000), 20 * 60_000, '上限 20min：再长也不许无限挂')
 })
 
@@ -359,5 +371,5 @@ test('B2-1：预算随帧数线性、与 fps 无关（同一帧数同预算）',
   const a = renderTimeoutMs(600)
   const b = renderTimeoutMs(600)
   assert.equal(a, b)
-  assert.ok(renderTimeoutMs(1200) - renderTimeoutMs(600) === 120_000, '每 600 帧应多 120s（200ms/帧）')
+  assert.ok(renderTimeoutMs(1200) - renderTimeoutMs(600) === 144_000, '每 600 帧应多 144s（240ms/帧）')
 })

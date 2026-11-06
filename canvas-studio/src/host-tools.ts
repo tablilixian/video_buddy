@@ -99,6 +99,7 @@ import { lintReceiptLines, writeLintReport } from './lint-report.js'
 import { readPendingFactWarning } from './data-provenance.js'
 import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
+import { withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
@@ -221,6 +222,7 @@ const resultSchema = {
         takeover: { type: 'boolean' as const, description: '是否发生过滞留改派（画布页卡住 → 隐藏窗口接管）' },
         waitedMs: { type: 'number' as const, description: '从派发到结算的毫秒数' },
         maxProgress: { type: 'number' as const, description: '到过的最大进度（0–1）' },
+        fallbackReason: { type: 'string' as const, description: '执行器为画布页时的回退原因（为什么没派给隐藏窗口）。有值时先判断该查执行器还是改画面，不要急着改 manifest' },
       },
       description: '工单生命周期：谁认领、有没有出首帧、是否改派过。失败时它决定「该改画面还是该查执行器」',
     },
@@ -363,6 +365,7 @@ interface ComposeToolResult {
     takeover: boolean
     waitedMs: number
     maxProgress: number
+    fallbackReason?: string
   }
   /** REQ-035 F-05：本次是探针渲染（未落画布节点、未抽帧、跳过体检）。 */
   probe?: boolean
@@ -812,6 +815,7 @@ function jobDiagnosticsPayload(d: RenderJobDiagnostics): NonNullable<ComposeTool
     maxProgress: d.maxProgress,
     ...(d.claimedAt === null ? {} : { claimedAt: d.claimedAt }),
     ...(d.firstFrameAt === null ? {} : { firstFrameAt: d.firstFrameAt }),
+    ...(d.fallbackReason === undefined ? {} : { fallbackReason: d.fallbackReason }),
   }
 }
 
@@ -828,7 +832,9 @@ function formatRenderJobDiagnostics(job: NonNullable<ComposeToolResult['job']>):
     : `已于 ${new Date(job.claimedAt).toLocaleTimeString('zh-CN', { hour12: false })} 认领`
   const first = job.firstFrameAt === undefined ? '无首帧' : '已出首帧'
   const takeover = job.takeover ? ' · 曾改派' : ''
-  return `工单：${who} · ${claimed} · ${first} · 进度 ${Math.round(job.maxProgress * 100)}% · 用时 ${(job.waitedMs / 1000).toFixed(1)}s${takeover}`
+  // CV-447（P0-B）：成功单也带回退原因 —— 解释「这次为什么走画布页/为什么慢」。
+  const fallback = job.fallbackReason === undefined ? '' : ` · 回退原因：${job.fallbackReason}`
+  return `工单：${who} · ${claimed} · ${first} · 进度 ${Math.round(job.maxProgress * 100)}% · 用时 ${(job.waitedMs / 1000).toFixed(1)}s${takeover}${fallback}`
 }
 
 /** 秒值展示：整数不带小数尾巴，小数留一位（标题与结果文案共用，避免两处漂移）。 */
@@ -3818,7 +3824,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(quality !== undefined ? { quality } : {}),
           // CV-373：探针贯通到客户端 —— 诊断渲跳过预览闸门，不再弹「帧 3/9」打断用户。
           ...(probe ? { probe } : {}),
-          ...(spot ? { spotFrames: a.spotFrames as number[] } : {}),
+          ...(spot ? { spotFrames: withStructuralSpotFrames(renderManifest, a.spotFrames as number[]) } : {}),
           ...(timingSegments !== undefined ? { timingSegments } : {}),
           realDurations: pre.realDurations,
           sampleFrames: probe || spot ? [] : pickSampleFrames(renderManifest),
@@ -3852,10 +3858,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // OPT-15：动画窗口表 —— QC 抽帧号对窗口用，防止把动画中段当布局 bug 排查。
         const animationWindows = probe || spot ? [] : collectAnimationWindows(renderManifest)
         const resolvedNote = formatResolvedStarts(normalized.resolved)
-        // B-4（CV-440，P-01/P-17）：storyboard pending 事实桥 —— write_storyboard 的
-        // facts[].status 与 manifest 之间此前无任何桥（pending 照样变成图表数字）。
-        // 观察期只点名不阻断；探针 / spot 不出（它们不交付，提醒是噪声）。
-        const pendingFactNote = probe || spot ? '' : readPendingFactWarning(registry.storyboardFile(projectId))
+        // B-4/CV-447（P1-D）：facts pending 桥 —— 优先读 build/fact-snapshot.json（落盘真值），
+        // 快照缺失回落 storyboard；探针 / spot 不出（它们不交付，提醒是噪声）。
+        const pendingFactNote = probe || spot ? '' : readPendingFactWarning(registry.projectDir(projectId), registry.storyboardFile(projectId))
         // P1-4（2026-11-05）：段边界相对 v1 变化 —— 只报告不拒收。重排有时合法（旁白重合成），
         // 拒收会把合法返工挡死；但模型改了 8 次帧表一次都没说，所以这里让它变成可见的事实。
         const segmentDrift = probe || spot ? '' : segmentDriftNote(registry.projectDir(projectId), renderManifest)

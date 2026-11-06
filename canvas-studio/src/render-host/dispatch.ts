@@ -41,6 +41,34 @@ let logger: RenderHostLogger | undefined
 // 初值取 -Infinity：0 会被"距上次重置 30s"判成刚重置过，导致**第一次失败反而不重置**。
 let lastResetAt = Number.NEGATIVE_INFINITY
 
+/**
+ * CV-447（P0-A）：渲染在飞时切换宿主窗口后台节流的钩子（生产实现 = `window.ts` 的
+ * `setMainWindowRenderThrottling`，由 `routes.ts` 注入）。
+ *
+ * 为什么走注入而不是让 render-job 直接 import window.ts：与本模块的 launcher /
+ * resetter 同一取向 —— render-job 是渲染无关的宿主逻辑，测试里天天直接 import，
+ * 不能反向依赖 electron 触点。切换失败在实现侧吞掉（观测通道不连累渲染）。
+ */
+export type RenderThrottleToggle = (enabled: boolean) => void
+let throttleToggle: RenderThrottleToggle | undefined
+
+/** 注册/注销节流开关钩子（插件卸载时传 `undefined`）。 */
+export function setRenderHostThrottleToggle(next: RenderThrottleToggle | undefined): void {
+  throttleToggle = next
+}
+
+/**
+ * 渲染在飞（`enabled=false`）/ 结算（`enabled=true`）时切换宿主窗口后台节流。
+ * 没有钩子（纯 CLI / 单测）时是空操作。
+ */
+export function toggleHostWindowThrottling(enabled: boolean): void {
+  try {
+    throttleToggle?.(enabled)
+  } catch {
+    // 切换失败不连累渲染：最坏结果 = 回到「被节流 → 超时」的旧行为。
+  }
+}
+
 /** 两次重置之间的最小间隔：防止"失败→重置→再失败"抖动成抖窗。 */
 export const RENDER_HOST_RESET_MIN_INTERVAL_MS = 30_000
 let lastWarmAt = 0

@@ -48,8 +48,9 @@ import { cancelRenderJob, claimRenderJobFor, commitRenderJob, failRenderHostJobs
 // REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
 import { renderHostHtml } from './render-host/page.js'
 import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
-import { setRenderHostLauncher, setRenderHostLogger, setRenderHostResetter, warnRenderRequestRejected } from './render-host/dispatch.js'
+import { setRenderHostLauncher, setRenderHostResetter, warnRenderRequestRejected } from './render-host/dispatch.js'
 import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHost } from './render-host/window.js'
+import { installRenderHostWiring, uninstallRenderHostWiring } from './render-host/wiring.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
@@ -3337,7 +3338,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       }
     }}),
 
-    // 三期 W6-1：客户端回写一张抽帧（octet-stream PNG + `jobId` / `frame` query）。
+    // 三期 W6-1：客户端回写一张抽帧（octet-stream JPEG + `jobId` / `frame` query）。
     // 幂等：工单不存在 / 已结算 → `{ok:true, url:null}`（不制造假错误）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_SAMPLE, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort())) {
@@ -3359,8 +3360,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           sendJson(res, 400, { error: '缺少 jobId' })
           return
         }
-        const png = await readRawBody(req, controller.signal, MAX_BODY_BYTES)
-        const sample = await recordRenderSample(registry, jobId, Number.isFinite(frameRaw) ? frameRaw : 0, png)
+        const bytes = await readRawBody(req, controller.signal, MAX_BODY_BYTES)
+        const sample = await recordRenderSample(registry, jobId, Number.isFinite(frameRaw) ? frameRaw : 0, bytes)
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 200, { ok: true, url: sample === null ? null : sample.url })
         }
@@ -3620,7 +3621,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
   ]
   // ── REQ-034 · O-06：RenderHost 派单登记 ──
   // P0-3①：派单侧观测出口（`render-job.ts` 不依赖 cordis，只喊话；见 dispatch.ts）。
-  setRenderHostLogger((message) => { ctx.logger.info(message) })
+  // CV-447（P0-A）：渲染在飞时放开宿主窗口后台节流、结算即恢复（实现见 window.ts / wiring.ts）。
+  installRenderHostWiring((message) => { ctx.logger.info(message) })
   // 默认**懒启**：只有真要渲染时才建隐藏窗口（空闲零成本），`CANVAS_STUDIO_RENDER_HOST=0` 可整体关掉。
   // `=1` 时额外在启动阶段就拉起（S1 人工验收要看 `/render-host/status` 自报 idle，等不到派单）。
   if (process.env.CANVAS_STUDIO_RENDER_HOST !== '0') {
@@ -3644,9 +3646,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
   }
   return () => {
     // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
-    setRenderHostLauncher(undefined)
-    setRenderHostResetter(undefined)
-    setRenderHostLogger(undefined)
+    uninstallRenderHostWiring()
     stopLoopback()
     disposeRenderHost('plugin-dispose')
     for (const dispose of routes) dispose()

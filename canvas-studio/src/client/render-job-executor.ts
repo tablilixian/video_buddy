@@ -30,7 +30,7 @@ export type RenderJobExecution = 'committed' | 'aborted' | 'failed'
 /** 回写通道（默认实现走 `api.ts` 的同源 fetch；单测注入假实现）。 */
 export interface RenderJobTransport {
   reportProgress(jobId: string, progress: number): Promise<void>
-  uploadSample(jobId: string, frame: number, png: Uint8Array): Promise<string | null>
+  uploadSample(jobId: string, frame: number, bytes: Uint8Array): Promise<string | null>
   commit(jobId: string, bytes: Uint8Array, warnings: readonly string[], report: StudioRenderReport): Promise<void>
   /** V1：spot-check 结算 —— 无成片字节，只结算已回写的静帧。 */
   commitSpot(jobId: string, warnings: readonly string[]): Promise<void>
@@ -39,7 +39,7 @@ export interface RenderJobTransport {
 
 export const defaultRenderTransport: RenderJobTransport = {
   reportProgress: (jobId, progress) => reportStudioRenderProgress(jobId, progress),
-  uploadSample: (jobId, frame, png) => uploadStudioRenderSample(jobId, frame, png),
+  uploadSample: (jobId, frame, bytes) => uploadStudioRenderSample(jobId, frame, bytes),
   commit: (jobId, bytes, warnings, report) => commitStudioRenderJob(jobId, bytes, warnings, report),
   commitSpot: (jobId, warnings) => commitStudioRenderJob(jobId, new Uint8Array(), warnings, undefined, undefined, true),
   cancel: (jobId, failed, reason) => cancelStudioRenderJob(jobId, failed, reason),
@@ -123,7 +123,7 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
       if (signal.aborted) return 'aborted'
       for (const sample of rendered.samples) {
         if (signal.aborted) return 'aborted'
-        await transport.uploadSample(job.jobId, sample.frame, sample.png).catch(() => null)
+        await transport.uploadSample(job.jobId, sample.frame, sample.bytes).catch(() => null)
       }
       await transport.commitSpot(job.jobId, rendered.warnings)
       return 'committed'
@@ -163,10 +163,10 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
       },
     })
     if (signal.aborted) return 'aborted'
-    // 抽帧先落盘：单张 PNG 几十 KB，早一步；宿主侧抽帧路由是幂等的，失败也不影响成片。
+    // 抽帧先落盘：单张 JPEG q0.85 约 170KB，早一步；宿主侧抽帧路由是幂等的，失败也不影响成片。
     for (const sample of rendered.samples) {
       if (signal.aborted) return 'aborted'
-      await transport.uploadSample(job.jobId, sample.frame, sample.png).catch(() => null)
+      await transport.uploadSample(job.jobId, sample.frame, sample.bytes).catch(() => null)
     }
     await transport.commit(job.jobId, rendered.bytes, rendered.warnings, metricsReport(rendered.metrics))
     return 'committed'

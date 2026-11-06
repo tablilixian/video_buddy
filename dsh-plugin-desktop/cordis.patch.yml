@@ -34,6 +34,16 @@
       config:
         apiKeyEnv: TINYFISH_API_KEY
         bingMarket: zh-CN
+# CV-447（P1-A）：spot-check 续渲是**正常**调用 —— agent 改一处版式后常拿同一组
+# spotFrames 再渲一遍，参数逐字符相同，会被 repeat-tool-reminder 当成死循环提醒。
+# `render_composition` 对链条透明（不计数、也不清零其它工具的连续计数）。
+# config 在这里整体替换 base 的条目，故 thresholds / argumentsPreviewChars 显式重复。
+- id: repeat-tool-reminder
+  config:
+    thresholds: [3, 5, 8]
+    argumentsPreviewChars: 500
+    exclude: [render_composition]
+
 # Canvas Studio owns the whole surface: the StudioFrame replaces the upstream
 # default DSH client page. The upstream ui-layout row is disabled so the studio
 # frame owns the root seat, and canvas-studio provides the ctx.layout service

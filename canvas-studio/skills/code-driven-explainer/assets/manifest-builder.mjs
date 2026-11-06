@@ -65,8 +65,12 @@ function loadJson(path) {
  * 内容表 → 句子帧窗。
  *
  * 两条输入通道，二选一（同时给以 `captions` 为准 —— 它已经是真值，不该被秒数覆盖）：
- *  - `captions[]`：`{ id, text, frames, src? }`，帧数直接来自 TTS / list_shots 真值；
+ *  - `captions[]`：`{ id, text, frames, src?, words? }`，帧数直接来自 TTS / list_shots 真值；
  *  - `narration[]`：`{ id, text, seconds }`，按 fps 折算（只用于旁白还没合成时）。
+ *
+ * CV-447（T0-A1）：`words` 必须原样透传 —— 低层契约支持词级时间戳（`manifest.ts:691`），
+ * 此前这里只挑 `{id,text,frames,src}`，导致卡拉 OK 字幕永远走能量包络兜底（真机事故：
+ * 字幕整句 dim 0.28，agent 花 7min 才发现是产生路径丢字段）。
  */
 function buildSegments(spec, fps) {
   const captions = Array.isArray(spec.captions) ? spec.captions : []
@@ -77,6 +81,7 @@ function buildSegments(spec, fps) {
       text: String(line.text ?? '').trim(),
       frames: Math.max(1, Math.round(num(line.frames, 0))),
       ...(typeof line.src === 'string' && line.src !== '' ? { src: line.src } : {}),
+      ...(Array.isArray(line.words) && line.words.length > 0 ? { words: line.words } : {}),
     }))
     : narration.map((line, index) => ({
       id: typeof line.id === 'string' && line.id !== '' ? line.id : `V${String(index + 1)}`,
@@ -190,6 +195,8 @@ function main() {
         text: segment.text,
         startFrame: segment.startFrame,
         durationInFrames: segment.durationInFrames,
+        // CV-447（T0-A1）：词级时间戳透传（有就带上，没有不写 —— 渲染层按能量谷兜底）。
+        ...(segment.words !== undefined ? { words: segment.words } : {}),
       })
   }
   // ③ 视觉轨：字段一律透传（样板见 references/shot-cards.md），只补 id 与帧窗。

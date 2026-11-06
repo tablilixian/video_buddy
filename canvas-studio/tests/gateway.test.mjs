@@ -18,6 +18,9 @@ import {
   GATEWAY_CREDENTIAL_REF, GATEWAY_IMAGE_INPUT_OVERRIDES, GATEWAY_MAX_OUTPUT_TOKENS,
   GATEWAY_MAX_REQUEST_IMAGE_BYTES, GATEWAY_ROUTE_NAME,
 } from '../lib/gateway.js'
+import {
+  REASONING_EFFORT_OPTIONS, gatewayReasoningEfforts, reasoningEffortLabel,
+} from '../lib/model-directory.js'
 
 const catalogOf = (models) => ({ apiBaseUrl: 'http://business.test', models, updatedAt: '2026-10-22T00:00:00Z' })
 const modelOf = (code, over = {}) => ({
@@ -50,7 +53,11 @@ test('gatewayRow + gatewayProfile：available 过滤、displayName 兜底、行�
     baseURL: 'http://business.test/v1/llm',
     maxRequestImageBytes: 2 * 1024 * 1024,
     models: [
-      { id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768, input: ['text', 'image'] },
+      {
+        id: 'deepseek-flash', name: 'DEEPSEEK-FLASH', contextWindow: 262_144, maxTokens: 32_768, input: ['text', 'image'],
+        reasoningEfforts: { minimal: 'none', low: 'low', medium: 'medium', high: 'high' },
+        compat: { supportsReasoningEffort: true },
+      },
       { id: 'no-display-name', name: 'no-display-name', contextWindow: 262_144, maxTokens: 32_768, input: ['text'] },
     ],
   })
@@ -120,6 +127,28 @@ test('gatewayProviderOf + 指纹：无变化不写的判据', () => {
   assert.equal(gatewayFingerprint(row), gatewayFingerprint(same))
   assert.notEqual(gatewayFingerprint(row), gatewayFingerprint(changed))
   assert.equal(gatewayFingerprint(null), '')
+})
+
+test('思考档位：关闭思考映射到 none、不用 off、只作用于实测模型、纳入指纹', () => {
+  const map = gatewayReasoningEfforts()
+  // 关键回归：llm-pi-ai adapter.ts:132 对 effort==='off' 直接省略 reasoning 选项，
+  // wire 值到不了请求。因此「关闭思考」必须挂在非 off 档位（minimal → none）。
+  assert.equal(map.minimal, 'none', '网关实测 reasoning_effort=none ⇒ reasoning_tokens=0')
+  assert.equal(map.off, undefined, '绝不声明 off（选了等于没选）')
+  assert.ok(Object.keys(map).length >= 2, '至少声明一个非 off 档位，否则 resolveModelReasoning 校验失败')
+  for (const option of REASONING_EFFORT_OPTIONS) {
+    if (option.level !== '' && option.wire !== null) {
+      assert.equal(map[option.level], option.wire, `设置页 ${option.label} 与 profile 档位必须同源`)
+    }
+  }
+  assert.match(reasoningEffortLabel('off'), /自定义/, '旧文本框遗留的非法值必须显式回显，不能静默吞掉')
+
+  const row = gatewayRow(catalogOf([modelOf('deepseek-flash'), modelOf('other-flash')]))
+  const profile = gatewayProfile(row)
+  assert.deepEqual(profile.models[0].reasoningEfforts, map)
+  assert.equal(profile.models[0].compat.supportsReasoningEffort, true)
+  assert.equal(profile.models[1].reasoningEfforts, undefined, '未实测模型不得被标成 reasoning model')
+  assert.ok(gatewayFingerprint(row).includes('"reasoningEfforts"'), '档位表变化必须触发 reconcile 重写网关行')
 })
 
 test('publishGatewayCredential：credentialRef 包装 + 空 token / 无服务不写', async () => {

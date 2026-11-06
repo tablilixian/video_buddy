@@ -16,6 +16,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CatalogModel } from './drama-management.js'
+import { gatewayReasoningEfforts } from './model-directory.js'
 
 export const GATEWAY_ROUTE_NAME = 'canvas-studio-gateway'
 export const GATEWAY_CREDENTIAL_REF = 'CANVAS_STUDIO_GATEWAY_TOKEN'
@@ -67,6 +68,15 @@ export const GATEWAY_MAX_REQUEST_IMAGE_BYTES = 2 * 1024 * 1024
  */
 export const GATEWAY_IMAGE_INPUT_OVERRIDES: ReadonlySet<string> = new Set(['deepseek-flash'])
 
+/**
+ * 已实测「思考强度」档位映射的网关模型。
+ *
+ * 只给探测过的 `deepseek-flash` 声明 `reasoningEfforts`：其余目录模型未验证，
+ * 贸然声明会把它们标成 reasoning model 并改变请求形状。档位表本身在
+ * `model-directory.ts` 的 `gatewayReasoningEfforts()`（设置页与 Host 共用唯一真源）。
+ */
+export const GATEWAY_REASONING_MODELS: ReadonlySet<string> = new Set(['deepseek-flash'])
+
 export type GatewayInputModality = 'text' | 'image'
 const GATEWAY_INPUT_MODALITIES: readonly GatewayInputModality[] = ['text', 'image']
 
@@ -104,7 +114,17 @@ export interface GatewayProviderProfile {
   baseURL: string
   /** llm-pi-ai provider 级字段：图片字节预算，超出即抛 IMAGE_OFFLOAD_REQUIRED 触发自动 offload。 */
   maxRequestImageBytes?: number
-  models: { id: string; name: string; contextWindow: number; maxTokens: number; input: GatewayInputModality[] }[]
+  models: {
+    id: string
+    name: string
+    contextWindow: number
+    maxTokens: number
+    input: GatewayInputModality[]
+    /** 思考档位 → 网关 wire 值（仅已实测模型，见 GATEWAY_REASONING_MODELS）。 */
+    reasoningEfforts?: Record<string, string>
+    /** 让 pi-ai 在 openai-completions 上确实发出 reasoning_effort。 */
+    compat?: { supportsReasoningEffort?: boolean }
+  }[]
 }
 
 export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
@@ -120,6 +140,12 @@ export function gatewayProfile(gateway: GatewayRow): GatewayProviderProfile {
       contextWindow: GATEWAY_DEFAULT_CONTEXT_WINDOW,
       maxTokens: GATEWAY_MAX_OUTPUT_TOKENS,
       input: model.input,
+      // 只有实测过的模型声明档位表：设置页选「关闭思考」时，llm-pi-ai 会把
+      // `minimal` 映射成 reasoning_effort:'none'（网关实测 reasoning_tokens=0）。
+      ...(GATEWAY_REASONING_MODELS.has(model.code) ? {
+        reasoningEfforts: gatewayReasoningEfforts(),
+        compat: { supportsReasoningEffort: true },
+      } : {}),
     })),
   }
 }
@@ -207,6 +233,8 @@ export function gatewayFingerprint(gateway: GatewayRow | null): string {
     apiBaseUrl: gateway.apiBaseUrl,
     // 纳入指纹：常量调整后下一次 reconcile 即命中形状差异重写网关行，不等重启。
     maxRequestImageBytes: GATEWAY_MAX_REQUEST_IMAGE_BYTES,
+    reasoningEfforts: gatewayReasoningEfforts(),
+    reasoningModels: [...GATEWAY_REASONING_MODELS],
     models: gateway.models.map((model) => [model.code, model.displayName, model.input]),
   })
 }

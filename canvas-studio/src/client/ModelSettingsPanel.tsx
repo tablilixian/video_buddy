@@ -29,7 +29,7 @@ import type {
 } from './contracts.js'
 import {
   asModelIds, deriveKeyRef, gatewayRowOf, joinProviderDirectory, partitionProviders,
-  summarizeModels, GATEWAY_PROVIDER_ID,
+  summarizeModels, GATEWAY_PROVIDER_ID, REASONING_EFFORT_OPTIONS, reasoningEffortLabel,
 } from '../model-directory.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
@@ -433,6 +433,10 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
   const gatewayRow = gatewayRowOf(providers)
   const gatewayProfile = gatewayRow !== undefined ? profileOf(gatewayRow).profile : undefined
   const gatewayModels = gatewayProfile !== undefined ? asModelIds(gatewayProfile.models) : []
+  // 旧版「推理强度」是自由文本框，可能留下任意值；下拉里补一个只读回显项，
+  // 让用户能看见并切回受控档位，而不是静默显示空白。
+  const currentEffort = agentValue.reasoningEffort ?? ''
+  const knownEffort = REASONING_EFFORT_OPTIONS.some((option) => option.level === currentEffort)
 
   return (
     <div className="csModelPanel">
@@ -459,14 +463,28 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
           />
         </div>
         <label className="csField" style={{ marginTop: 8 }}>
-          <span className="csFieldLabel">推理强度（reasoningEffort，可选）</span>
-          <input
+          <span className="csFieldLabel">思考强度（对新回合生效）</span>
+          <select
             className="csFieldInput"
-            value={agentValue.reasoningEffort ?? ''}
-            placeholder="留空使用默认"
-            spellCheck={false}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => void agentScope.set('reasoningEffort', e.target.value)}
-          />
+            value={currentEffort}
+            disabled={!writable}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+              const next = e.target.value
+              // 空值必须 unset：写空串会让 llm-pi-ai 把 '' 当 effort 并抛
+              // UNSUPPORTED_REASONING_EFFORT（旧文本框的潜在坑）。
+              void (next === '' ? agentScope.unset('reasoningEffort') : agentScope.set('reasoningEffort', next))
+            }}
+          >
+            {!knownEffort && <option value={currentEffort}>{reasoningEffortLabel(currentEffort)}</option>}
+            {REASONING_EFFORT_OPTIONS.map((option) => (
+              <option key={option.level} value={option.level}>{option.label}</option>
+            ))}
+          </select>
+          <p className="csFieldHint">
+            「关闭思考」已对网关实测生效（reasoning_tokens=0）；低 / 中 / 高实测仍会思考，
+            本网关暂未观察到强度差异。用于 A/B 时请同题各跑一条完整片再比较。
+            切换档位后需重启桌面端让网关 profile 重新下发。
+          </p>
         </label>
       </div>
 

@@ -123,3 +123,52 @@ export const GATEWAY_PROVIDER_ID = 'canvas-studio-gateway'
 export function gatewayRowOf(rows: readonly ConfigurableProviderView[]): ConfigurableProviderView | undefined {
   return rows.find(r => r.provider === GATEWAY_PROVIDER_ID)
 }
+
+/**
+ * 思考强度档位的**唯一真源**（设置页下拉 ↔ dsh thinking level ↔ 网关 wire 值）。
+ *
+ * 为什么不用 `off`：llm-pi-ai 的 `adapter.ts:132` 对 `effort === 'off'` 直接省略
+ * reasoning 选项，`thinkingLevelMap.off` 的 wire 值根本到不了 wire；服务端默认思考
+ * 时「选 off」与「不选」字节级相同。所以「关闭思考」必须挂在一个**非 off** 档位上，
+ * 由 `thinkingLevelMap` 映射到网关实测有效的 `reasoning_effort: 'none'`。
+ *
+ * 2026-11-06 对 `/v1/llm/chat/completions`（实际模型 deepseek-v4.1-flash）实测：
+ * `none` ⇒ reasoning_tokens=0、响应无 reasoning 字段；`low/medium/high/minimal` 与
+ * 不带参数 ⇒ 仍返回 reasoning（本网关暂未观察到强度差异，主要用途是开 / 关 A/B）。
+ */
+export interface ReasoningEffortOption {
+  /** 写入 `agent-default-model.reasoningEffort` 的值；空串 = unset（继承网关缺省）。 */
+  readonly level: '' | 'minimal' | 'low' | 'medium' | 'high'
+  /** 设置页展示文案。 */
+  readonly label: string
+  /** 发到网关的 `reasoning_effort` 值；null = 该档位不发字段。 */
+  readonly wire: string | null
+}
+
+export const REASONING_EFFORT_OPTIONS: readonly ReasoningEffortOption[] = [
+  { level: '', label: '默认（网关缺省 · 思考开启）', wire: null },
+  { level: 'minimal', label: '关闭思考（reasoning_effort=none）', wire: 'none' },
+  { level: 'low', label: '低（low）', wire: 'low' },
+  { level: 'medium', label: '中（medium）', wire: 'medium' },
+  { level: 'high', label: '高（high）', wire: 'high' },
+]
+
+/**
+ * 生成 llm-pi-ai `models[].reasoningEfforts`（level → wire）。
+ *
+ * 不声明 `off`：未声明的档位会被 `resolveModelReasoning` pin 成 null（不支持），
+ * 既避免用户选到无效档位，也满足「至少声明一个非 off 档位」的校验。
+ */
+export function gatewayReasoningEfforts(): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const option of REASONING_EFFORT_OPTIONS) {
+    if (option.level !== '' && option.wire !== null) map[option.level] = option.wire
+  }
+  return map
+}
+
+/** 设置页当前值 → 展示文案（未知值原样回显，不静默吞掉）。 */
+export function reasoningEffortLabel(level: string | undefined): string {
+  return REASONING_EFFORT_OPTIONS.find((option) => option.level === (level ?? ''))?.label
+    ?? `自定义（${level}）`
+}

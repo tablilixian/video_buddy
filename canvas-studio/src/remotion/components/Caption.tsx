@@ -1,10 +1,12 @@
 /**
  * 能力基准 #05 收口（2026-10-31）：**词级字幕（karaoke）**轨。
  *
- * 单句一条轨：`src` 是该句的 TTS mp3，`text` 是同步文本。词级时间戳两种来源：
- * 1. `words: [{text, from, to}]` 显式声明（帧）—— 外部对齐数据（未来后端词级戳）的即插即用口；
- * 2. 缺省走**能量谷推导**（`word-timing.ts` 纯函数）：浏览器解码 → 10ms RMS 包络 →
- *    字间谷切分。实测精度 ±1–3 帧（30fps 中文慢速 TTS，bench #05 像素验收过）。
+ * 单句一条轨：`src` 是该句的 TTS mp3，`text` 是同步文本。词级时间戳**三级来源**：
+ * 1. `words: [{text, from, to}]` 显式声明（帧）—— ASR 词级戳或外部对齐数据的入口；
+ * 2. 缺省按**真实时长 + 口播字数等分**（`captionWordsByCharCount`）：`durationInFrames`
+ *    是 tts_narration 的 ffprobe 真值，误差只来自语速不匀且不累积，零解码（CV-450）；
+ * 3. 前两级都不成立时走**能量谷推导**：浏览器解码 → 10ms RMS 包络 → 字间谷切分。
+ *    实测精度 ±1–3 帧（30fps 中文慢速 TTS，bench #05 像素验收过）。
  *
  * 渲染：measureText 贪心折行（产品测量器，同 TextCard）+ 逐字三态
  * （已读白 / 当前高亮+辉光 / 未读暗）。音频由本轨自播（`<Audio>`）—— 同一 src 不要
@@ -15,7 +17,7 @@ import React, { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { Audio } from '@remotion/media'
 import type { CaptionTrack } from '../manifest.js'
-import { isSpokenChar, wordTimingFromEnvelope, type WordTimingWindow } from '../word-timing.js'
+import { captionWordsByCharCount, isSpokenChar, wordTimingFromEnvelope, type WordTimingWindow } from '../word-timing.js'
 import { useEnvelope } from './audio-envelope.js'
 import { useFontFamilyStack } from './font-context.js'
 
@@ -53,12 +55,26 @@ export const Caption: React.FC<{ track: CaptionTrack }> = ({ track }) => {
     return track.words.map((w) => ({ start: w.from, end: w.to }))
   }, [track.words, spokenIndices.length])
 
-  const envelope = useEnvelope(track.src)
+  // CV-450：二级来源 —— 真实时长（`durationInFrames`，来自 tts_narration 的 ffprobe 真值）
+  // 按口播字数等分。确定性、零解码，中文场景比能量谷稳。条数与 `spokenIndices` 同源
+  // （同一个 `isSpokenChar`），所以能直接对齐。
+  const charAligned = useMemo(() => {
+    if (explicit !== null) return null
+    const words = captionWordsByCharCount({
+      text: track.text,
+      startFrame: track.startFrame,
+      durationInFrames: track.durationInFrames,
+    })
+    return words === null ? null : words.map((w) => ({ start: w.from, end: w.to }))
+  }, [explicit, track.text, track.startFrame, track.durationInFrames])
+
+  // 前两级有一级成立时，这一段包络根本用不上 ⇒ 跳过解码与 delayRender 阻塞。
+  const envelope = useEnvelope(track.src, explicit === null && charAligned === null)
   const derived = useMemo(() => {
-    if (explicit !== null || envelope === null) return null
+    if (explicit !== null || charAligned !== null || envelope === null) return null
     return wordTimingFromEnvelope({ envelope, fps, spokenChars: spokenIndices.length })
-  }, [explicit, envelope, fps, spokenIndices.length])
-  const spokenWindows: WordTimingWindow[] | null = explicit ?? derived
+  }, [explicit, charAligned, envelope, fps, spokenIndices.length])
+  const spokenWindows: WordTimingWindow[] | null = explicit ?? charAligned ?? derived
 
   // 口播字窗口 → 全字符窗口（标点骑在前后字的间隙上；首尾标点贴邻字）
   const charWindows = useMemo(() => {

@@ -16,6 +16,8 @@ import {
   DATA_CARD_CONTENT_WIDTH,
   DATA_CARD_OUTER_WIDTH,
   DATA_CARD_PADDING_X,
+  DATA_CARD_ROW_HEIGHT,
+  dataCardDesignHeight,
   dataCardMetrics,
 } from '../lib/remotion/data-card-metrics.js'
 
@@ -78,4 +80,59 @@ test('非法输入回落到设计尺寸（不产生 0 宽 / NaN 卡片）', () =
     const m = dataCardMetrics({ w }, FULL_HD)
     assert.equal(m.outerWidth, DATA_CARD_OUTER_WIDTH, `box.w=${w} 应回落`)
   }
+})
+
+// ── CV-450：高度维度（矮盒子纵向裁切）───────────────────────────────────────
+// 真机：标题「太阳直射点往返范围」被上边缘削掉、「基线」那行被下边缘削掉 ——
+// 只解宽度不够，盒子还会比内容矮。
+
+const FULL_HD_H = 1080
+
+test('设计高度随数据行数线性增长', () => {
+  const h1 = dataCardDesignHeight({ titleLines: 1, dataRows: 1 })
+  const h3 = dataCardDesignHeight({ titleLines: 1, dataRows: 3 })
+  assert.equal(h3 - h1, DATA_CARD_ROW_HEIGHT * 2)
+  assert.ok(h1 > 0)
+})
+
+test('盒子够高 ⇒ 不缩放（与只有宽度维度的结果一致，老 manifest 不变）', () => {
+  const design = dataCardDesignHeight({ titleLines: 1, dataRows: 2 })
+  const m = dataCardMetrics({ w: 60, h: 90 }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design })
+  assert.equal(m.scale, 1)
+  assert.equal(m.outerWidth, DATA_CARD_OUTER_WIDTH)
+})
+
+test('矮盒子等比缩小，内容不再上下被裁', () => {
+  const design = dataCardDesignHeight({ titleLines: 1, dataRows: 3 }) // ≈429px
+  const boxH = 30 // 30% × 1080 = 324px < 429px
+  const m = dataCardMetrics({ w: 60, h: boxH }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design })
+  assert.ok(m.scale < 1, '矮盒子必须缩小')
+  const scaledDesign = design * m.scale
+  assert.ok(
+    scaledDesign <= (boxH / 100) * FULL_HD_H + 1,
+    `缩放后内容高 ${scaledDesign} 必须装进盒子 ${(boxH / 100) * FULL_HD_H}`,
+  )
+})
+
+test('宽高同时受限时取更严格的缩放（不会只满足一维）', () => {
+  const design = dataCardDesignHeight({ titleLines: 1, dataRows: 3 })
+  const narrow = dataCardMetrics({ w: 30, h: 90 }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design })
+  const short = dataCardMetrics({ w: 90, h: 20 }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design })
+  assert.ok(narrow.scale < 1 && short.scale < 1)
+  const both = dataCardMetrics({ w: 30, h: 20 }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design })
+  assert.ok(both.scale <= Math.min(narrow.scale, short.scale) + 1e-9, '两维同时受限必须取更小者')
+})
+
+test('缺 canvasHeight / designHeight ⇒ 退回纯宽度口径（不误缩）', () => {
+  const design = dataCardDesignHeight({ titleLines: 1, dataRows: 3 })
+  assert.equal(dataCardMetrics({ w: 60, h: 20 }, FULL_HD).scale, 1, '缺画布高 ⇒ 不按高度缩')
+  assert.equal(
+    dataCardMetrics({ w: 60, h: 20 }, FULL_HD, { canvasHeight: FULL_HD_H }).scale,
+    1,
+    '缺设计高 ⇒ 不按高度缩',
+  )
+  assert.equal(
+    dataCardMetrics({ w: 60, h: 20 }, FULL_HD, { canvasHeight: FULL_HD_H, designHeight: design }).scale < 1,
+    true,
+  )
 })

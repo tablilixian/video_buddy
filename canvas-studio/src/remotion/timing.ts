@@ -1421,9 +1421,12 @@ export function pickSampleFrames(manifest: CompositionManifest): number[] {
 // CV-447：预算常量与公式已拆到 `render-budget.ts`（本文件撞 1200 行棘轮），此处只做转发。
 export {
   RENDER_TIMEOUT_BASE_MS,
+  RENDER_TIMEOUT_EXTEND_HEADROOM,
+  RENDER_TIMEOUT_EXTEND_MIN_MS,
   RENDER_TIMEOUT_MAX_MS,
   RENDER_TIMEOUT_MIN_MS,
   RENDER_TIMEOUT_PER_FRAME_MS,
   RENDER_TIMEOUT_QUALITY_FACTOR,
   renderTimeoutMs,
+  timeoutExtensionMs,
 } from './render-budget.js'

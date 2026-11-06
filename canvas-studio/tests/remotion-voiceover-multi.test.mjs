@@ -8,7 +8,12 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deriveAudioComposition, hasVoiceOverAudio, validateManifest } from '../lib/remotion/manifest.js'
+import {
+  deriveAudioComposition,
+  hasVoiceOverAudio,
+  summarizeManifestAudio,
+  validateManifest,
+} from '../lib/remotion/manifest.js'
 
 const VO = '/canvas-studio/assets/p1/vo-1.mp3'
 const VO2 = '/canvas-studio/assets/p1/vo-2.mp3'
@@ -74,4 +79,55 @@ test('没有旁白 ⇒ hasVoiceOverAudio 为 false，构成退回纯 BGM / none'
   assert.equal(hasVoiceOverAudio({}), false)
   assert.equal(hasVoiceOverAudio({ voiceOver: [] }), false)
   assert.equal(deriveAudioComposition(base({ bgmUrl: '/canvas-studio/assets/p1/bgm.mp3' })), 'bgm')
+})
+
+// ── CV-450（P0-A）：caption 轨**自播旁白**必须进音轨构成 ────────────────────
+// 真机：55 段纯代码片 + 12 条 caption 自播，成片实测 −24.6 LUFS 有声，回执却写
+// 「音轨 无声」（派生为 `none`）—— 模型据此白跑一轮音频排查。根因是构成派生只看
+// `audio.*` 三件套，而 caption 的声音来自 `<Audio src={track.src} />`。
+
+const CAPTION_SRC = '/canvas-studio/assets/p1/cap-1.mp3'
+
+function captionComp(tracks, extra = {}) {
+  return {
+    id: 'comp-caption',
+    meta: { title: '字幕自播', width: 1280, height: 720, fps: 30, durationInFrames: 300, lint: 'off' },
+    tracks,
+    ...extra,
+  }
+}
+
+test('纯 caption 自播（无 video / 无 audio 字段）⇒ 音轨构成「旁白」，不再是 none', () => {
+  const comp = captionComp([
+    { id: 'c1', type: 'caption', src: CAPTION_SRC, text: '太阳直射点', startFrame: 0, durationInFrames: 90 },
+    { id: 'c2', type: 'caption', src: VO2, text: '往返范围', startFrame: 90, durationInFrames: 90 },
+  ])
+  assert.equal(deriveAudioComposition(comp), 'voiceOver')
+})
+
+test('caption 自播 + 原生视频轨 ⇒ native+voiceOver', () => {
+  const comp = captionComp([
+    { id: 'v1', type: 'video', src: '/canvas-studio/assets/p1/a.mp4', startFrame: 0, durationInFrames: 300 },
+    { id: 'c1', type: 'caption', src: CAPTION_SRC, text: '一句话', startFrame: 0, durationInFrames: 120 },
+  ])
+  assert.equal(deriveAudioComposition(comp), 'native+voiceOver')
+})
+
+test('caption 轨没有 src（只有文字）⇒ 不计入出声源，构成仍是 none', () => {
+  const comp = captionComp([
+    { id: 'c1', type: 'caption', text: '纯文字无配音', startFrame: 0, durationInFrames: 120 },
+  ])
+  assert.equal(deriveAudioComposition(comp), 'none')
+})
+
+test('与 render 报告的 audibleSources 口径一致：caption 两条 = 出声源 2', () => {
+  // 同一份 manifest 两条派生链必须同结论（这正是本次误报的成因：一处计、一处不计）。
+  const comp = captionComp([
+    { id: 'c1', type: 'caption', src: CAPTION_SRC, text: '甲', startFrame: 0, durationInFrames: 90 },
+    { id: 'c2', type: 'caption', src: VO2, text: '乙', startFrame: 90, durationInFrames: 90 },
+  ])
+  const summary = summarizeManifestAudio(comp)
+  assert.equal(summary.audibleSources, 2, 'caption 轨自播应各计 1 个出声源')
+  assert.equal(summary.mutedVideoTracks, 0)
+  assert.equal(deriveAudioComposition(comp), 'voiceOver')
 })

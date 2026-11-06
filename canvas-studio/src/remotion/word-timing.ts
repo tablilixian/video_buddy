@@ -200,3 +200,52 @@ function fillGapsProportionally(from: number, to: number, fixedCuts: readonly nu
   }
   return [...fixedCuts, ...out].sort((a, b) => a - b)
 }
+
+/** 逐字窗口（可直接作 manifest 的 `caption.words`；`from`/`to` 是**绝对帧号**）。 */
+export interface CaptionWordSpan {
+  text: string
+  from: number
+  to: number
+}
+
+/**
+ * CV-450（P0-A 同批）：按**真实时长 + 口播字数**生成逐字窗口（缺省对齐）。
+ *
+ * 为什么需要它：`caption.words` 显式声明只有模型能填，实际没人填（真机 12 条 caption
+ * 全是空）；能量谷推导要解码整段音频（`delayRender` 阻塞首帧拍摄）且**中文词间没有
+ * 明显能量谷**，实测抖动 ±1–3 帧。
+ *
+ * 而 caption 轨的 `durationInFrames` 来自 `tts_narration` 的 ffprobe 真值 —— 本身已经是
+ * 精确的。把它按口播字数等分，误差只来自「语速不完全均匀」，且**不累积**（线性拉伸，
+ * 不是逐字漂移），同时完全不依赖音频解码。
+ *
+ * 与 `Caption.tsx` 的优先级配套：显式 `words` > 本函数 > 能量谷。
+ *
+ * @returns 逐字窗口（条数 === 口播字数，可直接对齐 `spokenIndices`）；无法生成时 `null`
+ *   （无口播字 / 时长非法 / 帧数不足以分配）—— 调用方继续走能量谷兜底。
+ */
+export function captionWordsByCharCount(input: {
+  text: string
+  startFrame: number
+  durationInFrames: number
+}): CaptionWordSpan[] | null {
+  const spoken = Array.from(input.text).filter(isSpokenChar)
+  if (spoken.length === 0) return null
+  if (!Number.isFinite(input.durationInFrames) || input.durationInFrames <= 0) return null
+  if (!Number.isFinite(input.startFrame)) return null
+  const origin = Math.max(0, Math.round(input.startFrame))
+  const total = Math.max(1, Math.round(input.durationInFrames))
+  const n = spoken.length
+  // 帧数少于字数 ⇒ 每字分不到一帧，逐字高亮必然重复/跳帧。交回兜底，不硬压。
+  if (total < n) return null
+  const out: CaptionWordSpan[] = []
+  for (let i = 0; i < n; i += 1) {
+    out.push({
+      text: spoken[i] ?? '',
+      // 用 (total*i)/n 而不是 i*per，避免浮点误差累积；最后一个 to 必然等于 origin+total。
+      from: origin + Math.round((total * i) / n),
+      to: origin + Math.round((total * (i + 1)) / n),
+    })
+  }
+  return out
+}

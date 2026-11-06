@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { countSpokenChars, wordTimingFromEnvelope } from '../lib/remotion/word-timing.js'
+import { captionWordsByCharCount, countSpokenChars, wordTimingFromEnvelope } from '../lib/remotion/word-timing.js'
 
 const FPS = 30
 
@@ -98,4 +98,49 @@ test('确定性：同输入两次调用逐帧全等', () => {
   const a = wordTimingFromEnvelope({ envelope: env, fps: FPS, spokenChars: 5 })
   const b = wordTimingFromEnvelope({ envelope: env, fps: FPS, spokenChars: 5 })
   assert.deepEqual(a, b)
+})
+
+// ── CV-450：按真实时长 + 口播字数生成逐字窗口 ──────────────────────────────
+// `caption.words` 显式声明没人填；能量谷要解码整段音频且中文词间无明显谷。
+// caption 轨的 `durationInFrames` 来自 tts_narration 的 ffprobe 真值，等分即够用。
+
+test('等分：条数 === 口播字数，首字从 startFrame 起、末字 to === startFrame+duration', () => {
+  const spans = captionWordsByCharCount({ text: '太阳直射点', startFrame: 100, durationInFrames: 50 })
+  assert.equal(spans.length, 5, '5 个口播字 ⇒ 5 条窗口')
+  assert.equal(spans[0].from, 100)
+  assert.equal(spans[spans.length - 1].to, 150)
+  // 严格递增且首尾相接，不留空洞
+  for (let i = 0; i < spans.length; i += 1) {
+    assert.ok(spans[i].to > spans[i].from, `第 ${i} 个字必须有正时长`)
+    if (i > 0) assert.equal(spans[i].from, spans[i - 1].to, '相邻窗口必须首尾相接')
+  }
+})
+
+test('标点不计入口播字（与 Caption 的 spokenIndices 同源）', () => {
+  const withPunct = captionWordsByCharCount({ text: '太阳，直射点。', startFrame: 0, durationInFrames: 60 })
+  assert.equal(withPunct.length, 5)
+  assert.deepEqual(withPunct.map((w) => w.text), ['太', '阳', '直', '射', '点'])
+  assert.equal(countSpokenChars('太阳，直射点。'), 5)
+})
+
+test('等分误差不累积：中点字的起点落在区间中点附近（±1 帧）', () => {
+  const spans = captionWordsByCharCount({ text: '一二三四五六七八九十', startFrame: 0, durationInFrames: 100 })
+  const mid = spans[5]
+  assert.ok(Math.abs(mid.from - 50) <= 1, `第 6 个字的起点应≈50，实得 ${mid.from}`)
+})
+
+test('帧数少于字数 ⇒ null（不硬压成零长度窗口）', () => {
+  assert.equal(captionWordsByCharCount({ text: '一二三四五', startFrame: 0, durationInFrames: 3 }), null)
+})
+
+test('非法输入 ⇒ null（无口播字 / 时长非正 / NaN）', () => {
+  assert.equal(captionWordsByCharCount({ text: '，。！', startFrame: 0, durationInFrames: 60 }), null)
+  assert.equal(captionWordsByCharCount({ text: '太阳', startFrame: 0, durationInFrames: 0 }), null)
+  assert.equal(captionWordsByCharCount({ text: '太阳', startFrame: 0, durationInFrames: -10 }), null)
+  assert.equal(captionWordsByCharCount({ text: '太阳', startFrame: Number.NaN, durationInFrames: 60 }), null)
+})
+
+test('确定性：同输入两次调用逐字段全等', () => {
+  const input = { text: '黄赤交角约为二十三度半', startFrame: 30, durationInFrames: 90 }
+  assert.deepEqual(captionWordsByCharCount(input), captionWordsByCharCount(input))
 })

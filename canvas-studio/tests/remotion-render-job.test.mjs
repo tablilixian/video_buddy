@@ -23,6 +23,7 @@ import {
   cancelRenderJob,
   commitRenderJob,
   pendingRenderJobFor,
+  reportRenderJobProgress,
   runRenderJob,
 } from '../lib/remotion/render-job.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
@@ -164,6 +165,65 @@ test('abort：建单前已打断立即 CS-GEN-207（不建单）；建单中打�
     const pending = runRenderJob({ projectId: project.id, manifest: minimalManifest(), timeoutMs: 5_000, signal: mid.signal })
     mid.abort()
     await assert.rejects(() => pending, (err) => err.code === 'CS-GEN-207')
+    assert.equal(activeRenderJobCount(), before)
+  })
+})
+
+// ── CV-449（P0-C）：总超时到期先判活，进度在涨就续期 ─────────────────────────
+// 真机（2026-11-06）：45s 片 draft 预算 287s，内容变重后需 378s ⇒ 连续 6 次渲到
+// 76–85% 被准点砍掉。判活逻辑已由 `timeoutExtensionMs` 纯函数单测覆盖（
+// `tests/render-timeout-extend.test.mjs`），这里锁**接线**：到期时真的续了期，
+// 而不是照样结算。
+
+test('超时到期但进度仍在推进 ⇒ 续期，不结算', async () => {
+  await withProject(async ({ project }) => {
+    const before = activeRenderJobCount()
+    // 预算 120ms、续期下限 60ms、停滞阈值 150ms：
+    //  t=0    建单并上报 40% 进度（刷新 lastProgressAt）
+    //  t=120  原预算到期 ⇒ 续期 ≈ 120×(0.6/0.4)×1.4 = 252ms
+    //  t=200  断言仍在册（说明真的续了，没被砍）
+    //  t=372  续期到期且距上次进度 372ms > 150ms ⇒ 停滞判据生效，才结算超时
+    const pending = runRenderJob({
+      projectId: project.id,
+      manifest: minimalManifest(),
+      timeoutMs: 120,
+      timeoutExtendMinMs: 60,
+      clientProgressStallMs: 150,
+    })
+    const view = pendingRenderJobFor(project.id)
+    assert.equal(reportRenderJobProgress(view.jobId, 0.4), true, '进度必须被工单收下')
+
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    assert.ok(
+      activeRenderJobCount() > before,
+      '原预算到期时进度仍在推进 ⇒ 必须续期存活，而不是被准点砍掉',
+    )
+
+    // 不再上报进度 ⇒ 续期到期后停滞判据判定为真卡死，结算超时。
+    await assert.rejects(
+      () => pending,
+      (err) => err.code === 'CS-RENDER-TIMEOUT',
+      '进度停住之后仍然要判死（续期不是无限保护）',
+    )
+    assert.equal(activeRenderJobCount(), before, '结算后必须从工单表摘掉')
+  })
+})
+
+test('一帧都没出 ⇒ 不续期，按原预算准时结算', async () => {
+  await withProject(async ({ project }) => {
+    const before = activeRenderJobCount()
+    const startedAt = Date.now()
+    await assert.rejects(
+      () => runRenderJob({
+        projectId: project.id,
+        manifest: minimalManifest(),
+        timeoutMs: 120,
+        timeoutExtendMinMs: 60,
+      }),
+      (err) => err.code === 'CS-RENDER-TIMEOUT',
+    )
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed < 1_000, `maxProgress=0 不该续期，实耗 ${elapsed}ms`)
     assert.equal(activeRenderJobCount(), before)
   })
 })

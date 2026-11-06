@@ -3,7 +3,7 @@ import type React from 'react'
 import { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
-import { DATA_CARD_PADDING_X, dataCardMetrics } from '../data-card-metrics.js'
+import { DATA_CARD_PADDING_X, dataCardDesignHeight, dataCardMetrics } from '../data-card-metrics.js'
 import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from '../subtitle-fit.js'
 import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
@@ -275,7 +275,13 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     // 居中压住旁边的图表；模型侧改 box 不生效。现在外宽/缩放由纯函数求解
     //（`data-card-metrics.ts`，可单测）：窄容器等比缩小，1080p 无 box 的老 manifest
     // 逐像素不变。
-    const metric = dataCardMetrics(box, canvasWidth)
+    // 2026-11-06 修（真机）：同时约束**高**。矮盒子原来照样按宽度铺满内容，
+    // 多余部分被 box 层的 `overflow:hidden` 上下削掉（标题被削顶、末行被削底）。
+    const designHeight = dataCardDesignHeight({
+      titleLines: lines.length,
+      dataRows: (track.data ?? []).length,
+    })
+    const metric = dataCardMetrics(box, canvasWidth, { canvasHeight, designHeight })
     const px = (value: number): number => Math.round(value * metric.scale)
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>

@@ -46,3 +46,71 @@ export function renderTimeoutMs(durationInFrames: number, quality: RenderQuality
   const raw = frames * RENDER_TIMEOUT_PER_FRAME_MS * factor + RENDER_TIMEOUT_BASE_MS
   return Math.round(Math.min(RENDER_TIMEOUT_MAX_MS, Math.max(RENDER_TIMEOUT_MIN_MS, raw)))
 }
+
+/**
+ * CV-449（P0-C）：总预算到期但进度仍在推进时，续期量的余量系数。
+ *
+ * 已渲比例算出的「每帧成本」只对**已渲的那部分**成立；后续段落可能才出现重轨
+ * （真机：前 300 帧只有 3 条轨在动，后面 41 轨同时动画），所以按剩余工作量给 40%
+ * 余量，而不是按剩余时间原样续。
+ */
+export const RENDER_TIMEOUT_EXTEND_HEADROOM = 1.4
+
+/** 单次续期下限：低于这个数会让 timer 在「刚续期就到期」之间空转。 */
+export const RENDER_TIMEOUT_EXTEND_MIN_MS = 15_000
+
+/** `timeoutExtensionMs` 的入参（全部来自工单上已有字段，纯函数便于单测）。 */
+export interface TimeoutExtensionInput {
+  /** 已渲到的最大进度（0–1）。 */
+  maxProgress: number
+  /** 派发时刻。 */
+  dispatchedAt: number
+  /** 最近一次进度变化时刻。 */
+  lastProgressAt: number
+  /** 进度停滞判死阈值。 */
+  progressStallMs: number
+  /** 现在。 */
+  now: number
+}
+
+/**
+ * 总预算到期时的**判活**：这一单还该不该继续等。
+ *
+ * 背景（2026-11-06 真机）：45s 片 draft 预算 `1350×240×0.7+60s = 287s`；内容加了
+ * 32 条 exit + 12 条 reveal 后实测 ≈215ms/帧、需要 ≈378s，于是**连续 6 次渲到
+ * 76–85% 被准点砍掉**。而进度一直在涨 —— 它没卡死，只是比静态单价贵。
+ *
+ * 判据只有两条，全部复用已有字段：
+ * - `maxProgress === 0` ⇒ 一帧都没出过，**不是「在渲只是慢」**，交回原结算
+ *   （「取单没动」由 `clientJobOrphanReason` 管，口径不重复）；
+ * - 距上次进度超过 `progressStallMs` ⇒ 进度真停了，同样交回原结算（那是卡死）。
+ *
+ * 续期量按**剩余工作比例**推：`elapsed × (1-p)/p × headroom`，再受绝对上限
+ * `RENDER_TIMEOUT_MAX_MS` 约束 —— 每帧越来越慢的病态情况也不会无限续期。
+ *
+ * @returns 要续期的毫秒数；`null` = 不该续期，照旧按超时结算。
+ */
+export function timeoutExtensionMs(
+  input: TimeoutExtensionInput,
+  options: { minMs?: number } = {},
+): number | null {
+  const { maxProgress, dispatchedAt, lastProgressAt, progressStallMs, now } = input
+  if (!Number.isFinite(maxProgress) || maxProgress <= 0 || maxProgress >= 1) return null
+  if (!Number.isFinite(now) || !Number.isFinite(dispatchedAt) || !Number.isFinite(lastProgressAt)) {
+    return null
+  }
+  // 进度停了 = 真卡死。判据只有 `progressStallMs` 一处，别在这里再造一个。
+  if (now - lastProgressAt >= progressStallMs) return null
+  const elapsed = now - dispatchedAt
+  if (elapsed <= 0) return null
+  // `minMs` 只给测试注入短阈值（生产恒为 RENDER_TIMEOUT_EXTEND_MIN_MS）：
+  // 下限 15s 是「别在刚续期又到期之间空转」，而单测不可能真等 15s。
+  const minMs = options.minMs ?? RENDER_TIMEOUT_EXTEND_MIN_MS
+  // 绝对上限：本单从派发起算最多等 RENDER_TIMEOUT_MAX_MS。
+  const remainingToHardMax = RENDER_TIMEOUT_MAX_MS - elapsed
+  if (remainingToHardMax <= minMs) return null
+  const projected = elapsed * ((1 - maxProgress) / maxProgress) * RENDER_TIMEOUT_EXTEND_HEADROOM
+  const extend = Math.round(projected)
+  if (!Number.isFinite(extend) || extend < minMs) return null
+  return Math.min(extend, remainingToHardMax)
+}

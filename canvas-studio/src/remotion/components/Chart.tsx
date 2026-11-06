@@ -15,6 +15,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remo
 import { donutSlicePath, gaugeDashArray, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
 import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
+import { CHART_CATEGORY_LABEL_TOP_PERCENT, CHART_PLOT } from '../chart-layout.js'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import { countUpTextAt } from '../count-up.js'
 import { useFontFamilyStack } from './font-context.js'
@@ -189,7 +190,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
   const lineColor = track.lineColor ?? DEFAULT_LINE_COLOR
 
   // 布局（百分比，铺满 box / 画布）：左轴留 9%、右轴留 8%、底留 12%（类目标签）
-  const plot = { left: 9, right: 8, top: 7, bottom: 12 }
+  const plot = CHART_PLOT
   const plotW = 100 - plot.left - plot.right
   const plotH = 100 - plot.top - plot.bottom
   const slot = plotW / Math.max(1, n)
@@ -327,7 +328,12 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                   position: 'absolute',
                   left: `${(i * slot).toFixed(3)}%`,
                   width: `${slot.toFixed(3)}%`,
-                  top: '100%',
+                  // 2026-11-06 修（真机事故）：此处原为 `top: '100%'` = **容器底部**，
+                  // 而布局已经用 `plot.bottom: 12` 在容器内预留了标签带 ⇒ 标签落在
+                  // 预留区**下方**，被 box 层的 `overflow: hidden` 整条裁掉（agent 三次
+                  // 裁切取证后放弃修复，把年份塞进头部卡绕过）。定位到绘图区底边
+                  //（`plot.top + plotH` = 88%）才落在预留带里。
+                  top: `${CHART_CATEGORY_LABEL_TOP_PERCENT.toFixed(3)}%`,
                   marginTop: axisFont * 0.6,
                   textAlign: 'center',
                   fontFamily,
@@ -353,7 +359,8 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                 position: 'absolute',
                 left: `${(i * slot).toFixed(3)}%`,
                 width: `${slot.toFixed(3)}%`,
-                top: '100%',
+                // 同上（折线分支）：`top: '100%'` 会落进 `overflow: hidden` 的裁切区。
+                top: `${CHART_CATEGORY_LABEL_TOP_PERCENT.toFixed(3)}%`,
                 marginTop: axisFont * 0.6,
                 textAlign: 'center',
                 fontFamily,

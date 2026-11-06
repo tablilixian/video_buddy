@@ -317,9 +317,21 @@ export interface ManifestAudioLike {
   duck?: { amount?: number }
 }
 
-/** render 路径的 manifest 轨道最小结构面（只要「有没有 video 轨」这一事实）。 */
+/**
+ * render 路径的 manifest 轨道最小结构面。
+ *
+ * 除 `type` 外只收 **caption 轨自播旁白**需要的三个字段：`src`（音频 URL）、
+ * `startFrame` / `durationInFrames`（与 `BaseTrack` 同域，帧号换算起点与占用时长）。
+ * video / image / 表现轨不读这些字段。
+ */
 export interface ManifestTracksLike {
   type: string
+  /** caption 轨：该句旁白音频 URL（本轨自带 `<Audio>` 播放，不经 ffmpeg 混音）。 */
+  src?: string
+  /** caption 轨：起始帧。 */
+  startFrame?: number
+  /** caption 轨：占用帧数。 */
+  durationInFrames?: number
 }
 
 /**
@@ -329,12 +341,38 @@ export interface ManifestTracksLike {
  * AudioTimeline 语义：`deriveAudioComposition` = compositionFromTimeline(本函数)。
  *
  * native 段是占位（video 轨的原生声由渲染器随画面播放），只表达「有原生声」这一
- * 派生事实；段时长/起点由渲染器按帧精确控制，不在此复述。
+ * 派生事实；段时长/起点由渲染器按帧精确控制，不在此复述。caption 轨同理 —— 它是
+ * **自播旁白**（不参与 ffmpeg 混音），这里登记只为让「音轨构成」说真话。
  */
-export function timelineFromManifestAudio(manifest: { tracks: ReadonlyArray<ManifestTracksLike>; audio?: ManifestAudioLike }): AudioTimeline {
+export function timelineFromManifestAudio(manifest: {
+  tracks: ReadonlyArray<ManifestTracksLike>
+  audio?: ManifestAudioLike
+  /** 帧率：caption 轨 `startFrame` → 秒的换算依据。缺省 0 = 只做构成派生（无需时间轴精度）。 */
+  meta?: { fps?: number }
+}): AudioTimeline {
   const segments: AudioSegment[] = []
   if (manifest.tracks.some((track) => track.type === 'video')) {
     segments.push({ url: '', startSec: 0, role: 'native' })
+  }
+  // CV-450（P0-A）：caption 轨**自播旁白**（`Caption.tsx` 里 `<Audio src={track.src} />`），
+  // 它的声音完全不经过 `audio.*` 三件套。旧实现只看 audio 字段 ⇒ 55 段纯代码片
+  // （12 条 caption 自播、成片实测 −24.6 LUFS 有声）被派生成 `none`，回执写「音轨 无声」，
+  // 模型据此白跑一轮音频排查。
+  //
+  // 这是「同一事实两处派生」的老毛病：`summarizeManifestAudio`（render 报告的
+  // audibleSources）早把 caption 计入了出声源，而**构成派生**这条链漏了 —— 两处口径必须一致。
+  const fps = typeof manifest.meta?.fps === 'number' && manifest.meta.fps > 0 ? manifest.meta.fps : 0
+  for (const track of manifest.tracks) {
+    if (track.type !== 'caption') continue
+    if (typeof track.src !== 'string' || track.src.length === 0) continue
+    const startFrame = typeof track.startFrame === 'number' ? Math.max(0, track.startFrame) : 0
+    const frames = typeof track.durationInFrames === 'number' ? track.durationInFrames : 0
+    segments.push({
+      url: track.src,
+      startSec: fps > 0 ? Math.round((startFrame / fps) * 1000) / 1000 : 0,
+      ...(fps > 0 && frames > 0 ? { durationSec: Math.round((frames / fps) * 1000) / 1000 } : {}),
+      role: 'voiceOver',
+    })
   }
   const audio = manifest.audio
   if (audio !== undefined) {

@@ -31,17 +31,22 @@ export function envelopeFromPcm(data: Float32Array, sampleRate: number): number[
 /**
  * 取一段音频的 RMS 包络（hook）：解码完成前 `null`（`delayRender` 闸住首帧拍摄），
  * 解码失败 / AudioContext 不可用静默降级为 `null`（调用方走均匀兜底）。
+ *
+ * `enabled: false` ⇒ 完全不发 `delayRender`、不 fetch、不解码，直接返回 `null`。
+ * CV-450：caption 已有更便宜的对齐来源（真实时长 + 字数比例）时，没必要为一段
+ * 用不上的包络付「整段解码 + 阻塞首帧」的代价。
  */
-export function useEnvelope(src: string): number[] | null {
+export function useEnvelope(src: string, enabled = true): number[] | null {
   const [envelope, setEnvelope] = useState<number[] | null>(null)
-  const [handle] = useState(() => delayRender('audio-envelope：解码音频包络'))
+  const [handle] = useState(() => (enabled ? delayRender('audio-envelope：解码音频包络') : null))
   const released = useRef(false)
   const release = () => {
     if (released.current) return
     released.current = true
-    continueRender(handle)
+    if (handle !== null) continueRender(handle)
   }
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     const guard = setTimeout(release, ENVELOPE_DECODE_TIMEOUT_MS)
     const run = async (): Promise<void> => {
@@ -68,6 +73,6 @@ export function useEnvelope(src: string): number[] | null {
       clearTimeout(guard)
       release()
     }
-  }, [src])
-  return envelope
+  }, [src, enabled])
+  return enabled ? envelope : null
 }

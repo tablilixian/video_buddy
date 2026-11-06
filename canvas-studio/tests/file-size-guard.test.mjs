@@ -156,8 +156,14 @@ export const FILE_WHITELIST = {
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
-  // 消化路径：随「渲染工单桥拆分」批外提结算段（commit/cancel 各自成模块）。
-  'src/remotion/render-job.ts': 1236,
+  // CV-449（P0-C，2026-11-06）：超时到期改判活 —— `onDeadline` 分支（续期 / 结算两条路）
+  // + `extendedMs` / `extendMinMs` 字段 +22（1236 → 1258）。判活**算法**已外提
+  // render-budget.ts（`timeoutExtensionMs` 纯函数），此处只剩接线；再压注释会让
+  // 「为什么不能到点就砍」的根因丢失（真机 6 次 76–85% 被砍）。
+  // 追加 +5（1258 → 1263）：`timeoutExtendMinMs` 注入（续期下限 15s，单测不可能真等 15s，
+  // 不注入就测不到「到期真的续了期」这条唯一关键的接线行为）。
+  // 消化路径：随「渲染工单桥拆分」批外提结算段（commit/cancel/timeout 各自成模块）。
+  'src/remotion/render-job.ts': 1263,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。

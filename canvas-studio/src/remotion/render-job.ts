@@ -51,7 +51,7 @@ import {
   resetRenderHostAfterFailure,
   toggleHostWindowThrottling,
 } from '../render-host/dispatch.js'
-import { pickSampleFrames, renderTimeoutMs } from './timing.js'
+import { pickSampleFrames, RENDER_TIMEOUT_EXTEND_MIN_MS, renderTimeoutMs, timeoutExtensionMs } from './timing.js'
 
 /**
  * 工单超时**下限**（毫秒）。
@@ -200,6 +200,8 @@ export interface RunRenderJobOptions {
   fps?: number
   /** 超时（毫秒）；缺省 `renderTimeoutMs(帧数)`。测试注入短值。 */
   timeoutMs?: number
+  /** CV-449：超时到期时的续期下限（缺省 `RENDER_TIMEOUT_EXTEND_MIN_MS`）。测试注入短值。 */
+  timeoutExtendMinMs?: number
   signal?: AbortSignal
   /** 三期 W5-3：质量档（缺省 `standard`）。 */
   quality?: RenderQuality
@@ -296,6 +298,10 @@ interface ActiveRenderJob {
   resolve: (outcome: RenderJobOutcome) => void
   reject: (cause: unknown) => void
   timer: ReturnType<typeof setTimeout>
+  /** CV-449（P0-C）：本单因「进度仍在推进」累计续期的毫秒数（诊断 / 文案用）。 */
+  extendedMs?: number
+  /** CV-449：续期下限（生产恒为 `RENDER_TIMEOUT_EXTEND_MIN_MS`；测试注入短值）。 */
+  extendMinMs: number
   signal?: AbortSignal
   onAbort?: () => void
   settled: boolean
@@ -440,6 +446,7 @@ export const CLIENT_CLAIM_STALL_NO_HOST_MS = 60_000
  * 马上要成的片子比多等一分钟更贵。
  */
 export const CLIENT_PROGRESS_STALL_MS = 90_000
+
 
 /**
  * 冷启等待上限（毫秒）。
@@ -932,6 +939,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       claimStallMs,
       claimStallNoHostMs,
       progressStallMs: Math.max(1, options.clientProgressStallMs ?? CLIENT_PROGRESS_STALL_MS),
+      extendMinMs: Math.max(1, options.timeoutExtendMinMs ?? RENDER_TIMEOUT_EXTEND_MIN_MS),
       ...(signal !== undefined ? { signal } : {}),
     }
     activeJobs.set(jobId, job)
@@ -947,13 +955,44 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       job.deadlineAt = job.dispatchedAt + timeoutMs
       // 两种执行者都要看门狗：client 单此前完全没有兜底（Phase 0 §三 D-3）。
       armLivenessWatchdog(job, heartbeatStaleMs)
-      job.timer = setTimeout(() => {
+      // CV-449（P0-C）：**到期先判活**，再决定砍还是续期。
+      // 2026-11-06 真机：6 次「渲到 76–85% 被准点砍掉」，进度一直在涨、片子没卡死，
+      // 只是内容变重（32 条 exit + 12 条 reveal ⇒ 215ms/帧）而预算仍按静态单价算。
+      // 真正的卡死由 `progressStallMs`（90s 不动）判 —— 口径只有一处。
+      const onDeadline = (): void => {
         if (job.settled) return
+        const now = Date.now()
+        const extend = timeoutExtensionMs({
+          maxProgress: job.maxProgress,
+          dispatchedAt: job.dispatchedAt ?? now,
+          lastProgressAt: job.lastProgressAt,
+          progressStallMs: job.progressStallMs,
+          now,
+        }, { minMs: job.extendMinMs })
+        if (extend !== null) {
+          const totalExtended = (job.extendedMs ?? 0) + extend
+          job.extendedMs = totalExtended
+          // `deadlineAt` 是「本单最晚什么时候结束」的唯一公开值，续期必须同步，
+          // 否则观测面（`GET /remotion/jobs`）会报一个早就过去的截止时刻。
+          job.deadlineAt = now + extend
+          logRenderHost(
+            `[canvas-studio] 渲染工单 ${job.jobId} 预算 ${Math.round(timeoutMs / 1000)}s 到期，`
+            + `但进度 ${Math.round(job.maxProgress * 100)}% 仍在推进 ⇒ 续期 ${Math.round(extend / 1000)}s`
+            + `（累计 ${Math.round(totalExtended / 1000)}s）`,
+          )
+          job.timer = setTimeout(onDeadline, extend)
+          return
+        }
         const diag = diagnosticsOf(job, 'timeout')
         job.settled = true
-        settleAndForget(job, 'timedOut', `timeout after ${timeoutMs}ms · ${describeDiagnostics(diag)}`)
+        // 续期过的单，超时文案要报**实际预算**，否则「等了 500s 却说 timeout after 287s」。
+        const budgetMs = timeoutMs + (job.extendedMs ?? 0)
+        const extendNote = (job.extendedMs ?? 0) > 0
+          ? `（原预算 ${Math.round(timeoutMs / 1000)}s，已续期 ${Math.round((job.extendedMs ?? 0) / 1000)}s）`
+          : ''
+        settleAndForget(job, 'timedOut', `timeout after ${budgetMs}ms · ${describeDiagnostics(diag)}`)
         // B2-2：超时且单在窗口上 ⇒ 认定窗口状态可疑，丢掉重建（客户端路径不碰窗口）。
-        if (diag.path === 'render-host') resetRenderHostAfterFailure(`render timeout ${Math.round(timeoutMs / 1000)}s`)
+        if (diag.path === 'render-host') resetRenderHostAfterFailure(`render timeout ${Math.round(budgetMs / 1000)}s`)
         // F-01/F-03：把「谁认领了 / 有没有出首帧」直接写进文案 —— 39 次超时里
         // agent 只能看到一句"超时"，于是把执行器故障误判成画面太复杂。
         // CV-447（P0-B）：再加已渲帧数估算 —— 「进度 55%」对模型是抽象百分比，
@@ -961,12 +1000,20 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         // 是合法动作（帧缓存跨次累积），与反重复 guard 的豁免配置（CV-447）配套。
         const totalFrames = spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames
         const renderedFrames = Math.max(0, Math.round(diag.maxProgress * totalFrames))
+        // CV-449：实测每帧成本进文案。真机里模型拿不到这个数，只能去 `uptime` 猜负载，
+        // 结果删错了东西（删 glow 滤镜）白费一轮 —— 「内容重了」和「环境坏了」必须可分辨。
+        const elapsedForRate = Math.max(0, now - (job.dispatchedAt ?? now))
+        const measuredMsPerFrame = renderedFrames > 0 && elapsedForRate > 0
+          ? Math.round(elapsedForRate / renderedFrames)
+          : 0
+        const rateNote = measuredMsPerFrame > 0 ? `，实测 ${measuredMsPerFrame}ms/帧` : ''
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {
-          seconds: Math.round(timeoutMs / 1000),
-          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧。若执行器为画布页且回退原因非调用方指定，先查宿主日志 render-host 行再决定重试`,
+          seconds: Math.round(budgetMs / 1000),
+          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧${rateNote}${extendNote}。若执行器为画布页且回退原因非调用方指定，先查宿主日志 render-host 行再决定重试`,
           job: diag,
         }))
-      }, timeoutMs)
+      }
+      job.timer = setTimeout(onDeadline, timeoutMs)
     }
     if (slot.dispatched) {
       armTimeout()

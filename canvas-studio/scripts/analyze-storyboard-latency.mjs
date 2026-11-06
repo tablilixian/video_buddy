@@ -84,6 +84,21 @@ for (const [step, events] of [...steps].sort((a, b) => a[0] - b[0])) {
     const key = category(name)
     byCategory[key] = (byCategory[key] ?? 0) + duration
   }
+  // CV-447（T1-A9）：渲染轮次埋点 —— 探针 / 草稿 / spotFrames 帧数与耗时。
+  // 没有这组数，事后无法回答「这轮到底烧在探针还是全片」。
+  const renders = []
+  for (const [i, call] of calls.entries()) {
+    if ((call.data?.name ?? '') !== 'render_composition') continue
+    const input = call.data?.args ?? call.data?.arguments ?? call.data?.input ?? {}
+    const matched = results[i]
+    renders.push({
+      probe: input.probe === true,
+      quality: typeof input.quality === 'string' ? input.quality : 'standard',
+      spotFrames: Array.isArray(input.spotFrames) ? input.spotFrames.length : 0,
+      rejected: (matched?.data?.error?.code ?? matched?.data?.code) === 'CS-USER-ERR',
+      seconds: matched ? (timeOf(matched) - timeOf(call)) / 1000 : 0,
+    })
+  }
   result.push({
     step,
     start: timeOf(start),
@@ -93,6 +108,7 @@ for (const [step, events] of [...steps].sort((a, b) => a[0] - b[0])) {
     byCategory,
     tools: calls.map(c => c.data?.name ?? '?'),
     resultBytes: results.reduce((n, r) => n + JSON.stringify(r.data ?? {}).length, 0),
+    renders,
   })
 }
 
@@ -107,6 +123,16 @@ const total = Object.fromEntries(
 const wall = (result.at(-1).start + result.at(-1).wall * 1000 - result[0].start) / 1000
 const reasonTotal = result.reduce((n, r) => n + r.reasonChars, 0)
 const replanSteps = result.slice(3).filter(r => r.reasonChars > 5000).map(r => r.step)
+const allRenders = result.flatMap(r => r.renders)
+const renderSummary = {
+  total: allRenders.length,
+  probes: allRenders.filter(r => r.probe).length,
+  drafts: allRenders.filter(r => r.quality === 'draft').length,
+  rejected: allRenders.filter(r => r.rejected).length,
+  spotFrames: allRenders.reduce((n, r) => n + r.spotFrames, 0),
+  seconds: Number(allRenders.reduce((n, r) => n + r.seconds, 0).toFixed(1)),
+  probeRulePass: allRenders.filter(r => r.probe).length <= 3,
+}
 const summary = {
   turn: turnFilter,
   window: `${stamp(result[0].start)} → ${stamp(result[0].start + wall * 1000)}`,
@@ -117,6 +143,7 @@ const summary = {
   categories: Object.fromEntries(Object.entries(total).map(([k, v]) => [k, Number(v.toFixed(1))])),
   p95LlmSeconds: Number(percentile(result.map(r => r.llm), 0.95).toFixed(1)),
   cumulativeResultKb: Number((result.reduce((n, r) => n + r.resultBytes, 0) / 1024).toFixed(1)),
+  renders: renderSummary,
   stepsDetail: result.map(r => ({
     step: r.step,
     wall: Number(r.wall.toFixed(1)),
@@ -150,4 +177,7 @@ if (asJson) {
   console.log('\n## 轮次预算判定')
   console.log(`  step ${result.length} / ≤5 ⇒ ${summary.budget.pass ? 'PASS' : 'FAIL'}`)
   console.log(`  第 3 轮之后 reasoning>5k 的重新规划步: ${replanSteps.length === 0 ? '0（PASS）' : replanSteps.join(', ') + '（FAIL）'}`)
+  console.log('\n## 渲染轮次（CV-447）')
+  console.log(`  共 ${renderSummary.total} 次 · 探针 ${renderSummary.probes} · draft ${renderSummary.drafts} · 被硬闸拒收 ${renderSummary.rejected} · spot 帧 ${renderSummary.spotFrames} · ${human(renderSummary.seconds)}`)
+  console.log(`  探针 ≤3 ⇒ ${renderSummary.probeRulePass ? 'PASS' : 'FAIL（规则 T0-A3 / 机器闸 T1-A4）'}`)
 }

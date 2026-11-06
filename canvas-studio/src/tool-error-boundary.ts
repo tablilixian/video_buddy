@@ -29,6 +29,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
+import { guardProbeBudget } from './render-probe-budget.js'
 import { assertKnownToolParams, type ToolShapeForParams } from './tool-unknown-params.js'
 import './errors/catalog.js'
 
@@ -137,6 +138,8 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 更误导的结论 ——「缺 manifestPath」其实是因为它写成了 manifestPATH）。
       // 文案里直接给合法字段清单 + 最小可用调用 + 纠错猜测 = 省掉「读源码定契约」。
       assertKnownToolParams(source as ToolShapeForParams, args)
+      // CV-447（T1-A4）：阶段二轮次硬闸 —— 探针第 4 次直接拒收（见 render-probe-budget.ts）。
+      guardProbeBudget(typeof source.name === 'string' ? source.name : '', args)
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)

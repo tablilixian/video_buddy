@@ -3,6 +3,7 @@ import type React from 'react'
 import { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
+import { DATA_CARD_PADDING_X, dataCardMetrics } from '../data-card-metrics.js'
 import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from '../subtitle-fit.js'
 import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
@@ -269,23 +270,32 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   }
 
   if (track.variant === 'dataCard') {
+    // 2026-11-06 修（真机事故）：设计宽 940 曾是**写死**的，而带 `box` 时外层容器宽是
+    // `box.w%`、层上还有 `overflow:hidden` ⇒ 窄盒子把卡片从两侧裁掉，宽盒子仍是 940
+    // 居中压住旁边的图表；模型侧改 box 不生效。现在外宽/缩放由纯函数求解
+    //（`data-card-metrics.ts`，可单测）：窄容器等比缩小，1080p 无 box 的老 manifest
+    // 逐像素不变。
+    const metric = dataCardMetrics(box, canvasWidth)
+    const px = (value: number): number => Math.round(value * metric.scale)
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>
         <div
           style={{
-            width: 940,
-            padding: '52px 60px',
-            borderRadius: 26,
+            width: '100%',
+            maxWidth: metric.outerWidth,
+            boxSizing: 'border-box',
+            padding: `${px(52)}px ${px(DATA_CARD_PADDING_X)}px`,
+            borderRadius: px(26),
             background: 'linear-gradient(160deg, #161f38, #111726)',
             border: `1px solid ${accent}`,
             fontFamily,
             ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
           }}
         >
-          <div style={{ fontSize: 40, fontWeight: 700, color: '#e6edf3', ...textFx }}>
+          <div style={{ fontSize: px(40), fontWeight: 700, color: '#e6edf3', ...textFx }}>
             {renderText(lines.join(' '))}
           </div>
-          <div style={{ height: 2, background: accent, margin: '26px 0 10px' }} />
+          <div style={{ height: 2, background: accent, margin: `${px(26)}px 0 ${px(10)}px` }} />
           {(track.data ?? []).map((row) => (
             <div
               key={`${row.k}-${row.v}`}
@@ -293,12 +303,12 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'baseline',
-                padding: '18px 4px',
+                padding: `${px(18)}px ${px(4)}px`,
                 borderBottom: '1px solid rgba(255,255,255,0.08)',
               }}
             >
-              <span style={{ fontSize: 34, color: '#9aa7b4' }}>{row.k}</span>
-              <span style={{ fontSize: 42, fontWeight: 700, color: accent }}>
+              <span style={{ fontSize: px(34), color: '#9aa7b4' }}>{row.k}</span>
+              <span style={{ fontSize: px(42), fontWeight: 700, color: accent }}>
                 {/* P2'：countUp 时数值前 45 帧滚动；不可解析的 v 由纯函数原样返回（静态）。 */}
                 {track.countUp === true ? countUpTextAt(row.v, frame) : row.v}
               </span>

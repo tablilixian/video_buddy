@@ -29,7 +29,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
-import { guardProbeBudget } from './render-probe-budget.js'
+import { commitProbeBudget, guardProbeBudget } from './render-probe-budget.js'
 import { assertKnownToolParams, type ToolShapeForParams } from './tool-unknown-params.js'
 import './errors/catalog.js'
 
@@ -109,6 +109,22 @@ export function recordStudioToolFailure(cause: unknown, exec: unknown): unknown 
 }
 
 /**
+ * 探针预算的隔离键：会话 id。
+ *
+ * 为什么不复用 `args.projectId`：`render_composition` 的契约明确要求**不要传**
+ * projectId（「省略即当前项目」，见工具描述第 ④ 条），于是旧实现永远落进同一个
+ * 全局桶，跨会话串额度（2026-11-06 A/B 实测：上条会话剩余的批注额度把新会话的
+ * **第一次** spotFrames 卡死，全程零探针）。会话 id 与工具内部解析项目用的
+ * `exec.agent.session.header.cwd` 同属一个 header，框架保证存在；取不到就返回
+ * undefined，由预算模块退回 `args.projectId` / 兜底桶。
+ */
+function sessionKeyOf(exec: unknown): string | undefined {
+  const agent = (exec as { agent?: { session?: { header?: { id?: unknown } } } } | null)?.agent
+  const id = agent?.session?.header?.id
+  return typeof id === 'string' && id !== '' ? id : undefined
+}
+
+/**
  * 包住一条工具定义的 `execute`：异常不再裸穿，而是统一过错误系统后抛出。
  *
  * 做两件事，都在「所有工具的唯一入口」这一点上完成：
@@ -139,12 +155,19 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 文案里直接给合法字段清单 + 最小可用调用 + 纠错猜测 = 省掉「读源码定契约」。
       assertKnownToolParams(source as ToolShapeForParams, args)
       // CV-447（T1-A4）：阶段二轮次硬闸 —— probe:true 与 spotFrames 共用 3 次预算，
-      // 成片后只放行 1 次批注（见 render-probe-budget.ts）。删掉本行即失去守卫。
-      guardProbeBudget(typeof source.name === 'string' ? source.name : '', args)
+      // 成片后只放行 1 次批注（见 render-probe-budget.ts）。第三个参数是**会话键**：
+      // 不传就会退回全局桶，跨会话串额度（真机事故见 render-probe-budget.ts 的 keyOf）。
+      // 删掉本行即失去守卫。
+      guardProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)
-      return await original.call(source, args, exec)
+      // 记账在**成功返回之后**：校验失败 / 宿主失联 / 用户打断都是抛错路径，
+      // 一律不消耗探针额度（真机实测：3 次额度里 2 次被这两种失败吃掉，零张图）。
+      // 放在这里而不是各工具内部，同样因为这是唯一实现点。
+      const result = await original.call(source, args, exec)
+      commitProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
+      return result
     } catch (cause) {
       throw recordStudioToolFailure(cause, exec)
     }

@@ -1,6 +1,8 @@
 # CompositionManifest 契约（组装必读）
 
 > **字段名与枚举取值看 [`manifest-fields.generated.md`](./manifest-fields.generated.md)** —— 那份由 `src/remotion/manifest.ts` **机器生成**（`node scripts/gen-manifest-fields.mjs`，有门禁守着不漂）。要确认「这个字段叫什么 / 必填吗 / 有哪几个取值」直接查它，**不要再去读 src/remotion/manifest.ts**（读一次平均 30 秒以上，而那份文件里就有答案）。
+>
+> **合法值 / 各结构合法键 / 默认常量看 [`component-contract.generated.md`](./component-contract.generated.md)**：`SHAPES`、`EFFECTS`、`TRACK_FX`、`KNOWN_TRACK_KEYS.<轨型>`、reveal 默认帧、组件默认色都由源码 AST 抽出（`node scripts/gen-component-contract.mjs`，漂移门禁守着）。这些以前只能 bash 读 `src/remotion/**` 才拿得到 —— 现在别读了，读一次就把上一版设计推翻一次的循环就是这么来的。
 
 `render_composition` 的 manifest 入参二选一：字段 `manifest`（一段 JSON 字符串），或字段 `manifestPath`（manifest JSON 文件的**绝对路径**）。本文是该结构的字段手册与硬约束；上游口径见 `skills/canvas-studio-creation/references/toolchain.md`。
 

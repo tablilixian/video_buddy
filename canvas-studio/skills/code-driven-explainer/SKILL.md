@@ -98,7 +98,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 
 ## 纪律
 
-- **禁止用 bash 读 `src/remotion/**` 推契约**：真机实测一次会话读了 304 次（34 文件、重复率 88.8%），每读一处就「发现」一条新校验、把上一版设计推翻一次。契约只认 `references/`，字段只认 `references/manifest-fields.generated.md`。
+- **禁止用 bash 读 `src/remotion/**` 推契约**：真机实测一次会话读了 304 次（重复率 88.8%）。字段认 `references/manifest-fields.generated.md`，**合法值 / 合法键 / 默认常量认 `references/component-contract.generated.md`**，组合认 `references/manifest-contract.md`；三份均由源码机器生成。
 - **禁止在推理里手排整片帧号**：帧窗由 builder / 脚本算，改一处只改内容表里那一条。
 - **禁止未出 M1 就做美化**（出图 / 量像素 / 调色 / 读源码）：先让用户看到一条能播的。
 - **一句一条字幕卡**：字数与展示时长匹配，不把长段落塞进一张卡。**卡的首尾必须相接**——`durationInFrames` 是屏上时长，每句延伸到下一句 `startFrame`（末句到总帧），句间不留空白帧；字幕卡由组件层硬切，别指望淡入淡出 → `references/subtitle-timing.md`。

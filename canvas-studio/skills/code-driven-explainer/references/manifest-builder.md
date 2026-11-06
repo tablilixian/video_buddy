@@ -2,6 +2,7 @@
 
 > 工具本体：`assets/manifest-builder.mjs`（零依赖，复制进项目 `build/` 直接跑）
 > 适用：`render_composition` 的轨道数 > 12，或总时长 > 20s，或需要「以第一版为锚点逐步丰富」
+> **写 spec 前先读 [`component-contract.generated.md`](./component-contract.generated.md)**：合法轨型 / 形状 / 特效 / 各轨合法键 / 默认常量（`SIZES`、`DEFAULT_THEME` 等）都在里面，别用 bash 读 `src/remotion/**` 确认。
 
 ## 为什么规则是「>12 轨必须用脚本」
 

@@ -364,6 +364,23 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '先落地故事板，再调产线工具。没有「豁免 / 跳过」这条路（按拍板：不豁免存量）。',
   },
 
+  // 2026-11-06 会话 18（真机 §13）：落地是单向终点，`assertNotLanded` 拦下此后一切版本写操作。
+  // 旧实现复用通用 `CS-USER-ERR`（无 uiKind ⇒ 回落 retryable），前端渲染成「出错了，重试一次？」，
+  // 而那张卡唯一出口就是「重试」——点了只刷列表，用户以为在重试落地。终态必须自带分级。
+  {
+    code: 'CS-STORY-002',
+    module: 'STORY',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'fatal',
+    channel: 'conversation',
+    uiKind: 'terminal',
+    userMessage: '本项目已落地（{version}），版本写操作已冻结。版本列表仍可只读回看。',
+    devMessage: 'storyboard already landed: version={version}; version writes frozen (assertNotLanded)',
+    recoveryHint: '**不要重试本调用** —— 落地是单向终点，重试必然同样失败。项目已进入产出阶段：'
+      + '把当前进度直接告诉用户；版本列表可只读回看，要看某个版本就调只读接口。',
+  },
+
   // ── I 波形（仅开发者示例：用户无需也不应看到 ffmpeg 内部缺失）──────────────
   {
     code: 'CS-FFMPEG-001',

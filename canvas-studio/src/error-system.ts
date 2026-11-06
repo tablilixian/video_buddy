@@ -63,8 +63,12 @@ export type RecoverableBy = 'ai' | 'user' | 'none'
  * - `retryable`：重试即可（默认；拿不准就归这里，不误导用户去改配置）。
  * - `config`：缺配置，主行动是「去设置」而不是重试（重试必然复发）。
  * - `unreachable`：服务不可达，提示先检查后端。
+ * - `terminal`：**一次性终态**，重试必然复发且无意义（例：故事板已落地 ⇒ 版本写操作被
+ *   单向冻结）。主行动只能是「知道了」把卡关掉 + 去做真正该做的事（看版本列表 / 继续
+ *   出片），所以**不渲染「重试」按钮**，卡片必须可关闭。会话 18 真机：`CS-USER-ERR`
+ *   回落 `retryable`，用户看到「出错了，重试一次？」而卡上唯一的按钮点了也没用。
  */
-export type ErrorUiKind = 'retryable' | 'config' | 'unreachable'
+export type ErrorUiKind = 'retryable' | 'config' | 'unreachable' | 'terminal'
 
 /** 错误规格（注册表条目）。`userMessage` / `devMessage` 支持 `{name}` 模板。 */
 export interface CanvasErrorSpec {

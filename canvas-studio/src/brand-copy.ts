@@ -136,4 +136,13 @@ export const ERROR_COPY = {
   /** 服务不可达。 */
   unreachableTitle: '服务不可达',
   unreachableHint: '生成服务没有响应，请确认 Drama 后端已启动后重试。',
+  /**
+   * 终态（`uiKind: 'terminal'`）：操作已完成或已单向冻结，重试不会改变结果。
+   * 标题不许再说「重试一次？」—— 那是把用户推到唯一失效的按钮上（会话 18 §13）。
+   */
+  terminalTitle: '不需要重试',
+  terminalHint: '这一步已经完成或已无法再执行，按上面的说明继续即可。',
+  /** 终态卡的主按钮（把卡关掉）。同时也是所有错误卡右上角 × 的无障碍标签。 */
+  dismiss: '知道了',
+  closeLabel: '关闭提示',
 } as const

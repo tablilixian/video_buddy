@@ -28,6 +28,7 @@ import { MilestoneBar } from './MilestoneBar.js'
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
+import { studioErrorCodeOf } from '../error-kind.js'
 import { clearEditorDrafts } from '../editor-drafts.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
@@ -995,7 +996,7 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [projectId, actions])
   const persist = useCallback((): void => {
     if (projectId !== null) void persistCanvas(projectId).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '画布保存失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '画布保存失败', studioErrorCodeOf(cause))
     })
   }, [projectId, actions, persistCanvas])
   const persistAfter = useCallback((mutate: () => void): void => {
@@ -1688,20 +1689,20 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     if (projectId !== null) {
       void activateSkill(projectId, entry.name).catch((cause) => {
-        actions.setFailed(cause instanceof Error ? cause.message : '技能装载失败')
+        actions.setFailed(cause instanceof Error ? cause.message : '技能装载失败', studioErrorCodeOf(cause))
       })
     }
   }
   const handleDeactivateSkill = (name: string): void => {
     if (projectId === null) return
     void deactivateSkill(projectId, name).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败', studioErrorCodeOf(cause))
     })
   }
   const handleRetry = useCallback((id: string): void => {
     if (projectId === null) return
     void retryNode(projectId, id).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '重试失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '重试失败', studioErrorCodeOf(cause))
     })
   }, [projectId, actions, retryNode])
   /**
@@ -1832,7 +1833,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const refreshStoryboardVersions = useCallback((): void => {
     if (projectId === null) return
     void fetchStoryboardVersions(projectId).then(setSbVersions).catch((cause: unknown) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '读取版本列表失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '读取版本列表失败', studioErrorCodeOf(cause))
     })
   }, [projectId, fetchStoryboardVersions, actions])
 
@@ -1850,7 +1851,7 @@ export function StudioFrame(props: StudioFrameProps) {
       setSbCompareFrom(undefined)
       if (backToLive) setSbVersion(undefined)
     }).catch((cause: unknown) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '操作失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '操作失败', studioErrorCodeOf(cause))
     }).finally(() => { setSbBusy(false) })
   }
 
@@ -1891,7 +1892,7 @@ export function StudioFrame(props: StudioFrameProps) {
       setSbCompareFrom(from)
       if (result.total === 0) actions.setFailed('两版内容完全一致，没有差异。')
     }).catch((cause: unknown) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '对比失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '对比失败', studioErrorCodeOf(cause))
     }).finally(() => { setSbBusy(false) })
   }
 
@@ -1917,12 +1918,12 @@ export function StudioFrame(props: StudioFrameProps) {
     void landStoryboard(projectId, sbVersion).then(() => {
       closeStoryboard()
     }).catch((cause: unknown) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '落地失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '落地失败', studioErrorCodeOf(cause))
     }).finally(() => { setLanding(false) })
   }
   const handleConfirmKeyframes = (): void => {
     if (projectId !== null) void confirmKeyframes(projectId).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '确认关键帧失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '确认关键帧失败', studioErrorCodeOf(cause))
     })
   }
   // CV-051：打回关键帧 —— 与分镜驳回同一条交互（意见框复用 rejectFeedback）。
@@ -1931,14 +1932,14 @@ export function StudioFrame(props: StudioFrameProps) {
       void rejectKeyframes(projectId, rejectFeedback).then(() => {
         setRejectFeedback('')
       }).catch((cause) => {
-        actions.setFailed(cause instanceof Error ? cause.message : '打回关键帧失败')
+        actions.setFailed(cause instanceof Error ? cause.message : '打回关键帧失败', studioErrorCodeOf(cause))
       })
     }
   }
   const applyWorkflowMode = (mode: 'confirm' | 'auto'): void => {
     setPendingAutoMode(false)
     if (projectId !== null) void setWorkflowMode(projectId, mode).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '模式切换失败')
+      actions.setFailed(cause instanceof Error ? cause.message : '模式切换失败', studioErrorCodeOf(cause))
     })
   }
   /**
@@ -2517,6 +2518,8 @@ export function StudioFrame(props: StudioFrameProps) {
                 onRenameGroup={renameGroup}
                 onDeleteGroup={deleteGroup}
                 onOpenSettings={() => { setSettingsOpen(true) }}
+                // 2026-11-06（会话 18 §13）：错误卡要有用户可用的关闭出口。
+                onDismissError={() => { actions.dismissError() }}
                 effectTest={effectTest}
                 onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
               />
@@ -2751,7 +2754,7 @@ export function StudioFrame(props: StudioFrameProps) {
             skills={activeSkills}
             onRemove={(name) => {
               void deactivateSkill(projectId, name).catch((cause) => {
-                actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败')
+                actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败', studioErrorCodeOf(cause))
               })
             }}
           />

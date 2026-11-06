@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyStudioError, classifyStudioFailure } from '../lib/error-kind.js'
+import { classifyStudioError, classifyStudioFailure, studioErrorCodeOf } from '../lib/error-kind.js'
 import { listErrorSpecs } from '../lib/error-system.js'
 import '../lib/errors/catalog.js'
 
@@ -94,4 +94,29 @@ test('全码遍历：每个码的分级与 catalog 声明严格一致', () => {
       assert.ok(spec.audience.includes('user'), `${spec.code}: 声明了 uiKind 却不在 user 受众，属死配置`)
     }
   }
+})
+
+test('CS-STORY-002：落地冻结是终态分级（不是可重试）—— 卡片要给「知道了」而不是「重试」', () => {
+  // 会话 18 真机 §13：这条错误此前复用通用 CS-USER-ERR（未声明 uiKind ⇒ retryable），
+  // 前端把它渲染成「出错了，重试一次？」，而那张卡唯一的按钮「重试」只刷项目列表，
+  // 再点一次同样的操作同一张卡立刻回来。终态错误必须在登记时就声明 terminal。
+  assert.equal(
+    classifyStudioFailure('CS-STORY-002', '本项目已落地（live），版本写操作已冻结。'),
+    'terminal',
+  )
+})
+
+test('studioErrorCodeOf：从抛出的错误里取回 CS-* 码（前端 catch 曾把码丢掉）', () => {
+  // 会话 18 §13 的真缺口：`StudioFrame` 十几个 catch 只把 message 交给 setFailed，码被
+  // 丢掉 ⇒ 注册表里声明的 uiKind 全成死配置，终态错误照样显示「出错了，重试一次？」。
+  assert.equal(studioErrorCodeOf({ code: 'CS-STORY-002' }), 'CS-STORY-002')
+  assert.equal(studioErrorCodeOf(Object.assign(new Error('x'), { code: 'CS-STORY-002' })), 'CS-STORY-002')
+  // 非本系统码 / 没有码 / 非对象：一律 undefined（交给启发式兜底，与改动前一致）
+  assert.equal(studioErrorCodeOf({ code: 'TOOL_ABORTED' }), undefined)
+  assert.equal(studioErrorCodeOf(new Error('x')), undefined)
+  assert.equal(studioErrorCodeOf(undefined), undefined)
+  assert.equal(studioErrorCodeOf(null), undefined)
+  assert.equal(studioErrorCodeOf('CS-STORY-002'), undefined)
+  // 端到端：抛出的错误 → 取码 → 分级（这条把「码丢了」这个真缺口钉死）
+  assert.equal(classifyStudioFailure(studioErrorCodeOf({ code: 'CS-STORY-002' }), '本项目已落地'), 'terminal')
 })

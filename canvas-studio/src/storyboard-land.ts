@@ -169,8 +169,8 @@ export async function landStoryboard(
   const anchorExists = hasSeedAnchor(canvas.nodes)
   const state = (await registry.getProject(projectId))?.workflow?.state
   if (anchorExists && state === 'executing') {
-    throwError('CS-USER-ERR', {
-      message: `本项目已落地（${document.landed.sourceVersion}），版本操作已冻结。版本列表仍可只读回看。`,
+    throwError('CS-STORY-002', {
+      version: document.landed.sourceVersion,
     })
   }
   return resumeLanding(registry, projectId, document, canvas, state)

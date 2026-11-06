@@ -4054,7 +4054,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // 连工具的**名字**都不在这里出现：产品代码里提名一个不存在的工具，下一个人
           // 只会再被骗一次（本批的 ⑥ 号用例把这条钉住了）。
           throwError('CS-USER-ERR', {
-            message: '故事板只能在「拍摄定稿」阶段（落画布之前）整体重写；当前项目已落地，画布上的分镜卡是按当时的定稿铸的，整体重写会让产物与规划失去对应。因而不接受本次整体重写：请把「想改哪些分镜、怎么改」直接告诉用户，由用户决定怎么继续。',
+            message: '故事板只能在「拍摄定稿」阶段（落画布之前）整体重写；当前项目已落地，画布上的分镜卡是按当时的定稿铸的，整体重写会让产物与规划失去对应。因而不接受本次整体重写：请把「想改哪些分镜、怎么改」直接告诉用户，由用户决定怎么继续。\n**注意：本项目阶段二已解锁** —— 不要再要求用户点「确认落地」，也不要以此为由拒绝旁白 / manifest / 渲染，需要推进时直接调对应工具。',
           })
         }
 
@@ -4211,6 +4211,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // CV-296：把「本次没传、保留现值」的节明说 —— agent 漏传时能自查，用户也能看懂哪几节没动。
         // 首稿（missing）全部是空值，没有「保留」可言，不列。
         const inputKeys = new Set(Object.keys(writeInput))
+        // 2026-11-06 §12.5：回执的「下一步」必须知道本项目是否已落地 —— 已落地或半落地
+        // 时再说「请点确认落地」＝把用户推回一个已经按过的按钮（真机 #137/#147/#152 白等两轮）。
+        const landedVersion = load2.status === 'ok' ? load2.document.landed?.sourceVersion : undefined
         const keptLabels = load2.status === 'ok'
           ? STORYBOARD_SECTION_KEYS
             .filter((key) => !inputKeys.has(key))
@@ -4237,9 +4240,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 ? (blockers.length === 0
                   ? '当前是 **auto 模式**：这一笔已可落地 —— 但本笔没传 `awaitingLanding:true`（收尾信号），故 Host 未自动落地。**确认本次规划已无更多要写的节**后，用收尾笔再写一次（可只重传同一节），Host 即自动落地。'
                   : `当前是 **auto 模式**：补齐上面 ${String(blockers.length)} 条阻断项后，用收尾笔（\`awaitingLanding:true\`）再写一次，Host 会自动落地。`)
-                : (concludedForLanding
-                  ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
-                  : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。'),
+                : (landedVersion !== undefined
+                  ? `✅ 本项目拍摄定稿已落地（${landedVersion}），**阶段二已解锁**：画布已可开工，直接进入产出阶段。不要再要求用户点「确认落地」，也不要以「未落地」为由拒绝旁白 / manifest / 渲染。`
+                  : (concludedForLanding
+                    ? '故事板已达可落地标准，本回合到此结束。请在画布顶条「拍摄定稿」覆盖层审阅：确认无误点「确认落地」；要改哪一节直接告诉我。'
+                    : '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。')),
             ]),
           ].join('\n'),
         }

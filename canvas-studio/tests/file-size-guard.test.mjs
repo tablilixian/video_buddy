@@ -65,7 +65,10 @@ export const FILE_WHITELIST = {
   // CV-444（2026-11-05，UI-06/08/09）:root 六档 z-index 令牌 + toast 去重/队列/断行
   // +15，11067 → 11082 补登（CV-444 提交时 test:smoke 未跑成，本批统一验证补登）。
   // 故事板提速 B1（2026-11-05）：字段级意图卡样式 +39（11082 → 11121）显式登记。
-  'src/client/styles.ts': 11125,
+  // 2026-11-06 会话 18（任务 17 终态错误卡）：`.csErrorCard` position:relative + 终态中性条
+  // `.csErrorKindTerminal` + 关闭键 `.csErrorDismiss`，+29（11125 → 11154）显式登记。
+  // 消化路径：随既有「按域拆 CSS」计划把 `.csError*` 段整体外提，不新立拆分批。
+  'src/client/styles.ts': 11154,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
@@ -95,7 +98,10 @@ export const FILE_WHITELIST = {
   // 消化路径随既有「工具壳拆分」批外提到 host-tools-workflow.ts。
   // CV-448（2026-11-06）：+asr2txt 工具壳（描述/参数/execute 三段，核心在 asr-transcript.ts
   // 新文件与 generate.ts 的 transcribeAudio），+45（4958 → 5003）显式登记。
-  'src/host-tools.ts': 5003,
+  // 2026-11-06 会话 18（任务 18）：write_storyboard 回执按 `document.landed` 改口径
+  // （已落地 / 半落地不再让 agent 要求点「确认落地」），+5（5003 → 5008）显式登记。
+  // 消化路径同上：随「工具壳拆分」批外提到 host-tools-workflow.ts。
+  'src/host-tools.ts': 5008,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
@@ -122,7 +128,10 @@ export const FILE_WHITELIST = {
   // P1-1（2026-11-05）：里程碑状态行接线 +6（import 2 + 工作条内 JSX 4，
   // 判定与配色全在 MilestoneBar/milestone-clock 新文件里），棘轮 3287 → 3293 显式登记。
   // 消化路径同上：随「显示外提 → 抽 hooks」第二阶段一起外提。
-  'src/client/StudioFrame.tsx': 3293,
+  // 2026-11-06 会话 18（任务 17）：12 处 catch 接 `studioErrorCodeOf`（错误码不再被 message
+  // 吞掉，注册表 uiKind 才真正生效）+ 关闭回调接线，+3（3293 → 3296）显式登记。
+  // 消化路径同上：随「显示外提 → 抽 hooks」第二阶段一起外提。
+  'src/client/StudioFrame.tsx': 3296,
   // REQ-037（2026-11-03）：divertAttachments 改「暂存 + 占位说明」（附件不再发送时
   // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
   // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
@@ -155,7 +164,9 @@ export const FILE_WHITELIST = {
   // 批 2（同日真机迭代）：手势期 cv-auto 抑制 +22 净行（gesturing 态 + 滚轮去抖回落），
   // 1727 → 1749 / func 1347 → 1368。
   'src/client/canvas/CanvasSurface.tsx': 1752,
-  'src/client/project-store.ts': 1612,
+  // 2026-11-06 会话 18（任务 17）：+`dismissError`（错误卡关闭出口：动作类型声明 + 实现），
+  // +12（1612 → 1624）显式登记。消化路径：随 store 按域切片时外提。
+  'src/client/project-store.ts': 1624,
   'src/projects.ts': 1575,
   // 转场坏点修复（2026-10-31，能力基准 #09 收口）：clock 的 conic mask 在 web-renderer 被
   // 整字段无视 ⇒ 换 clip-path polygon 扇形（clockFanPolygon +22 净行 + 注释），flipX 的
@@ -180,28 +191,33 @@ export const FILE_WHITELIST = {
 export const FUNC_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：素材托盘四分区 + 待落画布条样式 +67（10983 → 11050）。
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 11110, note: '整文件 CSS 模板字面量；CV-444 +15 补登；阶段 6 拆分时本条随之消失' },
+  // 2026-11-06 会话 18（任务 17）：终态错误卡样式 +27（11110 → 11137），与文件棘轮同批登记。
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 11137, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
   'src/routes.ts#registerStudioRoutes': { lines: 2969, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
-  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2871, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登；P1-1 里程碑行 +4（2867 → 2871）' },
+  // 2026-11-06 会话 18（任务 17）：12 处 catch 带错误码 + 关闭回调 +2（2871 → 2873）。
+  'src/client/StudioFrame.tsx#StudioFrame': { lines: 2873, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登；P1-1 里程碑 +4；会话18 错误码接线 +2' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
   // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
   'src/client/index.ts#studioClient': { lines: 2747, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2912, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771；CV-448 +asr2txt 工具壳 +37 → 2912' },
+  // 2026-11-06 会话 18（任务 18）：回执按 landed 改口径 + 阶段二解锁提示 +5（2912 → 2917）。
+  'src/host-tools.ts#createStudioTools': { lines: 2917, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。
   'src/client/canvas/CanvasSurface.tsx#CanvasSurface': { lines: 1371, note: 'P1：手势 / 命中 / 渲染三段（forwardRef 内嵌函数）' },
-  'src/client/project-store.ts#createProjectStore': { lines: 990, note: 'P1：按域切 store 切片' },
+  // 2026-11-06 会话 18（任务 17）：+dismissError 实现 +6（990 → 996）。
+  'src/client/project-store.ts#createProjectStore': { lines: 996, note: 'P1：按域切 store 切片；会话18 错误卡关闭出口 +6' },
   // 订阅与积分（2026-11-02）：CS-BILL-001（G1 余额闸）+19（990 → 1009）。表不拆，本条只钉不涨。
-  'src/errors/catalog.ts#SPECS': { lines: 1009, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
+  // 2026-11-06 会话 18（任务 17）：+CS-STORY-002 终态码条目（落地冻结），+17（1009 → 1026）。
+  'src/errors/catalog.ts#SPECS': { lines: 1026, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨；会话18 +CS-STORY-002（terminal）' },
   // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。
   'src/client/canvas/CanvasNode.tsx#CanvasNodeInner': { lines: 827, note: 'P1：节点态 / 预览 / 手势' },
   // CV-448 补登（2026-11-06）：棘轮 674 → 692 —— d2857e8299「设置页思考强度开关」+18 行

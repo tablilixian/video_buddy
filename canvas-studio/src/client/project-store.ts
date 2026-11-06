@@ -353,6 +353,12 @@ export type ProjectStoreActions = {
    */
   setFailed: (draft: ProjectStoreState, error: string, code?: string | null) => void
   /**
+   * 关掉错误卡：清错误槽并回到 `idle`（同 `setLoaded` 口径，但**不动** `projects`——
+   * 关一张卡不该顺手刷新列表）。2026-11-06 §13：终态错误重试必然复发，卡需有关闭出口；
+   * 十几个操作共用同一个错误槽，关闭即清槽。
+   */
+  dismissError: (draft: ProjectStoreState) => void
+  /**
    * 存储根（设置页「资产库位置」）变更后清空**按 projectId / 旧根索引**的全部内存态。
    *
    * 换库 = 新根是另一套 projectId：旧根的节点 / 视图 / 工作流 / 会话态留在 store 里
@@ -680,6 +686,12 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.phase = 'error'
         draft.error = error
         draft.errorCode = code ?? null
+      },
+      dismissError: (draft) => {
+        // 只清错误槽，不动 projects / selectedProjectId：关闭提示不是一次数据刷新。
+        draft.phase = 'idle'
+        draft.error = null
+        draft.errorCode = null
       },
       resetStorageScoped: (draft) => {
         // 列表与库清单：refreshProjects / listLibraryAssets 会按新根重新填。

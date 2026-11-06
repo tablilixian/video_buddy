@@ -92,6 +92,14 @@ export interface ProjectListProps {
   /** CV-091：删除分组（组内项目回落未分组）。 */
   onDeleteGroup(groupId: string): Promise<void>
   onOpenSettings(): void
+  /**
+   * 关掉当前错误卡（清全局错误槽）。
+   *
+   * 2026-11-06 真机（会话 18 §13）：错误卡原先只有「重试」一个出口，而落地冻结这类
+   * 终态错误重试必然复发 —— 用户被一张关不掉的卡挡住列表区。关闭是用户的基本出口，
+   * 与「这条错误来自哪个操作」无关。
+   */
+  onDismissError(): void
   /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
   effectTest: EffectTestRunState | null
   /** 启动一轮效果测试（apply 世界串行编排）。 */
@@ -113,6 +121,7 @@ function ProjectListInner(props: ProjectListProps) {
   const {
     projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, errorCode, creating,
     onRefresh, onNewInGroup, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
+    onDismissError,
     effectTest, onRunEffectTests,
   } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
@@ -384,7 +393,13 @@ function ProjectListInner(props: ProjectListProps) {
       )}
       {phase === 'loading' && <StudioLoadingState label={LOADING_COPY.projects} />}
       {phase === 'error' && error !== null && (
-        <StudioErrorState message={error} code={errorCode ?? undefined} onRetry={onRefresh} onOpenSettings={onOpenSettings} />
+        <StudioErrorState
+          message={error}
+          code={errorCode ?? undefined}
+          onRetry={onRefresh}
+          onOpenSettings={onOpenSettings}
+          onDismiss={onDismissError}
+        />
       )}
       {phase === 'idle' && projects.length === 0 && groups.length === 0 && (
         <div className="csProjectsEmpty">

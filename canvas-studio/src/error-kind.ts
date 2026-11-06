@@ -1,10 +1,13 @@
 /**
- * Studio 错误分级（纯函数）：把错误消息归类为三级处置，驱动三态 error 组件
+ * Studio 错误分级（纯函数）：把错误消息归类为四级处置，驱动三态 error 组件
  * 的提示与按钮（brand-identity-proposal.md §6.1）。
  *
  * - `unreachable`：生成服务不可达（fetch 失败 / 连接拒绝 / 超时）→ 提示检查后端；
  * - `config`：配置缺失（API Key / 基址 / 未授权）→ 引导打开设置；
- * - `retryable`：其它（业务错误、参数错误等）→ 直接重试。
+ * - `retryable`：其它（业务错误、参数错误等）→ 直接重试；
+ * - `terminal`：一次性终态（会话 18 真机：「故事板已落地，版本写操作冻结」）→
+ *   **不渲染重试**，只给「知道了」把关不掉的卡关掉。重试必然复发，那个按钮
+ *   只会拿走用户唯一的出口。
  *
  * 归类有两条路径：
  * - **主路径**（`classifyStudioFailure`）：拿到 `CS-*` 错误码时读注册表里登记的
@@ -108,4 +111,21 @@ export function classifyStudioFailure(
     if (spec !== undefined) return spec.uiKind ?? 'retryable'
   }
   return classifyStudioError(message)
+}
+
+/**
+ * 从任意「抛出来的东西」里取结构化 `CS-*` 错误码。
+ *
+ * 存在的理由（2026-11-06 真机）：`StudioFrame` 里十几个 catch 只把 `message` 交给
+ * `setFailed`，码被丢掉 ⇒ 三态卡永远走启发式，注册表里登记的 `uiKind` 全成了死配置。
+ * 本次「落地冻结」的终态分级就是因此第一次落空：`CS-STORY-002` 已经声明 terminal，
+ * 前端仍然显示「出错了，重试一次？」。
+ *
+ * 只认本系统码（`isStudioErrorCode`）：框架码（`TOOL_ABORTED` 之类）交给启发式兜底，
+ * 与改动前行为一致。
+ */
+export function studioErrorCodeOf(cause: unknown): string | undefined {
+  if (typeof cause !== 'object' || cause === null) return undefined
+  const code = (cause as { code?: unknown }).code
+  return typeof code === 'string' && isStudioErrorCode(code) ? code : undefined
 }

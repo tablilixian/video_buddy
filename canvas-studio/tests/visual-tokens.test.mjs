@@ -745,11 +745,14 @@ test('C8 守卫：错误三级分级走 kind 修饰类，幽灵流水线静态�
   assert.match(ghost, /--cs-accent-soft/, '幽灵站点底必须用 accent-soft 微光材料')
   assert.match(ruleBody(STYLES_SRC, '.csGhostPipeline'), /display:\s*flex/, '幽灵流水线必须是横向排布')
   assert.ok(!/\.csGhostPipeline[^{]*\{[^}]*animation/.test(STYLES_SRC), '幽灵流水线不得挂动画 —— 预演是常驻舞台指示')
-  // ③ 组件侧：kind → 修饰类映射齐全，缺配置时主按钮切「打开设置」。
-  assert.match(STATES_SRC, /csErrorKindConfig|csErrorKindUnreachable|csErrorKindRetryable/, '错误卡必须挂 kind 修饰类')
+  // ③ 组件侧：分级结论来自 errorCardPlan 纯函数（「终态不出现重试」「缺配置主按钮是
+  //    去设置」这类语义在 error-card-plan.test.mjs 里断言，比断源码里的三元更硬）。
+  assert.match(STATES_SRC, /errorCardPlan\(/, '错误卡必须按 errorCardPlan 渲染（否则分级不可测）')
+  assert.match(STATES_SRC, /csErrorDismiss/, '错误卡必须有可点击的关闭键 —— 会话 18 真机卡关不掉')
+  // ④ 终态级：中性色条，不是故障红（「到此为止」≠「出故障了」）。
   assert.match(
-    STATES_SRC, /className=\{isConfig && onOpenSettings !== undefined \? 'csErrorAction' : 'csErrorAction csErrorActionPrimary'\}/,
-    '缺配置时重试必须降为次按钮（主行动是去设置）',
+    ruleBody(STYLES_SRC, '.csErrorKindTerminal'), /border-left:\s*3px solid var\(--dsw-alias-label-tertiary/,
+    '.csErrorKindTerminal 必须用中性色 —— 终态不是故障',
   )
   assert.match(STATES_SRC, /GHOST_PIPELINE_STAGES = \['分镜', '定妆', '镜头', '成片'\]/,
     '幽灵流水线四站必须与 DD-06 一致（分镜 → 定妆 → 镜头 → 成片）')

@@ -7917,9 +7917,11 @@ button.csNodeHeadAlert:hover {
   50% { opacity: 1; }
 }
 
-/* 错误三级处置卡。 */
+/* 错误分级处置卡（含 2026-11-06 新增的终态级 terminal）。 */
 .csErrorCard {
   display: flex;
+  /* 右上角 × 的定位容器。 */
+  position: relative;
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
@@ -7946,6 +7948,37 @@ button.csNodeHeadAlert:hover {
 }
 .csErrorKindUnreachable {
   border-left: 3px solid var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-border));
+}
+/* 终态（terminal）：操作已完成 / 已单向冻结，重试必然复发。中性灰而不是错误红 ——
+   它要表达的是「到此为止」，不是「出故障了」。 */
+.csErrorKindTerminal {
+  border-left: 3px solid var(--dsw-alias-label-tertiary, var(--dsw-alias-border-l2));
+}
+.csErrorKindTerminal .csErrorTitle {
+  color: var(--dsw-alias-label-primary);
+}
+/* 关闭键：右上角 ×，低对比到悬停才提亮（常驻可见但不抢主行动）。 */
+.csErrorDismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  border: none;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.csErrorDismiss:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 .csErrorTitle {
   margin: 0;

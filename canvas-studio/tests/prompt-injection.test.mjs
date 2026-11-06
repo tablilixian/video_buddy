@@ -102,3 +102,18 @@ test('注入守卫⑤：composeImagePrompt —— 空白前缀跳过，正文原
   const tricky = '甲，乙；丙'
   assert.equal(composeImagePrompt({ prompt: tricky, stylePrefix: '风格' }), `风格，${tricky}`)
 })
+
+test('注入守卫⑥：已落地时必须显式声明「阶段二已解锁」（会话 18 白等两轮的真根因）', () => {
+  // 真机 #144 已经注入了本小节（landed !== null 的铁证），但正文只说「来自用户已确认的
+  // 定稿」，没说「按钮已经按过了」—— agent 于是采信 write_storyboard 回执里更具体的
+  // 「请点确认落地」，白等两轮（#137/#147/#152）。状态必须写成一句显式事实，不能让模型自己推。
+  const text = storyboardDisciplineText({
+    landed: {
+      at: 1,
+      sourceVersion: 'live',
+      sections: { ...emptyStoryboardSections(), '00_creative': { brief: '任意前提' } },
+    },
+  })
+  assert.ok(text.includes('阶段二已解锁'), '注入文本必须写明「阶段二已解锁」')
+  assert.ok(text.includes('不要再要求用户点「确认落地」'), '必须明说不要再要求用户点按钮')
+})

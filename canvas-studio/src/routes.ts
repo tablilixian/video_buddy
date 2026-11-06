@@ -119,8 +119,8 @@ const LOGIN_VIDEO_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 
 /** 落地后的统一拦截（单向终点：落地后不再接受任何版本写操作）。 */
 function assertNotLanded(document: StoryboardDocument): void {
   if (document.landed === null) return
-  throwError('CS-USER-ERR', {
-    message: `本项目已落地（${document.landed.sourceVersion}），版本操作已冻结。版本列表仍可只读回看。`,
+  throwError('CS-STORY-002', {
+    version: document.landed.sourceVersion,
   })
 }
 

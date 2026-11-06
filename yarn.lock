@@ -4719,6 +4719,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@deepseek-ai/dsh-tool-bash-persistent@patch:@deepseek-ai/dsh-tool-bash-persistent@npm%3A0.2.1-rc.2#./patches/dsh-tool-bash-persistent@0.2.1-rc.2.patch::locator=deepseek-harness-desktop%40workspace%3A.":
+  version: 0.2.1-rc.2
+  resolution: "@deepseek-ai/dsh-tool-bash-persistent@patch:@deepseek-ai/dsh-tool-bash-persistent@npm%3A0.2.1-rc.2#./patches/dsh-tool-bash-persistent@0.2.1-rc.2.patch::version=0.2.1-rc.2&hash=84dc19&locator=deepseek-harness-desktop%40workspace%3A."
+  dependencies:
+    "@deepseek-ai/schemastery": "npm:~3.18.5"
+  peerDependencies:
+    "@deepseek-ai/cordis": ~4.0.5
+    "@deepseek-ai/dsh-agent": 0.2.1-rc.2
+    "@deepseek-ai/dsh-output-retention": 0.2.1-rc.2
+    "@deepseek-ai/dsh-terminal": 0.2.1-rc.2
+    "@deepseek-ai/dsh-timeout": 0.2.1-rc.2
+    "@deepseek-ai/dsh-tools": 0.2.1-rc.2
+    "@deepseek-ai/dsh-working-directory": 0.2.1-rc.2
+  checksum: 10c0/df76f0190621b62448411a6443589e98d5acebb2486695e6cde36740582f0554513d89d20561cd12a9211f414fec476b32b654481b083fd4c33af4ac62414b5c
+  languageName: node
+  linkType: hard
+
 "@deepseek-ai/dsh-tool-bash@npm:0.2.1-rc.2":
   version: 0.2.1-rc.2
   resolution: "@deepseek-ai/dsh-tool-bash@npm:0.2.1-rc.2"

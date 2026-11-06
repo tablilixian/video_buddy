@@ -119,10 +119,15 @@ describe('desktop profile composition', {
     // 0.2.1 `minimal` mounts neither the catalog, nor the `skill` loader, and
     // turns `read` off — a session under it cannot discover a single skill.
     expect(pluginIds).toEqual(expect.arrayContaining(['skill-filesystem', 'tool-skill']))
+    // 2026-11-06：write / edit 必须是 true。关掉时 54 个工具里没有任何写文件手段，
+    // 模型只能 `cat <<'EOF' > build/x.mjs` 走持久 shell —— 真机实测那条路径会挂到
+    // 超时且文件根本没落盘（两条会话分别白等 20.2 / 60.7 分钟）；而且
+    // `render_composition` 的 `manifestPath` 通道本身就要求先把文件落盘。
+    // 回到 false 等于把唯一稳定的写出口再堵一次。
     expect(findNestedRow(plugins, 'tool-fs')?.config).toEqual(expect.objectContaining({
       read: true,
-      write: false,
-      edit: false,
+      write: true,
+      edit: true,
     }))
     // canvas-studio owns the Studio prompt sections; a `complete` persona would
     // replace every one of them.

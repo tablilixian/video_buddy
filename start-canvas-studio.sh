@@ -65,7 +65,7 @@ fi
 # 2. 安装 workspace 依赖（幂等：清单未变化时跳过）
 #    判据用 Yarn 4 的 node_modules/.yarn-state.yml：node-modules linker 下根目录
 #    不会被创建 node_modules/.bin（它只出现在各 workspace 内），原先判 .bin 恒为真
-#    → 每次启动都白跑一次 install（--immutable 还要求 yarn.lock 与清单完全同步）。
+#    → 每次启动都白跑一次 install。
 #    2026-09-30 补充过期判据：只看标记存在会在「新增依赖但未重新 install」时漏装
 #    （nmHoistingLimits: workspaces 下依赖落在各 workspace 自己的 node_modules，
 #    canvas-studio 新增 dsh-client-ui-tool 后 tsc 直接 TS2307）。因此清单文件
@@ -81,7 +81,14 @@ elif [ -n "$(find . -maxdepth 2 -name package.json -not -path './deepseek-harnes
 fi
 if [ "$NEED_INSTALL" = "1" ]; then
   echo "==> 安装 workspace 依赖（首次较重，需联网）..."
-  corepack yarn install --immutable
+  # 这里**不能**加 --immutable（2026-11-06 修）：走到本分支的前提就是「清单/锁比安装
+  # 标记新」，而 --immutable 禁止 install 改动 yarn.lock —— 一旦改动包含需要重算锁的
+  # 内容（例如新增一条 `resolutions` 里的 patch 条目，锁里要补 resolution + checksum），
+  # 它会在 Resolution 后直接以 `YN0028: The lockfile would have been modified by this
+  # install, which is explicitly forbidden` 失败，脚本停在「装依赖」这一步，且报错文本
+  # 完全看不出是锁文件过期。开发态一键启动脚本的职责是自愈，不是校验（锁一致性由
+  # CI 的 `yarn install --immutable` 把关）。
+  corepack yarn install
 fi
 
 # 2.1 内置 ffmpeg（开发态镜像，幂等）

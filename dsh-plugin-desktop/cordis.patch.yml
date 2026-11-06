@@ -57,6 +57,16 @@
 - id: ui-sidebar
   disabled: true
 
+# 2026-11-06：写能力的边界**不需要**在这里覆盖，别再多加一条。
+# 查证（`packages/sandbox/sandbox-policy/src/index.ts:75-87`）：`workspaceRoot` 只是
+# 「agentless 调用 / 没有 cwd 的会话」的兜底根，**正常 agent 调用的边界是会话 cwd**
+# （`resolve` 的注释原话：its immutable cwd becomes the workspace boundary）。而
+# canvas 会话的 cwd 必然落在项目目录内（`resolveProjectId` 按 `dir === cwd ||
+# cwd.startsWith(dir + sep)` 匹配，不匹配直接报「未绑定工作区」）⇒ 模型 `write`
+# 到 `<项目>/build/x.mjs` 天然在边界内，`bash` 的 cwd 也是同一个项目目录。
+# 曾一度把 workspaceRoot 改成 $HOME「修」这个问题，属于误判：那是兜底值，改了只放宽
+# agentless 调用，不解决任何真实症状，反而多一处未经验证的配置面。
+
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime
   config:
@@ -135,13 +145,18 @@
           references, and a persistent shell.
         order: 0
         plugins:
+          # 2026-11-06（A/B 实测）：此处原本 `write: false, edit: false`，54 个工具里
+          # 没有任何写文件手段 ⇒ 模型只能 `cat <<'EOF' > build/x.mjs` 走持久 shell，
+          # 而这条路径在 PTY 上会挂住直到 300s 超时（两条会话各白等 20/60 分钟，且
+          # 文件根本没落盘）。写能力是产线刚需（build/*.mjs 生成脚本、manifest 落盘），
+          # 且契约里 `manifestPath` 通道本就要求先写文件 —— 关掉写等于把唯一稳定出口堵死。
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
             config:
               read: true
               readImage: true
-              write: false
-              edit: false
+              write: true
+              edit: true
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
@@ -165,6 +180,11 @@
                   maxTokens: 32768
               - id: command-compact
                 name: '@deepseek-ai/dsh-command-compact'
+          # 2026-11-06（A/B 实测）：单条命令的墙钟上限原本沿用 base 的 300s。挂死的
+          # 命令（旧 heredoc 写法、等交互输入）不会自己结束，只会把 300s 走满 ——
+          # 两条真机会话分别白等 20.2min / 60.7min，占各自墙钟 33.6% / 53.4%。
+          # 压到 120s：让「挂住」更快暴露，同时给构建 / 测试留余量；更久的活按
+          # persistent-bash 的 description 放后台跑、再用 tail 轮询日志。
           - id: persistent-shell
             name: cordis:group
             group: true
@@ -177,12 +197,12 @@
                 name: '@deepseek-ai/dsh-terminal-bash'
                 disabled: !!js process.platform === 'win32'
                 config:
-                  timeoutMs: 300000
+                  timeoutMs: 120000
               - id: persistent-bash
                 name: '@deepseek-ai/dsh-tool-bash-persistent'
                 disabled: !!js process.platform === 'win32'
                 config:
-                  timeoutMs: 300000
+                  timeoutMs: 120000
                   description: |-
                     Run commands in a bash shell
                     * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
@@ -191,17 +211,20 @@
                     * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
                     * Please avoid commands that may produce a very large amount of output.
                     * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
+                    * Create and modify files with the `write` / `edit` tools, never with a heredoc or a shell redirect (`cat <<'EOF' > file`). Those forms hang on this persistent shell until the deadline and the file is not written at all.
+                    * Never write a bare `!word` inside a command (`!m`, `!ok`, `!he`, `!t.fadeFrames`): this shell is interactive, so `!word` is history expansion — the whole line is discarded before anything runs, and the call hangs until the deadline with no output. Compare instead: `x === false`, `x !== true`, `x.length === 0`.
+                    * One command has a 120 s wall-clock limit. Anything longer (builds, full test suites, installs) must go to the background: append ' &' and redirect output to a log file, then poll it with 'tail -n 40 <log>' instead of waiting inline.
               - id: terminal-pwsh
                 name: '@deepseek-ai/dsh-terminal-bash'
                 disabled: !!js process.platform !== 'win32'
                 config:
                   shellDialect: pwsh
-                  timeoutMs: 300000
+                  timeoutMs: 120000
               - id: persistent-pwsh
                 name: '@deepseek-ai/dsh-tool-pwsh-persistent'
                 disabled: !!js process.platform !== 'win32'
                 config:
-                  timeoutMs: 300000
+                  timeoutMs: 120000
                   description: |-
                     Run commands in a PowerShell shell
                     * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
@@ -210,3 +233,5 @@
                     * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
                     * Please avoid commands that may produce a very large amount of output.
                     * Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.
+                    * Create and modify files with the `write` / `edit` tools, never with a here-string or a shell redirect (`@'...'@ > file`). Those forms hang on this persistent shell until the deadline.
+                    * One command has a 120 s wall-clock limit. Anything longer must go to the background: use Start-Job and poll its output instead of waiting inline.

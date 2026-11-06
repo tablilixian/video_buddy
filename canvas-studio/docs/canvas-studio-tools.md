@@ -51,9 +51,9 @@
 
 ## 工具总览
 
-注册给模型的工具**共 49 个** = **48 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48；2026-11-05 故事板提速 B1：48 → 49）。
+注册给模型的工具**共 50 个** = **49 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48；2026-11-05 故事板提速 B1：48 → 49；CV-448：49 → 50）。
 
-### A. 后端生成 / 分析类（14 个）
+### A. 后端生成 / 分析类（16 个）
 
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
@@ -64,6 +64,7 @@
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
 | `image2vl` | text | `image2vl` | 直调视觉模型分析画面 |
 | `video2vl` | text | `video2vl` | **视频理解**（Qwen3-VL，CV-230）：按时间轴逐镜头描述运镜 / 景别 / 节奏 / 主体动作 |
+| `asr2txt` | text + 落盘 JSON | `asr2txt` | **语音转写**（CV-448）：音频 / 视频 → 文字，词级转写 JSON 落盘供 `evidence_grid.transcriptPath` 直食；99 语种、中文一般、**不支持方言** |
 | `qc_shot` | text | `image2vl` | 逐镜一致性质检，结论写回画布节点 |
 | `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用） |
 | `video_generate` | video | `image2videofl2va`（**恒定**，CV-269 拆分） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
@@ -82,14 +83,13 @@
 | `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
-### C. 画布 / 流程管控（12 个，不调后端）
+### C. 画布 / 流程管控（13 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
 | `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本号 / 状态 / 时长） |
 | `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点（三段返回） |
 | `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |
-| `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
 | `write_note` | **过程便签**（REQ-036 复刻提效批三）：把中间成果落成画布 `sticky` 卡（拆解表 / 映射草案 / 素材清单 / 待定项），参数 `title`（≤20 字）+ `text` + `anchorNodeId?`（锚到哪个节点右侧）+ `sourceIds?`（血缘）。`list_references` 的 `notes` 会把它读回来（下一阶段不必重新推理）。**与 `write_script` 的区别**：后者是成片文案（受故事板落地闸、被 compose 当 scriptId 消费），本工具不参与渲染、不受任何闸约束 |
 | `layout_table` | **项目级布局坐标表**（shotcraft 本地化 P0-a，2026-10-25）：`layout.json` 存命名矩形（画布百分比、x/y 中心语义），一次量清「表盘区 / 左栏 / 字幕带 / 安全边」全片复用。`action`: read / write / clear。**工作台不是渲染输入** —— 返回可粘的 `box` 片段，须展开进 manifest |
@@ -99,9 +99,12 @@
 | `add_to_library` | **画布节点入库**（P1-2，2026-10-26）：把音频 / 图片节点存成资产条目（媒体真拷贝进库目录）。音色锚的标准落地：`add_to_library(nodeId, category="voice", name="音色锚 · 女主")` → 之后 `refaudio: "lib:<id>"`。视频不能入库 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
 | `confirm_intent_card` | **一次性字段级意图卡**（提速方案 B1）：阶段一 confirm 模式唯一一次打断。五段分区（explicit / inferred / conflict / needsUser / defaults）逐字段可编辑、一次提交，答案以 JSON 字符串经既有 `answer` 路由回流；auto 模式不弹卡不等待，直接返回默认值意图卡并要求把假设写进 `write_note`。细则见 `skills/canvas-studio-creation/references/intent-card.md` |
-| `submit_screenplay_for_approval` | 剧本审批门禁 |
-| `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |
 | `submit_keyframes_for_approval` | 关键帧审批门禁 |
+
+> **已下线留档（不在上表）**：`write_screenplay` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval`
+> 随 REQ-022（剧本门与分镜审批门退役，只保留关键帧确认）从注册表删除；历史画布卡仍带这些
+> `toolName`（`tests/legacy-node-tools.test.mjs` 守卫），skill 正文提及它们属历史记录
+> （`skill-tool-refs` 组 3 豁免）。
 
 > 审批门禁的实际拦截由各工具 execute 里的 `assertApprovalAllowed`（`host-tools.ts`）实现，判定统一收口在
 > `approval-gate.ts` 的两张表：`FORMAL_TOOLS`（8 个正式产出工具，`drafting` 态拦截：video_generate /
@@ -111,7 +114,7 @@
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
-### C2. 本地媒体 / 复刻工具（11 个，不调后端）
+### C2. 本地媒体 / 复刻工具（16 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
@@ -129,6 +132,8 @@
 | `media_probe` | **媒体探针**（REQ-036 C3，第 39 号工具）：本地媒体文件一条命令摸清**时长（秒）/ 分辨率 / fps / 音轨数 / 容器 / 综合响度（LUFS）**。实现：`ffmpeg -i` stderr 解析（`src/media-probe.ts` 纯函数层，与 CV-188 同源口径 —— 随包分发只有 ffmpeg 没有 ffprobe，不引入 ffprobe 依赖）+ ebur128 复用 `probeLoudnessLufs`（同一份实现不复制）。响度只在有音轨时测，失败不阻塞（`audioLoudnessLufs: null` + 原因）。用途：① 拆解表头部真值（别拿声明时长当真值，H3 实测请求 5s 出 5.167s）；② **响度对齐**（成片 vs 参考片差值 >2 LUFS 调 BGM/旁白音量重渲）——替代临场拼 ffmpeg 命令 |
 | `plan_generation_units` | **生成单元规划**（CV-445 S3，rea-video A4 吸收，第 47 号工具）：把带「制作方式」列的拆解表变成**最少调用次数的生成单元计划**——同场景 + 硬切相连的 AI 镜头合并为一次连续生成（剪辑时再按硬切切开），插入的代码/录屏/静镜不打断分组；单镜超 15s 在动作停顿处切段（后段用前段尾帧 `shotTransition:'chain'` 衔接）；相邻单元同场景无缝硬切自动给尾帧衔接说明。场景相似度 = 首尾帧 HSV 直方图距离（≤0.5 同景，镜头 >60 降级只按硬切合并）；上限按 `video_composite` 真实规格校验（图 ≤9 / 视频 ≤3 / 音频 ≤3 / 合计 ≤12 / 单次 ≤15s）。**只出计划不代执行**（付费生成先人工确认）：返回 Markdown 计划 + 逐单元可贴 `video_composite` 的提示词。实现层 `src/plan-generation-units.ts`（DP 求最少单元，纯函数可单测） |
 | `make_compare` | **对比片**（CV-445 S4，rea-video A6 吸收，第 48 号工具）：原片｜复刻片**左右并排**合成一条 `compare.mp4`（各缩放 640×360 信箱居中不拉伸、烧录「原片/复刻」标签、音频取复刻片、时长对齐较短者），产物缺省落复刻片同目录。零模型费用，仅本地 ffmpeg。验收用法：对照 viral-remake 五项判据逐项看（节奏 ≤0.2s / 转场 / 字幕 / 信息卡 / 整体+响度）——「哪一秒没对齐」变成看得见的错位。实现层 `src/compare-video.ts`（argv 纯函数 + IO 分离） |
+| `analyze_beats` | **节拍分析**（CV-380，落 `src/host-tools-audio.ts` 的 `defineAudioTools` 工厂）：本地 ffmpeg 分析音频节点，BPM / 拍点（秒）/ `confidence` / 实测响度 LUFS 写回节点 `beats` 字段并回填故事板 `06_sound.bgm.bpm/lufs`；可选 `lyricsLines` → 启发式歌词时间轴 `lyricsTimeline`（标 estimated）。**`confidence < 0.5` 低置信禁卡点**。实现层 `src/beat-analyze.ts` |
+| `snap_cuts_to_beats` | **卡点吸附**（CV-380，同上工厂）：读音频节点 `beats`（先跑 `analyze_beats`），把有序片段内部切点吸附到最近拍（±0.5 拍容差，超差不吸附并告警），返回逐切点偏移 —— 据此改各镜时长并**重算 `durationInFrames`**。`confidence < 0.5` 直接拒绝。实现层 `src/beat-analyze.ts` 的 `snapCutsToBeats` |
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 
@@ -454,6 +459,26 @@
 
 ---
 
+### A14. `asr2txt`（CV-448）
+
+**功能**：**语音识别（ASR）** —— 把音频或视频里的语音转成文字（Drama `asr2txt` / fast-Whisper-large-v3-turbo-ct2）。返回三样东西：① 整篇识别文本 `txt`；② 词级时间戳 `txt_word`；③ 句段级时间戳 `txt_segment`。②③ 由 Host 归组后**落成一份词级转写 JSON**（回执给绝对路径），可直接作 `evidence_grid` 的 `transcriptPath`（每格叠台词词标签）。`transcribeAudio` 与 `image2vl` / `video2vl` 同链路（含 CV-155 同型自愈：产物名 → 反查画布节点 → 本地资产重传 → 换名重试一次）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `filename` | string | 是 | 媒体**句柄**：`upload_image` 返回名（音频或视频均可）或 `@ref[显示名]`。⚠️ 生成工具产物名（`MiniMax_H3_*` / `voxcpm_*` 等）不能直接传。**唯一入参**——按扩展名自动路由：音频扩展（mp3/wav/m4a/flac/ogg/aac…）填后端 `audio` 字段，视频扩展（mp4/mov/webm/mkv…）填 `video`，`resolveRefValue` 刻意不传 `expectKind`（单 kind 过滤会拦掉一半合法输入） |
+
+**行为要点**：
+- **三字段行格式**：`txt_word` / `txt_segment` 每行 `(起,止) 文本`（秒，浮点）。归组规则：词句重叠最大归段；无重叠取最近段；词起点 == 段起点归**下一段**（边界词铁律）；`txt_segment` 缺失时按标点 / 静音间隙自造句段；无词句段丢弃并计数；`txt_word` 缺失返回 `doc:null`。
+- **回执两种形态**：有词级时间戳 → 「N 句段 · M 词 + 整篇文本 + 转写 JSON 绝对路径」；没有 → 明写**未生成转写 JSON**（不能让模型拿不存在的路径去填 `transcriptPath`），整篇文本照回。
+- **产物纪律**：转写 JSON 落 `dshHomePath('canvas-studio')/transcripts/asr-*.json`，形状必须被 `evidence-grid.ts` 的 `parseTranscript` 原样吃下（`segments[].words` 非空且含 `t/start/end`，单测跨模块校验守住）。
+- **`duration` 是服务端耗时**（不是媒体时长），回执里不作时长依据。
+- **能力边界（fast-Whisper-large-v3-turbo-ct2）**：99 国语言、**中文准确度一般**、**不支持方言**（方言 / 重口音会整段错写）；人名地名数字英文缩写易错、标点不准 ⇒ **辅助参考**，字幕定稿 / 引语核对必须人工校对。
+- **超时复用 `DRAMA_TIMEOUT_MS.image`（720s）**：ASR 耗时按音频长度增长但远低于视频档；走 `callDramaRaw`（**不进** `withGenerateSlot` 排队），但描述带 `DRAMA_SERIAL_HINT` —— 占用后端单任务槽，**逐个调用**。
+- **不产生画布节点**（纯文本 + 落盘文件）⇒ 不参与节点重放；**不在审批门禁内**（与 `image2vl` / `video2vl` 同）。
+- 用在：口播 / 访谈 / 白板讲解出**逐句台词与时间点**、字幕排版、拆解表对口播节奏、`evidence_grid` 叠词标签。
+
+---
+
 ### B1. `extract_last_frame`
 
 **功能**：抽取画布上某个视频片段的**真实末帧**（本地 ffmpeg），用于「同场景连续镜头」的像素级衔接。
@@ -573,7 +598,10 @@
 
 ---
 
-### C3. `write_screenplay`
+### C3. `write_screenplay`（**已下线**，REQ-022 退役；本节留档）
+
+> ⚠️ 本工具与 `submit_screenplay_for_approval` 已从注册表删除（剧本门退役，只保留 `write_storyboard` 拍摄定稿与
+> `submit_keyframes_for_approval` 关键帧确认）。历史画布卡仍带这些 `toolName`，下文描述的是**退役前的行为**。
 
 **功能**：把完整剧本落为画布节点（标题「剧本」，`kind=text`）。
 
@@ -632,15 +660,15 @@
 
 ---
 
-### C6–C8. 三个审批门禁
+### C6–C8. 三个审批门禁（C6 / C7 已下线，仅 C8 存活）
 
 | 工具 | 参数 | 逐步确认模式下的行为 |
 |------|------|---------------------|
-| `submit_screenplay_for_approval` | `summary?` | 校验画布已有「剧本」节点 → 置 `state=script_review`，要求用户点「批准」。放手跑模式直接放行 |
-| `submit_storyboard_for_approval` | `storyboard`（必填）、`summary?` | 把分镜表**逐镜拆卡**落画布（解析不出表格则回退整表单节点）→ 置 `state=awaiting_approval`。批准后 `video_generate` / `video_composite` 才放行 |
+| `submit_screenplay_for_approval` | `summary?` | **已下线**（REQ-022，剧本门退役）：校验画布已有「剧本」节点 → 置 `state=script_review`，要求用户点「批准」。放手跑模式直接放行 |
+| `submit_storyboard_for_approval` | `storyboard`（必填）、`summary?` | **已下线**（REQ-022，分镜审批门退役 → `write_storyboard` 落 `storyboard.json` + 覆盖层确认）：把分镜表**逐镜拆卡**落画布（解析不出表格则回退整表单节点）→ 置 `state=awaiting_approval`。批准后 `video_generate` / `video_composite` 才放行 |
 | `submit_keyframes_for_approval` | `summary?` | 置 `state=keyframe_review`，等待用户点「确认关键帧」。放手跑模式为空操作 |
 
-三者均返回 `{ text }`（独立 schema，含下一步指引）。
+三者均返回 `{ text }`（独立 schema，含下一步指引）。**只有 C8 仍注册**；C6 / C7 的历史卡仍被工作流状态机识别（`workflow-stage` / `legacy-node-tools` 守卫）。
 
 ---
 
@@ -839,10 +867,14 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 
 ### 创作全流程（逐步确认模式）
 
+> ⚠️ **步骤 2 / 4 是退役前的旧流程**（`write_screenplay` / `submit_screenplay_for_approval` /
+> `submit_storyboard_for_approval` 均已随 REQ-022 下线）：现行入口是 **`write_storyboard` 落 `storyboard.json` →
+> 用户在「拍摄定稿」覆盖层点「确认落地」**，审批门只剩第 8 步关键帧确认。
+
 ```
 1. 需求澄清         ask_user_choice（一次一个问题）
-2. 剧本 → 审批      write_screenplay → submit_screenplay_for_approval（等「批准」）
-4. 分镜 → 审批      submit_storyboard_for_approval（等「批准」）
+2. 剧本 → 审批      write_screenplay → submit_screenplay_for_approval（等「批准」）  ← 已下线
+4. 分镜 → 审批      submit_storyboard_for_approval（等「批准」）  ← 已下线（→ write_storyboard）
 5. 资产卡           character_sheet（含角色的片子必经）
 6. 逐镜关键帧       image_generate（lockedPrompt 原样开头 + shotRefs）
 7. 逐镜质检         qc_shot（PASS 不重跑 / FAIL 只重跑该镜 / exhausted 上报）

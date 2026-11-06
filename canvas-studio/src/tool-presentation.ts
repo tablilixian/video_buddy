@@ -105,7 +105,7 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   submit_storyboard_for_approval: { tier: 'A', title: '提交分镜审批', icon: '批' },
   submit_keyframes_for_approval: { tier: 'A', title: '提交关键帧确认', icon: '批' },
 
-  // ===== B 流程级（10 真实 + 1 占位 + 5 历史别名）=====
+  // ===== B 流程级（11 真实 + 1 占位 + 5 历史别名）=====
   write_screenplay: { tier: 'B', title: '写剧本', icon: '写' },
   write_script: { tier: 'B', title: '写文案', icon: '写' },
   // REQ-022（CV-293）：拍摄定稿 —— 产出全片规划（storyboard.json），不落画布节点。
@@ -120,6 +120,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   teardown_store: { tier: 'B', title: '拆解落库', icon: '存' },
   image2vl: { tier: 'B', title: '画面分析', icon: '析' },
   video2vl: { tier: 'B', title: '视频理解', icon: '析' },
+  // CV-448：后端 asr2txt 上线（语音 → 整篇文本 + 词级/句段时间戳 + 转写 JSON 落盘）。
+  asr2txt: { tier: 'B', title: '语音转写', icon: '写' },
   subtitle_burn: { tier: 'B', title: '字幕（暂未开放）', icon: '字' },
   // 历史别名（仅老会话块会出现这些 wire 名）。
   compose: { tier: 'B', title: '成片合成', icon: '合' },

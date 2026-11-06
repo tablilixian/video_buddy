@@ -67,6 +67,8 @@ const NEVER_GATED = [
   'ask_user_choice',
   'upload_image',
   'image2vl',
+  // CV-448：asr2txt 只读（识别文本 + 转写 JSON），任何阶段都不产出新素材。
+  'asr2txt',
 ]
 
 const gate = (tool, state, { mode = 'confirm', shotBound = false } = {}) =>

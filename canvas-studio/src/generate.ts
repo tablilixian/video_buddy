@@ -1778,6 +1778,73 @@ export async function analyzeVideo(
 }
 
 /**
+ * 视频容器扩展名 → `asr2txt` 的 `video` 字段（其余一律走 `audio`）。
+ *
+ * 后端要求 `video` / `audio` 二选一（同传时优先吃 `audio`）。本工具对外只有单个
+ * `filename` 入参（拍板：模型不必自己判断媒体类型），字段路由在这一处收口。
+ */
+const ASR_VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|flv|ts|mts|m2ts|wmv|3gp|rmvb)$/iu
+
+/** ASR 原始产出（后端 `asr2txt` 的三个行式字符串字段）。 */
+export interface AsrRawText {
+  /** 整篇识别文本（无时间戳）。 */
+  txt: string
+  /** 词级时间戳行（每行 `(起, 止) 词`）。 */
+  txtWord: string
+  /** 句段级时间戳行（每行 `(起, 止) 文本`）。 */
+  txtSegment: string
+}
+
+/**
+ * 语音识别（ASR）：调用 Drama Backend 的 `asr2txt` 接口，入参是已上传的句柄。
+ *
+ * 与 `analyzeImage` / `analyzeVideo` **同一套纪律**（同型自愈：产物名被后端 0.1s
+ * 前置 500 → 反查画布节点 → 本地资产重传 → 换名重试一次），只是入参字段按扩展名
+ * 在 `audio` / `video` 之间路由。
+ *
+ * 超时显式用 `image` 档（720s）而不是文本档 360s：后端是**同步阻塞**，ASR 耗时随
+ * 片长线性增长（识别一小时口播远超文本档），按文本档跑等于长片必被自己掐断。
+ *
+ * @param filename - 媒体**句柄**（`upload_image` 返回名，或经 `@ref` 解析后的句柄）。
+ * @param signal - 中止信号。
+ * @param heal - 自愈上下文（registry + projectId）；不传即关闭自愈。
+ */
+export async function transcribeAudio(
+  filename: string,
+  signal?: AbortSignal,
+  heal?: AnalyzeHealContext,
+): Promise<AsrRawText> {
+  const call = async (target: string): Promise<AsrRawText> => {
+    const body = ASR_VIDEO_EXT.test(target) ? { video: target } : { audio: target }
+    const data = await callDramaRaw(DRAMA_ENDPOINTS.asr2txt, body, signal, DRAMA_TIMEOUT_MS.image)
+    const field = (key: string): string => (typeof data[key] === 'string' ? (data[key] as string) : '')
+    const out: AsrRawText = {
+      txt: field('txt'),
+      txtWord: field('txt_word'),
+      txtSegment: field('txt_segment'),
+    }
+    if (out.txt.trim() === '' && out.txtWord.trim() === '' && out.txtSegment.trim() === '') {
+      // 200 但三字段全空 = 识别没吐东西（多为素材无人声），不是网络/后端故障；
+      // 直接把原始响应体截一段进 dev 详情，省一轮「到底传了什么」的排查。
+      throwError('CS-USER-ERR', {
+        message: '识别完成但没有返回任何文本 —— 该素材可能没有可识别的人声（纯音乐 / 静音），或句柄已失效。请确认素材含语音后重试，或先用 upload_image 重新上传。',
+        detail: `asr2txt 空响应：${JSON.stringify(data).slice(0, 500)}`,
+      })
+    }
+    return out
+  }
+  try {
+    return await call(filename)
+  } catch (cause) {
+    // 与 analyzeImage / analyzeVideo 同一不变式：产物名入参必 500，靠自愈换名重试一次。
+    if (heal === undefined || !isBadReferenceError(cause)) throw cause
+    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal)
+    if (fresh === null) throw cause
+    return call(fresh)
+  }
+}
+
+/**
  * 节点级重试的**原地重写**（唯一实现）。
  *
  * 把新产物的字段写回既有节点，保留 id / 位置 / 血缘 / 编组，边不增加

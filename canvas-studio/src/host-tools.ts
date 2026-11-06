@@ -39,6 +39,8 @@ import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
 // （读法 `touchedStoryboard` 同处，见 tool-result-text.ts）。
 import { renderTextResult, storyboardTouchedNote } from './tool-result-text.js'
+// CV-448：asr2txt 行串 → `transcriptPath` 转写 JSON（归组与落盘的唯一实现）。
+import { buildAsrTranscript, writeAsrTranscript } from './asr-transcript.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, autoIntentCardAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -63,7 +65,7 @@ import { normalizeResolutionId, resolutionRank } from './resolution-tiers.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { runVideoShotQc, aggregateVideoQc, buildVideoQcRecord, validateQcTargetInput, VIDEO_QC_BUDGET } from './video-qc.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, analyzeImage, analyzeVideo, transcribeAudio, type AsrRawText, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
@@ -2918,6 +2920,49 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           { registry, projectId },
         )
         return { text }
+      },
+    }),
+    defineTool({
+      name: 'asr2txt',
+      description:
+        '语音识别（ASR）：把**音频或视频里的语音转成文字**，返回 ① 整篇识别文本；② 词级时间戳；③ 句段级时间戳，并把②③落成一份词级转写 JSON（回执里给绝对路径）。'
+        + '\n\n**输入**：只要一个 `filename` —— `upload_image` 返回的 Drama Backend 句柄，或画布素材的 `@ref[显示名]`（优先 `@ref`）。⚠️ 生成工具结果里的**产物名不能直接当句柄传**（后端 0.1s 前置 500）；真传了 Host 会反查重传换名重试一次，但别依赖它。'
+        + '\n\n**用在**：口播 / 访谈 / 白板讲解视频出**逐句台词与时间点**；给字幕排版、拆解表对口播节奏、`evidence_grid` 叠台词词标签（把回执里的转写 JSON 路径原样填进它的 `transcriptPath`）。'
+        + '\n\n⚠️ **模型能力边界（fast-Whisper-large-v3-turbo-ct2）**：支持 99 国语言，**中文准确度一般**，**不支持方言**（方言 / 重口音内容会整段错写）；人名、地名、数字、英文缩写容易写错，**无标点或标点不准**。转写结果是**辅助参考**——要逐字准确（字幕定稿、引语核对）必须人工校对，别拿它当事实直接交付。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
+      parameters: {
+        filename: { type: 'string' as const, required: true, description: '媒体句柄：`upload_image` 的返回名（音频或视频均可），或 `@ref[显示名]` 引用标记。⚠️ 生成工具结果里的产物名（形如 MiniMax_H3_ref2va_00020_.mp4 / voxcpm_00001_.flac）不能直接传。' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '识别文本 + 转写 JSON 路径（可直接作 evidence_grid 的 transcriptPath）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { filename: string }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        // 与 image2vl 同一条解析链；**刻意不传 expectKind** —— 本参数音频视频都收，
+        // 单 kind 过滤会把另一半合法输入拦在门外（字段路由在 transcribeAudio 里按扩展名做）。
+        const filename = await resolveRefValue(registry, projectId, a.filename, library)
+        const raw: AsrRawText = await transcribeAudio(filename, exec.signal, { registry, projectId })
+        const { doc, stats } = buildAsrTranscript(raw.txtWord, raw.txtSegment)
+        const lines: string[] = []
+        if (doc === null) {
+          // 后端没给词级时间戳（txt_word 缺失/解析不出）：照样回文本，但明说没落盘，
+          // 不能让模型拿着一个不存在的路径去填 transcriptPath。
+          lines.push('⚠️ 后端未返回词级时间戳，本次**未生成转写 JSON**（无法作 evidence_grid 的 transcriptPath）。')
+          lines.push('', raw.txt.trim() || '(整篇文本也为空)')
+          return { text: lines.join('\n') }
+        }
+        const transcriptPath = await writeAsrTranscript(doc)
+        lines.push(`识别完成：${String(stats.segments)} 句段 · ${String(stats.words)} 词${stats.dropped > 0 ? `（另有 ${String(stats.dropped)} 个无词句段已丢弃）` : ''}。`)
+        lines.push('', raw.txt.trim(), '', `词级转写 JSON：${transcriptPath}`, '——把它原样填进 `evidence_grid` 的 `transcriptPath`，即可在每格叠台词词标签。')
+        return { text: lines.join('\n') }
       },
     }),
     defineTool({

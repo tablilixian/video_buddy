@@ -113,7 +113,7 @@
 | --- | --- |
 | [api.md](./api.md) | Drama Backend 接口权威清单（**v0.4.0**，2026-09-30：异步任务 / withtxt / txt2speech / 双退役标注） |
 | [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) | 画布侧调用要点薄索引（调用链路 / 上传流程 / 分辨率档位 / image2fix 纪律 / health 语义） |
-| [canvas-studio-tools.md](./canvas-studio-tools.md) | **48 个工具**（47 真实 + 1 占位）的参数与返回说明（**数字由 `tests/tool-registry.test.mjs` 钉死**，增删改名即红；2026-10-12 AR-06 勘误：此前写 26；2026-10-16 REQ-034 加 `render_composition`；2026-10-23 加 `inspect_image`；2026-10-24 REQ-035 加 `scaffold_manifest`；2026-10-25 故事板强约束 L4 加 `adopt_canvas_as_storyboard`；2026-11-02 复刻提效批二/三加 `image_crop`、`write_note`；2026-11-03 REQ-036 复刻客户端能力批加 `media_probe`、`evidence_grid`、`download_video`；2026-11-05 CV-445 rea-video 吸收批加 `plan_generation_units`、`make_compare`） |
+| [canvas-studio-tools.md](./canvas-studio-tools.md) | **50 个工具**（49 真实 + 1 占位）的参数与返回说明（**数字由 `tests/tool-registry.test.mjs` 钉死**，增删改名即红；2026-10-12 AR-06 勘误：此前写 26；2026-10-16 REQ-034 加 `render_composition`；2026-10-23 加 `inspect_image`；2026-10-24 REQ-035 加 `scaffold_manifest`；2026-10-25 故事板强约束 L4 加 `adopt_canvas_as_storyboard`；2026-11-02 复刻提效批二/三加 `image_crop`、`write_note`；2026-11-03 REQ-036 复刻客户端能力批加 `media_probe`、`evidence_grid`、`download_video`；2026-11-05 CV-445 rea-video 吸收批加 `plan_generation_units`、`make_compare`，故事板提速 B1 加 `confirm_intent_card`；2026-11-06 CV-448 加 `asr2txt`，同批补登 `analyze_beats` / `snap_cuts_to_beats` 两处漏账、移出 REQ-022 退役三件） |
 
 ## 五、测试与探针
 

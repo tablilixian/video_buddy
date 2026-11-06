@@ -70,6 +70,16 @@ export const DRAMA_ENDPOINTS = {
    */
   jobs: '/api/v1/jobs',
   video2vl: '/api/v1/generate/video2vl',
+  /**
+   * 语音识别（ASR，后端 0.9.0 收录）：Fast Whisper（`fast_whisper_asr.json` 工作流，
+   * 模型 fast-Whisper-large-v3-turbo-ct2）—— 工具 `asr2txt`。
+   *
+   * 入参 `video` 或 `audio` **二选一**（上传得到的句柄；同传时后端优先吃 `audio`），
+   * 同步阻塞返回 `txt`（整篇文本）/ `txt_word`（每行 `(起, 止) 词`）/ `txt_segment`
+   * （每行 `(起, 止) 文本`）三个**行式字符串**，形状适配见 `asr-transcript.ts`。
+   * 能力边界：99 国语言、中文准确度一般、**不支持方言**（工具描述里对模型可见）。
+   */
+  asr2txt: '/api/v1/generate/asr2txt',
   txt2audio: '/api/v1/generate/txt2audio',
   /**
    * 语音合成（CV-271，2026-09-30 后端 0.8.0 收录 + 同日探针实测接入）：VoxCPM2

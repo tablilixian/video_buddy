@@ -88,7 +88,7 @@ test('护栏：lib/host-tools.js 产物中 image2vl 描述含读图通道与 VLM
  * 锚点必须用 `name: '<tool>'`——不用「首次出现的工具名」（CV-155 的教训：源码别处
  * 提到工具名会让锚点提前，断言落到无关片段上误判）。
  */
-const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image']
+const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image', 'asr2txt']
 const ASYNC_HINT_TOOLS = ['video_generate', 'video_composite']
 
 test('护栏：第 7 步不再说「可并行」，且骨架与分册都写明后端同步单任务（CV-215）', () => {

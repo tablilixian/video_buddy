@@ -93,10 +93,14 @@ export const FILE_WHITELIST = {
   // 外提到 host-tools-remotion.ts（与既有 host-tools-artifact / -data / -series 同路）。
   // 故事板提速 B1（2026-11-05）：+confirm_intent_card 工具定义 +99（4854 → 4953）显式登记；
   // 消化路径随既有「工具壳拆分」批外提到 host-tools-workflow.ts。
-  'src/host-tools.ts': 4958,
+  // CV-448（2026-11-06）：+asr2txt 工具壳（描述/参数/execute 三段，核心在 asr-transcript.ts
+  // 新文件与 generate.ts 的 transcribeAudio），+45（4958 → 5003）显式登记。
+  'src/host-tools.ts': 5003,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
-  'src/generate.ts': 3620,
+  // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
+  // 3620 → 3687 显式登记；超时复用 image 档，不新增档位。
+  'src/generate.ts': 3687,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
   // 阶段 2 按域拆分时随 routes 段消化。
   // 订阅与积分（2026-11-02）：/canvas-studio/billing 前缀三分派 +105（含 sendBillingFailure），
@@ -190,7 +194,7 @@ export const FUNC_WHITELIST = {
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
-  'src/host-tools.ts#createStudioTools': { lines: 2875, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771' },
+  'src/host-tools.ts#createStudioTools': { lines: 2912, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片（2026-11-05）render_composition 锚点接线 +17 → 2729；P1-3/P1-4 scaffold 落盘分支 + 段边界提示 +42 → 2771；CV-448 +asr2txt 工具壳 +37 → 2912' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。
@@ -200,7 +204,9 @@ export const FUNC_WHITELIST = {
   'src/errors/catalog.ts#SPECS': { lines: 1009, note: '错误码表 —— 清单判定「一张表」不拆，本条只钉不涨' },
   // CV-384（2026-10-31）：dragging prop + 2D translate + contain-intrinsic-size +8，显式登记。
   'src/client/canvas/CanvasNode.tsx#CanvasNodeInner': { lines: 827, note: 'P1：节点态 / 预览 / 手势' },
-  'src/client/ModelSettingsPanel.tsx#ModelSettingsPanel': { lines: 674, note: 'P1' },
+  // CV-448 补登（2026-11-06）：棘轮 674 → 692 —— d2857e8299「设置页思考强度开关」+18 行
+  // 当时未跑 test:smoke 漏登，本轮验证时补登（与 asr2txt 无关，属存量漏项）。
+  'src/client/ModelSettingsPanel.tsx#ModelSettingsPanel': { lines: 692, note: 'P1；思考强度开关 +18 行补登（d2857e8299）' },
 }
 
 const RE_TOP_FUNC = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*[\w$]+/

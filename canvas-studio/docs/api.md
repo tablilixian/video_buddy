@@ -10,13 +10,14 @@
 > - 🆕 **`image2fix`（Boogu 文字修复，2026-09-18 后端新增）**：契约已收录并接入（工具 `image_fix`，见「图像文字修复」节）——探针实测 200 / 68.5s，修复生效（SALLE→SALE），产物前缀 `boogu_*`；产物名不可直接入参（CV-155 纪律，直用 500 快失败 55ms 实测复证）。
 > - 🆕 **`video2vl`（视频理解 / Qwen3-VL，2026-09-22 收录并接入）**：工具 `video2vl`，见「视觉语言模型」节。探针实测（[api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)）：**上传句柄 → 200 / 16.7s**、**产物名 → 0.1s 前置 500**（与 CV-155 两类 filename 纪律同型，工具侧已自带换名自愈）。
 > - 🆕 **`txt2image_withtxt`（中文文字渲染 / Qwen Image 2.1，2026-09-30 收录并接入，CV-270）**：工具 `image_generate_withtxt`，见「图像生成」节。探针实测（[api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）：**纯文生直打 200 / 20.7s**，《剑归江湖》四字无错字；画面里有要读的文字时用它，普通无字图仍走 `txt2image`。
+> - 🆕 **`asr2txt`（语音识别 / Fast Whisper，2026-11-06 收录并接入，CV-448）**：工具 `asr2txt`，见「语音识别」节。入参 `video` / `audio` 二选一（同传优先 `audio`），同步阻塞返回 `txt` / `txt_word` / `txt_segment`；**`duration` 是服务端耗时不是媒体时长**；模型 99 语种、中文一般、**不支持方言**。
 > - **后端单任务同步**：并发只排队不加速（A 9.4s / B 18.7s / 墙钟 18.7s）→ 调用一律串行。
 > - **422 vs 500**：缺必填/类型错 = 422（字段名精确，可回显）；文件读取失败/生成中崩 = 500 **无原因**。
 > - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
 **版本:** 0.4.0  
-**最近修订:** 2026-09-30（对齐后端 **0.8.0**：收录 `txt2image_withtxt` 文字渲染端点（CV-270，探针见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）；`txt2imageanime` / `image2promptenhance` 随后端 0.7.0 移除标「已下线」；`txt2audio` 节从 ACE Step 口径改写 Yue2；错误码补 404/409/422/504；**新增「端点 ↔ 工具占用映射表」**。此前 2026-09-24 收录后端 0.5.0 异步视频任务，CV-231；2026-09-22 `video2vl`，CV-230；2026-09-18 `image2fix`，CV-202）
+**最近修订:** 2026-11-06（收录后端 **0.9.0** `asr2txt` 语音识别端点并接入工具 `asr2txt`，CV-448；同批把「canvas-studio 工具清单」节的计数与四张表**对齐注册面实测 50 = 49 真实 + 1 占位**，补登 `video_rerender` / `tts_voiceover` / `tts_narration` / `write_storyboard` / `write_note` / `layout_table` / `adopt_canvas_as_storyboard` / 资产库两件 / `confirm_intent_card` 与新增 **C2 本地媒体复刻 16 个**，移出 REQ-022 退役的三件）。此前 2026-09-30 对齐后端 **0.8.0**（收录 `txt2image_withtxt` 文字渲染端点，CV-270，探针见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)；`txt2imageanime` / `image2promptenhance` 随后端 0.7.0 移除标「已下线」；`txt2audio` 节从 ACE Step 口径改写 Yue2；错误码补 404/409/422/504；**新增「端点 ↔ 工具占用映射表」**。此前 2026-09-24 收录后端 0.5.0 异步视频任务，CV-231；2026-09-22 `video2vl`，CV-230；2026-09-18 `image2fix`，CV-202）
 
 > **0.4.0 修订说明（对齐后端 0.8.0 / 0.7.0，2026-09-30，CV-268~270）**
 > 后端文档 0.7.0 先做了**退役与拆分**（CV-268 / CV-269 已接入），0.8.0 又新增**文字渲染端点**（CV-270 接入）。本次逐节对拍后本仓同步如下：
@@ -188,6 +189,7 @@
 - [图像修复（已不接入）](#图像修复)
 - [图像文字修复（Boogu Edit）](#图像文字修复boogu-edit)
 - [视觉语言模型](#视觉语言模型)
+- [语音识别](#语音识别)
 - [图像转视频](#图像转视频)
 - [异步视频任务](#异步视频任务)
 - [音频生成](#音频生成)
@@ -198,9 +200,9 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **25 个工具**：
+插件当前在 Host 侧注册 **50 个工具**：
 
-- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **24 个真实工具**（下表 A/B/C）
+- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **49 个真实工具**（下表 A / B / C / C2）
 - `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **1 个占位工具**（不调后端，仅返回能力边界与替代路径）
 
 > **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
@@ -227,8 +229,16 @@
 > 漂移：`tts_voiceover`（CV-271）转真后占位工具应为 **1 个**（`subtitle_burn`）⇒ 注册总数
 > **26 → 25**（24 真实 + 1 占位），与 `docs/STATUS.md §3.4` / `tests/tool-registry.test.mjs` 对齐。
 > 详见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §B4。
+>
+> **2026-11-06 CV-448 新增 `asr2txt`（语音识别）**：真实工具 49 → 50，注册总数 = **50（49 真实 + 1 占位）**。
+> 本节计数此前停在 0.4.0 收口的 25，本轮**一并对齐注册面实测**：A 类 12 → 16（补 `video_rerender` /
+> `tts_voiceover` / `tts_narration` / `asr2txt`）；C 类 9 → 13（REQ-022 退役的 `write_screenplay` /
+> `submit_screenplay_for_approval` / `submit_storyboard_for_approval` 移出）；新增 **C2 本地媒体 / 复刻 16 个**
+>（含 `analyze_beats` / `snap_cuts_to_beats`，此前两处都漏登）；占位 2 → 1（`tts_voiceover` CV-271 已转正）。
+> **逐个参数与返回见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §A–D**（该表由
+> `tests/tool-registry.test.mjs` 钉死，增删改名即红）。
 
-### A. 后端生成 / 分析（12 个）
+### A. 后端生成 / 分析（16 个）
 
 | 工具 | 用途 | 后端端点 / 实现位置 |
 | --- | --- | --- |
@@ -239,11 +249,15 @@
 | `character_sheet` | 四视图立绘**拼图整图**作一致性资产卡唯一锚点（同名卡整体覆盖） | `image2character` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
 | `video2vl` | **视频理解**（Qwen3-VL）：按时间轴 / 逐镜头描述运镜、景别、节奏与主体动作（CV-230） | `video2vl` |
+| `asr2txt` | **语音识别**（CV-448）：音频 / 视频 → 整篇文本 + 词级 / 句段时间戳，词级转写 JSON 落盘供 `evidence_grid.transcriptPath` 直食（99 语种、中文一般、**不支持方言**） | `asr2txt`（见「语音识别」节） |
 | `qc_shot` | 逐镜一致性质检（PASS/FAIL/WARN + 漂移项），结论写回画布节点 | `image2vl` |
 | `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（唯一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
 | `video_generate` | **首尾帧通道**（CV-269 拆分，**恒定**）：纯文生 / 单首帧 / 首尾帧插值（`filenameTail`） | **`image2videofl2va`**；`provider=fal` 走 fal MiniMax H3（**fal 未接入参考视频，带 `videoRefs` 直接报错**） |
 | `video_composite` | **多参考通道**（CV-269 拆分，**恒定**）：参考图锁角色 / 场景 / 风格，可带参考视频 / 参考音频（2 张图不再解释为首尾帧） | **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3（同上） |
+| `video_rerender` | **同参数升档重出**（只换 `resolution`，提示词 / 素材 / 时长全部沿用节点快照，原地覆盖） | 同该节点原工具（`image2videofl2va` / `image2videoref2va`） |
 | `music_generation` | BGM 生成（Yue2 工作流），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具同参数自动重试最多 3 次） |
+| `tts_voiceover` | **配音生成**（VoxCPM2，CV-271 占位升真）：文本 → 语音，时长由文本决定 | `txt2speech` |
+| `tts_narration` | **多段旁白批量合成 + 帧级排期**：一次调用 N 段，代码算好 `audio.voiceOver[]` 帧号 | `txt2speech` × N（工具内部串行） |
 
 ### B. 本地媒体处理（4 个，不调后端）
 
@@ -254,29 +268,58 @@
 | `render_composition` | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成成片 | 客户端 `@remotion/web-renderer`（`src/client/remotion-render.ts`）+ 宿主落盘（`src/remotion/render-job.ts`） |
 | `cut_audio` | 裁切音频区间，产物落新音频节点（BUG-002 / CV-245） | Host 本地 ffmpeg 重编码（`src/audio-cut.ts`） |
 
-### C. 画布 / 流程管控（9 个，不调后端）
+### C. 画布 / 流程管控（13 个，不调后端）
 
 | 工具 | 用途 | 实现位置 |
 | --- | --- | --- |
 | `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本 / 状态 / 时长） | 本地项目注册表 |
 | `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点 | 本地项目注册表 |
 | `look_card` | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 | 本地项目注册表 |
-| `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） | 本地画布落盘 |
 | `write_script` | 结构化文案落「文案」节点（供 `compose_video` 作 `scriptId`） | 本地画布落盘 |
+| `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：九节 JSON 落项目 `storyboard.json`（全片 SSOT，分节合并）；落画布由「拍摄定稿」覆盖层确认 | 本地项目注册表 |
+| `write_note` | **过程便签**（sticky 卡：拆解表 / 草案 / 待定项），`list_references` 的 `notes` 可读回 | 本地画布落盘 |
+| `layout_table` | **项目级布局坐标表**（CV-368）：`layout.json` 存命名矩形（read / write / clear） | 本地项目注册表 |
+| `adopt_canvas_as_storyboard` | **老项目迁移**（故事板强约束 L4）：从画布分镜卡反推 `storyboard.json` §04 骨架并报剩余阻断项 | 本地画布落盘 |
+| `list_library_assets` | **列资产库**：拿 `lib:<id>` 句柄（角色 / 场景 / 音色锚） | 本地资产库 |
+| `add_to_library` | **画布节点入库**：音频 / 图片节点真拷贝进资产库（音色锚标准落地） | 本地资产库 |
 | `ask_user_choice` | 点选式提问（需求澄清） | 本地交互阻塞 |
-| `submit_screenplay_for_approval` | 剧本审批门禁 | 本地工作流状态机 |
-| `submit_storyboard_for_approval` | 分镜表审批门禁（批准后视频工具才放行） | 本地工作流状态机 |
-| `submit_keyframes_for_approval` | 关键帧确认门禁 | 本地工作流状态机 |
+| `confirm_intent_card` | **一次性字段级意图卡**（提速方案 B1）：阶段一唯一一次打断，五段分区逐字段可编辑 | 本地交互阻塞 |
+| `submit_keyframes_for_approval` | 关键帧确认门禁（**唯一保留的审批门**） | 本地工作流状态机 |
+
+> REQ-022 退役的 `write_screenplay` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval`
+> 已移出上表（历史画布卡仍带这些 `toolName`，由 `tests/legacy-node-tools.test.mjs` 守卫）。
+
+### C2. 本地媒体 / 复刻工具（16 个，不调后端）
+
+零后端槽位的分析 / 复刻 / 数据工具（**逐个参数见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §C2**）：
+
+| 工具 | 用途 | 实现位置 |
+| --- | --- | --- |
+| `inspect_image` | **像素级图像检测**（CV-362，零依赖 PNG）：profile / bbox-dark·bright（画布百分比，与 `render_composition` box 同口径）/ colors 主色 | `src/inspect-image.ts` |
+| `image_crop` | **拼贴 / 精灵图裁切**（REQ-036 批二）：grid（从 1 起）或 rect（左上角）裁出项目资产，越界显式报错 | 本地 ffmpeg |
+| `image_matting` | **纯色底抠透明底**（CV-394）：colorkey 出真 alpha PNG（`<原名>-alpha.png`） | 本地 ffmpeg |
+| `import_csv` | **CSV 导入**（六大体裁 4.2）：文本 → chart 轨 `{labels, values}`，分隔符嗅探 + 千分位 / `%` 收口 | 本地解析 |
+| `series_manage` | **剧集管理**（3.1）：`series.json` 系列登记与集绑定（集 = 项目），每集 recap ≤2000 字 | 本地项目注册表 |
+| `episode_brief` | **前情上下文**（3.1）：新集开工只读装配前 N 集 recap + 库内角色 `lib:` 句柄 | 本地项目注册表 |
+| `verify_teardown` | **拆解回核**（REQ-036 B3）：ffmpeg 抽帧实测切点 ↔ 拆解表边界机器比对（matched / unmatched / extraSwitches） | `src/teardown-verify.ts` |
+| `teardown_store` | **拆解落库**（C4 后半）：按参考视频指纹存取拆解表（save / load / list，跨项目） | `src/teardown-store.ts` |
+| `scaffold_manifest` | **Manifest 骨架**（REQ-035 B2-3）：`title` + `durationSeconds`（+ theme / recipe）→ 时长自洽的合法 JSON | 本地生成 |
+| `evidence_grid` | **证据网格**（C2）：时间标注网格图 + 结构化清单 + 实测切点红框；`transcriptPath` 可叠 ASR 词标签 | `src/evidence-grid.ts` |
+| `download_video` | **视频页链接落盘**（C1）：抖音 / B站 / YouTube → yt-dlp 下载 → 画布素材区并标参考 | `src/video-download.ts` |
+| `media_probe` | **媒体探针**（C3）：时长 / 分辨率 / fps / 音轨 / 容器 / LUFS 一条命令 | `src/media-probe.ts` |
+| `plan_generation_units` | **生成单元规划**（CV-445 S3，第 47 号）：拆解表 → 最少调用次数的生成单元计划（只出计划不代执行） | `src/plan-generation-units.ts` |
+| `make_compare` | **对比片**（CV-445 S4，第 48 号）：原片｜复刻并排烧标签，零模型费用 | `src/compare-video.ts` |
+| `analyze_beats` | **节拍分析**（CV-380）：BPM + 拍点 + confidence + LUFS 写回 `beats`（confidence <0.5 禁卡点） | `src/beat-analyze.ts`（`defineAudioTools` 工厂） |
+| `snap_cuts_to_beats` | **卡点吸附**（CV-380）：内部切点吸附到最近拍（±0.5 拍，超差告警），据此重算 `durationInFrames` | 同上 |
 
 > 审批门禁的实际拦截由各工具 execute 里的 `assertApprovalAllowed` 实现，判定收口在 `approval-gate.ts`：
 > `FORMAL_TOOLS`（8 个正式产出工具，drafting 态拦）与 `PRODUCING_TOOLS`（另含 4 个图片类工具，审阅态也拦），
 > 按「是否绑定分镜卡」区分放行口径——名单以 `src/approval-gate.ts` 为准。
 
-### 占位工具（2 个，仅返回降级指引）
+### 占位工具（1 个，仅返回降级指引）
 
 | 工具 | 用途 | 降级路径 |
 | --- | --- | --- |
-| `tts_voiceover` | 旁白 / 对白 TTS 配音 | 用 `write_script` 落「文案」节点（不生成音频）；H3 提示词用 `says in an off-screen voiceover` 处理离屏旁白 |
 | `subtitle_burn` | 硬字幕烧录进画面 | 用 `write_script` 落「文案」节点（仅成片详情展示）；画面内文字写进 H3 提示词画面描述 |
 
 > 占位工具存在的意义：让 agent 能完整跑完上游 MiniMax-H3 原版 skill 流程而不因「tool not found」中断；
@@ -327,6 +370,7 @@
 | `POST /api/v1/generate/image2fix` | `image_fix`（+ `image_generate` 的 CV-212 自动修复兜底） | 已占用（CV-202） |
 | `POST /api/v1/generate/image2vl` | `image2vl` / `qc_shot`（两工具共用） | 已占用 |
 | `POST /api/v1/generate/video2vl` | `video2vl` | 已占用（CV-230） |
+| `POST /api/v1/generate/asr2txt` | `asr2txt` | 已占用（CV-448） |
 | `POST /api/v1/generate/image2videofl2va` | `video_generate`（CV-269 起恒定） | 已占用（异步 202） |
 | `POST /api/v1/generate/image2videoref2va` | `video_composite`（CV-269 起恒定） | 已占用（异步 202） |
 | `GET /api/v1/jobs/{job_id}` | 系统内部：视频任务轮询 + 断线续查（CV-231） | 已占用（非工具） |
@@ -1115,6 +1159,78 @@ openapi 里该字段 `required: true`；字段名写错会得到
 - **`duration` 是服务端耗时**（实测 1.65MB 样片 16.66s ≈ HTTP 墙钟 16.7s），不是视频时长
 - 探针实测见 [api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)；复跑命令 `node scripts/probe-video2vl.mjs`
 - canvas-studio 接入：工具 **`video2vl`**（超时取视频档 600s；带参考名自愈），用法见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §A12
+
+---
+
+## 语音识别
+
+> **0.9.0 收录（CV-448，2026-11-06）**：后端新增 `POST /api/v1/generate/asr2txt`（Fast Whisper ASR，
+> 工作流 `workflows/fast_whisper_asr.json` / fast-Whisper-large-v3-turbo-ct2）。canvas-studio 侧接入为
+> 工具 **`asr2txt`**（注册面第 50 号），用法见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §A14。
+
+### POST /api/v1/generate/asr2txt
+
+从音频或视频中识别语音，返回完整文本、词级时间戳与句段级时间戳（**同步阻塞**：识别完成才返回，不走异步任务）。
+
+**请求体 (ASR2TxtRequest):**
+
+| 字段 | 类型 | 必填 | 默认值 | 描述 |
+|------|------|------|--------|------|
+| `video` | string | 条件必填 | "" | 视频文件名，与 `audio` **至少提供一个** |
+| `audio` | string | 条件必填 | "" | 音频文件名，与 `video` **至少提供一个** |
+
+**说明:**
+- `video` / `audio` 必须是**文件上传接口拿到的句柄**；生成工具的产物名会被前置 500（纪律同 `image2vl` / `video2vl`）
+- 两者同时提供时**当前实现优先识别 `audio`**，建议一次只给一种输入
+- ⚠️ **模型能力边界**：支持 99 国语言、**中文准确度一般**、**不支持方言**（方言 / 重口音会整段错写）；
+  人名、地名、数字、英文缩写容易写错，**无标点或标点不准** ⇒ 转写是**辅助参考**，字幕定稿 / 引语核对必须人工校对
+- 耗时随音频长度线性增长；工具侧超时取 `DRAMA_TIMEOUT_MS.image`（**720s**，长片也不能用文本档）
+
+**请求示例（音频）:**
+```json
+{
+  "audio": "interview.mp3"
+}
+```
+
+**请求示例（视频）:**
+```json
+{
+  "video": "speech.mp4"
+}
+```
+
+**响应字段:**
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `prompt_id` | string | ComfyUI 任务 ID |
+| `txt` | string | 不带时间戳的完整识别文本 |
+| `txt_word` | string | 词级时间戳，每行 `(开始秒, 结束秒) 词` |
+| `txt_segment` | string | 句段级时间戳，每行 `(开始秒, 结束秒) 文本` |
+| `duration` | number | **接口等待识别完成的耗时（秒），不是媒体文件时长** |
+
+**响应示例:**
+```json
+{
+  "prompt_id": "4756c02d-72e5-4e0c-b7ac-2b5f7ccb1010",
+  "txt": "今天天气真好我们出去走走吧",
+  "txt_word": "(0.0, 0.4) 今天\n(0.4, 0.8) 天气\n(0.8, 1.08) 真\n(1.08, 1.32) 好\n(1.32, 1.62) 我们\n(1.62, 1.9) 出去\n(1.9, 2.16) 走走\n(2.16, 2.4) 吧",
+  "txt_segment": "(0.0, 1.32) 今天天气真好\n(1.32, 2.4) 我们出去走走吧",
+  "duration": 1.86
+}
+```
+
+**消费侧纪律（canvas-studio）:**
+- **200 但三字段全空** = 素材没有可识别的人声（纯音乐 / 静音）或句柄失效，**不是网络故障** ——
+  工具侧抛 `CS-USER-ERR` 并附原始响应体截段（`transcribeAudio`）
+- **产物名入参** → 与 `image2vl` / `video2vl` 同型自愈：反查画布节点 → 本地资产重传 → 换名重试一次
+- **入参只有 `filename` 一个**：Host 按扩展名路由到 `video`（`mp4|m4v|mov|webm|mkv|avi|flv|ts|mts|m2ts|wmv|3gp|rmvb`）
+  或 `audio`（其余），`resolveRefValue` 刻意不传 `expectKind`
+- **产物纪律**：`txt_word` / `txt_segment` 归组后落
+  `dshHomePath('canvas-studio')/transcripts/asr-*.json`（形状被 `evidence-grid.ts` 的 `parseTranscript`
+  原样吃下），回执给绝对路径 —— 原样填进 `evidence_grid` 的 `transcriptPath` 即可在网格图上叠台词词标签；
+  后端未给词级时间戳时**不落盘且回执明写**，不给模型一个不存在的路径
 
 ---
 

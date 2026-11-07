@@ -105,3 +105,22 @@ scale 2%、opacity 0.1、rotation 3°）——幅度看不见的往复照报。*
 **修法**：一律取 `list_shots` 的真值（细则见 `references/source-duration.md`）。
 宿主复核后改写时长，相邻轨可能不再重叠 ⇒ 转场窗口「完全不相交」而被拒收。
 收到就按报错里的真值重排轨道与转场窗口，**不要原样重试**。
+
+## §9 `draw`（路径生长）在非等比画布上退化成断续胶囊
+
+**症状**：`shape:'path'` 加 `draw` 做描边生长，生长**结束后**线条不是实线，而是 ~8 段
+断续胶囊（实段 ≈30px / 间隔 ≈15px）。不带 `draw` 的同一条线正常。
+（四季片仪表盘弧实拍确认，2026-11-07；取证台 `QR2` 场景复现：带 draw = 8 段、
+不带 = 实线，`scripts/render-forensics/out/2026-11-07T09-28-46/`。）
+
+**根因**：Chrome（Electron 43 / Chrome 150 实测）在 `preserveAspectRatio="none"` +
+`vector-effect: non-scaling-stroke` 组合下，`stroke-dasharray` / `stroke-dashoffset`
+的语义整体坏掉 —— dash 模式与 dasharray 取值（1 / 94.26 / 1000）和 `pathLength`
+（有无 / 值）**全都无关**；去掉 non-scaling-stroke 立刻恢复正常（受控浏览器五组
+对照实验隔离定案，2026-11-07）。产品 path 轨正是这个组合（0–100 双轴百分比空间
+必须 `PA="none"`，等宽描边必须 `VE`），所以 `draw`（= dash 机制）必踩。
+
+**修法**：**不需要绘制动画的线不要传 `draw`**（本片仪表盘弧完全可以首帧即成）；
+确需 draw 时接受虚线退化，或等根治批（修法已定案：运行时把原 d 在拉伸空间重采样成
+像素坐标 polyline、渲染进等比 viewBox 的 svg —— dash 回到正确语义，等宽由 1:1
+像素空间天然保证；统筹方案 Q-A2）。`vectorEffect` 不是元凶，别只删它。

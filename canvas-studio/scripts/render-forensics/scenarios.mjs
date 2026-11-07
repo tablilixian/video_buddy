@@ -303,6 +303,36 @@ export function buildMatrix(env) {
     console.warn(`[rf] 跳过 Q12/Q13：${String(cause)}`)
   }
 
+  // QR2（四季片复盘 R-02）：`draw` 描边动画在实拍中退化成断续胶囊（~10 段、周期≈45px）。
+  // 单变量对照：同一条弧 path，唯一差别是 `draw` 在场与否 —— 各渲 4 帧取末帧做
+  // 连通域计数（=1 实线，>1 虚线）。判读脚本在本文档配套（python3 + ffmpeg rawvideo）。
+  const arcManifest = (withDraw) => ({
+    id: 'fornsics',
+    meta: meta(4),
+    tracks: [
+      {
+        id: 'arc',
+        type: 'shape',
+        shape: 'path',
+        color: '#38bdf8',
+        d: 'M 20 78 A 30 30 0 0 1 80 78',
+        strokeWidth: 3,
+        startFrame: 0,
+        durationInFrames: 4,
+        ...(withDraw ? { draw: { to: 1, startFrame: 0, durationInFrames: 2 } } : {}),
+      },
+    ],
+  })
+  groups.push({
+    id: 'QR2',
+    title: 'draw 虚线复现（四季片 R-02）',
+    question: '带 draw 的弧在描边结束态是实线还是断续胶囊？（strokeDasharray:1 + pathLength + non-scaling-stroke 组合归因）',
+    runs: [
+      { id: 'qr2-plain', title: '弧 path · 无 draw（对照）', manifest: arcManifest(false), quality: 'draft', frames: 4, timeoutMs: 240_000 },
+      { id: 'qr2-draw', title: '弧 path · 带 draw（结束态）', manifest: arcManifest(true), quality: 'draft', frames: 4, timeoutMs: 240_000 },
+    ],
+  })
+
   return { groups }
 }
 

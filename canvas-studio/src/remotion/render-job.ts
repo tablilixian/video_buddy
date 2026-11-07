@@ -35,7 +35,7 @@ import '../errors/catalog.js'
 import type { CompositionManifest, RenderQuality } from './manifest.js'
 import { describeDiagnostics, diagHint } from './render-diagnostics.js'
 import type { RenderExecutor, RenderJobDiagnostics } from './render-diagnostics.js'
-import { summarizeManifestAudio, type ManifestAudioSummary } from './manifest.js'
+import { summarizeManifestAudio } from './manifest.js'
 import {
   listRenderJobs,
   reportRenderProgress,
@@ -114,37 +114,10 @@ export interface PendingRenderJob {
   deadlineAt: number
 }
 
-/** 三期 W6-2 / REQ-035 F-04：渲染报告（宿主侧形状，字段与客户端 `RenderMetrics` 一一对齐）。 */
-export interface RenderJobReport {
-  quality: RenderQuality
-  frames: number
-  totalMs: number
-  /** 准备阶段（字体注入 + 素材时长探测 + 能力判定），与帧数无关。 */
-  prepareMs: number
-  /** 净渲染耗时（`renderMediaOnWeb` 从调用到返回）。 */
-  renderMs: number
-  /** 每帧净渲染耗时 = `renderMs / frames`。 */
-  msPerFrame: number
-  /** 全部帧**编码完成**的时刻（相对渲染开始）；不是"编码耗时"。 */
-  encodeDoneAtMs: number
-  bytes: number
-  bitrateKbps: number
-  width: number
-  height: number
-  sampledFrames: number
-  /** OPT-11：音频平台保证 —— 由 manifest 确定性推导（非探测）。`audibleSources=0` ⇒ 成片必然无声。 */
-  audio?: ManifestAudioSummary
-  /**
-   * Q1 响度闸：成片综合响度（ITU-R BS.1770 integrated LUFS）。无声片 / 探测失败不出此字段。
-   * 复刻场景里响度直接决定观感对齐（甜品复刻会话实测：-15.3 vs 原片 -11.4，无人发现）。
-   */
-  loudnessLufs?: number
-  /**
-   * Q2 时序闸（复刻提效批四）：调用方传了 `timingSegments` 时，渲完实测成片切换点
-   * 与拆解段起点的逐边界比对结论（漂移超窗报 warnings，细节看这里逐段校准）。
-   */
-  timingCheck?: TimingCheckSummary
-}
+// RP-16 撞行数棘轮（1,282 > 登记 1,263）：报告接口外提到 render-report.ts（与
+// render-diagnostics / render-budget 同款拆法），此处 re-export 保持既有导入路径不变。
+export type { RenderJobReport } from './render-report.js'
+import type { RenderJobReport } from './render-report.js'
 
 /**
  * 隐藏窗口此刻为什么不能接单 / 接管 —— 拼进**模型可见**的文案。
@@ -1109,6 +1082,9 @@ export async function commitRenderJob(
       frames: spotFrames.length,
       totalMs: input.report?.totalMs ?? 0,
       prepareMs: input.report?.prepareMs ?? 0,
+      prepareFontMs: input.report?.prepareFontMs ?? 0,
+      prepareProbeMs: input.report?.prepareProbeMs ?? 0,
+      prepareCapabilityMs: input.report?.prepareCapabilityMs ?? 0,
       renderMs: input.report?.renderMs ?? 0,
       msPerFrame: input.report?.msPerFrame ?? 0,
       encodeDoneAtMs: 0,
@@ -1189,6 +1165,9 @@ export async function commitRenderJob(
     frames: Math.max(1, Math.round(job.manifest.meta.durationInFrames)),
     totalMs: input.report?.totalMs ?? 0,
     prepareMs: input.report?.prepareMs ?? 0,
+    prepareFontMs: input.report?.prepareFontMs ?? 0,
+    prepareProbeMs: input.report?.prepareProbeMs ?? 0,
+    prepareCapabilityMs: input.report?.prepareCapabilityMs ?? 0,
     renderMs: input.report?.renderMs ?? 0,
     msPerFrame: input.report?.msPerFrame ?? 0,
     encodeDoneAtMs: input.report?.encodeDoneAtMs ?? 0,

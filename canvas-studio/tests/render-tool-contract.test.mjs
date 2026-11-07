@@ -59,7 +59,7 @@ test('结果：report 内部字段与宿主 `RenderJobReport` 对齐（耗时 / 
   const report = renderTool().output?.schema?.properties?.report
   assert.ok(report, 'report 必须有内联结构，否则 agent 读到的是不透明对象')
   const fields = Object.keys(report.properties ?? {})
-  for (const key of ['quality', 'frames', 'totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'sampledFrames']) {
+  for (const key of ['quality', 'frames', 'totalMs', 'prepareMs', 'prepareFontMs', 'prepareProbeMs', 'prepareCapabilityMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'sampledFrames']) {
     assert.ok(fields.includes(key), `report 缺少字段 ${key}（实际：${fields.join(', ')}）`)
   }
   // REQ-035 F-04：`warm` / `encodeMs` 已删除 —— 前者恒为 false（硬编码），后者语义是
@@ -134,6 +134,37 @@ test('O-01 / F-04：渲染报告必须进返回文本（准备 / 渲染 / msPerF
   assert.match(text, /总 35\.0s/, `必须含总耗时，实际：\n${text}`)
   assert.match(text, /1545kbps/, `必须含码率，实际：\n${text}`)
   assert.ok(!/warm=/.test(text), `不该再有 warm 字段，实际：\n${text}`)
+})
+
+test('RP-16：报告带三段拆解时，文本必须给出「字体 / 探测 / 能力」各自耗时', () => {
+  const report = {
+    quality: 'standard',
+    frames: 600,
+    totalMs: 35_000,
+    prepareMs: 19_400,
+    prepareFontMs: 40,
+    prepareProbeMs: 19_300,
+    prepareCapabilityMs: 60,
+    renderMs: 15_600,
+    msPerFrame: 26,
+    encodeDoneAtMs: 15_100,
+    bytes: 3.88 * 1024 * 1024,
+    bitrateKbps: 1545,
+    width: 1280,
+    height: 720,
+    sampledFrames: 3,
+  }
+  const text = renderText('render_composition', composeResultValue({ frames: [], report }))
+  // 拆解的价值全在这行：真机 19s 到底是字体还是探测，看括号里谁大（RP-16）
+  assert.match(text, /准备 19\.4s（字体 0\.0 \/ 探测 19\.3 \/ 能力 0\.1）/,
+    `准备段必须带三段拆解，实际：\n${text}`)
+  // 没有拆解的报告（老客户端 / spot）保持原文：不带括号，也绝不冒出一串 '-'
+  const legacy = renderText('render_composition', composeResultValue({
+    frames: [],
+    report: { ...report, prepareFontMs: undefined, prepareProbeMs: undefined, prepareCapabilityMs: undefined },
+  }))
+  assert.match(legacy, /准备 19\.4s/, `老报告的准备行不能丢，实际：\n${legacy}`)
+  assert.ok(!/准备 19\.4s（/.test(legacy), `没有拆解就不该出现括号段，实际：\n${legacy}`)
 })
 
 test('O-01：compose_video 没有 frames/report 时不得冒出空段（老调用方文本不变）', () => {

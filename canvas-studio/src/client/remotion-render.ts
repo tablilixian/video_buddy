@@ -106,6 +106,19 @@ export interface RenderMetrics {
   totalMs: number
   /** 准备阶段：字体注入 + 素材时长探测 + 能力判定（与帧数无关的固定项）。 */
   prepareMs: number
+  /**
+   * RP-16 · `prepareMs` 三段拆解（毫秒，三段之和 ≈ `prepareMs`，差值是中间胶水）。
+   *
+   * 为什么拆：真机报告里「准备 19.0s」从没被归因过 —— 2026-11-07 字体探针实测
+   * 随包中文字体全程仅 26–44ms（`docs/plans/2026-11-07-渲染性能优化调研与推进计划.md` §7.5），
+   * 证伪了「字体吃掉 19s」的假设 ⇒ 19s 另有出处，不拆开就只能猜。
+   * `prepareProbeMs` 在宿主已给 `realDurations` 时应趋近 0（短路生效的直接证据）。
+   */
+  prepareFontMs: number
+  /** 素材时长探测段（`probeManifestDurations`；宿主给了 `realDurations` 即短路为 ≈0）。 */
+  prepareProbeMs: number
+  /** 能力判定段（`canRenderMediaOnWeb`：编码器 / 分辨率能不能渲）。 */
+  prepareCapabilityMs: number
   /** 净渲染耗时：`renderMediaOnWeb` 从调用到返回（不含取字节）。 */
   renderMs: number
   /** 每帧净渲染耗时 = `renderMs / frames`（**不再掺准备阶段**）。 */
@@ -210,14 +223,20 @@ export async function renderManifestOnWeb(
   const preset = QUALITY_PRESETS[quality] ?? QUALITY_PRESETS.standard
   const startedAt = Date.now()
   // R1：字体面先就绪再渲染（顺序不可颠倒 —— 渲染期才注入会拍到回退字体的帧）。
+  const fontStartedAt = Date.now()
   const fontWarnings = await applyManifestFonts(manifest)
+  const prepareFontMs = Date.now() - fontStartedAt
   // 三期 W5-4：宿主已探到的真值直接复用；没给才在浏览器里再探一遍（二期 B2 兜底）。
+  const probeStartedAt = Date.now()
   const hostDurations = options.realDurations ?? {}
   const probed: ManifestDurationProbe = Object.keys(hostDurations).length > 0
     ? { realDurations: hostDurations, warnings: [] }
     : await probeManifestDurations(manifest, options.signal)
   const probedManifest = applyProbedDurations(manifest, probed, fontWarnings)
+  const prepareProbeMs = Date.now() - probeStartedAt
+  const capabilityStartedAt = Date.now()
   const capability: CanRenderMediaOnWebResult = await canRenderMediaOnWeb({ container: 'mp4', videoCodec: 'h264', width, height })
+  const prepareCapabilityMs = Date.now() - capabilityStartedAt
   if (!capability.canRender) {
     const detail = capability.issues.map((issue: CanRenderIssue) => issue.message).join('；')
     throw new WebRenderError(`当前渲染环境不支持该成片${detail.length > 0 ? `（${detail}）` : ''}，请降低分辨率后重试。`)
@@ -240,7 +259,8 @@ export async function renderManifestOnWeb(
   // REQ-035 F-04：`doneIn` 是"编码完成的时刻"而不是"编码耗时"，字段名必须说清这一点。
   let encodeDoneAtMs = 0
   // 准备阶段到此为止（字体 + 时长探测 + 能力判定）；它和帧数无关，必须单独计量，
-  // 否则 `msPerFrame` 会把固定开销摊到每一帧上（中文字体场景可达 19s，见取证报告）。
+  // 否则 `msPerFrame` 会把固定开销摊到每一帧上。真机曾报「准备 19.0s」，但字体那部分
+  // 经 §7.5 探针实测只有 26–44ms ⇒ 19s 出处待三段拆解归因（RP-16），别再先验地赖字体。
   const renderStartedAt = Date.now()
   const prepareMs = renderStartedAt - startedAt
   const result = await renderMediaOnWeb({
@@ -306,6 +326,9 @@ export async function renderManifestOnWeb(
     frames,
     totalMs,
     prepareMs,
+    prepareFontMs,
+    prepareProbeMs,
+    prepareCapabilityMs,
     renderMs,
     msPerFrame: Math.round((renderMs / frames) * 100) / 100,
     encodeDoneAtMs,
@@ -395,7 +418,12 @@ export async function renderSpotFramesOnWeb(
     quality,
     frames: total,
     totalMs,
+    // spot 口径：字体 + 能力判定的耗时**已经含在 `renderMs`（= `totalMs`）里**，
+    // 没有独立"准备阶段"⇒ `prepareMs` 与三段拆解一律 0，保持「三段之和 ≈ prepareMs」不变。
     prepareMs: 0,
+    prepareFontMs: 0,
+    prepareProbeMs: 0,
+    prepareCapabilityMs: 0,
     renderMs: totalMs,
     msPerFrame: Math.round((totalMs / total) * 100) / 100,
     encodeDoneAtMs: 0,

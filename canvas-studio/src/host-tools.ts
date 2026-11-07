@@ -98,6 +98,9 @@ import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
 import { lintReceiptLines, writeLintReport } from './lint-report.js'
+// RP-16 撞行数棘轮（5,022 > 登记 5,008）：报告形状 + 一行文本外提，与 render-budget /
+// render-diagnostics 同款拆法。不改白名单登记数，只把成块代码搬走。
+import { formatRenderReport, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
 import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
@@ -161,6 +164,9 @@ const resultSchema = {
         frames: { type: 'integer' as const, description: '渲染帧数' },
         totalMs: { type: 'number' as const, description: '总耗时（毫秒，含准备/渲染/取字节）' },
         prepareMs: { type: 'number' as const, description: '准备阶段耗时（毫秒：字体注入 + 素材时长探测 + 能力判定，与帧数无关）' },
+        prepareFontMs: { type: 'number' as const, description: '准备·**字体注入段**耗时（毫秒；与另两段之和 ≈ prepareMs）——RP-16 拆解，用于定位准备段真元凶' },
+        prepareProbeMs: { type: 'number' as const, description: '准备·**素材时长探测段**耗时（毫秒；宿主给了 realDurations 即应 ≈0，非 0 说明短路没生效）' },
+        prepareCapabilityMs: { type: 'number' as const, description: '准备·**能力判定段**耗时（毫秒）' },
         renderMs: { type: 'number' as const, description: '净渲染耗时（毫秒：renderMediaOnWeb 调用到返回）' },
         msPerFrame: { type: 'number' as const, description: '每帧净渲染耗时（毫秒，= renderMs / frames）' },
         encodeDoneAtMs: { type: 'number' as const, description: '全部帧编码完成的时刻（毫秒，相对渲染开始）——**这是时间点，不是编码耗时**' },
@@ -329,31 +335,8 @@ interface ComposeToolResult {
   warnings?: string[]
   /** 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。 */
   frames?: { frame: number; url: string }[]
-  /** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量可复盘）。 */
-  report?: {
-    quality: string
-    frames: number
-    totalMs: number
-    prepareMs: number
-    renderMs: number
-    msPerFrame: number
-    encodeDoneAtMs: number
-    bytes: number
-    bitrateKbps: number
-    width: number
-    height: number
-    sampledFrames: number
-    /** OPT-11：音频平台保证（manifest 确定性推导；audibleSources=0 ⇒ 成片必然无声）。 */
-    audio?: { mutedVideoTracks: number; audibleSources: number }
-    /** OPT-15：带动画轨的动画窗口表（QC 拿抽帧号对窗口，先看末帧再定论）。 */
-    animationWindows?: { id: string; start: number; end: number; kinds: string[] }[]
-    /** 三期 W1-3 / W6-2：编排体检回执（编号 + 定位 + 主文案；B-3 起返回文本给前 5 条原文）。 */
-    lint?: { code: string; at: string; message: string }[]
-    /** B-3（CV-439）：体检完整清单落盘路径（项目 build/ 下）。落盘失败缺省。 */
-    lintPath?: string
-    /** Q1 响度闸：成片综合响度（LUFS）。无声片缺省。 */
-    loudnessLufs?: number
-  }
+  /** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量可复盘）。形状见 `render-report-text.ts`。 */
+  report?: ComposeRenderReport
   /** REQ-035 F-01：工单生命周期（谁认领、有没有出首帧、是否改派过）。 */
   job?: {
     id: string
@@ -693,46 +676,6 @@ function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasN
     if (found !== undefined && isShotCard(found)) return found.title
   }
   return undefined
-}
-
-/**
- * 渲染报告 → 一行文本（REQ-034 O-01）。
- *
- * 报告字段早已算好并塞进 payload，但一直没进模型可见文本 ⇒ W6 闭环（按 msPerFrame /
- * 报文字段决策）在真机上 100% 失效。耗时为 0（客户端没上报）的项直接省略，
- * 避免出现一串「0ms」让人误读成「渲染没花时间」。
- */
-function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): string {
-  const parts = [`quality=${report.quality}`]
-  if (report.frames > 0) parts.push(`${report.frames} 帧`)
-  if (report.totalMs > 0) parts.push(`总 ${(report.totalMs / 1000).toFixed(1)}s`)
-  // 把"准备"与"渲染"分开报：中文字体场景准备项可达十几秒，混在 msPerFrame 里
-  // 会让人以为是渲染慢（REQ-035 取证结论）。
-  if (report.prepareMs > 0) parts.push(`准备 ${(report.prepareMs / 1000).toFixed(1)}s`)
-  if (report.renderMs > 0) parts.push(`渲染 ${(report.renderMs / 1000).toFixed(1)}s`)
-  if (report.msPerFrame > 0) parts.push(`msPerFrame=${report.msPerFrame.toFixed(1)}`)
-  if (report.encodeDoneAtMs > 0) parts.push(`编码完成于 ${(report.encodeDoneAtMs / 1000).toFixed(1)}s`)
-  if (report.bytes > 0) parts.push(`${(report.bytes / 1024 / 1024).toFixed(2)}MB`)
-  if (report.bitrateKbps > 0) parts.push(`${Math.round(report.bitrateKbps)}kbps`)
-  // OPT-11：音频平台保证 —— 无声是确定性推论，直接给结论省掉 agent 的采电平验证。
-  if (report.audio !== undefined) {
-    parts.push(
-      report.audio.audibleSources === 0
-        ? '音频=无声（平台保证，muted/无音源，无需验证）'
-        : `音频=${report.audio.audibleSources} 个出声源（muted 轨 ${report.audio.mutedVideoTracks}）`,
-    )
-  }
-  // OPT-15：动画窗口表进可见文本（QC 铁律的载体——只列轨号不展开，细节在结构化字段里）。
-  const windows = report.animationWindows ?? []
-  if (windows.length > 0) {
-    const brief = windows.slice(0, 4).map((w) => `${w.id}[${w.start}–${w.end}:${w.kinds.join('+')}]`).join('、')
-    const more = windows.length > 4 ? ` 等 ${String(windows.length)} 轨` : ''
-    parts.push(`动画窗口=${brief}${more}（抽帧落在窗口内=动画飞行中，先看末帧再定论）`)
-  }
-  // B-3（CV-439）：体检计数进统计行；前 N 条原文与落盘路径由 lintReceiptLines 单独成段
-  //（挤在这一行里可读性差）。lint 为空不占位。
-  if ((report.lint ?? []).length > 0) parts.push(`体检=${report.lint?.length} 条`)
-  return `渲染报告：${parts.join(' · ')}`
 }
 
 /** CV-108：成片合成结果——补上「纳入 / 跳过」片段数，让「哪些镜进了成片」可核对。 */

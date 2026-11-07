@@ -160,6 +160,10 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
         totalMs: 12_345,
         msPerFrame: 102.9,
         prepareMs: 7_000,
+        // RP-16：准备段拆解与 prepareMs 一样都是"客户端测得到、宿主测不到" ⇒ 必须透传
+        prepareFontMs: 40,
+        prepareProbeMs: 6_900,
+        prepareCapabilityMs: 60,
         renderMs: 5_345,
         encodeDoneAtMs: 4_321,
         bitrateKbps: 3_500,
@@ -177,6 +181,14 @@ test('渲染报告：宿主字段优先，客户端只补耗时 / 码率', async
     assert.equal(outcome.report.bytes, FAKE_MP4.length, '字节数取真实落盘长度')
     assert.equal(outcome.report.sampledFrames, 0, '抽帧数取宿主真实记录')
     assert.equal(outcome.report.totalMs, 12_345, '总耗时只能由客户端上报')
+    assert.equal(outcome.report.prepareFontMs, 40, 'RP-16 字体段必须透传（宿主测不到）')
+    assert.equal(outcome.report.prepareProbeMs, 6_900, 'RP-16 探测段必须透传')
+    assert.equal(outcome.report.prepareCapabilityMs, 60, 'RP-16 能力段必须透传')
+    assert.equal(
+      (outcome.report.prepareFontMs ?? 0) + (outcome.report.prepareProbeMs ?? 0) + (outcome.report.prepareCapabilityMs ?? 0),
+      outcome.report.prepareMs,
+      'fixture 下三段之和等于 prepareMs（确认三段都透传了，而不是只透传了总数）',
+    )
     assert.equal(outcome.report.encodeDoneAtMs, 4_321)
     assert.equal(outcome.report.bitrateKbps, 3_500)
     assert.ok(outcome.report.msPerFrame > 0)
@@ -190,11 +202,14 @@ test('渲染报告：客户端没上报时全部兜底为 0（不产生 NaN / un
     await commitRenderJob(registry, view.jobId, { bytes: FAKE_MP4 })
     const outcome = await pending
 
-    for (const key of ['totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bitrateKbps', 'width', 'height']) {
+    for (const key of ['totalMs', 'prepareMs', 'prepareFontMs', 'prepareProbeMs', 'prepareCapabilityMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bitrateKbps', 'width', 'height']) {
       assert.equal(typeof outcome.report[key], 'number', `report.${key} 必须是数字`)
       assert.ok(Number.isFinite(outcome.report[key]), `report.${key} 不得是 NaN`)
     }
     assert.equal(outcome.report.sampledFrames, 0)
     assert.equal(outcome.report.prepareMs, 0, '客户端没上报准备耗时时兜底 0')
+    assert.equal(outcome.report.prepareFontMs, 0, 'RP-16 字体段没上报时兜底 0（老客户端）')
+    assert.equal(outcome.report.prepareProbeMs, 0, 'RP-16 探测段没上报时兜底 0')
+    assert.equal(outcome.report.prepareCapabilityMs, 0, 'RP-16 能力段没上报时兜底 0')
   })
 })

@@ -649,7 +649,7 @@ function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefine
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined
   }
   const report: Partial<RenderJobReport> = {}
-  for (const key of ['frames', 'totalMs', 'prepareMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'width', 'height', 'sampledFrames'] as const) {
+  for (const key of ['frames', 'totalMs', 'prepareMs', 'prepareFontMs', 'prepareProbeMs', 'prepareCapabilityMs', 'renderMs', 'msPerFrame', 'encodeDoneAtMs', 'bytes', 'bitrateKbps', 'width', 'height', 'sampledFrames'] as const) {
     const value = num(key)
     if (value !== undefined) report[key] = value
   }

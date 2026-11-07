@@ -3,8 +3,8 @@
  *
  * 单句一条轨：`src` 是该句的 TTS mp3，`text` 是同步文本。词级时间戳**三级来源**：
  * 1. `words: [{text, from, to}]` 显式声明（帧）—— ASR 词级戳或外部对齐数据的入口；
- * 2. 缺省按**真实时长 + 口播字数等分**（`captionWordsByCharCount`）：`durationInFrames`
- *    是 tts_narration 的 ffprobe 真值，误差只来自语速不匀且不累积，零解码（CV-450）；
+ * 2. 缺省按**真实时长 + 口播字数等分**（`trackWordWindows`，等分原点恒 0 = 轨内相对帧）：
+ *    `durationInFrames` 是 tts_narration 的 ffprobe 真值，误差只来自语速不匀且不累积，零解码；
  * 3. 前两级都不成立时走**能量谷推导**：浏览器解码 → 10ms RMS 包络 → 字间谷切分。
  *    实测精度 ±1–3 帧（30fps 中文慢速 TTS，bench #05 像素验收过）。
  *
@@ -17,7 +17,7 @@ import React, { useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { Audio } from '@remotion/media'
 import type { CaptionTrack } from '../manifest.js'
-import { captionWordsByCharCount, isSpokenChar, wordTimingFromEnvelope, type WordTimingWindow } from '../word-timing.js'
+import { isSpokenChar, trackWordWindows, wordTimingFromEnvelope, type WordTimingWindow } from '../word-timing.js'
 import { useEnvelope } from './audio-envelope.js'
 import { useFontFamilyStack } from './font-context.js'
 
@@ -49,32 +49,22 @@ export const Caption: React.FC<{ track: CaptionTrack }> = ({ track }) => {
   const fontSize = Math.round(track.fontSize ?? canvasHeight * 0.11)
   const maxWidth = canvasWidth * ((track.widthPercent ?? 66) / 100)
 
-  // 词级窗口：显式 words 优先（与口播字一一对应），否则能量谷推导
-  const explicit = useMemo(() => {
-    if (!Array.isArray(track.words) || track.words.length !== spokenIndices.length) return null
-    return track.words.map((w) => ({ start: w.from, end: w.to }))
-  }, [track.words, spokenIndices.length])
-
-  // CV-450：二级来源 —— 真实时长（`durationInFrames`，来自 tts_narration 的 ffprobe 真值）
-  // 按口播字数等分。确定性、零解码，中文场景比能量谷稳。条数与 `spokenIndices` 同源
-  // （同一个 `isSpokenChar`），所以能直接对齐。
-  const charAligned = useMemo(() => {
-    if (explicit !== null) return null
-    const words = captionWordsByCharCount({
-      text: track.text,
-      startFrame: track.startFrame,
-      durationInFrames: track.durationInFrames,
-    })
-    return words === null ? null : words.map((w) => ({ start: w.from, end: w.to }))
-  }, [explicit, track.text, track.startFrame, track.durationInFrames])
+  // 词级窗口（轨内相对帧口径）：显式 words 优先，其次真实时长等分（原点恒 0），
+  // 见 `trackWordWindows`。R-01 修复：本组件在 `<Sequence from={track.startFrame}>` 内，
+  // `useCurrentFrame()` 是轨内相对帧；等分若以 `track.startFrame` 为原点会整体错位一个
+  // 轨起点 —— startFrame=0 的首句恰好碰对、其余轨全句灰。
+  const aligned = useMemo(
+    () => trackWordWindows(track),
+    [track.words, track.text, track.startFrame, track.durationInFrames],
+  )
 
   // 前两级有一级成立时，这一段包络根本用不上 ⇒ 跳过解码与 delayRender 阻塞。
-  const envelope = useEnvelope(track.src, explicit === null && charAligned === null)
+  const envelope = useEnvelope(track.src, aligned === null)
   const derived = useMemo(() => {
-    if (explicit !== null || charAligned !== null || envelope === null) return null
+    if (aligned !== null || envelope === null) return null
     return wordTimingFromEnvelope({ envelope, fps, spokenChars: spokenIndices.length })
-  }, [explicit, charAligned, envelope, fps, spokenIndices.length])
-  const spokenWindows: WordTimingWindow[] | null = explicit ?? charAligned ?? derived
+  }, [aligned, envelope, fps, spokenIndices.length])
+  const spokenWindows: WordTimingWindow[] | null = aligned ?? derived
 
   // 口播字窗口 → 全字符窗口（标点骑在前后字的间隙上；首尾标点贴邻字）
   const charWindows = useMemo(() => {

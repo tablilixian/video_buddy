@@ -249,3 +249,26 @@ export function captionWordsByCharCount(input: {
   }
   return out
 }
+
+/**
+ * caption 轨 → 词级窗口（**轨内相对帧**口径，与组件在 `<Sequence from={track.startFrame}>`
+ * 内拿到的 `useCurrentFrame()` 同一坐标系）。三级来源的前两级：
+ * 1. 显式 `words`（0-based，长度须与口播字数一致）原样采用；
+ * 2. 按真实时长 + 口播字数等分 —— **原点恒 0**。等分若以 `track.startFrame` 为原点会整体
+ *    错位一个轨起点：startFrame=0 的首句恰好碰对、其余轨全句灰（四季片复盘 R-01；
+ *    显式 words 本就 0-based，两条来源的坐标系必须一致）。
+ * 两级都不成立返回 null，调用方退回能量包络推导（第三级）。
+ */
+export function trackWordWindows(track: {
+  readonly words?: unknown
+  text: string
+  startFrame: number
+  durationInFrames: number
+}): WordTimingWindow[] | null {
+  const spokenCount = countSpokenChars(track.text)
+  if (Array.isArray(track.words) && track.words.length === spokenCount) {
+    return (track.words as Array<{ from: number; to: number }>).map((w) => ({ start: w.from, end: w.to }))
+  }
+  const words = captionWordsByCharCount({ text: track.text, startFrame: 0, durationInFrames: track.durationInFrames })
+  return words === null ? null : words.map((w) => ({ start: w.from, end: w.to }))
+}

@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { captionWordsByCharCount, countSpokenChars, wordTimingFromEnvelope } from '../lib/remotion/word-timing.js'
+import { captionWordsByCharCount, countSpokenChars, trackWordWindows, wordTimingFromEnvelope } from '../lib/remotion/word-timing.js'
 
 const FPS = 30
 
@@ -143,4 +143,45 @@ test('非法输入 ⇒ null（无口播字 / 时长非正 / NaN）', () => {
 test('确定性：同输入两次调用逐字段全等', () => {
   const input = { text: '黄赤交角约为二十三度半', startFrame: 30, durationInFrames: 90 }
   assert.deepEqual(captionWordsByCharCount(input), captionWordsByCharCount(input))
+})
+
+// ── R-01（四季片复盘）：trackWordWindows —— 轨内相对帧口径的接线层 ─────────────
+// `captionWordsByCharCount` 的原点由调用方决定（纯函数语义），而 Caption 组件在
+// `<Sequence from={track.startFrame}>` 内拿的是轨内相对帧 ⇒ 接线层必须把等分原点钉在 0。
+// 这里测的是「组件真实调用的那层」，不是裸等分 —— 反向变异（原点改回 track.startFrame）
+// 必须让下面的相对口径断言变红。
+
+test('trackWordWindows：等分原点恒 0（轨内相对帧），与 startFrame 无关', () => {
+  const w = trackWordWindows({ text: '太阳直射点', startFrame: 144, durationInFrames: 150 })
+  assert.equal(w.length, 5)
+  assert.equal(w[0].start, 0, '首字从轨内相对帧 0 起（不是 144）')
+  assert.equal(w[w.length - 1].end, 150, '末字 to === durationInFrames')
+  assert.ok(w.every((x) => x.start < 144), `全部窗口落在轨内 [0, duration) —— 实得 ${JSON.stringify(w)}`)
+})
+
+test('trackWordWindows：startFrame=0 时与裸等分逐帧一致（老路径行为不变）', () => {
+  const raw = captionWordsByCharCount({ text: '太阳直射点', startFrame: 0, durationInFrames: 150 })
+  const w = trackWordWindows({ text: '太阳直射点', startFrame: 0, durationInFrames: 150 })
+  assert.deepEqual(w, raw.map((x) => ({ start: x.from, end: x.to })))
+})
+
+test('trackWordWindows：显式 words 优先且原样采用（0-based 语义一致）', () => {
+  const words = [
+    { text: '太', from: 0, to: 30 },
+    { text: '阳', from: 30, to: 60 },
+  ]
+  const w = trackWordWindows({ words, text: '太阳', startFrame: 144, durationInFrames: 60 })
+  assert.deepEqual(w, [
+    { start: 0, end: 30 },
+    { start: 30, end: 60 },
+  ])
+})
+
+test('trackWordWindows：words 长度与口播字数不符 ⇒ 落等分；都不成立 ⇒ null（退能量包络）', () => {
+  // 2 个显式词 vs 5 个口播字 ⇒ 不匹配，走等分
+  const mismatch = trackWordWindows({ words: [{ text: '太', from: 0, to: 30 }], text: '太阳直射点', startFrame: 10, durationInFrames: 150 })
+  assert.equal(mismatch.length, 5)
+  assert.equal(mismatch[0].start, 0)
+  // 纯标点文本 + 无 words ⇒ null（组件据此开能量包络兜底）
+  assert.equal(trackWordWindows({ text: '，。！', startFrame: 10, durationInFrames: 60 }), null)
 })

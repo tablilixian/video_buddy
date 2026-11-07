@@ -178,6 +178,27 @@ test('textCard variant 非法 / shape 缺色 → error', () => {
 
 // ── chart title / labelEvery / maxLabels（四季片 D-06 / D-09，Q-A3/Q-A4）────────
 
+test('caption audioFrames：非法值 error，窗口脱钩 >20% warning（D-03）', () => {
+  const base = { id: 'cap', type: 'caption', src: '/canvas-studio/assets/v.mp3', text: '第一句旁白', startFrame: 0, durationInFrames: 90 }
+
+  const m1 = baseManifest()
+  m1.tracks.push({ ...base, audioFrames: -5 })
+  const r1 = validateManifest(m1)
+  assert.equal(r1.ok, false)
+  assert.ok(r1.errors.some((e) => e.includes('.audioFrames') && e.includes('正数')))
+
+  const m2 = baseManifest()
+  m2.tracks.push({ ...base, durationInFrames: 246, audioFrames: 106 })
+  const r2 = validateManifest(m2)
+  assert.equal(r2.ok, true, r2.errors.join('；'))
+  assert.ok(r2.warnings.some((w) => w.includes('脱钩')), '246 vs 106 = +132% 必须给脱钩 warning（V10 场景）')
+
+  const m3 = baseManifest()
+  m3.tracks.push({ ...base, audioFrames: 84 })
+  const r3 = validateManifest(m3)
+  assert.ok(!r3.warnings.some((w) => w.includes('脱钩')), '90 vs 84 在 20% 内不该告警')
+})
+
 test('chart 标签抽稀与标题字段：合法值通过，非法值拒收，双抽稀参数给 warning', () => {
   const m = baseManifest()
   m.tracks.push({

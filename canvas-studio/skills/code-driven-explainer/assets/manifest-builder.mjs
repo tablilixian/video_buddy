@@ -96,6 +96,7 @@ function buildSegments(spec, fps) {
       ...(num(line.fontSize, 0) > 0 ? { fontSize: line.fontSize } : {}),
       ...(num(line.widthPercent, 0) > 0 ? { widthPercent: line.widthPercent } : {}),
       ...(isLayoutBox(line.box) ? { box: line.box } : {}),
+      ...(num(line.audioFrames, 0) > 0 ? { audioFrames: line.audioFrames } : {}),
     }))
     : narration.map((line, index) => ({
       id: typeof line.id === 'string' && line.id !== '' ? line.id : `V${String(index + 1)}`,
@@ -215,6 +216,8 @@ function main() {
         ...(segment.fontSize !== undefined ? { fontSize: segment.fontSize } : {}),
         ...(segment.widthPercent !== undefined ? { widthPercent: segment.widthPercent } : {}),
         ...(segment.box !== undefined ? { box: segment.box } : {}),
+        // 词级等分的音频真值（D-03）：从 tts_narration 回执的 ffprobe 秒数 × fps 抄入。
+        ...(segment.audioFrames !== undefined ? { audioFrames: segment.audioFrames } : {}),
       })
   }
   // ③ 视觉轨：字段一律透传（样板见 references/shot-cards.md），只补 id 与帧窗。

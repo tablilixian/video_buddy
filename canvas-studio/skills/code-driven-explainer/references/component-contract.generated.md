@@ -33,7 +33,7 @@
 - `KNOWN_TRACK_KEYS.transition`: 'effect' | 'fromTrackId' | 'toTrackId' | 'easing' | 'softness' | 'direction'
 - `KNOWN_TRACK_KEYS.audioViz`: 'src' | 'bars' | 'color' | 'mode' | 'gain' | 'heightPercent' | 'position' | 'smoothing' | 'gradient' | 'bandSplit' | 'bandColors'
 - `KNOWN_TRACK_KEYS.chart`: 'source' | 'variant' | 'labels' | 'values' | 'lineValues' | 'lineLabel' | 'unit' | 'lineUnit' | 'color' | 'lineColor' | 'dataSource' | 'baseline' | 'title' | 'labelEvery' | 'maxLabels' | 'gaugeMax' | 'palette'
-- `KNOWN_TRACK_KEYS.caption`: 'src' | 'text' | 'words' | 'fontSize' | 'widthPercent' | 'color' | 'activeColor' | 'dimColor'
+- `KNOWN_TRACK_KEYS.caption`: 'src' | 'text' | 'words' | 'fontSize' | 'widthPercent' | 'color' | 'activeColor' | 'dimColor' | 'audioFrames'
 - `KNOWN_TRACK_KEYS.callout`: 'anchor' | 'text' | 'line' | 'color' | 'labelBackground'
 - `KNOWN_TRANSFORM_KEYS`: 'x' | 'y' | 'scale' | 'rotation'
 - `KNOWN_VISUAL_STATE_KEYS`: 'x' | 'y' | 'scale' | 'rotation' | 'opacity'

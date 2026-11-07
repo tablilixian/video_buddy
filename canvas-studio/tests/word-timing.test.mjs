@@ -185,3 +185,28 @@ test('trackWordWindows：words 长度与口播字数不符 ⇒ 落等分；都�
   // 纯标点文本 + 无 words ⇒ null（组件据此开能量包络兜底）
   assert.equal(trackWordWindows({ text: '，。！', startFrame: 10, durationInFrames: 60 }), null)
 })
+
+// ── D-03（Q-A7）：audioFrames 真值等分 —— 高亮随语音收束，长窗口剩余静默不爬 ───
+
+test('audioFrames 在场 ⇒ 按音频真值等分，末字 to === 音频帧数（V10 场景）', () => {
+  // 四季片 V10：字幕窗口 246 帧（8.20s 凑片长），音频只有 106 帧（3.55s）
+  const w = trackWordWindows({ text: '太阳直射点', startFrame: 0, durationInFrames: 246, audioDurationFrames: 106 })
+  assert.equal(w.length, 5)
+  assert.equal(w[w.length - 1].end, 106, '末字收在语音结束处（不是窗口尾 246）')
+  assert.ok(w.every((x) => x.end <= 106.01), `全部窗口落在音频内 —— ${JSON.stringify(w.map((x) => x.end))}`)
+})
+
+test('audioFrames 缺省 / 非法 ⇒ 退回字幕窗口（老 manifest 逐帧不变）', () => {
+  const plain = captionWordsByCharCount({ text: '太阳直射点', startFrame: 0, durationInFrames: 150 })
+  for (const bad of [undefined, 0, -5, Number.NaN]) {
+    const w = captionWordsByCharCount({ text: '太阳直射点', startFrame: 0, durationInFrames: 150, audioDurationFrames: bad })
+    assert.deepEqual(w, plain, `audioFrames=${String(bad)} 必须与缺省行为逐帧一致`)
+  }
+})
+
+test('audioFrames 少于口播字数 ⇒ null（交回兜底，不硬压成零长窗口）', () => {
+  assert.equal(
+    captionWordsByCharCount({ text: '一二三四五', startFrame: 0, durationInFrames: 300, audioDurationFrames: 3 }),
+    null,
+  )
+})

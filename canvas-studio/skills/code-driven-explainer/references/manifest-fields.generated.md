@@ -275,6 +275,7 @@
 - `color`?: string — 已读字颜色（缺省白）。
 - `activeColor`?: string — 当前字颜色（缺省青 #5ad2ff + 辉光）。
 - `dimColor`?: string — 未读字颜色（缺省 28% 白）。
+- `audioFrames`?: number — 音频实际时长（帧，tts ffprobe 真值）：词级等分的基数（四季片 D-03 / Q-A7）——
 
 ## TrackReveal
 > P3（2026-11-03）：**分区揭示**配置（`BaseTrack.reveal`，卡片级）。

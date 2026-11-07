@@ -709,6 +709,12 @@ export interface CaptionTrack extends BaseTrack {
   activeColor?: string
   /** 未读字颜色（缺省 28% 白）。 */
   dimColor?: string
+  /**
+   * 音频实际时长（帧，tts ffprobe 真值）：词级等分的基数（四季片 D-03 / Q-A7）——
+   * 高亮随语音结束收束，字幕窗口剩余部分静默不爬。缺省退回 `durationInFrames`。
+   * 与窗口脱钩 >20% 校验层 warning（长窗口把逐字高亮拖过语音结束）。
+   */
+  audioFrames?: number
 }
 
 /**
@@ -946,7 +952,7 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
   chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'title', 'labelEvery', 'maxLabels', 'gaugeMax', 'palette']),
-  caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
+  caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor', 'audioFrames']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
@@ -1801,6 +1807,16 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         if (track.fontSize !== undefined && (typeof track.fontSize !== 'number' || !Number.isFinite(track.fontSize) || track.fontSize < 8 || track.fontSize > 400)) {
           errors.push(`${at}.fontSize 必须是 8–400 的数值（px）`)
+        }
+        // 四季片 D-03（Q-A7）：词级等分基数的音频真值。非正数 error；与字幕窗口
+        // 脱钩 >20% warning（长窗口把逐字高亮拖过语音结束 —— V10 +131% 的教训）。
+        if (track.audioFrames !== undefined) {
+          if (typeof track.audioFrames !== 'number' || !Number.isFinite(track.audioFrames) || track.audioFrames <= 0) {
+            errors.push(`${at}.audioFrames 必须是正数（音频实际时长帧数，tts ffprobe 真值）`)
+          } else if (typeof track.durationInFrames === 'number' && Number.isFinite(track.durationInFrames)
+            && Math.abs(track.durationInFrames - track.audioFrames) / track.audioFrames > 0.2) {
+            warnings.push(`${at} 的字幕窗口（${track.durationInFrames} 帧）与音频真值（${track.audioFrames} 帧）脱钩 >20% —— 词级高亮将按音频真值收束，窗口剩余部分静默；确认这不是为凑时长拉长的窗口（四季片 D-03 的 V10 +131%）`)
+          }
         }
         if (track.widthPercent !== undefined && (typeof track.widthPercent !== 'number' || !Number.isFinite(track.widthPercent) || track.widthPercent < 10 || track.widthPercent > 100)) {
           errors.push(`${at}.widthPercent 必须是 10–100 的数值（折行宽度占画布宽百分比）`)

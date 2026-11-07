@@ -209,3 +209,27 @@ test('空 spec / 空文案 / 换行：显式报错，不静默出半条片', () 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('audioFrames 透传（D-03）：captions[].audioFrames → caption 轨，缺省不造键', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
+  try {
+    const result = run({
+      title: 't',
+      fps: 30,
+      captions: [
+        { id: 'V1', text: '第一句', frames: 90, src: '/canvas-studio/assets/a.mp3', audioFrames: 84 },
+        { id: 'V2', text: '第二句', frames: 60, src: '/canvas-studio/assets/b.mp3' },
+      ],
+    }, dir)
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    const manifest = readManifest(dir)
+    const captions = manifest.tracks.filter((t) => t.type === 'caption')
+    assert.equal(captions[0].audioFrames, 84, '音频真值必须透传（词级等分基数，D-03）')
+    assert.equal(captions[1].audioFrames, undefined, '没给不造键')
+    const check = validateManifest(manifest)
+    assert.equal(check.ok, true, check.errors.join('；'))
+    assert.ok(!check.warnings.some((w) => w.includes('脱钩')), '90 vs 84 帧在 20% 内，不该有脱钩 warning')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

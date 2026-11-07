@@ -228,13 +228,22 @@ export function captionWordsByCharCount(input: {
   text: string
   startFrame: number
   durationInFrames: number
+  /**
+   * 音频实际时长（帧，tts ffprobe 真值）：在场 ⇒ **按它等分** —— 高亮随语音结束而收束，
+   * 字幕窗口的剩余部分静默不爬（四季片 D-03：V10 窗口被拉到 8.20s 去填满片长而音频只有
+   * 3.55s，按窗口均分 = 片尾高亮爬 4.65s、漂移 +131%）。缺省退回字幕窗口（老行为不变）。
+   */
+  audioDurationFrames?: number
 }): CaptionWordSpan[] | null {
   const spoken = Array.from(input.text).filter(isSpokenChar)
   if (spoken.length === 0) return null
   if (!Number.isFinite(input.durationInFrames) || input.durationInFrames <= 0) return null
   if (!Number.isFinite(input.startFrame)) return null
+  const audio = input.audioDurationFrames
   const origin = Math.max(0, Math.round(input.startFrame))
-  const total = Math.max(1, Math.round(input.durationInFrames))
+  const total = Math.max(1, Math.round(
+    typeof audio === 'number' && Number.isFinite(audio) && audio > 0 ? audio : input.durationInFrames,
+  ))
   const n = spoken.length
   // 帧数少于字数 ⇒ 每字分不到一帧，逐字高亮必然重复/跳帧。交回兜底，不硬压。
   if (total < n) return null
@@ -264,11 +273,18 @@ export function trackWordWindows(track: {
   text: string
   startFrame: number
   durationInFrames: number
+  /** 音频实际时长（帧，tts ffprobe 真值；`caption.audioFrames` 透传，见 D-03）。 */
+  audioDurationFrames?: number
 }): WordTimingWindow[] | null {
   const spokenCount = countSpokenChars(track.text)
   if (Array.isArray(track.words) && track.words.length === spokenCount) {
     return (track.words as Array<{ from: number; to: number }>).map((w) => ({ start: w.from, end: w.to }))
   }
-  const words = captionWordsByCharCount({ text: track.text, startFrame: 0, durationInFrames: track.durationInFrames })
+  const words = captionWordsByCharCount({
+    text: track.text,
+    startFrame: 0,
+    durationInFrames: track.durationInFrames,
+    ...(track.audioDurationFrames !== undefined ? { audioDurationFrames: track.audioDurationFrames } : {}),
+  })
   return words === null ? null : words.map((w) => ({ start: w.from, end: w.to }))
 }

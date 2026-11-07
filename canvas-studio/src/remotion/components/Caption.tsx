@@ -54,8 +54,12 @@ export const Caption: React.FC<{ track: CaptionTrack }> = ({ track }) => {
   // `useCurrentFrame()` 是轨内相对帧；等分若以 `track.startFrame` 为原点会整体错位一个
   // 轨起点 —— startFrame=0 的首句恰好碰对、其余轨全句灰。
   const aligned = useMemo(
-    () => trackWordWindows(track),
-    [track.words, track.text, track.startFrame, track.durationInFrames],
+    () => trackWordWindows(
+      track.audioFrames === undefined
+        ? track
+        : { ...track, audioDurationFrames: track.audioFrames },
+    ),
+    [track.words, track.text, track.startFrame, track.durationInFrames, track.audioFrames],
   )
 
   // 前两级有一级成立时，这一段包络根本用不上 ⇒ 跳过解码与 delayRender 阻塞。

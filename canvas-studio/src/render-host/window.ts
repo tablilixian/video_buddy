@@ -315,7 +315,10 @@ export function ensureRenderHost(options: EnsureRenderHostOptions): RenderHostHa
     ).then((raw: unknown) => {
       const info = (raw ?? {}) as { ready?: unknown; text?: unknown }
       const ready = info.ready === true
-      log(`[canvas-studio] RenderHost 页面已加载：__csRenderHost=${ready ? '已定义' : '未定义'} · 页面文字「${String(info.text ?? '').slice(0, 160)}」`)
+      // 行内同时带驼峰与连字符两种写法：agent 侧常用 `grep render-host`（连字符）取数，
+      // 只写 `RenderHost`（驼峰无连字符）会让这行最关键的定论证据被过滤器自己滤掉
+      // （四季片复盘 R-03 / P-02）。
+      log(`[canvas-studio] RenderHost 页面已加载（render-host window）：__csRenderHost=${ready ? '已定义' : '未定义'} · 页面文字「${String(info.text ?? '').slice(0, 160)}」`)
     }).catch((error: unknown) => {
       log(`[canvas-studio] RenderHost 页面自检失败：${error instanceof Error ? error.message : String(error)}`)
     })
@@ -355,7 +358,9 @@ export function ensureRenderHost(options: EnsureRenderHostOptions): RenderHostHa
       ? '从未收到任何自报'
       : `收到过自报但状态是 ${last.state}${last.detail === undefined ? '' : `（${last.detail}）`}`
     log(`[canvas-studio] ⚠ RenderHost 建窗 ${waited}s 后仍不可接管：${why} —— 页面脚本没跑起来，本单回退画布页`)
-    log(`[canvas-studio] 自查顺序：① 直接打开 ${options.url} 看状态码（403 = 宿主准入闸拒了，503 = 没构建 bundle）；② 看上一行「页面已加载」里的 body 文字；③ 确认 lib/render-host.js 已由 tsdown 产出`)
+    // 给现成可粘贴的命令，并写明驼峰/连字符都要匹配 —— 「指引依赖一个匹配不到的
+    // 字符串」本身就是工程缺陷（四季片复盘 R-03）。
+    log(`[canvas-studio] 自查（可直接粘贴）：grep -aE "RenderHost|render-host" <宿主日志文件> —— 重点看「页面已加载」行的 __csRenderHost 与页面文字；① 直接打开 ${options.url} 看状态码（403 = 宿主准入闸拒了，503 = 没构建 bundle）；② 确认 lib/render-host.js 已由 tsdown 产出`)
   }, warnMs)
   ;(firstReportProbe as unknown as { unref?: () => void }).unref?.()
   return handle

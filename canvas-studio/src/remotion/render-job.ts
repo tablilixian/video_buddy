@@ -45,6 +45,7 @@ import {
 } from './render-queue.js'
 import { hasRenderHostLauncher, logRenderHost, warmRenderHost } from '../render-host/dispatch.js'
 import { RENDER_HOST_STALE_MS, renderHostCanTakeOver, renderHostHealth, renderHostReady } from '../render-host/status.js'
+import { noteRenderHostSkip, noteRenderHostServed, shouldSkipRenderHostWait } from '../render-host-fallback.js'
 import {
   markRenderHostServedJob,
   recycleRenderHostIfServed,
@@ -617,7 +618,11 @@ function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | '
   // 无条件恢复（幂等）：即使本单是 render-host 渲的，恢复一次也无害。
   toggleHostWindowThrottling(true)
   // 这扇窗已经用过了：下一次派单会换新的（见 `recycleServedRenderHost`）。
-  if (job.executor === 'render-host') markRenderHostServedJob()
+  if (job.executor === 'render-host') {
+    markRenderHostServedJob()
+    // R-03 熔断：隐藏窗成功接管 ⇒ 该项目连续失败计数清零（窗口恢复）。
+    noteRenderHostServed(job.projectId)
+  }
   activeJobs.delete(job.jobId)
   releaseRenderSlot(job.jobId, state, error)
 }
@@ -651,6 +656,14 @@ function immediateExecutor(options: RunRenderJobOptions): RenderExecutor | undef
  * 等不到才老实回退客户端。
  */
 async function pickExecutor(options: RunRenderJobOptions): Promise<RenderExecutor> {
+  // R-03 熔断（保底层）：该项目连续多单「窗口存在但没就绪」⇒ 不再每单白等满冷启预算。
+  // 仍做一次即时探测 —— 窗口若已恢复，这一单照走隐藏窗（自愈探针节拍见
+  // `render-host-fallback.ts`）；否则立刻回退画布页，8s 盲等不再发生。
+  if (shouldSkipRenderHostWait(options.projectId)) {
+    warmRenderHost()
+    if (renderHostReady()) return 'render-host'
+    return 'client'
+  }
   warmRenderHost()
   const budget = Math.max(0, options.hostWarmupMs ?? RENDER_HOST_WARMUP_MS)
   if (budget === 0) return 'client'
@@ -877,6 +890,9 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
   const fallbackReason = executor === 'client' ? executorFallbackReason(options, fastExecutor) : undefined
   if (fallbackReason !== undefined) {
     logRenderHost(`[canvas-studio] 渲染工单 ${jobId} 交给画布页（${fallbackReason}）`)
+    // R-03 熔断计数：只记「窗口存在但冷启超时」这一档（拉起器缺失 / 显式指定 executor
+    // 是配置态，不是窗口故障，不该推动熔断）。
+    if (fallbackReason.startsWith('冷启等待')) noteRenderHostSkip(projectId)
   }
   // 入队 + 尝试派发（同步入表 ⇒ 客户端当拍可见；并发 = 1 ⇒ 第二单要等前一单结算）。
   const slot = reserveRenderSlot(
@@ -982,7 +998,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         const rateNote = measuredMsPerFrame > 0 ? `，实测 ${measuredMsPerFrame}ms/帧` : ''
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {
           seconds: Math.round(budgetMs / 1000),
-          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧${rateNote}${extendNote}。若执行器为画布页且回退原因非调用方指定，先查宿主日志 render-host 行再决定重试`,
+          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧${rateNote}${extendNote}。已自动回退画布页执行器，可直接继续任务（重试与执行器选择由宿主侧自动处理，含熔断跳过盲等）；执行器链路排障（隐藏窗口为何未接管）是宿主侧的事，把宿主日志交给用户即可，不要为消超时删减画面元素`,
           job: diag,
         }))
       }

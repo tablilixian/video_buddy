@@ -2113,11 +2113,9 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
 }
 
 /**
- * 人声音量 0–2（`audio.voiceOver[].volume` / `audio.mix.voiceVolume` 两条人声专用）：
- * >1 为增益 —— TTS 产出过轻（如 -28 LUFS）时在混音层补偿；此前限 0–1 会把
- * 「响度不达标」逼成改写源素材的破坏性绕过（四季片复盘 §6.4，含音色锚点样本被改写）。
- * BGM / duck / 音轨 volume 仍 0–1（过响 BGM 是另一种故障，不在本口径内）。
- * 成片响度目标（targetLufs / loudnorm）另立项，不在这里混口径。
+ * 人声音量 0–2（仅 `voiceOver[].volume` / `mix.voiceVolume` 两条人声；BGM/duck/音轨仍 0–1）：
+ * >1 为增益补偿过轻 TTS —— 限 0–1 曾逼出改写源素材的破坏性绕过（四季片复盘 §6.4）。
+ * 成片响度目标（targetLufs / loudnorm）另立项。
  */
 function validateVoiceGain(value: unknown, label: string, errors: string[]): void {
   if (value === undefined) return

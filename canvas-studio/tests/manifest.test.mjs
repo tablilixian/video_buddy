@@ -176,6 +176,41 @@ test('textCard variant 非法 / shape 缺色 → error', () => {
   assert.ok(result.errors.some((e) => e.includes('.color')))
 })
 
+// ── chart title / labelEvery / maxLabels（四季片 D-06 / D-09，Q-A3/Q-A4）────────
+
+test('chart 标签抽稀与标题字段：合法值通过，非法值拒收，双抽稀参数给 warning', () => {
+  const m = baseManifest()
+  m.tracks.push({
+    id: 'c1', type: 'chart', variant: 'line', startFrame: 0, durationInFrames: 120,
+    labels: Array.from({ length: 30 }, (_, i) => String(1995 + i)),
+    values: Array.from({ length: 30 }, (_, i) => 0.2 + i * 0.03),
+    title: '近 30 年全球均温距平', labelEvery: 5, dataSource: 'GISTEMP v4', baseline: '1951–1980',
+  })
+  const ok = validateManifest(m)
+  assert.equal(ok.ok, true, ok.errors.join('；'))
+  assert.ok(!ok.warnings.some((w) => w.includes('maxLabels')), '只给 labelEvery 不该有双参数 warning')
+
+  const m2 = baseManifest()
+  m2.tracks.push({
+    id: 'c2', type: 'chart', variant: 'bars', startFrame: 0, durationInFrames: 60,
+    labels: ['a', 'b', 'c'], values: [1, 2, 3], labelEvery: 0, maxLabels: 1.5, title: 'x'.repeat(41),
+  })
+  const bad = validateManifest(m2)
+  assert.equal(bad.ok, false)
+  assert.ok(bad.errors.some((e) => e.includes('.labelEvery') && e.includes('≥1')), 'labelEvery=0 拒收')
+  assert.ok(bad.errors.some((e) => e.includes('.maxLabels')), 'maxLabels 非整数拒收')
+  assert.ok(bad.errors.some((e) => e.includes('.title')), '标题超 40 字拒收')
+
+  const m3 = baseManifest()
+  m3.tracks.push({
+    id: 'c3', type: 'chart', variant: 'bars', startFrame: 0, durationInFrames: 60,
+    labels: ['a', 'b', 'c'], values: [1, 2, 3], labelEvery: 2, maxLabels: 2, dataSource: 'x', baseline: 'y',
+  })
+  const both = validateManifest(m3)
+  assert.equal(both.ok, true, both.errors.join('；'))
+  assert.ok(both.warnings.some((w) => w.includes('maxLabels 被忽略')), '双参数给防误配 warning')
+})
+
 test('audio.bgmUrl 外链 / audio.mix 越界 → error', () => {
   const m = baseManifest()
   m.audio = { bgmUrl: 'http://cdn/bgm.mp3', mix: { bgmVolume: 1.5 } }

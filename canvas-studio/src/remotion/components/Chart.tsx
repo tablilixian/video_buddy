@@ -15,7 +15,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remo
 import { donutSlicePath, gaugeDashArray, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
 import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
-import { CHART_CATEGORY_LABEL_TOP_PERCENT, CHART_PLOT } from '../chart-layout.js'
+import { chartCategoryLabelTopPercent, chartPlotFor, CHART_TITLE_BAND_PERCENT, pickLabelIndices } from '../chart-layout.js'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import { countUpTextAt } from '../count-up.js'
 import { useFontFamilyStack } from './font-context.js'
@@ -189,11 +189,15 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
   const barColor = track.color ?? DEFAULT_BAR_COLOR
   const lineColor = track.lineColor ?? DEFAULT_LINE_COLOR
 
-  // 布局（百分比，铺满 box / 画布）：左轴留 9%、右轴留 8%、底留 12%（类目标签）
-  const plot = CHART_PLOT
+  // 布局（百分比，铺满 box / 画布）：左轴留 9%、右轴留 8%、底留 12%（类目标签）；
+  // 标题在场时顶边让出一个标题带（老 manifest 无 title ⇒ 几何逐像素不变，Q-A4）。
+  const hasTitle = typeof track.title === 'string' && track.title.length > 0
+  const plot = chartPlotFor(hasTitle)
   const plotW = 100 - plot.left - plot.right
   const plotH = 100 - plot.top - plot.bottom
   const slot = plotW / Math.max(1, n)
+  // 标签抽稀（Q-A3）：只抽标签不改数据点；首末点强制保留（末点是 countUp 终值锚点）。
+  const pickedLabels = new Set(pickLabelIndices(n, track.labelEvery, track.maxLabels))
 
   // CV-334 同款分层：整轨位置/缩放走 layerTransform，box 在场改盒子定位层。
   const box = track.box
@@ -216,6 +220,30 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
 
   return (
     <AbsoluteFill style={{ fontFamily, ...layer }}>
+      {/* 图上标题（Q-A4）：住在顶带里，绘图区随之让位（chartPlotFor） */}
+      {hasTitle && typeof track.title === 'string' ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: `${plot.left}%`,
+            width: `${plotW}%`,
+            height: `${CHART_TITLE_BAND_PERCENT}%`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily,
+            fontSize: Math.max(13, canvasWidth * 0.0125),
+            fontWeight: 600,
+            color: 'rgba(232,238,252,0.92)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {track.title}
+        </div>
+      ) : null}
       <AbsoluteFill style={{ margin: `${plot.top}% ${plot.right}% ${plot.bottom}% ${plot.left}%` }}>
         {/* 4.1：pie / donut / gauge 分支（无轴无网格，整域交给 PieFamily） */}
         {track.variant === 'pie' || track.variant === 'donut' || track.variant === 'gauge' ? (
@@ -323,36 +351,38 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                   {unit}
                 </div>
               ) : null}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${(i * slot).toFixed(3)}%`,
-                  width: `${slot.toFixed(3)}%`,
-                  // 2026-11-06 修（真机事故）：此处原为 `top: '100%'` = **容器底部**，
-                  // 而布局已经用 `plot.bottom: 12` 在容器内预留了标签带 ⇒ 标签落在
-                  // 预留区**下方**，被 box 层的 `overflow: hidden` 整条裁掉（agent 三次
-                  // 裁切取证后放弃修复，把年份塞进头部卡绕过）。定位到绘图区底边
-                  //（`plot.top + plotH` = 88%）才落在预留带里。
-                  top: `${CHART_CATEGORY_LABEL_TOP_PERCENT.toFixed(3)}%`,
-                  marginTop: axisFont * 0.6,
-                  textAlign: 'center',
-                  fontFamily,
-                  fontSize: axisFont,
-                  color: 'rgba(138,160,198,0.95)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {labels[i]}
-              </div>
+              {pickedLabels.has(i) ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${(i * slot).toFixed(3)}%`,
+                    width: `${slot.toFixed(3)}%`,
+                    // 2026-11-06 修（真机事故）：此处原为 `top: '100%'` = **容器底部**，
+                    // 而布局已经用 `plot.bottom: 12` 在容器内预留了标签带 ⇒ 标签落在
+                    // 预留区**下方**，被 box 层的 `overflow: hidden` 整条裁掉（agent 三次
+                    // 裁切取证后放弃修复，把年份塞进头部卡绕过）。定位到绘图区底边
+                    //（`plot.top + plotH` = 88%）才落在预留带里。
+                    top: `${chartCategoryLabelTopPercent(hasTitle).toFixed(3)}%`,
+                    marginTop: axisFont * 0.6,
+                    textAlign: 'center',
+                    fontFamily,
+                    fontSize: axisFont,
+                    color: 'rgba(138,160,198,0.95)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {labels[i]}
+                </div>
+              ) : null}
             </React.Fragment>
           )
         }) : null}
 
-        {/* P2'：variant:'line' 的类目标签（无柱时单独铺一行，样式与柱状图一致） */}
+        {/* P2'：variant:'line' 的类目标签（无柱时单独铺一行，样式与柱状图一致；同受抽稀） */}
         {track.variant === 'line'
-          ? labels.map((l, i) => (
+          ? labels.map((l, i) => pickedLabels.has(i) ? (
             <div
               key={`cat-${i}`}
               style={{
@@ -360,7 +390,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                 left: `${(i * slot).toFixed(3)}%`,
                 width: `${slot.toFixed(3)}%`,
                 // 同上（折线分支）：`top: '100%'` 会落进 `overflow: hidden` 的裁切区。
-                top: `${CHART_CATEGORY_LABEL_TOP_PERCENT.toFixed(3)}%`,
+                top: `${chartCategoryLabelTopPercent(hasTitle).toFixed(3)}%`,
                 marginTop: axisFont * 0.6,
                 textAlign: 'center',
                 fontFamily,
@@ -373,7 +403,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
             >
               {l}
             </div>
-          ))
+          ) : null)
           : null}
 
         {/* P2'：独立折线 —— 主序列 values，左轴量纲，同一 30%→55% 揭示；

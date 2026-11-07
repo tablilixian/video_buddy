@@ -241,6 +241,22 @@ export function validateChartTrack(
     if (track.baseline === undefined) {
       warnings.push(`${at} 内联数值缺 baseline（口径 / 基线说明，如 '1951–1980 基线距平'）——混基准会画出错误结论（RUN-2），成片前请补（B-4 观察期提醒，暂不阻断）`)
     }
+    // 四季片 D-09（Q-A3）：标签抽稀 —— 只抽标签不改数据点。整数 ≥1；显式 labelEvery
+    // 优先于 maxLabels（两处都写不报错，但 maxLabels 被忽略，warning 提一句防误配）。
+    for (const key of ['labelEvery', 'maxLabels'] as const) {
+      const raw = track[key]
+      if (raw === undefined) continue
+      if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
+        errors.push(`${at}.${key} 必须是 ≥1 的整数（标签抽稀步进 / 上限；只抽标签不改数据点数）`)
+      }
+    }
+    if (track.labelEvery !== undefined && track.maxLabels !== undefined && typeof track.labelEvery === 'number' && typeof track.maxLabels === 'number') {
+      warnings.push(`${at} 同时给了 labelEvery 与 maxLabels —— 显式步进优先，maxLabels 被忽略（删掉一个防误配）`)
+    }
+  }
+  // 四季片 D-06（Q-A4）：图上标题。1–40 字 —— 超长会挤占绘图区（顶带只有 8%）。
+  if (track.title !== undefined && (!isNonEmptyString(track.title) || track.title.length > 40)) {
+    errors.push(`${at}.title 必须是 1–40 字的字符串（图上标题；超长挤占绘图区）`)
   }
   for (const key of ['lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline'] as const) {
     if (track[key] !== undefined && !isNonEmptyString(track[key])) {

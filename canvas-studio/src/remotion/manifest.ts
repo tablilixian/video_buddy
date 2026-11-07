@@ -640,6 +640,16 @@ export interface ChartTrack extends BaseTrack {
    * 不同口径的序列必须让读者可辨。观察期 warning 同上。
    */
   baseline?: string
+  /** 图表标题（1–40 字；四季片 D-06：图上必须有标题）。仅在场时启用绘图区上方的标题带。 */
+  title?: string
+  /**
+   * x 轴类目标签抽稀步进（≥1 整数；显式给定时优先于 `maxLabels`）。只抽**标签**不改
+   * 数据点数 —— 30 点逐年 + 抽稀标签才同时满足「数据完整」与「标签可读」
+   * （四季片 D-09：隔年取样冒称三十年是错误解法）。首末点强制保留。
+   */
+  labelEvery?: number
+  /** 类目标签数上限（≥1 整数；未给 `labelEvery` 时按等距均匀取；首末点强制保留 ⇒ 1 等价 2）。 */
+  maxLabels?: number
   /**
    * 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
    * `dual` = 柱状 + 折线双轴（`lineValues` 必填）；`line` = 独立折线图（主序列
@@ -935,7 +945,7 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
-  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'gaugeMax', 'palette']),
+  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'title', 'labelEvery', 'maxLabels', 'gaugeMax', 'palette']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }

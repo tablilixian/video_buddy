@@ -156,6 +156,26 @@ test('resolveAudioTimeline：gain/duck 越界收拢到 0–1 并给 warning（�
   assert.equal(resolved.issues.filter((issue) => issue.code === 'invalid-gain').length, 2)
 })
 
+test('resolveAudioTimeline：人声 gain 0–2（>1 增益保留），BGM 仍收拢 0–1', () => {
+  // 人声 >1 是合法增益（manifest validateVoiceGain 同口径）——四季片 §6.4：
+  // TTS -28 LUFS 时此前被收拢到 1，逼出改写源素材的破坏性绕过。
+  const resolved = resolveAudioTimeline({
+    fps: 25, durationSec: 30,
+    segments: [seg('voiceOver', { gain: 1.6 }), seg('bgm', { gain: 1.5 })],
+  })
+  assert.equal(resolved.ok, true)
+  assert.equal(resolved.timeline.segments[0].gain, 1.6, '人声 1.6 增益原样保留')
+  assert.equal(resolved.timeline.segments[1].gain, 1, 'BGM 仍收拢 0–1')
+  assert.equal(resolved.issues.filter((issue) => issue.code === 'invalid-gain').length, 1, '只有 BGM 那条告警')
+
+  const over = resolveAudioTimeline({
+    fps: 25, durationSec: 30,
+    segments: [seg('voiceOver', { gain: 2.5 })],
+  })
+  assert.equal(over.timeline.segments[0].gain, 2, '人声上限 2（超出收拢）')
+  assert.ok(over.issues.some((issue) => issue.code === 'invalid-gain'))
+})
+
 test('resolveAudioTimeline：duck 只属于旁白（非旁白段带 duckAmount → 忽略 + warning）', () => {
   const resolved = resolveAudioTimeline({
     fps: 25, durationSec: 30,

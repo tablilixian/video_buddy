@@ -185,6 +185,32 @@ test('audio.bgmUrl 外链 / audio.mix 越界 → error', () => {
   assert.ok(result.errors.some((e) => e.includes('audio.mix.bgmVolume')))
 })
 
+// ── 人声增益口径（四季片复盘 §6.4：voiceVolume 限 0–1 把「响度不达标」逼成改写源素材）──
+
+test('人声音量 0–2：voiceVolume>1 与 voiceOver[].volume>1 合法（bgm 仍 0–1）', () => {
+  const m = baseManifest()
+  m.audio = { voiceOverUrl: '/canvas-studio/assets/v1.mp3', mix: { voiceVolume: 1.6 } }
+  const r1 = validateManifest(m)
+  assert.equal(r1.ok, true, `voiceVolume 1.6 应通过 —— 实际错误：${JSON.stringify(r1.errors)}`)
+
+  const m2 = baseManifest()
+  m2.audio = { voiceOver: [{ src: '/canvas-studio/assets/v2.mp3', startFrame: 0, volume: 1.8 }] }
+  const r2 = validateManifest(m2)
+  assert.equal(r2.ok, true, `voiceOver[].volume 1.8 应通过 —— 实际错误：${JSON.stringify(r2.errors)}`)
+
+  const m3 = baseManifest()
+  m3.audio = { voiceOverUrl: '/canvas-studio/assets/v3.mp3', mix: { voiceVolume: 2.1 } }
+  const r3 = validateManifest(m3)
+  assert.equal(r3.ok, false, 'voiceVolume 2.1 必须拒收')
+  assert.ok(r3.errors.some((e) => e.includes('audio.mix.voiceVolume') && e.includes('0–2')))
+
+  const m4 = baseManifest()
+  m4.audio = { bgmUrl: '/canvas-studio/assets/b.mp3', mix: { bgmVolume: 1.2 } }
+  const r4 = validateManifest(m4)
+  assert.equal(r4.ok, false, 'bgmVolume 1.2 仍必须拒收（放开的只有人声两条）')
+  assert.ok(r4.errors.some((e) => e.includes('audio.mix.bgmVolume')))
+})
+
 test('deriveAudioComposition 八分支（CV-334 / D6 正交展开）', () => {
   const withVideo = (audio) => ({ id: 'c', meta: {}, tracks: [{ id: 'n', type: 'video', src: '/x' }], audio })
   const noVideo = (audio) => ({ id: 'c', meta: {}, tracks: [{ id: 'n', type: 'textCard' }], audio })

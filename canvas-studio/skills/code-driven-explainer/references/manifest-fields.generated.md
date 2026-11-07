@@ -305,14 +305,14 @@
 
 - `src`: string — 旁白资产 URL（`tts_voiceover` 产物，同源约束同 `tracks[].src`）。
 - `startFrame`?: number — 该句在成片里的起始帧（缺省 0）。
-- `volume`?: number — 单句音量（0–1）；缺省走 `mix.voiceVolume`（再缺省 1）。
+- `volume`?: number — 单句人声音量（0–2，>1 为增益补偿过轻的 TTS）；缺省走 `mix.voiceVolume`（再缺省 1）。
 
 ## ManifestAudio
 
 - `bgmUrl`?: string — BGM 资产 URL（复用 `compose_video` 的 `bgmNodeId` 语义）。
 - `voiceOverUrl`?: string — 旁白资产 URL（`tts_voiceover` 产物）。**单轨兼容入口** —— 只有一句旁白时用这个；
 - `voiceOver`?: ManifestVoiceOver[] — O-10：**多轨旁白**。`[{src, startFrame?, volume?}]`，宿主/渲染器按 `startFrame` 排到
-- `mix`?: { bgmVolume?: number; voiceVolume?: number } — 混音音量（0–1），缺省走 `BGM_MIX_VOLUME` / 1.0。
+- `mix`?: { bgmVolume?: number; voiceVolume?: number } — 混音音量：`bgmVolume` 0–1；`voiceVolume` 0–2（>1 为增益），缺省走 `BGM_MIX_VOLUME` / 1.0。
 - `fadeInSeconds`?: number — 三期 W3-2：BGM 淡入（秒，缺省 0）。
 - `fadeOutSeconds`?: number — 三期 W3-2：BGM 淡出（秒，缺省 0）。
 - `duck`?: { amount?: number } — 三期 W3-2：BGM 自动闪避（D-09 选 A：以字幕窗口为依据，零音频分析）。

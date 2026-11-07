@@ -781,7 +781,7 @@ export interface ManifestVoiceOver {
   src: string
   /** 该句在成片里的起始帧（缺省 0）。 */
   startFrame?: number
-  /** 单句音量（0–1）；缺省走 `mix.voiceVolume`（再缺省 1）。 */
+  /** 单句人声音量（0–2，>1 为增益补偿过轻的 TTS）；缺省走 `mix.voiceVolume`（再缺省 1）。 */
   volume?: number
 }
 
@@ -798,7 +798,7 @@ export interface ManifestAudio {
    * 时间轴，不需要 agent 自己用 ffmpeg 拼一条长音轨。
    */
   voiceOver?: ManifestVoiceOver[]
-  /** 混音音量（0–1），缺省走 `BGM_MIX_VOLUME` / 1.0。 */
+  /** 混音音量：`bgmVolume` 0–1；`voiceVolume` 0–2（>1 为增益），缺省走 `BGM_MIX_VOLUME` / 1.0。 */
   mix?: { bgmVolume?: number; voiceVolume?: number }
   /** 三期 W3-2：BGM 淡入（秒，缺省 0）。 */
   fadeInSeconds?: number
@@ -1859,7 +1859,7 @@ export function validateManifest(input: unknown): ManifestValidation {
             }
             validateAssetRefField(clip.src, `${at}.src`, errors)
             validateNonNegativeInteger(clip.startFrame, `${at}.startFrame`, errors)
-            validateUnitInterval(clip.volume, `${at}.volume`, errors)
+            validateVoiceGain(clip.volume, `${at}.volume`, errors)
           })
         }
       }
@@ -1883,7 +1883,7 @@ export function validateManifest(input: unknown): ManifestValidation {
           errors.push('audio.mix 必须是对象')
         } else {
           validateUnitInterval(mix.bgmVolume, 'audio.mix.bgmVolume', errors)
-          validateUnitInterval(mix.voiceVolume, 'audio.mix.voiceVolume', errors)
+          validateVoiceGain(mix.voiceVolume, 'audio.mix.voiceVolume', errors)
         }
       }
     }
@@ -2109,6 +2109,20 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
   if (value === undefined) return
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
     errors.push(`${label} 必须是 0–1 的数值`)
+  }
+}
+
+/**
+ * 人声音量 0–2（`audio.voiceOver[].volume` / `audio.mix.voiceVolume` 两条人声专用）：
+ * >1 为增益 —— TTS 产出过轻（如 -28 LUFS）时在混音层补偿；此前限 0–1 会把
+ * 「响度不达标」逼成改写源素材的破坏性绕过（四季片复盘 §6.4，含音色锚点样本被改写）。
+ * BGM / duck / 音轨 volume 仍 0–1（过响 BGM 是另一种故障，不在本口径内）。
+ * 成片响度目标（targetLufs / loudnorm）另立项，不在这里混口径。
+ */
+function validateVoiceGain(value: unknown, label: string, errors: string[]): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2) {
+    errors.push(`${label} 必须是 0–2 的数值（>1 为增益，补偿过轻的 TTS 输出）`)
   }
 }
 

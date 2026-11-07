@@ -93,6 +93,9 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }
 
+/** 人声（voiceOver）段的 gain 上限：>1 为增益（manifest 侧 validateVoiceGain 同口径）。 */
+const VOICE_GAIN_MAX = 2
+
 /**
  * 校验 + 归一化（纯函数）：把任意来源（agent 手填 / 老数据派生 / manifest 适配）的
  * 时间轴洗成可装配形态。校验只写一次，两条路径共用 —— 否则又是一份放水白名单。
@@ -100,6 +103,10 @@ function clamp01(value: number): number {
  * 处置分级：**结构性非法**（负时长 / 负起点 / 非有限数 / 非法 onShort / 空 url）=
  * error，调用方应拒绝；**语义可疑但可自动兜住**（同 role 重叠、duck 无旁白、
  * gain 越界、段起点越过片尾）= warning + 归一化，装配继续但结果文本必须回显。
+ *
+ * gain 上限分角色：人声（voiceOver）0–2（>1 为增益，补偿过轻的 TTS —— 与
+ * manifest 校验层 `validateVoiceGain` 同口径）；BGM / 其余 0–1（过响 BGM 是
+ * 另一种故障，不在放开范围）。
  */
 export function resolveAudioTimeline(input: AudioTimeline): ResolvedAudioTimeline {
   const issues: AudioTimelineIssue[] = []
@@ -137,9 +144,10 @@ export function resolveAudioTimeline(input: AudioTimeline): ResolvedAudioTimelin
         issues.push({ severity: 'error', code: 'non-finite', message: `${where}音量不是有限数字`, segmentIndex: index })
         return
       }
-      if (raw.gain < 0 || raw.gain > 1) {
-        gain = clamp01(raw.gain)
-        issues.push({ severity: 'warning', code: 'invalid-gain', message: `${where}音量 ${raw.gain} 越界（0–1），已收拢到 ${gain}`, segmentIndex: index })
+      const gainCeiling = raw.role === 'voiceOver' ? VOICE_GAIN_MAX : 1
+      if (raw.gain < 0 || raw.gain > gainCeiling) {
+        gain = Math.min(gainCeiling, Math.max(0, raw.gain))
+        issues.push({ severity: 'warning', code: 'invalid-gain', message: `${where}音量 ${raw.gain} 越界（人声 0–2 / 其余 0–1），已收拢到 ${gain}`, segmentIndex: index })
       } else {
         gain = raw.gain
       }

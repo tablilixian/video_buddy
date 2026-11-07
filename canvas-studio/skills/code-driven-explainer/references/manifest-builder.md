@@ -54,6 +54,7 @@ node build/manifest-builder.mjs
 | 通道 | 何时用 | 帧数从哪来 |
 |---|---|---|
 | `captions[].frames` | **有旁白**（TTS 已合成） | `tts_voiceover` / `tts_narration` 的真值时长 × fps（**唯一合法来源**，禁止目测） |
+| `captions[].audioFrames` | **有旁白**（强烈建议同帧给） | 同一真值：TTS 回执秒数 × fps。词级卡拉OK高亮按**它**等分收束——缺省按 `frames`（字幕窗口）等分，窗口若为凑片长拉长，片尾高亮会拖过语音结束（四季片 V10 漂移 +131%）。与 `frames` 脱钩 >20% 校验层会 warning |
 | `narration[].seconds` | 旁白还没合成，先出字幕片 | 按 fps 折算；后续换成 frames 即升级为真值版 |
 
 `captions[].src` 有值 → 生成 `caption` 轨（自带旁白播放）；没有 → 生成 `textCard/subtitle`

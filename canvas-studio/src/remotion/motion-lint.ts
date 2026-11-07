@@ -18,7 +18,7 @@ import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
 import { motionIntervalsFor, trackMotionFeatures } from './motion-features.js'
 
 export interface MotionLintIssue {
-  /** `ML-01` … `ML-13`。 */
+  /** `ML-01` … `ML-15`。 */
   code: string
   /** 回执主文案（说清「哪里」+「为什么不好」）。 */
   message: string
@@ -465,6 +465,64 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
           hint: '文字会互相压字；建议错开 box 位置或时间，或把两段文案合并成一张卡的多行排版。',
         })
       }
+    }
+  }
+
+  // ML-14：countUp 激活期间数据卡标签写死图表末点标签 ⇒「2025 年 配 0.47」式事实错误
+  //（四季片 D-07：数位滚动中卡片固定标终值年份，观众在滚动中段读到 1997 年的值）。
+  // 刻意只判「标签文本包含图表末点标签」这一种可机器判定的形态；改法（区间标签 /
+  // 滚动结束才出终值年份）是编排自由度，交给 hint。
+  {
+    const chartLastLabels = new Set<string>()
+    for (const track of tracks) {
+      if (track.type !== 'chart') continue
+      const labels = (track as { labels?: unknown }).labels
+      if (Array.isArray(labels) && labels.length > 0) {
+        const last = labels[labels.length - 1]
+        if (typeof last === 'string' && last !== '') chartLastLabels.add(last)
+      }
+    }
+    if (chartLastLabels.size > 0) {
+      // 归一化后**同值**才算写死（剥首尾空白与尾部「年」）：区间标签「1996–2025」
+      // 天然包含「2025」子串但语义正确，不能用 includes 判 —— 否则正解被误报。
+      const normalize = (s: string): string => s.trim().replace(/年+$/u, '').trim()
+      for (const track of tracks) {
+        if (track.type !== 'textCard') continue
+        const card = track as TextCardTrack
+        if (card.variant !== 'dataCard' || card.countUp !== true) continue
+        const label = typeof card.text === 'string' ? card.text : ''
+        const hit = [...chartLastLabels].find((l) => normalize(label) === normalize(l))
+        if (hit === undefined) continue
+        push({
+          code: 'ML-14',
+          at: String(card.id),
+          message: `countUp 激活期间卡片标签「${label}」与图表末点标签「${hit}」同值 —— 滚动中段显示的是别的时点的值，构成事实错误组合`,
+          hint: '滚动期间标签改用区间（如「1996–2025」）或「滚动中」；终值年份等滚动结束才出现（四季片 D-07）。',
+        })
+      }
+    }
+  }
+
+  // ML-15：首帧「半可见」起步（四季片 D-01：title fadeUp from.opacity 0.25、主体从
+  // 第 6/14 帧才起 ⇒ 0–0.4s 近全黑）。刻意只判 **(0, 0.35) 的半透明起步**：
+  // 从 0 淡入是正常入场（几帧内即过门槛），从 ≥0.35 起是完整可见 —— 只有「既不是
+  // 干净入场也不是完整可见」的半截状态才是 D-01 的病灶。判据收在结构层，不猜画面；
+  // 退场侧（reveal.out 整屏空）口径未拍，本条只管入场。
+  for (const track of tracks) {
+    if (track.startFrame !== 0) continue
+    for (const raw of animateList(track)) {
+      if (!isRecord(raw)) continue
+      if ((numeric(raw.startFrame) ?? 0) + track.startFrame !== 0) continue
+      const from = isRecord(raw.from) ? raw.from : {}
+      const opacity = numeric(from.opacity)
+      if (opacity === undefined || opacity <= 0 || opacity >= 0.35) continue
+      push({
+        code: 'ML-15',
+        at: track.id !== undefined ? String(track.id) : 'track',
+        message: `轨道在第 0 帧从 opacity ${opacity} 半透明起步 —— 既非干净入场也非完整可见，首帧观感近全黑`,
+        hint: '要么从 0 淡入（正常入场），要么首帧完整可见（opacity ≥0.35 起）；半截起步配主体后置 = 开头近全黑（四季片 D-01）。',
+      })
+      break
     }
   }
 

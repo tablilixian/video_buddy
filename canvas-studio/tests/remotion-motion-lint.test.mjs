@@ -437,3 +437,47 @@ test('P-05：scale 0.994↔1.006 微幅假呼吸照报 ML-04（1.2% 人眼读不
   assert.equal(codes(issues).filter((c) => c === 'ML-04').length, 1,
     `微幅假呼吸必须照报：${formatMotionLint(issues)}`)
 })
+
+// ── ML-14 / ML-15（四季片 D-07 / D-01，Q-A5 / Q-A6）────────────────────────────
+
+test('ML-14：countUp 激活期间数据卡标签写死图表末点标签 → 报', () => {
+  const issues = lintMotion(manifest([
+    { id: 'chart', type: 'chart', variant: 'line', startFrame: 0, durationInFrames: 120, labels: ['1996', '2010', '2025'], values: [0.1, 0.6, 1.18] },
+    { id: 'card', type: 'textCard', variant: 'dataCard', text: '2025 年', startFrame: 0, durationInFrames: 120, data: [{ k: '距平', v: '1.18°C' }], countUp: true },
+  ]))
+  assert.equal(codes(issues).filter((c) => c === 'ML-14').length, 1,
+    `滚动中标签写死终值年份必须报：${formatMotionLint(issues)}`)
+})
+
+test('ML-14：区间标签 / 未开 countUp / 标签不含末点 → 不报', () => {
+  const base = [
+    { id: 'chart', type: 'chart', variant: 'line', startFrame: 0, durationInFrames: 120, labels: ['1996', '2010', '2025'], values: [0.1, 0.6, 1.18] },
+  ]
+  const range = lintMotion(manifest([...base, { id: 'c1', type: 'textCard', variant: 'dataCard', text: '1996–2025', startFrame: 0, durationInFrames: 120, data: [{ k: '距平', v: '1.18°C' }], countUp: true }]))
+  assert.equal(codes(range).filter((c) => c === 'ML-14').length, 0, '区间标签是正解，不报')
+  const noCountUp = lintMotion(manifest([...base, { id: 'c2', type: 'textCard', variant: 'dataCard', text: '2025 年', startFrame: 0, durationInFrames: 120, data: [{ k: '距平', v: '1.18°C' }] }]))
+  assert.equal(codes(noCountUp).filter((c) => c === 'ML-14').length, 0, '静态卡写终值年份没有滚动矛盾，不报')
+})
+
+test('ML-15：第 0 帧半透明起步（opacity 0.25）→ 报；从 0 淡入 / 完整可见 → 不报', () => {
+  const dim = lintMotion(manifest([
+    { id: 't', type: 'textCard', variant: 'title', text: '标题', startFrame: 0, durationInFrames: 60, animate: { from: { opacity: 0.25 }, to: { opacity: 1 }, durationInFrames: 30 } },
+  ]))
+  assert.equal(codes(dim).filter((c) => c === 'ML-15').length, 1,
+    `半截起步必须报（四季片 D-01）：${formatMotionLint(dim)}`)
+
+  const fadeFromZero = lintMotion(manifest([
+    { id: 't0', type: 'textCard', variant: 'title', text: '标题', startFrame: 0, durationInFrames: 60, animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 30 } },
+  ]))
+  assert.equal(codes(fadeFromZero).filter((c) => c === 'ML-15').length, 0, '从 0 淡入是正常入场')
+
+  const visible = lintMotion(manifest([
+    { id: 't1', type: 'textCard', variant: 'title', text: '标题', startFrame: 0, durationInFrames: 60, animate: { from: { opacity: 0.5 }, to: { opacity: 1 }, durationInFrames: 20 } },
+  ]))
+  assert.equal(codes(visible).filter((c) => c === 'ML-15').length, 0, '≥0.35 起步完整可见')
+
+  const later = lintMotion(manifest([
+    { id: 't2', type: 'textCard', variant: 'title', text: '标题', startFrame: 10, durationInFrames: 60, animate: { from: { opacity: 0.25 }, to: { opacity: 1 }, durationInFrames: 30 } },
+  ]))
+  assert.equal(codes(later).filter((c) => c === 'ML-15').length, 0, '非第 0 帧入场不归本条管')
+})

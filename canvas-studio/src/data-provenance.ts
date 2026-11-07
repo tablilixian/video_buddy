@@ -13,8 +13,14 @@
  *   糊弄闸门 —— 恰是本条要治的病）。
  * ② `pendingFactWarning` —— storyboard `facts[].status` 与成片之间的宿主桥：
  *   渲染回执点名 pending 事实（pending 事实不得进成片）。
+ *
+ * ⚠️ **本文件必须保持零 `node:` 内置依赖**：`remotion/manifest-track-validate.ts`
+ * → `manifest.ts` → 渲染侧 bundle（`scripts/render-forensics/entry.tsx` 等）
+ * 都会拉到本文件，一旦 import `node:fs` 就会让 webpack 报
+ * `UnhandledSchemeError: Reading from "node:fs" is not handled by plugins`。
+ * 读盘的 `readPendingFactWarning` 已拆到 `data-provenance-file.ts`（仅宿主用）。
+ * 需要加"要读文件"的溯源能力时，**新增模块**，别塞回这里。
  */
-import { readFileSync } from 'node:fs'
 
 /**
  * dataCard `v` 是否像「数值型事实」。触发 = 含数字且带可溯源量纲标记，
@@ -50,34 +56,4 @@ export function pendingFactWarning(facts: unknown): string {
     .slice(0, 2)
   const preview = claims.length > 0 ? `：${claims.join('；')}${pending.length > 2 ? ' 等' : ''}` : ''
   return `数据溯源：事实表有 ${pending.length} 条 pending（未核源）事实${preview}。pending 事实不得进成片（P-17）——若本片图表 / 数据卡引用了这些数字，先核源升级 verified 并重跑 facts-builder 落盘，或补 dataSource:'observed' 说明（B-4 观察期提醒）`
-}
-
-/**
- * 读本项目的事实表 pending 事实并出提醒文案（CV-447 P1-D）。
- *
- * 优先读 `build/fact-snapshot.json`（B2 事实快照，agent 用 `facts-builder.mjs` 落盘）；
- * 快照不存在时回落到 storyboard `01_facts`。读不到 / 损坏 ⇒ 空串
- * （事实表是可选前置，没有它不该挡渲染）。
- *
- * 为什么优先快照：真机事故里 agent 口头"已标 verified"但没写任何文件 ⇒ storyboard 仍是
- * pending，交付 lint 连续两次报假警报。快照是**落盘真值**，纪律也写死了状态变更必须重跑
- * `facts-builder`（叙述式更新不算数）。
- */
-export function readPendingFactWarning(projectDir: string, storyboardPath: string): string {
-  try {
-    const snapshot = JSON.parse(readFileSync(`${projectDir}/build/fact-snapshot.json`, 'utf8')) as {
-      facts?: unknown
-    }
-    return pendingFactWarning(snapshot.facts)
-  } catch {
-    // 快照缺失 / 坏 JSON：回落到 storyboard（老项目路径）。
-  }
-  try {
-    const doc = JSON.parse(readFileSync(storyboardPath, 'utf8')) as {
-      sections?: { '01_facts'?: { facts?: unknown } }
-    }
-    return pendingFactWarning(doc.sections?.['01_facts']?.facts)
-  } catch {
-    return ''
-  }
 }

@@ -7,7 +7,7 @@
  * 归因目标：**同样是 Remotion + 同一台机器**，差异只可能来自
  *   ① Remotion 能力边界  ② 产品调用参数  ③ 窗口/进程环境  ④ manifest 内容
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { REAL_ASSETS, PROJECT_ASSET_PREFIX } from './fixtures.mjs'
 import * as cardsMod from './cards.mjs'
 export { REAL_ASSETS, PROJECT_ASSET_PREFIX } from './fixtures.mjs'
@@ -254,24 +254,34 @@ export function buildMatrix(env) {
     })
   }
 
-  groups.push({
-    id: 'Q11',
-    title: '真实工件重放',
-    question: '会话里**原样那些文件**（探针 / 分段 / 半片 / shape-only）在独立工程里各要多久？',
-    runs: REPLAY.map((item) => {
-      const manifest = loadArtifact(item.file)
-      return {
-        id: `q11-${item.file.replace(/\.json$/, '')}`,
-        title: `${item.file} · ${manifest.meta.durationInFrames} 帧 / ${manifest.tracks.length} 轨`,
-        note: `会话结果：${item.session}`,
-        manifest,
-        quality: 'draft',
-        frames: manifest.meta.durationInFrames,
-        mode: 'product',
-        timeoutMs: 900_000,
-      }
-    }),
+  // Q11 的工件来自**某次具体会话**的 build 目录，换机器 / 换项目就不在了。
+  // 缺件时整组跳过而不是让 buildMatrix 抛错 —— 否则 Q1–Q10（含 Q9 窗口矩阵）全部跑不了，
+  // 为一个可选重放实验牺牲主实验台不划算。缺了哪些会打 warn，便于识别"是没件不是没测"。
+  const replayItems = REPLAY.filter((item) => {
+    const present = existsSync(join(REAL_BUILD_DIR, item.file))
+    if (!present) console.warn(`[rf] 跳过 Q11 工件（不存在）：${join(REAL_BUILD_DIR, item.file)}`)
+    return present
   })
+  if (replayItems.length > 0) {
+    groups.push({
+      id: 'Q11',
+      title: '真实工件重放',
+      question: '会话里**原样那些文件**（探针 / 分段 / 半片 / shape-only）在独立工程里各要多久？',
+      runs: replayItems.map((item) => {
+        const manifest = loadArtifact(item.file)
+        return {
+          id: `q11-${item.file.replace(/\.json$/, '')}`,
+          title: `${item.file} · ${manifest.meta.durationInFrames} 帧 / ${manifest.tracks.length} 轨`,
+          note: `会话结果：${item.session}`,
+          manifest,
+          quality: 'draft',
+          frames: manifest.meta.durationInFrames,
+          mode: 'product',
+          timeoutMs: 900_000,
+        }
+      }),
+    })
+  }
 
   // ── REQ-035 / shotcraft 吸收方案：镜头卡与主题预设的**实证**（不是纸面判断）──
   // 每张卡 = 一份完整 manifest；渲染成功 + 采样三帧亮度有变化，才算"这张卡能用"。

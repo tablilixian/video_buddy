@@ -87,27 +87,43 @@ function resolveAsset(rel) {
 
 async function buildBundle() {
   const { bundle } = await import('@remotion/bundler')
-  const stale = !existsSync(BUNDLE) || (existsSync(BUNDLE) && statSync(ENTRY).mtimeMs > statSync(BUNDLE).mtimeMs)
+  // 新鲜度判据必须落在**产物文件**上，不能落在目录上：
+  // 旧判据 `existsSync(BUNDLE)` 有个致命盲区 —— `mkdirSync(BUNDLE)` 在 `bundle()` **之前**执行，
+  // 于是 webpack 一旦失败（如 2026-11-07 之前的 `node:fs` UnhandledSchemeError），就留下一个
+  // **空目录**；下次运行 `existsSync(BUNDLE)=true`、目录 mtime 又比入口新 ⇒ 判成「入口未变」
+  // ⇒ 复用一个空 bundle ⇒ 页面白屏、取证台四档全部 300s 超时零回报（RP-00 调试实录）。
+  const INDEX = join(BUNDLE, 'index.html')
+  const stale = !existsSync(INDEX) || statSync(ENTRY).mtimeMs > statSync(INDEX).mtimeMs
   if (!stale) {
     ok('bundle 复用（入口未变）')
     return BUNDLE
   }
-  if (argv.includes('--rebuild')) rmSync(BUNDLE, { recursive: true, force: true })
+  // 先清空再构建：失败时宁可什么都不留，也不能留一个"看起来可用"的空壳。
+  rmSync(BUNDLE, { recursive: true, force: true })
   mkdirSync(BUNDLE, { recursive: true })
   log('打包 bundle（webpack，一次约 10s）…')
   const t = Date.now()
-  await bundle({
-    entryPoint: ENTRY,
-    outDir: BUNDLE,
-    // 产品源码用 NodeNext 的 `../x.js` 写法，webpack 需要 extensionAlias 才能落到 .ts/.tsx
-    webpackOverride: (config) => ({
-      ...config,
-      resolve: {
-        ...(config.resolve ?? {}),
-        extensionAlias: { ...((config.resolve && config.resolve.extensionAlias) || {}), '.js': ['.ts', '.tsx', '.js'] },
-      },
-    }),
-  })
+  try {
+    await bundle({
+      entryPoint: ENTRY,
+      outDir: BUNDLE,
+      // 产品源码用 NodeNext 的 `../x.js` 写法，webpack 需要 extensionAlias 才能落到 .ts/.tsx
+      webpackOverride: (config) => ({
+        ...config,
+        resolve: {
+          ...(config.resolve ?? {}),
+          extensionAlias: { ...((config.resolve && config.resolve.extensionAlias) || {}), '.js': ['.ts', '.tsx', '.js'] },
+        },
+      }),
+    })
+  } catch (cause) {
+    rmSync(BUNDLE, { recursive: true, force: true })
+    throw cause
+  }
+  if (!existsSync(INDEX)) {
+    rmSync(BUNDLE, { recursive: true, force: true })
+    throw new Error(`bundle 结束但没有产出 ${INDEX}（上游静默失败，已清空避免下次被误判为可用）`)
+  }
   ok(`bundle 完成 ${Math.round((Date.now() - t) / 1000)}s`)
   return BUNDLE
 }

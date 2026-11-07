@@ -52,6 +52,13 @@ function num(value, fallback) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+/** `box`（BaseTrack 通用键，0–100 双轴百分比、x/y 中心语义）四键齐全才算给了。 */
+function isLayoutBox(box) {
+  return typeof box === 'object' && box !== null
+    && num(box.x, NaN) === box.x && num(box.y, NaN) === box.y
+    && num(box.w, NaN) === box.w && num(box.h, NaN) === box.h
+}
+
 function loadJson(path) {
   if (!existsSync(path)) fail(`找不到文件：${path}`)
   try {
@@ -71,6 +78,10 @@ function loadJson(path) {
  * CV-447（T0-A1）：`words` 必须原样透传 —— 低层契约支持词级时间戳（`manifest.ts:691`），
  * 此前这里只挑 `{id,text,frames,src}`，导致卡拉 OK 字幕永远走能量包络兜底（真机事故：
  * 字幕整句 dim 0.28，agent 花 7min 才发现是产生路径丢字段）。
+ *
+ * 排版三键同理必须透传（四季片复盘 P-06 / 复盘 §8 P2-1）：`fontSize` / `widthPercent` /
+ * `box` 都是低层契约合法键（`KNOWN_TRACK_KEYS.caption` + BaseTrack `box`，Caption.tsx 消费），
+ * 丢了以后模型被迫在项目里外挂 finalize 脚本改写产物 —— 绕过一旦发生，根因就留在库里。
  */
 function buildSegments(spec, fps) {
   const captions = Array.isArray(spec.captions) ? spec.captions : []
@@ -82,6 +93,9 @@ function buildSegments(spec, fps) {
       frames: Math.max(1, Math.round(num(line.frames, 0))),
       ...(typeof line.src === 'string' && line.src !== '' ? { src: line.src } : {}),
       ...(Array.isArray(line.words) && line.words.length > 0 ? { words: line.words } : {}),
+      ...(num(line.fontSize, 0) > 0 ? { fontSize: line.fontSize } : {}),
+      ...(num(line.widthPercent, 0) > 0 ? { widthPercent: line.widthPercent } : {}),
+      ...(isLayoutBox(line.box) ? { box: line.box } : {}),
     }))
     : narration.map((line, index) => ({
       id: typeof line.id === 'string' && line.id !== '' ? line.id : `V${String(index + 1)}`,
@@ -195,8 +209,12 @@ function main() {
         text: segment.text,
         startFrame: segment.startFrame,
         durationInFrames: segment.durationInFrames,
-        // CV-447（T0-A1）：词级时间戳透传（有就带上，没有不写 —— 渲染层按能量谷兜底）。
+        // CV-447（T0-A1）：词级时间戳透传（有就带上，没有不写 —— 渲染层按等分兜底）。
         ...(segment.words !== undefined ? { words: segment.words } : {}),
+        // 排版三键透传（四季片复盘 P-06）：fontSize / widthPercent / box。
+        ...(segment.fontSize !== undefined ? { fontSize: segment.fontSize } : {}),
+        ...(segment.widthPercent !== undefined ? { widthPercent: segment.widthPercent } : {}),
+        ...(segment.box !== undefined ? { box: segment.box } : {}),
       })
   }
   // ③ 视觉轨：字段一律透传（样板见 references/shot-cards.md），只补 id 与帧窗。

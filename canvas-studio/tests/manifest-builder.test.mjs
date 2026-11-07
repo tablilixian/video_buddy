@@ -119,6 +119,32 @@ test('CV-447 T0-A1：captions[].words 原样透传到 caption 轨（缺省则不
   }
 })
 
+test('排版三键透传：fontSize / widthPercent / box 原样到 caption 轨，缺省不造键（四季片 P-06）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
+  try {
+    const result = run({
+      title: 't',
+      fps: 30,
+      captions: [
+        { id: 'V1', text: '第一句', frames: 60, src: '/canvas-studio/assets/a.mp3', fontSize: 40, widthPercent: 60, box: { x: 50, y: 82, w: 90, h: 22 } },
+        { id: 'V2', text: '第二句', frames: 60, src: '/canvas-studio/assets/b.mp3' },
+      ],
+    }, dir)
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    const manifest = readManifest(dir)
+    const captions = manifest.tracks.filter((t) => t.type === 'caption')
+    assert.equal(captions[0].fontSize, 40, 'fontSize 必须透传（79px 缺省曾把图形全压住）')
+    assert.equal(captions[0].widthPercent, 60)
+    assert.deepEqual(captions[0].box, { x: 50, y: 82, w: 90, h: 22 }, 'box 必须透传（矮盒子裁切修法的入口）')
+    assert.equal(captions[1].fontSize, undefined, '没给就绝不造键')
+    assert.equal(captions[1].box, undefined)
+    const check = validateManifest(manifest)
+    assert.equal(check.ok, true, check.errors.join('；'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('narration（秒）通道：按 fps 折算，且帧数累计等于总时长', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
   try {

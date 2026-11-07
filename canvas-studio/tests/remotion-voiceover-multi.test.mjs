@@ -68,9 +68,12 @@ test('voiceOver 形状非法：非数组 / 空数组 / src 非资产引用 / sta
     errorsOf(base({ voiceOver: [{ src: VO, startFrame: -3 }] })).join('；'),
     /audio\.voiceOver\[0\]\.startFrame 必须是 >= 0 的整数/,
   )
+  // 人声两条（voiceOver[].volume / mix.voiceVolume）已放开 0–2（>1 为增益，响度两步走）；
+  // 1.4 现在合法，越界判据同步抬到 >2。
+  assert.equal(errorsOf(base({ voiceOver: [{ src: VO, startFrame: 0, volume: 1.4 }] })).length, 0, '1.4 增益合法')
   assert.match(
-    errorsOf(base({ voiceOver: [{ src: VO, startFrame: 0, volume: 1.4 }] })).join('；'),
-    /audio\.voiceOver\[0\]\.volume 必须是 0–1 的数值/,
+    errorsOf(base({ voiceOver: [{ src: VO, startFrame: 0, volume: 2.4 }] })).join('；'),
+    /audio\.voiceOver\[0\]\.volume 必须是 0–2 的数值/,
   )
 })
 

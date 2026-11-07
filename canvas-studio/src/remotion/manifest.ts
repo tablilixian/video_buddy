@@ -38,6 +38,8 @@ import {
   validateCalloutTrack,
   validateChartTrack,
   validateDataCardProvenance,
+  validateVoiceGain,
+  validateCaptionAudioFrames,
   validateColorShift,
   validateExitMotion,
   validateNonNegativeInteger,
@@ -640,15 +642,11 @@ export interface ChartTrack extends BaseTrack {
    * 不同口径的序列必须让读者可辨。观察期 warning 同上。
    */
   baseline?: string
-  /** 图表标题（1–40 字；四季片 D-06：图上必须有标题）。仅在场时启用绘图区上方的标题带。 */
+  /** 图表标题（1–40 字，D-06）；仅在场时启用绘图区上方标题带（老 manifest 几何不变）。 */
   title?: string
-  /**
-   * x 轴类目标签抽稀步进（≥1 整数；显式给定时优先于 `maxLabels`）。只抽**标签**不改
-   * 数据点数 —— 30 点逐年 + 抽稀标签才同时满足「数据完整」与「标签可读」
-   * （四季片 D-09：隔年取样冒称三十年是错误解法）。首末点强制保留。
-   */
+  /** x 轴标签抽稀步进（≥1 整数，优先于 maxLabels）；只抽标签不改数据点，首末点强制保留（D-09）。 */
   labelEvery?: number
-  /** 类目标签数上限（≥1 整数；未给 `labelEvery` 时按等距均匀取；首末点强制保留 ⇒ 1 等价 2）。 */
+  /** 标签数上限（≥1 整数；未给 labelEvery 时等距取；首末点强制保留 ⇒ 1 等价 2）。 */
   maxLabels?: number
   /**
    * 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
@@ -709,11 +707,7 @@ export interface CaptionTrack extends BaseTrack {
   activeColor?: string
   /** 未读字颜色（缺省 28% 白）。 */
   dimColor?: string
-  /**
-   * 音频实际时长（帧，tts ffprobe 真值）：词级等分的基数（四季片 D-03 / Q-A7）——
-   * 高亮随语音结束收束，字幕窗口剩余部分静默不爬。缺省退回 `durationInFrames`。
-   * 与窗口脱钩 >20% 校验层 warning（长窗口把逐字高亮拖过语音结束）。
-   */
+  /** 音频实际时长（帧，tts 真值）：词级等分基数（D-03），高亮随语音收束；缺省退回 durationInFrames。 */
   audioFrames?: number
 }
 
@@ -1808,16 +1802,7 @@ export function validateManifest(input: unknown): ManifestValidation {
         if (track.fontSize !== undefined && (typeof track.fontSize !== 'number' || !Number.isFinite(track.fontSize) || track.fontSize < 8 || track.fontSize > 400)) {
           errors.push(`${at}.fontSize 必须是 8–400 的数值（px）`)
         }
-        // 四季片 D-03（Q-A7）：词级等分基数的音频真值。非正数 error；与字幕窗口
-        // 脱钩 >20% warning（长窗口把逐字高亮拖过语音结束 —— V10 +131% 的教训）。
-        if (track.audioFrames !== undefined) {
-          if (typeof track.audioFrames !== 'number' || !Number.isFinite(track.audioFrames) || track.audioFrames <= 0) {
-            errors.push(`${at}.audioFrames 必须是正数（音频实际时长帧数，tts ffprobe 真值）`)
-          } else if (typeof track.durationInFrames === 'number' && Number.isFinite(track.durationInFrames)
-            && Math.abs(track.durationInFrames - track.audioFrames) / track.audioFrames > 0.2) {
-            warnings.push(`${at} 的字幕窗口（${track.durationInFrames} 帧）与音频真值（${track.audioFrames} 帧）脱钩 >20% —— 词级高亮将按音频真值收束，窗口剩余部分静默；确认这不是为凑时长拉长的窗口（四季片 D-03 的 V10 +131%）`)
-          }
-        }
+        validateCaptionAudioFrames(track, at, errors, warnings)
         if (track.widthPercent !== undefined && (typeof track.widthPercent !== 'number' || !Number.isFinite(track.widthPercent) || track.widthPercent < 10 || track.widthPercent > 100)) {
           errors.push(`${at}.widthPercent 必须是 10–100 的数值（折行宽度占画布宽百分比）`)
         }
@@ -2135,18 +2120,6 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
   if (value === undefined) return
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
     errors.push(`${label} 必须是 0–1 的数值`)
-  }
-}
-
-/**
- * 人声音量 0–2（仅 `voiceOver[].volume` / `mix.voiceVolume` 两条人声；BGM/duck/音轨仍 0–1）：
- * >1 为增益补偿过轻 TTS —— 限 0–1 曾逼出改写源素材的破坏性绕过（四季片复盘 §6.4）。
- * 成片响度目标（targetLufs / loudnorm）另立项。
- */
-function validateVoiceGain(value: unknown, label: string, errors: string[]): void {
-  if (value === undefined) return
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2) {
-    errors.push(`${label} 必须是 0–2 的数值（>1 为增益，补偿过轻的 TTS 输出）`)
   }
 }
 

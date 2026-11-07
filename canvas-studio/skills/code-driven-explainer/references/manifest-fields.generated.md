@@ -248,9 +248,9 @@
 - `source`?: 'timeline' — 数据来源（A2，2026-10-31）：
 - `dataSource`?: string — B-4（CV-440，P-01/P-17）：数据出处 —— 数据集名 + 可复核入口（如
 - `baseline`?: string — B-4（CV-440，P-01/P-17）：口径 / 基准说明（如 `'1951–1980 基线距平'`）。
-- `title`?: string — 图表标题（1–40 字；四季片 D-06：图上必须有标题）。仅在场时启用绘图区上方的标题带。
-- `labelEvery`?: number — x 轴类目标签抽稀步进（≥1 整数；显式给定时优先于 `maxLabels`）。只抽**标签**不改
-- `maxLabels`?: number — 类目标签数上限（≥1 整数；未给 `labelEvery` 时按等距均匀取；首末点强制保留 ⇒ 1 等价 2）。
+- `title`?: string — 图表标题（1–40 字，D-06）；仅在场时启用绘图区上方标题带（老 manifest 几何不变）。
+- `labelEvery`?: number — x 轴标签抽稀步进（≥1 整数，优先于 maxLabels）；只抽标签不改数据点，首末点强制保留（D-09）。
+- `maxLabels`?: number — 标签数上限（≥1 整数；未给 labelEvery 时等距取；首末点强制保留 ⇒ 1 等价 2）。
 - `variant`: 'bars' | 'dual' | 'line' | 'pie' | 'donut' | 'gauge' — 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
 - `labels`: string[] — 类目标签（与 `values` 一一对应；上限 32 项）。
 - `values`: number[] — 主序列（柱，左轴；非负、有限，至少一个 > 0）。
@@ -275,7 +275,7 @@
 - `color`?: string — 已读字颜色（缺省白）。
 - `activeColor`?: string — 当前字颜色（缺省青 #5ad2ff + 辉光）。
 - `dimColor`?: string — 未读字颜色（缺省 28% 白）。
-- `audioFrames`?: number — 音频实际时长（帧，tts ffprobe 真值）：词级等分的基数（四季片 D-03 / Q-A7）——
+- `audioFrames`?: number — 音频实际时长（帧，tts 真值）：词级等分基数（D-03），高亮随语音收束；缺省退回 durationInFrames。
 
 ## TrackReveal
 > P3（2026-11-03）：**分区揭示**配置（`BaseTrack.reveal`，卡片级）。

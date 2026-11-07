@@ -290,6 +290,41 @@ export function validateDataCardProvenance(track: Record<string, unknown>, at: s
 }
 
 /** P3（2026-11-03）：callout 轨校验（标签盒 box 在通用区已查几何与位置来源冲突）。 */
+/**
+ * 人声音量 0–2（仅 `voiceOver[].volume` / `mix.voiceVolume` 两条人声；BGM/duck/音轨仍 0–1）：
+ * >1 为增益补偿过轻 TTS —— 限 0–1 曾逼出改写源素材的破坏性绕过（四季片复盘 §6.4）。
+ * 成片响度目标（targetLufs / loudnorm）另立项。装配层 `resolveAudioTimeline` 的
+ * gain 收拢上限与本口径同步（voiceOver 0–2）。
+ */
+export function validateVoiceGain(value: unknown, label: string, errors: string[]): void {
+  if (value === undefined) return
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 2) {
+    errors.push(`${label} 必须是 0–2 的数值（>1 为增益，补偿过轻的 TTS 输出）`)
+  }
+}
+
+/**
+ * caption 的 `audioFrames`（词级等分的音频真值，D-03）：非正数 error；与字幕窗口
+ * 脱钩 >20% warning（长窗口把逐字高亮拖过语音结束 —— V10 +131% 的教训）。
+ */
+export function validateCaptionAudioFrames(
+  track: Record<string, unknown>,
+  at: string,
+  errors: string[],
+  warnings: string[],
+): void {
+  const audioFrames = track.audioFrames
+  if (audioFrames === undefined) return
+  if (typeof audioFrames !== 'number' || !Number.isFinite(audioFrames) || audioFrames <= 0) {
+    errors.push(`${at}.audioFrames 必须是正数（音频实际时长帧数，tts ffprobe 真值）`)
+    return
+  }
+  const duration = track.durationInFrames
+  if (typeof duration === 'number' && Number.isFinite(duration) && Math.abs(duration - audioFrames) / audioFrames > 0.2) {
+    warnings.push(`${at} 的字幕窗口（${duration} 帧）与音频真值（${audioFrames} 帧）脱钩 >20% —— 词级高亮将按音频真值收束，窗口剩余部分静默；确认这不是为凑时长拉长的窗口（四季片 D-03 的 V10 +131%）`)
+  }
+}
+
 export function validateCalloutTrack(track: Record<string, unknown>, at: string, errors: string[]): void {
   const anchor: unknown = track.anchor
   const anchorOk = isRecord(anchor)

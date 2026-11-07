@@ -268,7 +268,7 @@ export function captionWordsByCharCount(input: {
  *    显式 words 本就 0-based，两条来源的坐标系必须一致）。
  * 两级都不成立返回 null，调用方退回能量包络推导（第三级）。
  */
-export function trackWordWindows(track: {
+export function trackWordWindows(caption: {
   readonly words?: unknown
   text: string
   startFrame: number
@@ -276,15 +276,18 @@ export function trackWordWindows(track: {
   /** 音频实际时长（帧，tts ffprobe 真值；`caption.audioFrames` 透传，见 D-03）。 */
   audioDurationFrames?: number
 }): WordTimingWindow[] | null {
-  const spokenCount = countSpokenChars(track.text)
-  if (Array.isArray(track.words) && track.words.length === spokenCount) {
-    return (track.words as Array<{ from: number; to: number }>).map((w) => ({ start: w.from, end: w.to }))
+  // 入参刻意叫 `caption` 不叫 `track`：它是「轨状数据」但不是 manifest track ——
+  // P-02 漂移扫描按 `track.X` 抓实现读取的字段，撞名会把 audioDurationFrames
+  // 误报成未登记轨字段。
+  const spokenCount = countSpokenChars(caption.text)
+  if (Array.isArray(caption.words) && caption.words.length === spokenCount) {
+    return (caption.words as Array<{ from: number; to: number }>).map((w) => ({ start: w.from, end: w.to }))
   }
   const words = captionWordsByCharCount({
-    text: track.text,
+    text: caption.text,
     startFrame: 0,
-    durationInFrames: track.durationInFrames,
-    ...(track.audioDurationFrames !== undefined ? { audioDurationFrames: track.audioDurationFrames } : {}),
+    durationInFrames: caption.durationInFrames,
+    ...(caption.audioDurationFrames !== undefined ? { audioDurationFrames: caption.audioDurationFrames } : {}),
   })
   return words === null ? null : words.map((w) => ({ start: w.from, end: w.to }))
 }

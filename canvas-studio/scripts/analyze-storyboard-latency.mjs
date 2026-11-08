@@ -102,6 +102,44 @@ function percentile(values, p) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(p * sorted.length) - 1)]
 }
 
+// ── 批 2-1.4：全会话 turn 分解 + 跨 turn 判红（max-tokens / scaffold / intent）──
+// 会话 19 教训：回合死亡与流程闸是**会话级**事实，不能随 --turn 收窄——
+// 4 个 turn 的会话只看 turn 1 会把 max-tokens×3 和 scaffold=0 全部漏掉。
+const sessionTurns = []
+{
+  const byTurn = new Map()
+  for (const row of rows) {
+    const turn = row.data?.turn
+    if (typeof turn !== 'number') continue
+    if (!byTurn.has(turn)) byTurn.set(turn, [])
+    byTurn.get(turn).push(row)
+  }
+  for (const [turn, events] of [...byTurn].sort((a, b) => a[0] - b[0])) {
+    const stepNos = new Set(events.filter(e => e.type === 'step/start').map(e => e.data.step))
+    const endRow = events.find(e => e.type === 'turn/end')
+    const calls = events.filter(e => e.type === 'tool/call')
+    const callCount = name => calls.filter(c => c.data.name === name).length
+    const ts = events.map(e => e.time).filter(t => typeof t === 'number')
+    sessionTurns.push({
+      turn,
+      window: ts.length === 0 ? null : `${stamp(Math.min(...ts))} → ${stamp(Math.max(...ts))}`,
+      steps: stepNos.size,
+      compactions: events.filter(e => e.type === 'compaction/start').length,
+      calls: calls.length,
+      sourceReads: calls.filter(c => c.data.name === 'bash' && SOURCE_READ_RE.test(toolCommand(toolArgs(c)))).length,
+      writeStoryboard: callCount('write_storyboard'),
+      scaffoldManifest: callCount('scaffold_manifest'),
+      intentCard: callCount('confirm_intent_card'),
+      renders: callCount('render_composition'),
+      endReason: endRow?.data?.reason?.kind ?? null,
+    })
+  }
+}
+const maxTokensDeaths = sessionTurns.filter(t => t.endReason === 'max-tokens').length
+const storyboardLanded = sessionTurns.some(t => t.writeStoryboard > 0)
+const scaffoldCallsTotal = sessionTurns.reduce((n, t) => n + t.scaffoldManifest, 0)
+const intentCardCallsTotal = sessionTurns.reduce((n, t) => n + t.intentCard, 0)
+
 const steps = new Map()
 for (const row of rows) {
   const data = row.data ?? {}
@@ -320,10 +358,17 @@ const verdict = {
   stepsWithinBudget: result.length <= stepLimit,
   sourceReadsBounded: sourceReadCalls <= 5,
   noRestatement: restatementSteps === 0,
+  // 批 2-1.4：全会话判红（不随 --turn 收窄）。故事板未落地时 scaffold/intent 两项 n/a 放行。
+  noMaxTokensDeath: maxTokensDeaths === 0,
+  scaffoldAfterStoryboard: !storyboardLanded || scaffoldCallsTotal >= 1,
+  intentCardSeen: !storyboardLanded || intentCardCallsTotal >= 1,
 }
 const gatePass = Object.values(verdict).every(Boolean)
 const summary = {
   turn: turnFilter,
+  sessionTurns,
+  maxTokensDeaths,
+  storyboardLanded,
   window: `${stamp(windowStart)} → ${stamp(windowEnd)}`,
   wallSeconds: Number(wall.toFixed(1)),
   steps: result.length,
@@ -374,6 +419,13 @@ if (asJson) {
   console.log(`  IMAGE_OFFLOAD_REQUIRED ${contextSummary.offloads} · compaction ${contextSummary.compactions}（出片前 ${preDeliveryCompactions}）· AUTH/401 ${contextSummary.authFailures} · 单步 tool/result P95 ${contextSummary.p95StepResultKb} KB`)
   console.log(`  源码复读 bash ${sourceReadCalls} 次 / ${sourceReadKb} KB · 复述步 ${restatementSteps} · 有 reasoning 的步 ${reasoningSteps} · reasoning 单步 P95 ${contextSummary.reasonCharsP95} 字符`)
   console.log(`  请求头 ${contextSummary.headerCount} 次 · 工具清单 P95 ${contextSummary.headerP95Kb ?? 'n/a'} KB / 最多 ${contextSummary.headerToolsMax ?? 'n/a'} 工具 · inputTokens ${contextSummary.inputTokens.toLocaleString()} · 思考档位 ${JSON.stringify(reasoningEfforts)}`)
+  console.log('\n## 全会话 turn 分解（批 2-1.4）')
+  console.log('  turn | 窗口 | 步 | compaction | 调用 | 源码读 | sb/scaffold/intent/render | 结局')
+  for (const t of sessionTurns) {
+    console.log(`  turn${t.turn} | ${t.window ?? '?'} | ${t.steps} | ${t.compactions} | ${t.calls} | ${t.sourceReads} | ${t.writeStoryboard}/${t.scaffoldManifest}/${t.intentCard}/${t.renders} | ${t.endReason ?? '-'}`)
+  }
+  console.log(`  回合 max-tokens 死亡 ${maxTokensDeaths} / 0 ⇒ ${verdict.noMaxTokensDeath ? 'PASS' : 'FAIL'}`)
+  console.log(`  故事板${storyboardLanded ? '已落地' : '未出现'}：scaffold_manifest ${scaffoldCallsTotal} / ≥1 ⇒ ${verdict.scaffoldAfterStoryboard ? 'PASS' : 'FAIL'} · confirm_intent_card ${intentCardCallsTotal} / ≥1 ⇒ ${verdict.intentCardSeen ? 'PASS' : 'FAIL'}`)
   console.log('\n## 上下文治理判据（P1-2，交接文档 §9 任务 5）')
   console.log(`  出片前 compaction ${preDeliveryCompactions} / 0 ⇒ ${verdict.noCompactionBeforeDelivery ? 'PASS' : 'FAIL'}${compactionAt.length === 0 ? '' : '  @ ' + compactionAt.map(c => c.at + '(s' + c.step + ')').join(', ')}`)
   console.log(`  turn${turnFilter} 步数 ${result.length} / ≤${stepLimit} ⇒ ${verdict.stepsWithinBudget ? 'PASS' : 'FAIL'}`)

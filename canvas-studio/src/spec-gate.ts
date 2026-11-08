@@ -16,6 +16,13 @@
  *   intentCardSeen=false ⇒ 拒收；scaffoldSeen=false ⇒ 拒收（文案给 scaffold→spec→builder 正路）。
  *
  * 与 probe budget 的差别：闸的是「流程顺序」不是「次数」——见一次成功即置位、永不清零。
+ *
+ * 已知边界（有意为之，登记备查）：
+ * - 状态按**会话键**隔离 ⇒ 同一会话先后做多个项目时，前一个项目置位的 intent/scaffold
+ *   会让后一个项目免检（近似而非逐项目精确）；probe budget 同款取舍（render_composition
+ *   契约要求不传 projectId，见 tool-error-boundary.sessionKeyOf 注释）。
+ * - 闸对全部体裁生效：六体裁 / 复刻线的 write_storyboard 同样要求先 confirm_intent_card
+ *   （auto 下零成本、confirm 下本就是设计中的 HITL）；拒收文案自带出口，模型可自愈。
  */
 
 export interface SpecGateVerdict {

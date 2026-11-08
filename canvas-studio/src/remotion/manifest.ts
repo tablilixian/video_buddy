@@ -81,8 +81,7 @@ export interface ManifestMeta {
   look?: ManifestLook
   /** 三期 W5-3：渲染质量档（也可由工具参数覆盖）。缺省 `standard`。 */
   quality?: RenderQuality
-  /** 批 2-1.2：builder 产物标记 —— 缺省缺失时 render 侧发观察期 warning（手写 manifest 绕过契约的观测口）。 */
-  generatedBy?: string
+  generatedBy?: string // 批 2-1.2：builder 产物标记；缺失 ⇒ render 侧观察期 warning（P-06 观测口）
   /** 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。 */
   lint?: 'off'
 }

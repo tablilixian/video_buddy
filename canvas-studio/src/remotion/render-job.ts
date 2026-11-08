@@ -1131,6 +1131,11 @@ export async function commitRenderJob(
   const info = await probeMediaInfo(resolveAssetPathIn(registry.assetsDir(job.projectId), saved.assetFile))
   const warnings = [...(input.warnings ?? [])]
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
+  // 批 2-1.2（四季片 P-06 观察期，拍板②A）：缺 builder 生成标记 = 手写 manifest 绕过字段
+  // 契约与 builder 白名单（真机：模型外挂 finalize.mjs 改写产物）→ 引导走正路。
+  if (job.manifest.meta.generatedBy !== 'manifest-builder') {
+    warnings.push('manifest 缺 generatedBy 标记（非 builder 产物）——手写会绕过 builder 契约与字段校验；请改走 scaffold_manifest + build/manifest-spec.json。')
+  }
 
   // Q1 响度闸：有声成片测一次综合响度（完整解码音轨，15s 片亚秒级）。
   // 出常见区间只告警不阻断 —— 响度是观感参数不是错误；但值**永远**进 report，

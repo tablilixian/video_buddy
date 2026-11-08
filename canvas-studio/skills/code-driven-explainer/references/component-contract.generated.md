@@ -47,7 +47,7 @@
 - `TEXT_ANIM_PRESETS`: 'fadeUp' | 'maskReveal' | 'typewriter' | 'wordStagger'
 - `RENDER_QUALITIES`: 'draft' | 'standard' | 'high'
 - `KNOWN_MANIFEST_KEYS`: 'id' | 'meta' | 'tracks' | 'audio' | 'global'
-- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint'
+- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint' | 'generatedBy'
 - `KNOWN_BASE_TRACK_KEYS`: 'id' | 'type' | 'startFrame' | 'durationInFrames' | 'transform' | 'animate' | 'fadeFrames' | 'box' | 'orbit' | 'fx' | 'exit' | 'startAfter' | 'colorShift' | 'blend' | 'reveal'
 - `KNOWN_TRACK_KEYS.video`: 'src' | 'kenBurns' | 'trimBeforeFrames' | 'playbackRate' | 'muted' | 'volume' | 'loop'
 - `KNOWN_TRACK_KEYS.image`: 'src' | 'fit' | 'caption' | 'sourceRect' | 'hasAlpha'

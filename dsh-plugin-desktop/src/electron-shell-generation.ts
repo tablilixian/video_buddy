@@ -513,7 +513,9 @@ export class ElectronShellGeneration {
     else app.setBadgeCount(this.attentionCount)
 
     if (!Notification.isSupported()) return
-    const nativeNotification = new Notification(notification)
+    // evenWhenFocused 是调度标志（上方聚焦豁免用），不进 Electron 通知选项。
+    const { evenWhenFocused: _evenWhenFocused, ...notificationOptions } = notification
+    const nativeNotification = new Notification(notificationOptions)
     nativeNotification.once('click', () => { this.show() })
     nativeNotification.show()
   }

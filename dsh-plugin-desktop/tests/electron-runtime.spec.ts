@@ -1245,6 +1245,19 @@ describe('Electron desktop runtime', () => {
     runtime.notifyAttention({ title: 'Ignored', body: 'Focused window' })
     expect(electron.notifications).toHaveLength(2)
 
+    // 批 2-1.1：失败类通知（evenWhenFocused: true）聚焦时也弹 —— 会话 19 三次
+    // max-tokens 死亡正发生在用户盯着窗口放手跑的时候，全被聚焦抑制吞掉。
+    runtime.notifyAttention({
+      title: 'Turn Interrupted at Output Limit',
+      body: 'Your context is preserved. Open VideoBuddy and type 继续 to resume where it stopped.',
+      evenWhenFocused: true,
+    })
+    expect(electron.notifications).toHaveLength(3)
+    expect(electron.notifications[2]?.options).toEqual({
+      title: 'Turn Interrupted at Output Limit',
+      body: 'Your context is preserved. Open VideoBuddy and type 继续 to resume where it stopped.',
+    })
+
     await release()
   })
 

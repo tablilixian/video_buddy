@@ -198,7 +198,7 @@ describe('desktop notifications Host plugin', () => {
 
     expect(harness.notifyAttention.mock.calls).toEqual([
       [{ title: 'Background Job Completed', body: 'A background job has finished.' }],
-      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open VideoBuddy for details.' }],
+      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open VideoBuddy for details.', evenWhenFocused: true }],
     ])
     expect(JSON.stringify(harness.notifyAttention.mock.calls)).not.toMatch(/Users|private|secret|session-123/u)
   })
@@ -237,8 +237,8 @@ describe('desktop notifications Host plugin', () => {
     }, 6))
 
     expect(harness.notifyAttention.mock.calls).toEqual([
-      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open VideoBuddy for details.' }],
-      [{ title: 'User Turn Failed', body: 'A user-initiated turn could not finish. Open VideoBuddy for details.' }],
+      [{ title: 'Background Job Failed', body: 'A background job could not finish. Open VideoBuddy for details.', evenWhenFocused: true }],
+      [{ title: 'User Turn Failed', body: 'A user-initiated turn could not finish. Open VideoBuddy for details.', evenWhenFocused: true }],
     ])
   })
 
@@ -315,9 +315,24 @@ describe('desktop notifications Host plugin', () => {
     }
 
     expect(harness.notifyAttention).toHaveBeenCalledOnce()
+    expect(harness.notifyAttention).toHaveBeenCalledOnce()
+    expect(harness.notifyAttention).toHaveBeenCalledWith({
+      title: 'Turn Interrupted at Output Limit',
+      body: 'Your context is preserved. Open VideoBuddy and type 继续 to resume where it stopped.',
+      evenWhenFocused: true,
+    })
+  })
+
+  it('keeps error and completed endings on their existing copy (max-tokens split is the only copy change)', async () => {
+    const harness = createHarness(['sessions'])
+    const active = session('direct')
+    await harness.sessionEvent(active, event('turn/start', { turn: 1 }, 1))
+    await harness.sessionEvent(active, userMessage('user', 2))
+    await harness.sessionEvent(active, event('turn/end', { turn: 1, reason: { kind: 'error' } } as never, 3))
     expect(harness.notifyAttention).toHaveBeenCalledWith({
       title: 'User Turn Failed',
       body: 'A user-initiated turn could not finish. Open VideoBuddy for details.',
+      evenWhenFocused: true,
     })
   })
 

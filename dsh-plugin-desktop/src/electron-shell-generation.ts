@@ -502,7 +502,11 @@ export class ElectronShellGeneration {
 
   notifyAttention(notification: DesktopNotification): void {
     const window = this.window
-    if (window === undefined || window.isDestroyed() || window.isFocused()) return
+    if (window === undefined || window.isDestroyed()) return
+    // 批 2-1.1：完成类通知保留「聚焦即静默」（用户正看着，不必打扰）；失败类
+    // （evenWhenFocused: true）聚焦时也弹 —— 会话 19 三次 max-tokens 死亡正发生在
+    // 用户盯着窗口放手跑的时候，全被这行 early-return 吞掉。
+    if (window.isFocused() && notification.evenWhenFocused !== true) return
 
     this.attentionCount += 1
     if (this.options.platform.platform === 'win32') window.flashFrame(true)

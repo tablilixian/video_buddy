@@ -95,6 +95,13 @@ export interface DesktopNotification {
   title: string
   /** Concise user-facing status. */
   body: string
+  /**
+   * 批 2-1.1：失败类通知不受「窗口聚焦即静默」抑制。既有关注即静默是为完成类通知
+   * 设计的（用户正盯着窗口时不必打扰）；但回合失败（max-tokens / error）恰恰发生在
+   * 用户盯着窗口放手跑的时候 —— 会话 19 三次 max-tokens 死亡全被这行 early-return
+   * 吞掉，8h55m 无人知。失败类通知传 true，聚焦时也弹系统通知。
+   */
+  evenWhenFocused?: boolean
 }
 
 /** Electron capabilities used by the headless update plugin. */

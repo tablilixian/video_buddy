@@ -39,18 +39,20 @@ const DEFAULT_SETTINGS: DesktopNotificationSettings = {
   notifyOnJobFailure: true,
 }
 
-type NotificationOutcome = 'turn-completed' | 'turn-failed' | 'job-completed' | 'job-failed'
+type NotificationOutcome = 'turn-completed' | 'turn-failed' | 'turn-failed-max-tokens' | 'job-completed' | 'job-failed'
 
 const NOTIFICATION_COPY: Record<DesktopLocale, Record<NotificationOutcome, DesktopNotification>> = {
   en: {
     'turn-completed': { title: 'User Turn Completed', body: 'A user-initiated turn has finished.' },
     'turn-failed': { title: 'User Turn Failed', body: 'A user-initiated turn could not finish. Open VideoBuddy for details.' },
+    'turn-failed-max-tokens': { title: 'Turn Interrupted at Output Limit', body: 'Your context is preserved. Open VideoBuddy and type 继续 to resume where it stopped.' },
     'job-completed': { title: 'Background Job Completed', body: 'A background job has finished.' },
     'job-failed': { title: 'Background Job Failed', body: 'A background job could not finish. Open VideoBuddy for details.' },
   },
   zh: {
     'turn-completed': { title: '用户回合已完成', body: '一个由你发起的回合已完成。' },
     'turn-failed': { title: '用户回合失败', body: '一个由你发起的回合未能完成，请打开 VideoBuddy 查看详情。' },
+    'turn-failed-max-tokens': { title: '回合因输出上限中断', body: '上下文已保留：打开 VideoBuddy 输入「继续」即可接着做，无需重述任务。' },
     'job-completed': { title: '后台任务已完成', body: '有一个后台任务已结束。' },
     'job-failed': { title: '后台任务失败', body: '一个后台任务未能完成，请打开 VideoBuddy 查看详情。' },
   },
@@ -70,7 +72,7 @@ function notifyJob(
   if (view.status === 'completed' && settings.notifyOnJobCompletion) {
     runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['job-completed'])
   } else if (view.status === 'failed' && settings.notifyOnJobFailure) {
-    runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['job-failed'])
+    runtime.notifyAttention({ ...NOTIFICATION_COPY[runtime.locale]['job-failed'], evenWhenFocused: true })
   }
 }
 
@@ -104,8 +106,12 @@ function trackTurn(
   const reason = event.data.reason.kind
   if (reason === 'completed' && settings.notifyOnTurnCompletion) {
     runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['turn-completed'])
-  } else if ((reason === 'error' || reason === 'max-tokens') && settings.notifyOnTurnFailure) {
-    runtime.notifyAttention(NOTIFICATION_COPY[runtime.locale]['turn-failed'])
+  } else if (reason === 'max-tokens' && settings.notifyOnTurnFailure) {
+    // 批 2-1.1：max-tokens 单列 —— 文案给可行动出口（上下文已保留，打开输入「继续」），
+    // 且失败类通知不受聚焦抑制（会话 19 三次死亡全被 isFocused early-return 吞掉）。
+    runtime.notifyAttention({ ...NOTIFICATION_COPY[runtime.locale]['turn-failed-max-tokens'], evenWhenFocused: true })
+  } else if (reason === 'error' && settings.notifyOnTurnFailure) {
+    runtime.notifyAttention({ ...NOTIFICATION_COPY[runtime.locale]['turn-failed'], evenWhenFocused: true })
   }
 }
 

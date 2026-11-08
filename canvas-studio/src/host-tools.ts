@@ -3861,6 +3861,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // 放在 reconciled 之后：判的是**真正要渲染的**那份排布。
           ...checkManifestResolution(renderManifest, pre.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
+          // 批 2-1.2（四季片 P-06）：缺 builder 生成标记 = 手写 manifest 绕过了字段契约与
+          // builder 白名单（真机：模型外挂 finalize.mjs 改写产物）。观察期 warning（拍板②A），
+          // 引导走 scaffold→spec→builder 正路。
+          ...(renderManifest.meta.generatedBy !== 'manifest-builder'
+            ? ['manifest 缺 generatedBy 标记（非 builder 产物）——手写 manifest 会绕过 builder 契约与字段校验；请改走 scaffold_manifest + build/manifest-spec.json']
+            : []),
           ...(pendingFactNote !== '' ? [pendingFactNote] : []),
           ...(segmentDrift !== '' ? [segmentDrift] : []),
           ...coverageWarnings,

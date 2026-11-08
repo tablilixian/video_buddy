@@ -25,6 +25,7 @@
 - `backgroundColor`?: string
 - `look`?: ManifestLook — 三期 W2-4：**全片调色**（对比 / 饱和 / 亮度 / 色温 / 暗角 / 颗粒）。
 - `quality`?: RenderQuality — 三期 W5-3：渲染质量档（也可由工具参数覆盖）。缺省 `standard`。
+- `generatedBy`?: string — 批 2-1.2：builder 产物标记 —— 缺省缺失时 render 侧发观察期 warning（手写 manifest 绕过契约的观测口）。
 - `lint`?: 'off' — 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。
 
 ## RenderQuality

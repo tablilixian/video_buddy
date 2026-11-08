@@ -262,6 +262,9 @@ function main() {
       fps,
       durationInFrames,
       backgroundColor: theme.background,
+      // 批 2-1.2（四季片 P-06）：builder 产物标记 —— render 侧对缺标记的手写 manifest
+      // 发观察期 warning（拍板②A），引导走 scaffold→spec→builder 正路。
+      generatedBy: 'manifest-builder',
     },
     tracks,
     ...(spec.audio === undefined ? {} : { audio: spec.audio }),

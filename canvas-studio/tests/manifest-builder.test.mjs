@@ -145,6 +145,24 @@ test('排版三键透传：fontSize / widthPercent / box 原样到 caption 轨�
   }
 })
 
+test('generatedBy 标记：builder 产物 meta 带 manifest-builder（批 2-1.2 观察期观测口）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
+  try {
+    const result = run({
+      title: 't',
+      captions: [{ id: 'V1', text: '第一句', frames: 60, src: '/canvas-studio/assets/a.mp3' }],
+    }, dir)
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    const manifest = readManifest(dir)
+    assert.equal(manifest.meta.generatedBy, 'manifest-builder', '缺标记 = render 侧发手写 warning（P-06 观测口）')
+    const check = validateManifest(manifest)
+    assert.equal(check.ok, true, check.errors.join('；'))
+    assert.equal(check.warnings.some((w) => w.includes('generatedBy')), false, '标记必须是合法 meta 键（不触发未知键告警）')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('narration（秒）通道：按 fps 折算，且帧数累计等于总时长', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cs-builder-'))
   try {

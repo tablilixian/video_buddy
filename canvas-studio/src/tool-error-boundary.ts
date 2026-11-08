@@ -30,6 +30,8 @@ import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
 import { commitProbeBudget, guardProbeBudget } from './render-probe-budget.js'
+import { noteIntentCard, noteScaffold, noteStoryboard, specGateSnapshot } from './spec-gate.js'
+import { throwError } from './error-system.js'
 import { assertKnownToolParams, type ToolShapeForParams } from './tool-unknown-params.js'
 import './errors/catalog.js'
 
@@ -125,6 +127,39 @@ function sessionKeyOf(exec: unknown): string | undefined {
 }
 
 /**
+ * spec 编排闸（批 2-1.2 / 2.1，状态机在 spec-gate.ts）：
+ * - `write_storyboard`：意图卡未见 ⇒ 拒收（auto 模式下 confirm_intent_card 不弹卡不等待，
+ *   调用零成本 —— 会话 19 的 0 次调用是模型跳过，不是模式限制）；
+ * - `render_composition`：故事板已落地时，intent / scaffold 缺一即拒（会话 19 手搓 spec
+ *   68 步零产出的直接解）。storyboard 未落地（无故事板流 / 进程重启丢状态）一律放行，
+ *   手写 manifest 由 `meta.generatedBy` 标记的观察期 warning 兜底观测。
+ * 其余工具不设闸。
+ */
+function guardSpecGate(toolName: string, sessionKey?: string): void {
+  if (toolName !== 'write_storyboard' && toolName !== 'render_composition') return
+  const gate = specGateSnapshot(sessionKey)
+  if (toolName === 'write_storyboard' && !gate.intentCardSeen) {
+    throwError('CS-USER-ERR', {
+      message: '先调 `confirm_intent_card` 核对本次制作的意图与假设（放手跑下不弹卡、不等待，直接返回按默认值组装的卡），再 `write_storyboard`。',
+    })
+  }
+  if (toolName === 'render_composition' && !gate.renderAllowed) {
+    throwError('CS-USER-ERR', {
+      message: gate.missing === 'intent'
+        ? '先调 `confirm_intent_card` 核对意图（放手跑下不弹卡不等待），再 `write_storyboard` → `scaffold_manifest` → 渲染。'
+        : '先 `scaffold_manifest` 出骨架（M1：落地后 20 分钟内首片），把内容表填进 `build/manifest-spec.json` 跑 builder 生成 `build/manifest.json`，再渲染。**不要手写 manifest**——会绕过 builder 字段契约（四季片复盘 P-06）。',
+    })
+  }
+}
+
+/** 成功返回后置位（顺序闸：见一次成功即置位、永不清零）。 */
+function commitSpecGate(toolName: string, sessionKey?: string): void {
+  if (toolName === 'confirm_intent_card') noteIntentCard(sessionKey)
+  else if (toolName === 'write_storyboard') noteStoryboard(sessionKey)
+  else if (toolName === 'scaffold_manifest') noteScaffold(sessionKey)
+}
+
+/**
  * 包住一条工具定义的 `execute`：异常不再裸穿，而是统一过错误系统后抛出。
  *
  * 做两件事，都在「所有工具的唯一入口」这一点上完成：
@@ -159,6 +194,10 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 不传就会退回全局桶，跨会话串额度（真机事故见 render-probe-budget.ts 的 keyOf）。
       // 删掉本行即失去守卫。
       guardProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
+      // 批 2-1.2 / 2.1：spec 编排闸 —— write_storyboard 前须见过意图卡（auto 下零成本）；
+      // render_composition 前须走过 scaffold（storyboard 已落地时）。会话 19 实证：
+      // 无闸时模型手搓 spec 68 步零产出。删掉本行即失去守卫（反向变异靶）。
+      guardSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec))
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)
@@ -167,6 +206,7 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 放在这里而不是各工具内部，同样因为这是唯一实现点。
       const result = await original.call(source, args, exec)
       commitProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
+      commitSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec))
       return result
     } catch (cause) {
       throw recordStudioToolFailure(cause, exec)

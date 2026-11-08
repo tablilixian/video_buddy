@@ -37,6 +37,8 @@ export interface AutoTestPanelProps {
   projects: readonly StudioProject[]
   /** 启动一个场景（apply 世界的执行器；同一时刻只允许一个场景在跑）。 */
   onRunScenario: (scenario: AutoTestScenario) => void
+  /** 借鉴+翻拍 3v3：一键串行跑 6 个独立项目（与场景共用 running 闸门）。 */
+  onRunExperiment: () => void
   /** 请求停止当前场景（取消当前回合，执行器在两条回合之间落停）。 */
   onStop: () => void
   /** 清理全部历史测试项目（含已确认；返回实删数量）。 */
@@ -46,7 +48,7 @@ export interface AutoTestPanelProps {
 }
 
 export function AutoTestPanel(props: AutoTestPanelProps): ReactElement | null {
-  const { useStudio, settingsScope, projects, onRunScenario, onStop, onCleanup, onOpenProject } = props
+  const { useStudio, settingsScope, projects, onRunScenario, onRunExperiment, onStop, onCleanup, onOpenProject } = props
   // 客户端设置作用域只有 subscribe 无推送（client/index.ts 设置订阅同款口径），
   // 用 useSyncExternalStore 订阅快照 —— 与 SettingsModal.useScope 同构。
   const scope = useMemo(
@@ -89,6 +91,18 @@ export function AutoTestPanel(props: AutoTestPanelProps): ReactElement | null {
       )}
       {/* 场景列表（一期 1 个；场景本体是版本化静态数据，见 auto-test-scenarios.ts）。 */}
       <div className="csAutoTestScenarios">
+        {/* 借鉴+翻拍 3v3：6 个独立项目、6 段冻结首句，串行自动跑完（实验专用）。 */}
+        <div className="csAutoTestScenarioRow">
+          <span className="csAutoTestScenarioName" title="experiment-6run">借鉴翻拍 3v3（6 项目）</span>
+          <button
+            type="button"
+            className="csAutoTestRunBtn"
+            disabled={running}
+            onClick={() => onRunExperiment()}
+          >
+            ▶ 开始
+          </button>
+        </div>
         {AUTO_TEST_SCENARIOS.map(scenario => (
           <div key={scenario.id} className="csAutoTestScenarioRow">
             <span className="csAutoTestScenarioName" title={scenario.id}>{scenario.label}</span>

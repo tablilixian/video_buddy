@@ -268,6 +268,8 @@ export interface StudioProjectListInjected {
    * 同一时刻只允许一个场景在跑（防重入由执行器守卫）。
    */
   runAutoTestScenario(scenario: AutoTestScenario): Promise<void>
+  /** 借鉴+翻拍 3v3：一键串行跑 6 个独立项目，每跑发冻结首句原文、等回合结束后建下一跑；进度写 store.autoTest。 */
+  runExperiment6(): Promise<void>
   /** REQ-021：请求停止当前场景（取消当前回合；执行器在两条回合之间落停）。 */
   stopAutoTest(): void
   /**

@@ -426,7 +426,7 @@ export function StudioFrame(props: StudioFrameProps) {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
     retryNode, cancelCurrentTurn, confirmKeyframes, rejectKeyframes, setWorkflowMode, landStoryboard,
     fetchStoryboardVersions, archiveStoryboardVersion, restoreStoryboardVersion, renameStoryboardVersion, fetchStoryboardDiff,
-    activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest, cleanupTestProjects,
+    activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, runExperiment6, stopAutoTest, cleanupTestProjects,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, subscribeTheme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
@@ -3270,7 +3270,7 @@ export function StudioFrame(props: StudioFrameProps) {
         settingsScope={settingsScope}
         projects={projects}
         onRunScenario={(scenario) => { void runAutoTestScenario(scenario) }}
-        onStop={stopAutoTest}
+        onStop={stopAutoTest} onRunExperiment={() => { void runExperiment6() }}
         onCleanup={() => cleanupTestProjects()}
         onOpenProject={(projectId) => {
           // 返回原项目 / 打开测试项目：走与点击项目行相同的 openProject 链路

@@ -58,6 +58,7 @@ import { buildAssetHandles } from '../reference-handle.js'
 import type { AssetHandle } from '../reference-handle.js'
 import { insertAssetChip, insertSkillChip, registerCanvasAssetSourceWhenReady, registerCanvasSkillSourceWhenReady, registerLibAssetSourceWhenReady, insertLibChip } from './reference-source.js'
 import { VISIBLE_CATALOG } from '../skill-catalog.js'
+import { runExperiment6 as runExperiment6Impl, type ExperimentDeps } from './experiment-runner.js'
 import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
@@ -2827,6 +2828,13 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
             })
           }
         }
+        /** 借鉴+翻拍 3v3 执行器的依赖接线（编排主体外提到 ./experiment-runner.ts）。 */
+        const experimentDeps: ExperimentDeps = {
+          store: storeInstance, createProject: (label) => createStudioProject(label, undefined, undefined, 'auto'),
+          refreshProjects, openProject, driver: testDriver, send: sendChatText,
+          isStopRequested: () => autoTestStopRequested,
+          clearStopRequested: () => { autoTestStopRequested = false },
+        }
         /** 请求停止当前场景：取消当前回合（waitAgentTurn 随之空闲返回），执行器在两条回合之间落停。 */
         const stopAutoTest = (): void => {
           autoTestStopRequested = true
@@ -2967,6 +2975,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
           runEffectTests,
           // REQ-021：自动测试场景执行器（建项目 → 逐条发送 → 机器断言 → 报告落盘）。
           runAutoTestScenario,
+          runExperiment6: () => runExperiment6Impl(experimentDeps),
           stopAutoTest,
           cleanupTestProjects,
           // CV-066：装载 / 卸载 skill（store + skills.json 持久化）。

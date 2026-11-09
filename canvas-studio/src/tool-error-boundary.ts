@@ -31,6 +31,7 @@ import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-gua
 import { assertRequiredToolParams } from './tool-required-params.js'
 import { commitProbeBudget, guardProbeBudget } from './render-probe-budget.js'
 import { noteIntentCard, noteScaffold, noteStoryboard, specGateSnapshot } from './spec-gate.js'
+import { noteStoryboardLandedForPolicy, noteThinkingToolResult, type ThinkingSession } from './thinking-policy.js'
 import { throwError } from './error-system.js'
 import { assertKnownToolParams, type ToolShapeForParams } from './tool-unknown-params.js'
 import './errors/catalog.js'
@@ -120,6 +121,15 @@ export function recordStudioToolFailure(cause: unknown, exec: unknown): unknown 
  * `exec.agent.session.header.cwd` 同属一个 header，框架保证存在；取不到就返回
  * undefined，由预算模块退回 `args.projectId` / 兜底桶。
  */
+/** exec → 运行中的 Session（动态思考强度记账用；取不到返回 undefined，策略静默跳过）。 */
+function sessionOfExec(exec: unknown): ThinkingSession | undefined {
+  const agent = (exec as { agent?: { session?: ThinkingSession } } | null)?.agent
+  const session = agent?.session
+  return session !== undefined && typeof session === 'object' && 'header' in session
+    ? (session as ThinkingSession)
+    : undefined
+}
+
 function sessionKeyOf(exec: unknown): string | undefined {
   const agent = (exec as { agent?: { session?: { header?: { id?: unknown } } } } | null)?.agent
   const id = agent?.session?.header?.id
@@ -207,8 +217,14 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       const result = await original.call(source, args, exec)
       commitProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
       commitSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec))
+      // 批 2-v2：动态思考强度策略记账（成功路径）；故事板落地 = spec 装配段起点 ⇒ 压 low。
+      const sessionForPolicy = sessionOfExec(exec)
+      noteThinkingToolResult(sessionForPolicy, typeof source.name === 'string' ? source.name : '未知工具', true)
+      if (typeof source.name === 'string' && source.name === 'write_storyboard') noteStoryboardLandedForPolicy(sessionForPolicy)
       return result
     } catch (cause) {
+      // 批 2-v2：失败路径同样记账（同名连续 2 次失败 ⇒ 升级缺省档）。
+      noteThinkingToolResult(sessionOfExec(exec), typeof source.name === 'string' ? source.name : '未知工具', false)
       throw recordStudioToolFailure(cause, exec)
     }
   }

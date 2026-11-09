@@ -2494,3 +2494,11 @@
 - **详情**：翻拍会话实证三 bug 链——GitHub 直连 30MB 组件挂 1886s 才报错（组件 fetch 无超时）、错误对象 String() 序列化成 `[object Object]` 吞掉真因（网络慢 16KB/s 误报成「组件缺失」）、Node fetch 不读系统代理（默认档自愈靠 curl -x 才成功）。四修：①组件 fetch 加 `AbortSignal.timeout(120s)`；②直连失败自动走 ghfast.top 镜像（真机实证可用）；③fetch 双候选全挂且检测到代理环境变量时 execFile curl 兜底（真机自愈链同款）；④非 Error 对象走 JSON.stringify 截断。文案写明已尝试链路 + 「放置路径以本条文案为准」（沙箱与宿主 HOME/DSH_HOME 可能不同——双 home 错位实测）。
 - **涉及文件**：`src/video-download.ts`。
 - **验证**：video-download 11 测试全绿；全量 smoke 0 失败。**⚑ 待验收**：真机删 bin 缓存后重调 download_video ⇒ 组件在超时内经镜像/代理到位。
+
+#### CV-456 · 动态思考强度 v2：storyboard 压 low + 失败升级有界降回（2026-11-09，待真机验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：策略文档 `plans/2026-11-08-动态思考强度-分层策略与实施.md` §8 v2 批落码（杠杆 B——`agent-default-model.reasoningEffort` 对运行中会话不热生效的实测结论下，Host 动态档位是唯一可行路径）。新 `src/thinking-policy.ts` 状态机：① 会话首条 request/header 定基线，`reasoningEffort: 'none'`（显式关思考）⇒ 策略完全不介入；② `write_storyboard` 成功 ⇒ 压 low（spec 装配段，缺省档 50~100k 字符/步必爆——会话 19 实证）；③ 同名工具连续 2 次失败（含探针拒收）⇒ 升缺省（失败归因是判断类，低档躺平——会话 20 实证），换名打断连击；④ 升级后 5 个工具结果有界降回 low（防振荡）。写入机制 = `session.append('model/selection', {provider, model, reasoningEffort?})`（dsh-session:1517 查证）：modelSelection 投影 pending 跟随 → 下一请求即用新档 → 消费后 lastUsed 粘性更新（重启安全、UI 模型选择器同步可见）；升缺省 = 事件**不带** reasoningEffort 字段。接线两处：`tool-error-boundary.ts` 成功/失败双路径记账 + storyboard 落地触发；`index.ts` request/header 事件 → 基线观测。档位未变不重发事件。
+- **涉及文件**：`src/thinking-policy.ts`（新增）、`src/tool-error-boundary.ts`、`src/index.ts`、`tests/thinking-policy.test.mjs`（新增）。
+- **验证**：thinking-policy 8 测试全绿（基线 none / 基线只认首条 header / 压 low 不重发 / 换名打断连击 / 升缺省不带 effort / 5 结果降回 / 缺 provider 静默跳过 / 接线双向）；typecheck + build + verify:loader + 全量 smoke 0 失败。**⚑ 待真机验收**：跑一场 A2 同款内容表会话 ⇒ analyzer 分相档位时间线出现 storyboard→low 切换、失败升级与降回事件，且 max-tokens 0 / 探针 ≤3 / 自愈收敛不回退。

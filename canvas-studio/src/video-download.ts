@@ -16,6 +16,7 @@
  * 二进制路径可注入（同 ffmpegPath 先例），测试用桩脚本跑通全链路。
  */
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -222,18 +223,53 @@ export async function resolveYtDlpPath(options: {
     if (sha256Hex(cached) === expectedSha) return binaryPath
   }
   const url = ytDlpReleaseUrl(binaryName)
-  let bytes: Uint8Array
-  try {
-    // exactOptionalPropertyTypes：signal 仅在传入时带上（undefined 不能赋给 AbortSignal | null）。
-    const response = await fetch(url, { redirect: 'follow', ...(options.signal !== undefined ? { signal: options.signal } : {}) })
-    if (!response.ok) {
-      throwError('CS-USER-ERR', { message: `yt-dlp 组件下载失败（HTTP ${response.status}）—— 请检查网络后重试；或手动下载 ${url} 放到 ${binaryPath}（sha256=${expectedSha}）。` })
+  // 批 2-v1（会话 20 三 bug 链）：①组件下载加超时（此前无保护，真机挂 1886s）；
+  // ②GitHub 直连失败走镜像 fallback（ghfast.top，真机实证可用）；
+  // ③系统代理兜底用 curl（Node fetch 不读系统/环境代理，curl 读——真机自愈链同款）；
+  // ④错误对象安全序列化（此前 [object Object] 吞掉真因「网络慢」，误报成「组件缺失」）。
+  const COMPONENT_TIMEOUT_MS = 120_000
+  const proxyFromEnv = process.env.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.http_proxy ?? process.env.HTTP_PROXY
+  const candidateUrls = [url, `https://ghfast.top/${url}`]
+  const attempted: string[] = []
+  let bytes: Uint8Array | null = null
+  for (const candidate of candidateUrls) {
+    try {
+      const response = await fetch(candidate, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(COMPONENT_TIMEOUT_MS),
+      })
+      if (!response.ok) {
+        attempted.push(`HTTP ${response.status} @ ${candidate}`)
+        continue
+      }
+      bytes = new Uint8Array(await response.arrayBuffer())
+      break
+    } catch (error) {
+      attempted.push(`${error instanceof Error ? error.message : JSON.stringify(error ?? null)?.slice(0, 160) ?? String(error)} @ ${candidate}`)
     }
-    bytes = new Uint8Array(await response.arrayBuffer())
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('yt-dlp 组件下载失败')) throw error
-    throwError('CS-USER-ERR', { message: `yt-dlp 组件下载失败（${error instanceof Error ? error.message : String(error)}）—— 请检查网络后重试；或手动下载 ${url} 放到 ${binaryPath}（sha256=${expectedSha}）。` })
   }
+  if (bytes === null && proxyFromEnv !== undefined) {
+    // curl 兜底：系统/环境代理只有 curl 正确继承（真机自愈链同款：-x 走代理拉 GitHub）。
+    for (const candidate of candidateUrls) {
+      const tmp = join(tmpdir(), `ytdlp-component-${Date.now()}`)
+      try {
+        await execFile('curl', ['-sSL', '--max-time', '120', '-x', proxyFromEnv, '-o', tmp, candidate], { timeout: 130_000 })
+        bytes = new Uint8Array(await readFile(tmp))
+        if (bytes.length > 0) break
+        bytes = null
+      } catch (error) {
+        attempted.push(`${error instanceof Error ? error.message : String(error)} @ curl ${candidate}`)
+      }
+    }
+  }
+  if (bytes === null) {
+    throwError('CS-USER-ERR', {
+      message: `yt-dlp 组件下载失败（${attempted.join('；').slice(0, 400)}）—— 已尝试直连/镜像${proxyFromEnv !== undefined ? '/代理' : ''}。`
+        + `可配代理后重试，或手动下载 ${url} 放到 ${binaryPath}（sha256=${expectedSha}）。`
+        + `注意：放置路径以本条文案为准（沙箱与宿主的 HOME/DSH_HOME 可能不同）。`,
+    })
+  }
+  bytes = bytes as Uint8Array
   if (sha256Hex(bytes) !== expectedSha) {
     throwError('CS-USER-ERR', { message: `yt-dlp 组件校验失败（sha256 不符）—— 下载源被污染或网络劫持，已放弃执行。可手动下载 ${url} 放到 ${binaryPath}（sha256=${expectedSha}）。` })
   }

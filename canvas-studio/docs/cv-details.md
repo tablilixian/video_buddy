@@ -2444,3 +2444,53 @@
 - **详情**：后端 0.9.0 新增 `POST /api/v1/generate/asr2txt`（fast-Whisper-large-v3-turbo-ct2，同步阻塞，返回 `txt` / `txt_word` / `txt_segment` 三个行式字符串字段），本批把它作为第 **50** 个工具（49 真实 + 1 占位）接入 canvas-studio，只动工具侧（用户拍板：本轮不接 api-playground 测试台）。**入参单参数 `filename`**（媒体句柄或 `@ref[显示名]`）——按扩展名路由 `video` / `audio`（同传优先 `audio`），故 `resolveRefValue` **刻意不传 `expectKind`**（单 kind 过滤会拦掉一半合法输入），字段路由在 `transcribeAudio` 一处收口；超时复用 `DRAMA_TIMEOUT_MS.image`（720s，ASR 耗时随片长线性增长，文本档 360s 长片必被掐断），走 `callDramaRaw` 不进 `withGenerateSlot`，不新增 CS-* 错误码（沿 `analyzeImage`/`analyzeVideo` 同型自愈：产物名 0.1s 前置 500 → 反查重传换名重试一次）。**输出形态 = 文本回执 + 落盘词级转写 JSON**：新纯函数层 `src/asr-transcript.ts` 把 `txt_word` / `txt_segment` 行串解析成 `evidence-grid.parseTranscript` 可直食的 `{segments:[{start,end,text,words:[{t,start,end}]}]}`，写到 `dshHomePath('canvas-studio')/transcripts/asr-*.json`（回执给绝对路径，原样填 `evidence_grid.transcriptPath` 即可每格叠台词词标签；产物属于「拆解证据」不绑项目，与 teardown-store 同哲学）。**归组策略互斥**：后端给了 `txt_segment` 才按「重叠最大」归词（段边界与词起点相等 / 段间偶发重叠免疫，顺序扫会把边界词判错段）；缺失时从词序列按标点 + >1s 静音间隙自造句段 —— 这些段**已按构造分好组，不二次归组**（无条件再跑 `assignWords` 会把每个词推两遍，实测 [6,2,2] 而非 [3,1,1]，本轮修掉的真 bug，单测钉死）；归不到词的句段丢弃并计数（留着必被 `parseTranscript` 拒收）；`txt_word` 完全缺失则 `doc = null` 只回文本、回执明说未落盘。**能力边界写进工具描述**（用户要求）：99 语种、中文准确度一般、**不支持方言**（方言素材如实转告）、人名地名数字易错、无标点或标点不准，转写是辅助参考须人工校对；`duration` 是**服务端耗时**非媒体时长；带 `DRAMA_SERIAL_HINT` 逐个调用（进 skill 串行清单）。展示面：`tool-presentation.ts` B 档「语音转写」。**同批清三处存量漂移账**（AGENTS「漂移高发区就地修正」）：canvas-studio-tools.md 分节计数 A 14→16 / C 12→13（移出 REQ-022 退役三件）/ C2 11→16（补 `analyze_beats` / `snap_cuts_to_beats` 两处漏账）+ 新增 §A14 详情节；api.md 工具清单节 25→50 对齐注册面实测（脚本核对零缺零多零重）+ 新增 C2 节 + 端点映射表 + 「语音识别」契约节 + TOC；README 48→50；STATUS §3.4 停在 43 的指针式清单改 50。
 - **涉及文件**：`src/asr-transcript.ts`（新）、`src/{config,generate,host-tools,tool-presentation}.ts`、`tests/asr-transcript.test.mjs`（新）、`tests/{tool-registry,skill-guardrail,approval-gate,file-size-guard}.test.mjs`、`skills/canvas-studio-creation/references/toolchain.md`、`docs/{canvas-studio-tools.md,api.md,README.md,STATUS.md,cv-details.md}`。
 - **验证**：重建（tsdown + 双 tsc）EXIT=0；定向测试 asr-transcript（7 条：行解析 / 边界词归下段 / 跨模块同源吃进 parseTranscript / 无词句段丢弃 / 自造句段 / txt_word 缺失 doc=null / 落盘 E2E 文件名不撞）+ registry（50 与名单）+ skill 门禁 + status-shape 双层同步；完整链 `typecheck && build && verify:loader && test:smoke`（失败集合 ⊆ `baseline-red.json`，当前 `failing: []`）。**⚑ 待桌面验收**：真机传口播素材跑 `asr2txt` → 回执出三样 + 转写 JSON 路径填进 `evidence_grid.transcriptPath` 出词标签；方言素材如实转告边界。
+
+#### CV-449 · §18 渲染超时判活 + caption 音轨构成（a4fd9e5c47 前半，A2 验收通过）
+
+- **状态**：已完成·桌面验收通过（A2 场：渲染零误杀 + 「音轨 BGM + 旁白」回执正确）
+- **详情**：§18 批（a4fd9e5c47）前半——渲染总超时改判活（`onDeadline` 递归按剩余工作比例续期，`render-budget.ts` 纯函数）与 `timelineFromManifestAudio` caption 轨分支（纯代码片派生「无声」误报的修复）。真机判据：A2 场渲染 11 次零误杀、msPerFrame 17.5。
+
+#### CV-450 · §18 词级对齐三级来源 + box 内裁切（a4fd9e547 后半，代码注释引用号；R-01 坐标错位由 CV-451 同批修复）
+
+- **状态**：已完成·桌面验收通过（A2 场：卡拉OK逐字高亮三帧实证、末点不裁）
+- **详情**：§18 批（a4fd9e5c47）后半——词级对齐三级来源（显式 words > `audioFrames` 真值等分 > 能量包络）与 box 内裁切（chart 类目标签 88% 带 + dataCard 双维缩放）。**遗留 R-01**（等分原点产绝对帧 vs 轨内相对帧消费 ⇒ startFrame>0 全灰）由后续批修复（`trackWordWindows` 钉死轨内相对帧口径）；本节的 `audioFrames` 字段与 A2 内容表指引（manifest-builder.md）使模型真机主动填写（A2 场 8 句全填）。
+
+#### CV-451 · analyzer 全会话 turn 分解 + 跨 turn 判红三件（2026-11-08，A2/翻拍判卷实测通过）
+
+- **状态**：已完成·桌面验收通过（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：会话 19 教训（4 turn 跨两天的会话只看 turn 1 会把 max-tokens×3 与 scaffold=0 全漏）——`analyze-storyboard-latency.mjs` 新增「全会话 turn 分解」段（每 turn 窗口/步数/compaction/调用/源码读/sb-scaffold-intent-render 计数/turn-end 结局）+ verdict 三判红（全会话口径不随 --turn 收窄）：`noMaxTokensDeath` / `scaffoldAfterStoryboard` / `intentCardSeen`（故事板未落地时后两项 n/a 放行）。对会话 19 自动报出全部病灶；四季片转录回归无误报。
+- **涉及文件**：`scripts/analyze-storyboard-latency.mjs`。
+- **验证**：行为夹具断言 + 反向变异（删 scaffold 调用/改 completed ⇒ 判红翻转）；A2/翻拍两场真机判卷实测。
+
+#### CV-452 · 契约生成物「行为语义速查」段 + SKILL 缺口前置纪律（2026-11-08，待验收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：会话 19 实证模型读了 generated.md 仍读源码 60 次——要的是**行为语义**（reveal 两口径/countUp 滚多久/fontSize 缺省怎么算/draw 为什么胶囊），生成物只答「合法值/默认值」。`gen-component-contract.mjs` 静态 header 追加「行为语义速查」手写段（只写机制口径不写数值，数值仍由 AST 生成段承担，漂移门禁不变）；SKILL.md 禁令行升级「生成物没覆盖 ⇒ 先点名缺口（引用条目名）再读源码，缺口进交付未决项」。generated.md 6001→8548B。
+- **涉及文件**：`scripts/gen-component-contract.mjs`、`skills/code-driven-explainer/{SKILL.md,references/component-contract.generated.md}`。
+- **验证**：--check 一致；drift 测试 3/3；SKILL 15020B < 15KB 闸。**⚑ 待验收**：A2 真机读源码 22 次 > 12 目标（Chart.tsx 返工期为主），部分达标——契约覆盖面随缺口声明迭代。
+
+#### CV-453 · spec 编排闸：intent 前置 + scaffold 前置 + generatedBy 观察期（2026-11-08，scaffold 拒收真机实证）
+
+- **状态**：已完成·桌面验收通过（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：会话 19 病灶（绕开 scaffold 手搓 spec 68 步零产出 + confirm_intent_card 被跳过）。新 `src/spec-gate.ts` 按会话键三态（intent/storyboard/scaffold，见成功即置位永不清零，重启 fail-open），挂在唯一入口 `wrapStudioToolDefinition`（先于一切 execute 副作用，镜像 render-probe-budget 接线模式）：`write_storyboard` 前意图卡未见 ⇒ 拒收（auto 下 confirm_intent_card 不弹卡不等待调用零成本）；`render_composition` 前故事板已落地时 intent/scaffold 缺一即拒，文案给 scaffold→spec→builder 正路并禁手写。builder 产物 `meta.generatedBy='manifest-builder'`（缺标记 = 手写绕过契约的观察期 warning，拍板②A）；generatedBy 登记 KNOWN_META_KEYS + ManifestMeta + 字段表。
+- **涉及文件**：`src/spec-gate.ts`（新）、`src/tool-error-boundary.ts`、`src/remotion/manifest.ts`、`src/remotion/render-job.ts`、`skills/code-driven-explainer/assets/manifest-builder.mjs`、`tests/spec-gate.test.mjs`（新，8 条）、`tests/manifest-builder.test.mjs`。
+- **验证**：接线测试镜像 probe-budget 模式；反向变异（快照恒放行）2 条变红恢复 sha256 一致；直连 execute 的存量测试不受影响（闸只在包装器层）。**真机实证（A2）**：首轮 spotFrames 被闸拒收 → 模型立刻补 scaffold → 通过（拒收文案自愈链路成立）。
+
+#### CV-454 · 桌面通知聚焦豁免 + max-tokens 专属可行动文案（2026-11-08，待真机确认接收）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：会话 19 三次 max-tokens 回合死亡 8h55m 无人知。notifications.ts 早已正确处理 max-tokens，真凶是 `electron-shell-generation.ts` 的 `if (window.isFocused()) return` 吞掉聚焦态通知（放手跑正中）。`DesktopNotification.evenWhenFocused?: boolean`（失败类聚焦也弹，完成类保持静默）；max-tokens 从 turn-failed 拆出专属 outcome——文案给可行动出口「上下文已保留：打开 VideoBuddy 输入『继续』即可接着做」；通知点击 → show()（既有）。
+- **涉及文件**：`dsh-plugin-desktop/src/{notifications.ts,runtime.ts,electron-shell-generation.ts}`、`dsh-plugin-desktop/tests/{notifications.spec.ts,electron-runtime.spec.ts}`。
+- **验证**：notifications 9 条 + electron-runtime 63 条全绿（含聚焦豁免正向用例与 evenWhenFocused 不透传 Electron 选项）。**⚑ 待验收**：真机回合死亡 ⇒ 聚焦态系统通知弹出（401 两例未获用户接收确认）。
+
+#### CV-455 · download_video 组件下载四修（2026-11-09，待真机复验）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：翻拍会话实证三 bug 链——GitHub 直连 30MB 组件挂 1886s 才报错（组件 fetch 无超时）、错误对象 String() 序列化成 `[object Object]` 吞掉真因（网络慢 16KB/s 误报成「组件缺失」）、Node fetch 不读系统代理（默认档自愈靠 curl -x 才成功）。四修：①组件 fetch 加 `AbortSignal.timeout(120s)`；②直连失败自动走 ghfast.top 镜像（真机实证可用）；③fetch 双候选全挂且检测到代理环境变量时 execFile curl 兜底（真机自愈链同款）；④非 Error 对象走 JSON.stringify 截断。文案写明已尝试链路 + 「放置路径以本条文案为准」（沙箱与宿主 HOME/DSH_HOME 可能不同——双 home 错位实测）。
+- **涉及文件**：`src/video-download.ts`。
+- **验证**：video-download 11 测试全绿；全量 smoke 0 失败。**⚑ 待验收**：真机删 bin 缓存后重调 download_video ⇒ 组件在超时内经镜像/代理到位。

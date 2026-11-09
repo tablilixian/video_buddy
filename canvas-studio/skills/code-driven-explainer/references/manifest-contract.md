@@ -1,5 +1,18 @@
 # CompositionManifest 契约（组装必读）
 
+## 首轮必读速查表（组装前先读；真机返工八成出在这四条）
+
+| 坑 | 规则 | 报错时怎么改（**不要去读源码**） |
+| --- | --- | --- |
+| z-order | `tracks` **数组靠后 = 更上层**；全屏 image/video 轨排在内容轨之后会盖住文字 | 把全屏媒体轨移到数组最前，或给它加 `box` 限定局部区域；**补字幕卡只会新增更多被盖配对，不是解法** |
+| sourceRect | `{x,y,w,h}` 是**百分比 0–100**；`x+w≤100` 且 `y+h≤100`，负值 / 零尺寸 / 非数值硬失败 | 报错给的是当前 `x+w / y+h`：缩小 `w/h`，或把 `x/y` 左移上移；别去改画布尺寸 |
+| 轨道 id | 全 manifest 唯一；video / image 轨 `id` = 画布节点 id（`list_shots` / `list_references` 取），纯呈现轨用本地唯一 id | 给重复的那条轨换唯一 id，不要删轨、不要改 type |
+| box × animate | 轨有 `box` 时位置已由它决定，`animate.from/to` 与 `exit.to` **不得含 x/y**；scale / rotation / opacity 可留 | 删掉 from / to 里的 x/y 键；需要位移改走别的运动字段 |
+
+**校验在宿主侧**：这四类由 `validateManifest` 与 manifest lint 检查，**不在 `assets/manifest-builder.mjs` 里**。
+报错已经给修法，就按提示改那一条轨，**不要 bash sed `src/remotion/**` 去找「校验写在哪」**；
+只有生成物确实没覆盖到的缺口，才按纪律节「先点名缺口再读源码」处理。
+
 > **字段名与枚举取值看 [`manifest-fields.generated.md`](./manifest-fields.generated.md)** —— 那份由 `src/remotion/manifest.ts` **机器生成**（`node scripts/gen-manifest-fields.mjs`，有门禁守着不漂）。要确认「这个字段叫什么 / 必填吗 / 有哪几个取值」直接查它，**不要再去读 src/remotion/manifest.ts**（读一次平均 30 秒以上，而那份文件里就有答案）。
 >
 > **合法值 / 各结构合法键 / 默认常量看 [`component-contract.generated.md`](./component-contract.generated.md)**：`SHAPES`、`EFFECTS`、`TRACK_FX`、`KNOWN_TRACK_KEYS.<轨型>`、reveal 默认帧、组件默认色都由源码 AST 抽出（`node scripts/gen-component-contract.mjs`，漂移门禁守着）。这些以前只能 bash 读 `src/remotion/**` 才拿得到 —— 现在别读了，读一次就把上一版设计推翻一次的循环就是这么来的。

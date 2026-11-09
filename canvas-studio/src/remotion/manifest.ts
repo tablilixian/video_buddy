@@ -1464,7 +1464,7 @@ export function validateManifest(input: unknown): ManifestValidation {
     if (!isNonEmptyString(id)) {
       errors.push(`${at}.id 必须是非空字符串`)
     } else if (kindById.has(id)) {
-      errors.push(`${at}.id 重复（${id}）：轨道 id 必须唯一`)
+      errors.push(`${at}.id 重复（${id}）：轨道 id 必须唯一 —— 给重复的那条轨换唯一 id；video/image 轨填画布节点 id（list_shots / list_references 取），纯呈现轨用本地唯一 id`)
     }
 
     const type = track.type

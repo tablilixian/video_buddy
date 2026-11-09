@@ -594,3 +594,87 @@ test('P3：体裁壳与 executor 的双向引用不得成环（壳引 executor�
     }
   }
 })
+
+// ── 2026-11-09 · CV-429 回归反证（`9853fa28` 瑞幸 C 档）───────────────────
+//
+// 事故：11-04 已给 6 壳 description 与 executor 回指段补过「点名也先过壳」，
+// 但 brief 同时做了三件事：点名 executor + 把三问答案写死 + 声明「不要反问」。
+// agent 自述 "doc explicitly declares brand-promo-video-generator, load it"，
+// 整场未加载 brand-format-director ⇒ 消解句没覆盖「答案已给全」这个形态，
+// 且总纲「点名具体技能 → Look 采集整体跳过」被泛化成了「定向也跳过」。
+//
+// 本组钉三处入口，并带反向变异哨兵：把例外句拿掉后判据必须变红。
+const BRIEF_CARVE_OUT = /答案.{0,10}给全|不要反问|写.{0,4}三问/u
+const SHELL_REQUIRED = /不跳体裁壳定向|仍须先加载|不得跳过本壳|壳不可跳/u
+const carveOutPresent = (text) => BRIEF_CARVE_OUT.test(text) && SHELL_REQUIRED.test(text)
+
+const CARVE_OUT_TARGETS = [
+  {
+    name: '总纲跳过规则',
+    path: ['canvas-studio-creation', 'SKILL.md'],
+    pick: (text) => text.split('\n').find((l) => l.startsWith('**跳过规则**')) ?? '',
+    sentence: '只跳 Look，不跳体裁壳定向',
+    legacy: '用户已点名具体技能或风格 → Look 采集整体跳过',
+  },
+  {
+    name: 'brand-format-director §1',
+    path: ['brand-format-director', 'SKILL.md'],
+    pick: (text) => text.split('\n').filter((l) => l.startsWith('> **答案已给全的形态')).join('\n'),
+    sentence: '答案已给全的形态',
+    legacy: '问完即在回复中复述定向结论（素材现实 / 场景 / 时长画幅语言）再开工。',
+  },
+  {
+    name: 'brand-promo-video-generator 回指段',
+    path: ['brand-promo-video-generator', 'SKILL.md'],
+    pick: (text) => text.split('\n').filter((l) => l.startsWith('> 即使任务书已把三问答案写死')).join('\n'),
+    sentence: '答案可引用，壳不可跳',
+    legacy: '点名只决定「用哪条链」，不替代定向。',
+  },
+]
+
+test('P3 扩展：三处入口必须覆盖「brief 写死答案 / 不要反问」形态', () => {
+  for (const t of CARVE_OUT_TARGETS) {
+    const text = readFileSync(join(SKILLS_DIR, ...t.path), 'utf8')
+    const clause = t.pick(text)
+    assert.ok(clause.includes(t.sentence), `${t.name}: 缺定向例外句「${t.sentence}」`)
+    assert.ok(carveOutPresent(clause), `${t.name}: 例外句没写明「答案可给全但壳不可跳」`)
+  }
+})
+
+test('P3 扩展哨兵：换回事故前的旧文案后判据必须变红（门禁不得恒真）', () => {
+  assert.equal(carveOutPresent('用户已点名具体技能或风格 → Look 采集整体跳过'), false,
+    '无例外句的旧文案竟被判通过 —— 门禁恒真')
+  for (const t of CARVE_OUT_TARGETS) {
+    assert.equal(carveOutPresent(t.legacy), false,
+      `${t.name}: 事故前旧文案仍判绿 ⇒ 断言命中了别处的无关文字（门禁失效）`)
+  }
+})
+
+// ── 2026-11-09 · CV-452 第 6 次反证：契约知识必须落在「必读入口」 ───────
+//
+// 真机（`9853fa28`）：bash 读组件源码 25 次 > 12；19:47 补进
+// component-contract.generated.md 的「行为语义速查」整场 0 命中 —— 模型的必读入口
+// 是 `SKILL.md` 工作流第 2 步点名的 manifest-contract.md（713 行整读），
+// 且它 sed builder 是在找「根本不存在的校验」（真校验在宿主侧）。
+// ⇒ 继续往生成物堆知识无效：四条高频坑要放进必读入口，校验报错要自带修法。
+test('P0-3 必读入口：manifest-contract.md 顶部四类速查在位，且工作流点名它', () => {
+  const contract = readFileSync(
+    join(SKILLS_DIR, 'code-driven-explainer', 'references', 'manifest-contract.md'), 'utf8',
+  )
+  const head = contract.split('\n').slice(0, 16).join('\n')
+  assert.ok(head.includes('首轮必读速查表'), '速查表必须在文件最前面（模型整读时第一个看到）')
+  for (const marker of ['数组靠后', 'sourceRect', '轨道 id', 'box × animate', '不在 `assets/manifest-builder.mjs`']) {
+    assert.ok(head.includes(marker), `速查表缺「${marker}」`)
+  }
+  const skill = readFileSync(join(SKILLS_DIR, 'code-driven-explainer', 'SKILL.md'), 'utf8')
+  assert.match(skill, /顶部速查表/, '工作流第 2 步没点名速查表 —— 模型仍不会走到它')
+})
+
+test('P0-3 报错带修法：sourceRect 越界 / 轨道 id 重复不再是「只说错」', () => {
+  const sprite = readFileSync(join(ROOT, 'src', 'remotion', 'sprite.ts'), 'utf8')
+  const manifest = readFileSync(join(ROOT, 'src', 'remotion', 'manifest.ts'), 'utf8')
+  assert.match(sprite, /越界：x\+w[\s\S]{0,200}(缩小|左移)/u,
+    'sourceRect 越界报错没给修法 —— 模型会回去 sed 源码找校验')
+  assert.match(manifest, /id 重复[\s\S]{0,220}(换唯一 id|画布节点 id)/u,
+    '轨道 id 重复报错没给修法 —— 同上')
+})

@@ -52,7 +52,7 @@ export function validateSpriteRect(value: unknown, at: string, errors: string[])
     return
   }
   if (x + w > 100 + EPS || y + h > 100 + EPS) {
-    errors.push(`${label} 越界：x+w 与 y+h 不得大于 100（当前 ${x + w} / ${y + h}）`)
+    errors.push(`${label} 越界：x+w 与 y+h 不得大于 100（当前 ${x + w} / ${y + h}）—— 缩小 w/h 或把 x/y 左移上移；sourceRect 是百分比，不是像素`)
   }
 }
 

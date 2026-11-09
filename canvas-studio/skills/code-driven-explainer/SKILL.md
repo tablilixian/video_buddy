@@ -42,7 +42,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
 `recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
 单镜头动效从 `references/shot-cards.md` 挑卡填参。
-手写整份也行，但务必照 `references/manifest-contract.md` 的硬约束来（顶层 `id` 必填是最常见的首轮失败）。`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（九种轨型）+ 可选 `audio`。
+手写整份也行，但**先读 `references/manifest-contract.md` 顶部速查表**（四类首轮高频坑）与硬约束（顶层 `id` 必填最常见）。`meta` + `tracks` + 可选 `audio`。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **先出片，再丰富**（下节 R0–R6）：拿到骨架就渲一版 `quality:"draft"`，之后每轮只加一层、每轮都出片 → 见下一节。**不要等 manifest 写完才渲**。
 5. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。

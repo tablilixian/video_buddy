@@ -29,6 +29,19 @@
   四季片 §6.4）；BGM / duck / 音轨 volume 仍 0–1。禁止重编码源音频凑响度（A 版提示词 A9）。
 - **chart**：`title`（1–40 字）画在绘图区上方标题带；`labelEvery` / `maxLabels` 只抽**标签**
   不改数据点，首末点强制保留（末点是 countUp 锚点）；类目标签画在绘图区底边 88% 带内（§18.4）。
+- **textCard 无 `color` 键**（品牌宣传第一版 v1 / 2026-11-09）：合法键只有 `variant` / `text` /
+  `data` / `accentColor` / `anim` / `animOptions` / `countUp` / `dataSource`。写 `color` 只会进
+  「契约外字段」warning 并**静默丢弃**（该场一次 13 条）；正文色由 variant 固定为浅色系，
+  ⇒ 浅底配深字不可能用 textCard 实现，改用深色底板 / `caption`（有 color）/ `shape` 承载。
+- **textCard `title` 变体**（品牌宣传第一版 v1）：无条件铺满整盒的 35% 黑色遮罩，换行宽度按
+  `canvasWidth * 0.9` 算、**忽略 `box`**；`subtitle` 变体铺 `rgba(0,0,0,0.62)` 药丸底。想做轻底或
+  精确盒宽排版别硬调这两个变体（该场实测标题溢出盒子、浅瓷底被压成深板）。
+- **shape 的 `fx` 是文字效果**（品牌宣传第一版 v1）：`fxStyles()` 里 `stroke` 只产出 `textStroke`
+  与 `textShadow`，对形状填充/轮廓**完全无效** ⇒ 指望 `fx:stroke` 把实心圆变环会失败（该场 s4 环
+  渲染成与 s3 相同的实心圆）。要环形/绕圈点用 `path` 或 `orbit`，别靠 fx。
+- **shape `path` 忽略 `box`**（品牌宣传第一版 v1）：path 是铺满画布的 SVG，坐标为 0–100 双轴
+  百分比（`preserveAspectRatio=none`），源码注释明写「path 没有 box 落点」；用 `box` 限制轨迹范围
+  无效、会横贯整幅画面。要控尺寸就在 `d` 里写真实半径，或改用受 box 约束的其它 shape 类型。
 
 ## src/remotion/manifest.ts
 

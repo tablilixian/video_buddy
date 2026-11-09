@@ -2210,10 +2210,12 @@
 - **详情**：六大体裁路线阶段 1.1（品牌宣传/产品讲解能力前提）。LibCategory 五处同步：contracts 枚举 + LIB_CATEGORIES + 标签 + isLibCategory 收口 / param-guard 描述串 / AssetLibrary CATEGORY_COLORS（logo `#F472B6` / brand `#A3E635` / product `#F87171`）/ manifest.global 新 `logo` 键（KNOWN_GLOBAL_KEYS + 字段文档机器生成物同步）。REQ-032 C1 失败模式上闸：B-4 追加 param-guard 描述串同源断言。
 - **验证**：B-4 全量对拍绿 + 反向变异（描述串摘 logo → 红）；voice「排末位」断言退休改存在性（位置漂移由 B-4 兜底）；棘轮 manifest.ts +2（2187→2189）显式登记；`yarn check` 全绿。
 
-#### CV-417 · brand-format-director 品牌宣传编排壳（2026-11-04，待桌面验收）
+#### CV-417 · brand-format-director 品牌宣传编排壳（2026-11-04，品牌宣传 v1 验收通过）
 
+- **状态**：已完成·桌面验收通过（品牌宣传 v1 场：编排壳路由 + 真实性底线实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **详情**：六大体裁路线阶段 1.2。从 `brand-promo-video-generator` 拆编排层（explainer 壳同款样板）：定向三问（素材现实 / 投放场景 / 时长画幅语言，素材底线前置进第一问）+ 两条链路路由（brand-promo 风格链 / code-driven-explainer 动效图形链）+ 验收四条（真实性底线）+ 不做清单；风格与素材纪律留 L3 原样。SKILL.md 4334B；platform.yaml（category: format / stage: preview / role: decision / handoff）+ catalog 快照同批。
 - **验证**：skill 守卫全绿；裸 `references/` 路径踩渐进披露守卫（改跨 skill 全限定路径）；`yarn check` 全绿；真机整片验收 = 阶段 1.4。
+- **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：**编排壳路由实证** —— 首句「用品牌宣传体裁做一条 20 秒…」后，模型第一动作即加载 `brand-format-director`（全文命中 59 次），依次读链路与契约、按「定向三问 → 路由表」判定零参考素材；17:03:46 明确写下「触发 brand-promo 底线：我不能重绘它」，17:04:22 宣布退 `code-driven-explainer` 动效图形链并写进故事板硬约束。B1（素材不足退链且说明原因）/ B3（身份承载资产零重绘）达标；成片 20.07s / 1280×720 / −15.6 LUFS / 最终 lint 0 告警。**边界**：本场是零素材降级链，不是 B1–B6 完整正例，真实素材链待 C 档场验证。
 
 #### CV-418 · product-format-director 产品讲解编排壳（2026-11-04，待桌面验收）
 
@@ -2271,19 +2273,22 @@
 
 #### CV-428 · reveal 退场擦除 `reveal.out` + 进场方向语义告警（2026-11-04，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（2026-11-09 `4cdaca33` 场真机实证；权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
 - **详情**：科普 0.1 成片验收发现右面板 reveal **自左往右推进**，与需求「右 wipe 出」相反。根因：`reveal.direction` 只描述**进场**方向（可见区自该侧展开），而当时 `exit` 只支持 opacity/scale/rotation/x/y、**没有 clip** ⇒ 「wipe 出」只能写 `direction:"right"`，而那是进场方向 ⇒ 视觉正好相反。修复：① 新增 `TrackRevealOut` 契约（`direction` 退场方向 / `durationInFrames` / `gapFrames`）+ `reveal.out?` 字段 + `KNOWN_REVEAL_OUT_KEYS` 子键扫描；② `reveal.ts` 新增 `revealClipWithOut` / `revealOutWindow` / `revealHiddenSide` / `revealOutHiddenSide`（老路径 `revealClipAt` **逐字不变**，无 `out` 的老 manifest 逐像素不变）；③ **两个方向不是同一口径**：进场 `direction` = 可见区展开方向 ⇒ 隐藏侧 = 该方向；退场 `out.direction` = 内容退去方向 ⇒ 隐藏侧 = 该方向的**对侧**；退场区间锚轨尾 `[dur-gap-dur, dur-gap)`，与 `exit` 同口径；④ `validateReveal` 加 A5 语义告警：**仅当**进场方向指向本卡所在侧才提示改用 `reveal.out.direction`（异侧不报）；⑤ `RevealShell.tsx` 增必填 prop `trackDurationInFrames`，`Root.tsx` 传 `track.durationInFrames`。
 - **涉及文件**：`src/remotion/reveal.ts`、`src/remotion/manifest.ts`、`src/remotion/components/{RevealShell,Root}.tsx`、`skills/code-driven-explainer/references/manifest-contract.md`、`tests/remotion-callout-reveal.test.mjs`（+6 例）。
 - **验证**：告警精准命中真实 manifest 的 `tracks[38]`（s4_rPanel），左面板不报；退场擦除方向正确。
+- **真机验收（2026-11-09，`4cdaca33` 固定 low 场）**：`reveal.direction` 进场/退场方向语义告警多次出现，模型按提示改用正确方向；与 `c9bc5f7e` 场合并构成二次实证。**证据边界**：本场是整片链路覆盖，未单独对退场擦除做逐帧像素复核。
 
-#### CV-429 · 六个体裁编排壳 description 补消解句（2026-11-04，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+#### CV-429 · 六个体裁编排壳 description 补消解句（2026-11-04，品牌宣传 v1 验收通过）
+
+- **状态**：已完成·桌面验收通过（品牌宣传 v1 场：点名体裁仍先加载体裁壳）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：科普 0.1 验收 A1：`explainer-format-director` 全会话出现 5 次但**全部不在路由声明里**，可见回复中路由声明 0 次 —— 点名下游 executor 时体裁壳被整层跳过。根因**在 executor 侧**：壳的 description 只说自己是什么，没说与 executor 的分工；executor 侧对体裁壳**零提及**。修复取**双侧**：① 六个壳（brand / data-viz / drama / explainer / product / social-ad）的 description 补「用户点名下游 executor 时本壳仍须先加载做定向——点名只决定『用哪条链』，不替代定向三问」；② 七个 executor（code-driven-explainer / papercraft-stop-motion-explainer / paper-collage-explainer-generator / brand-promo-video-generator / minimalist-product-ad-generator / viral-remake / drama-episode-executor）加回指上游壳 —— 点名时 agent 读的是它，这才是真根因侧。
 - **涉及文件**：6 个 `skills/*-format-director/SKILL.md`、7 个 executor `SKILL.md`、`tests/skill-tool-refs.test.mjs`（+3 条门禁：壳 description 消解句 / executor 回指 / 双向引用不成环）。
 - **验证**：description 长度 334–465 ≤ 500 字符；skill 相关门禁 44/44 绿。⚠️ `code-driven-explainer/SKILL.md` 因 12 KB 闸（12241 B）把细则下沉到 `references/format-directors.md`。
+- **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：用户首句点名「用品牌宣传体裁」，模型第一句回复即「I'll start by loading the master creation spec, then the brand-promo format director as required」，**先加载体裁壳再做定向**，没有因点名体裁而跳过去下游 executor；全程无「点名下游即绕过壳」现象 ⇒ 消解句 + executor 回指在真机生效（科普 0.1 的 A1 病灶未复现）。
 
 #### CV-430 · 验收结论传递：pitfalls / verification 分册 + 项目级 lessons（2026-11-04，待桌面验收）
 
@@ -2293,15 +2298,16 @@
 - **涉及文件**：`skills/code-driven-explainer/references/{pitfalls,verification}.md`（新）、`skills/code-driven-explainer/SKILL.md`（必读指针 + 纪律节改指）、`skills/code-driven-explainer/references/explainer-patterns.md`（流程纪律下沉，避免两份事实源）。
 - **验证**：references 断链守卫（渐进披露门禁）绿；SKILL.md 11588 B / 上限 12288 B。
 
-#### CV-431 · 三条流程纪律进 SKILL.md（负例闸门 / 画面判据取证 / 探针前置）（2026-11-04，待桌面验收）
+#### CV-431 · 三条流程纪律进 SKILL.md（负例闸门 / 画面判据取证 / 探针前置）（2026-11-04，品牌宣传 v1 验收通过）
 
 > **〔2026-11-04 22:57 纠偏〕** 本条三条中的「负例必发闸门」已撤销（B-0 批）：负例是验收阶段验证功能生效的**可选测试手段**，不进正常流程、不影响结案；SKILL.md 第 5 步改「交付前复述未决项」。画面判据取证与探针前置两条保留。现行口径见 `references/verification.md §3` 与执行计划 §6。
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（品牌宣传 v1 场：取证 / 探针 / 未决项复述三纪律实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：三条纪律此前只落在文档、没落进流程，靠人记得。① **负例必发闸门**（P5）：正例成片交付后必须发出负例提示词并验证拦截，**未执行不得结案**（0.1 批 A8 因漏发无法判定，卡住整批收口，续跑批人工补上 +245.7min）；② **画面类判据必须看图本身**（P8）：`inspect_image` 的 grid/bbox 只用于**定位疑点**，不能当「元素是否存在」的结论依据，**禁止拿 manifest 字段自证画面效果**（0.1 批 render #7 看的是 32×18 亮度网格，把地轴误认成引线；A4 正是凭 manifest 字段自证，漏检了整层不可见）；③ **首轮渲染即用 `spotFrames` 探针**（P9）：探针 ~1.5s vs 全片 ~25s（快 17 倍），逐条判据取代表帧；全片 draft 只用于交付前定稿（0.1 批前 6 次渲染全是全片 draft，第 7 次才首次用上探针）。
 - **涉及文件**：`skills/code-driven-explainer/SKILL.md`（工作流第 4/5 步 + 纪律节）、`skills/code-driven-explainer/references/verification.md`、`skills/code-driven-explainer/references/explainer-patterns.md`（自检清单加两条）。
 - **验证**：SKILL.md 体积闸（12 KB）绿；渐进披露 / 引用断链门禁绿。
+- **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：纠偏后三条现行纪律实证 —— ① **画面判据看图本身**：首轮渲染即 `spotFrames` + 20 次 `read_image` 逐张看成片像素，抓出白字压浅底 / 标题溢出 / s3-s4 同圆 / CTA 重叠 / 599 帧空白 / 0 帧黑屏 6 个真缺陷，未拿 manifest 字段自证；② **探针前置 + 预算硬闸**：3 次探针用满后被拒收，按提示转 `quality:"draft"` 渲全片，未继续逐帧试错；③ **交付前复述未决项**：交付卡逐条对照四条硬要求，并主动披露零素材、概念文案占位、未走 official builder。
 
 #### CV-432 · `ask_user_choice` 失败兜底（2026-11-04，待桌面验收）
 
@@ -2321,11 +2327,13 @@
 
 #### CV-434 · 字幕卡排版预算按盒子算（2026-11-04，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（2026-11-09 `4cdaca33` 场真机实证；权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：科普 0.1 成片像素实证 —— 带 `box` 的 `textCard` + `variant:'subtitle'` 轨**文字被裁**（不是叠字）：`"0° Equator"` 只剩 `"Equator"`、`"+23.5°N · Solstice"` 只剩 `"Solstice"`、两行字幕首行被削成一条横线。根因：旧实现把字号与行数预算一律按**画布**算（`maxWidthPx = canvasWidth*0.86-64` / `baseFontPx = 44` / `maxLines = 3`），而带 `box` 的卡片真实容器是**盒子**（常常只有画布 1/6 宽、1/10 高）⇒ **排版预算与真实容器不是同一个尺寸** ⇒ 溢出后被外层 `overflow: hidden` 一刀裁掉。修复：新纯函数 `src/remotion/subtitle-fit.ts`（`subtitleFitBudget`：带 box 时按盒子宽高定可用宽/高/基准字号/行数上限，字号下限 16px），`TextCard.tsx` 改用预算；**不带 `box` 的铺满卡走老参数，逐像素不变**。
 - **涉及文件**：`src/remotion/subtitle-fit.ts`（新）、`src/remotion/components/TextCard.tsx`、`tests/remotion-subtitle-fit.test.mjs`（新，6 例含三张事故卡片的「高度必须装得进盒子」断言）。
 - **验证**：6/6 绿；`yarn check` 全绿。
+- **真机验收（2026-11-09，`4cdaca33` 固定 low 场）**：15:38:35 box 口径校验拒收「位置已由 box 决定，请移除 animate 的 x/y」，box 语义守卫在生产链路生效，构成二次实证。**证据边界**：本场是 box 口径链路覆盖，未单独复跑带 box 的多行 subtitle 裁切像素判据。
+
 
 #### CV-435 · 读图能力恢复：网关模型行 image 声明 + 视觉禁令反转（2026-11-04，待桌面验收）
 
@@ -2383,13 +2391,14 @@
 - **涉及文件**：src/remotion/manifest.ts（KNOWN 表补登 + export + levenshteinWithin/nearestKnownKey + warnUnknownKeys 文案）、src/remotion/reveal.ts（direction 显式判定）、src/remotion/motion-lint.ts（delta 取整）、tests/{manifest-fields-drift,manifest-chart,remotion-motion-lint,remotion-callout-reveal}.test.mjs。
 - **验证**：反向变异实证两条 —— ① 漂移扫描：lib 删 hasAlpha 登记 ⇒ 「实现读取了未登记字段：hasAlpha」红，还原 ⇒ 绿；② P-05：lib 去掉 1e-9 取整 ⇒ 0.9↔1.0 边界用例红，还原 ⇒ 绿。段 A 收官统一测试：**全量 294 文件 2756·2756 全绿**（分 6 批跑通；唯一两红 = chart-line-countup 夹具未带 B-4 溯源字段，补「构造样本 / observed」归零）+ verify:loader + 双 tsc 绿。全量 test:smoke 按计划仍由用户终端跑（P2 基线）。
 
-#### CV-442 · B-6 六体裁推广工程准备：六壳工程纪律节 + 通用护栏（2026-11-05，待桌面验收）
+#### CV-442 · B-6 六体裁推广工程准备：六壳工程纪律节 + 通用护栏（2026-11-05，品牌宣传 v1 验收通过）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（品牌宣传 v1 场：工程纪律节三要点实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：段 A 收官批（P4 收窄口径：6 编排壳 + 各自 executor + 通用护栏，打勾靠 §5.2 真机循环）。① **六壳统一「工程纪律」节**（explainer / brand / product / data-viz / social-ad / drama 六个 format director，各 +572B 同文）：三层取证层级（read_image 首选看图本身 / inspect_image 精确数值 / image2vl·video2vl 仅三种情况保底且不可当事实 + toolchain §7 指针）、交付前复述未决项（体检 N 条段 + lint 落盘清单）、数据判据（dataSource/baseline/observed/inline/pending 禁入）。② **五 executor 补取证层级**（drama-episode-executor / brand-promo-video-generator / minimalist-product-ad-generator / mv-production / viral-remake，各 +232B）：read_image 首选 + 禁 manifest 自证。此前六壳与五 executor **零 read_image 覆盖**（grep 实证）——读图能力恢复后只有科普 executor 接上了，B-6 把工程能力铺满六体裁入口。③ **通用护栏**：新 `tests/skill-genre-guardrail.test.mjs` 4 条（六壳三标记 + toolchain 指针 / 五 executor 两标记 / data-viz 数据判据 / 12KB 体积闸）——在场性守卫不锁全文措辞，新体裁壳落地时这条闸会要求接上工程纪律。
 - **涉及文件**：skills/{6 壳 + 5 executor}/SKILL.md、tests/skill-genre-guardrail.test.mjs（新）。
 - **验证**：段 A 收官统一测试 **2756·2756 全绿**（含 skill-genre-guardrail 4 条）；**能力矩阵「工程改动」半边就此就绪**（§5.3 六格的「读图取证 / 体检回执 / 动效口径 / 数据契约 / 负例纠偏 / 通用护栏」行）；「打勾」另一半 = §5.2 协作循环（用户真机跑 + 判定报告），段 A 不自判。
+- **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：六壳工程纪律节三要点在真机全部落地 —— 三层取证层级（`read_image` 看图为主、`inspect_image` 只定位数值、`image2vl` 未当事实）、交付前复述未决项（体检 N 条 + lint 落盘清单）、数据判据未用 `pending`/`inline` 冒充事实。段 A「工程改动半边」由此拿到 §5.2 协作循环的真机证据。**保留**：打勾仍按 §5.2 需用户判定报告，本条只证明工程纪律在真机被遵守。
 
 #### CV-443 · 读图线补漏收尾：B-1 漏项清账 + 分册/散点取证层级对齐（2026-11-05，待桌面验收）
 
@@ -2417,11 +2426,13 @@
 
 #### CV-446 · 请求体 413 止血：网关图片预算对齐 4 MiB 实测上限（2026-11-05，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（2026-11-09 `4cdaca33` 场真机实证；权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0（会话级不可用：读图后永久卡死、重试必败）
 - **详情**：真机会话（成片检查阶段连续 `read_image` 15+ 张）三连败 `413: INVALID_REQUEST {"code":"invalid_argument","message":"request body is too large"}`。**实测探测**（裸 socket 二分，非法 JSON body——未超限返 400 解析错误不进模型，零费用）：DramaServer `/v1/llm` 请求体上限**精确 4194304 B（4 MiB）**，`4194305` 即 413、`~4.004 MiB` 起连接 reset；413 错误体与事故逐字节一致。**根因链**：① spill-policy 调 `imageRequestPricing` 抛「no image token calculator」被 catch 吞掉 ⇒ 带图工具结果**永不截断**（`dsh-2026-11-05.error.log` 14:38 起刷屏）——`llm-pi-ai` 适配器未 override 该能力（只有 `llm-deepseek` 有）；② pi-ai `maxRequestImageBytes` 默认 **20 MiB 仅计 base64 图片字节** vs 网关「整包 4 MiB」错位 ⇒ `IMAGE_OFFLOAD_REQUIRED` 自愈（image-offload 用占位文本替换最老图片并重试）在 413 前永不触发；③ 413 被 `stream.ts:48` 归类 INVALID_REQUEST 终态，而 `compaction-image-offload` 只认 `IMAGE_OFFLOAD_REQUIRED` ⇒ 无任何恢复。**修法（P0，编辑区内）**：`src/gateway.ts` 新增 `GATEWAY_MAX_REQUEST_IMAGE_BYTES = 2*1024*1024`（< 4 MiB 且给文本历史留 ≥2 MiB 头部，注释写死实测依据）→ `GatewayProviderProfile.maxRequestImageBytes` + `gatewayProfile()` 带出（provider 级，`llm-pi-ai/src/config.ts:345` schema 原生支持，不动子模块）+ `gatewayFingerprint` 纳入该常量（改值下一次 reconcile 即命中形状差异热重写网关行——沿 CV-435「profile 每次启动整体覆盖，修复必须落仓库」教训）。**P1（上游子模块轨道，不在本批）**：spill-policy 中性估算兜底 或 `PiAiAdapter` 补 `imageRequestPricing`；**P2**：服务端放大上限 + 413 错误体带 `limit` 字段。分层方案正本：根仓 `docs/2026-11-05-请求体413根因分析与修复方案.md`。同族先例 CV-360（输出上限 400）/ CV-435（profile 字段丢失）。
 - **涉及文件**：`src/gateway.ts`（常量 + 接口 + `gatewayProfile` + `gatewayFingerprint`）、`tests/gateway.test.mjs`（回归 1 例 + deepEqual 补字段）
 - **验证**：`corepack yarn typecheck && build && verify:loader && test:smoke` 四步全绿，**2841·2841、失败 0、基线 0**。**⚑ 待桌面验收**：新会话连续读 15+ 张图 → 不再 413，日志出现 `image/offload` 事件、最老图片变占位文本、会话继续。
+- **真机验收（2026-11-09，`4cdaca33` 固定 low 场）**：38 次 `read_image`（含 24 次读 `.jpg`）、**5 次 `image/offload`**、零 413 ⇒ 主判据与 `c9bc5f7e` 场缺的次判据全齐，整条结项。
+
 
 #### CV-447 · 画布阶段提速批 A/B + T0/T1：节流 / 诊断 / JPEG 探针 / 结构帧 / 轮次硬闸（2026-11-06，待桌面验收）
 
@@ -2436,6 +2447,8 @@
 - **后续修正 ③**：A9 补齐 —— `analyze-storyboard-latency.mjs` 新增 msPerFrame P95、档位墙钟 P95、offload / compaction / AUTH 次数、单步上下文 P95；`probeRulePass` 改为重放硬闸状态机（出片前 ≤3 / 成片后 ≤1）。`render-job.ts:961` 注释的 `CV-448` 更正为 `CV-447`，水位不变。
 - **后续修正 ④ · 验证**：`clean` → `tsdown` → 双 `tsc` → `verify:loader` 全绿；纯函数 / 接线探针自检通过、反向变异实证、埋点脚本 `node --check` + fixture 跑通。**全量 `test:smoke` / `verify-previews` 待用户终端执行**；阶段二方案 §6 九项真机指标与阶段一 6 步 UI 验收未跑 ⇒ 本条维持「已修复·待验收」，`changelog.md` 摘要行留到验收后补。两份方案文档已回填 §10 实施记录。
 - **后续修正 ⑤ · 用户验收结果（2026-11-06 10:58）**：`test:smoke` **失败 0 条**；`verify-previews` 38 组 **20 通过 / 18 失败**，`--no-gen` 与完整重生成复跑结果一致 ⇒ 排除产物过期。失败集中在预览台 DOM 夹具与当前产品 CSS 的类名漂移（`create-modal` 夹具 `.csCreateHead` 在 `src/client/styles.ts` 已 0 处，读数多为浏览器默认值）、`visual-direction` 时间轴容器宽度 0 导致比例 `NaN`、`library` 两组空判决；本批未碰 `src/client/**` / `scripts/preview-*.mjs` / `src/brand.ts`，与该存量红无关。18 组红另立 P2 清账，不阻塞本批（T3 判据 = smoke 0 失败 + 接线反向变异实证），详见阶段二方案 §10.6。
+- **验收补记（2026-11-09，`4cdaca33` 固定 low 场）**：**P1-B JPEG 探针达标** —— 24 次 `.jpg` 的 `read_image` 全部成功，`c9bc5f7e` 场「两张 not found」反证未复现。**整条仍挂**：high 档系数回填 / `executorFallbackReason` 复核 / P1-E 窗口复用去留 / JPEG vs PNG 观感对照，四项本场零证据。
+
 
 #### CV-448 · 语音识别 asr2txt：文本 + 词级转写 JSON 落盘（2026-11-06，待桌面验收）
 
@@ -2470,6 +2483,7 @@
 - **详情**：会话 19 实证模型读了 generated.md 仍读源码 60 次——要的是**行为语义**（reveal 两口径/countUp 滚多久/fontSize 缺省怎么算/draw 为什么胶囊），生成物只答「合法值/默认值」。`gen-component-contract.mjs` 静态 header 追加「行为语义速查」手写段（只写机制口径不写数值，数值仍由 AST 生成段承担，漂移门禁不变）；SKILL.md 禁令行升级「生成物没覆盖 ⇒ 先点名缺口（引用条目名）再读源码，缺口进交付未决项」。generated.md 6001→8548B。
 - **涉及文件**：`scripts/gen-component-contract.mjs`、`skills/code-driven-explainer/{SKILL.md,references/component-contract.generated.md}`。
 - **验证**：--check 一致；drift 测试 3/3；SKILL 15020B < 15KB 闸。**⚑ 待验收**：A2 真机读源码 22 次 > 12 目标（Chart.tsx 返工期为主），部分达标——契约覆盖面随缺口声明迭代。
+- **本轮补记（2026-11-09，状态仍「已修复·待验收」）**：品牌宣传 v1 暴露 4 个新的行为语义缺口（`textCard` 无 `color` 键 / `title` 变体硬编码 35% 黑遮罩且换行忽略 `box` / shape 的 `fx:stroke` 只产出文字描边、对几何无效 / `path` 轨忽略 `box`），按用户拍板补进 `scripts/gen-component-contract.mjs` 的「行为语义速查」并重生成 `component-contract.generated.md`（`--check` 一致、漂移闸 3/3 绿）。**不据此清状态**：本场读组件源码 17 次 > 12 目标，是第四次稳定反证；补充文档属产生路径修复，达标与否须由下一场真机读源码次数判定。
 
 #### CV-453 · spec 编排闸：intent 前置 + scaffold 前置 + generatedBy 观察期（2026-11-08，scaffold 拒收真机实证）
 
@@ -2478,6 +2492,9 @@
 - **详情**：会话 19 病灶（绕开 scaffold 手搓 spec 68 步零产出 + confirm_intent_card 被跳过）。新 `src/spec-gate.ts` 按会话键三态（intent/storyboard/scaffold，见成功即置位永不清零，重启 fail-open），挂在唯一入口 `wrapStudioToolDefinition`（先于一切 execute 副作用，镜像 render-probe-budget 接线模式）：`write_storyboard` 前意图卡未见 ⇒ 拒收（auto 下 confirm_intent_card 不弹卡不等待调用零成本）；`render_composition` 前故事板已落地时 intent/scaffold 缺一即拒，文案给 scaffold→spec→builder 正路并禁手写。builder 产物 `meta.generatedBy='manifest-builder'`（缺标记 = 手写绕过契约的观察期 warning，拍板②A）；generatedBy 登记 KNOWN_META_KEYS + ManifestMeta + 字段表。
 - **涉及文件**：`src/spec-gate.ts`（新）、`src/tool-error-boundary.ts`、`src/remotion/manifest.ts`、`src/remotion/render-job.ts`、`skills/code-driven-explainer/assets/manifest-builder.mjs`、`tests/spec-gate.test.mjs`（新，8 条）、`tests/manifest-builder.test.mjs`。
 - **验证**：接线测试镜像 probe-budget 模式；反向变异（快照恒放行）2 条变红恢复 sha256 一致；直连 execute 的存量测试不受影响（闸只在包装器层）。**真机实证（A2）**：首轮 spotFrames 被闸拒收 → 模型立刻补 scaffold → 通过（拒收文案自愈链路成立）。
+- **二次回归（2026-11-09，`4cdaca33` 固定 low 场）**：15:30:33 intent 前置拒收 → 模型补 `confirm_intent_card` → 写 storyboard；15:38:02 scaffold 前置拒收 → 补 `scaffold_manifest` → 渲染放行。双闸自愈链路在 A2 场之外再次成立。
+- **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：**双闸第三次回归** —— 17:07:37 `write_storyboard` 被 intent 前置拒收 → 补 `confirm_intent_card`；17:12:17 首轮渲染被 scaffold 前置拒收 → 补 `scaffold_manifest` 后放行；17:15:19 box 口径校验拒收 animate 的 x/y → 模型改生成器。⚠️ **同场反例（状态不改）**：spec-gate 只验 intent / scaffold 出现过，`meta.generatedBy` 仅观察期 warning ⇒ 模型两次自认手写 `gen-v2~v5.mjs` 绕过 official builder 仍过关（1 次 SyntaxError + 2 次 file changed），已记入台账 §15，升硬闸与否待下一场观察。
+
 
 #### CV-454 · 桌面通知聚焦豁免 + max-tokens 专属可行动文案（2026-11-08，待真机确认接收）
 

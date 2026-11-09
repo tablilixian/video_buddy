@@ -22,7 +22,6 @@ import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
 import { registerWorkflowModePrompt } from './workflow-mode-prompt.js'
-import { noteThinkingHeader } from './thinking-policy.js'
 import { registerActiveSkillsPrompt } from './active-skills-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
@@ -438,11 +437,6 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   //   ② 下一轮第一次工具返回挂一行提醒（模型一定会读到的地方）。
   // 为什么不 steer：计划在模型脑子里，宿主逼它写会改变 turn 语义，且只能真机验、失败没法回滚。
   ctx.on('session/event', (session, event) => {
-    // 批 2-v2：动态思考强度——header 观测（基线/当前档位跟踪）。
-    if (event.type === 'request/header') {
-      noteThinkingHeader(session as Parameters<typeof noteThinkingHeader>[0], (event.data as { header?: { config?: unknown } })?.header?.config as never)
-      return
-    }
     if (event.type !== 'turn/end') return
     const key = session.header.cwd ?? ''
     const calls = turnCalls.get(key) ?? 0

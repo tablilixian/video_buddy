@@ -2216,6 +2216,7 @@
 - **详情**：六大体裁路线阶段 1.2。从 `brand-promo-video-generator` 拆编排层（explainer 壳同款样板）：定向三问（素材现实 / 投放场景 / 时长画幅语言，素材底线前置进第一问）+ 两条链路路由（brand-promo 风格链 / code-driven-explainer 动效图形链）+ 验收四条（真实性底线）+ 不做清单；风格与素材纪律留 L3 原样。SKILL.md 4334B；platform.yaml（category: format / stage: preview / role: decision / handoff）+ catalog 快照同批。
 - **验证**：skill 守卫全绿；裸 `references/` 路径踩渐进披露守卫（改跨 skill 全限定路径）；`yarn check` 全绿；真机整片验收 = 阶段 1.4。
 - **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：**编排壳路由实证** —— 首句「用品牌宣传体裁做一条 20 秒…」后，模型第一动作即加载 `brand-format-director`（全文命中 59 次），依次读链路与契约、按「定向三问 → 路由表」判定零参考素材；17:03:46 明确写下「触发 brand-promo 底线：我不能重绘它」，17:04:22 宣布退 `code-driven-explainer` 动效图形链并写进故事板硬约束。B1（素材不足退链且说明原因）/ B3（身份承载资产零重绘）达标；成片 20.07s / 1280×720 / −15.6 LUFS / 最终 lint 0 告警。**边界**：本场是零素材降级链，不是 B1–B6 完整正例，真实素材链待 C 档场验证。
+- **C 档边界补记（2026-11-09，`9853fa28`，状态不改）**：阶段 1.4 期望的「真实素材完整链 + 编排壳定向」**未成立** —— 本场三轨同场且真实性底线零重绘（B3 正例），但编排壳被任务书短路（见 CV-429 补记），定向三问由 brief 写死 ⇒ **C 档不能算阶段 1.4 整片验收通过**，完整链仍需一场「不给 executor 名字、由壳自行定向」的复核。
 
 #### CV-418 · product-format-director 产品讲解编排壳（2026-11-04，待桌面验收）
 
@@ -2289,6 +2290,7 @@
 - **涉及文件**：6 个 `skills/*-format-director/SKILL.md`、7 个 executor `SKILL.md`、`tests/skill-tool-refs.test.mjs`（+3 条门禁：壳 description 消解句 / executor 回指 / 双向引用不成环）。
 - **验证**：description 长度 334–465 ≤ 500 字符；skill 相关门禁 44/44 绿。⚠️ `code-driven-explainer/SKILL.md` 因 12 KB 闸（12241 B）把细则下沉到 `references/format-directors.md`。
 - **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：用户首句点名「用品牌宣传体裁」，模型第一句回复即「I'll start by loading the master creation spec, then the brand-promo format director as required」，**先加载体裁壳再做定向**，没有因点名体裁而跳过去下游 executor；全程无「点名下游即绕过壳」现象 ⇒ 消解句 + executor 回指在真机生效（科普 0.1 的 A1 病灶未复现）。
+- **回归反证（2026-11-09，`9853fa28`，状态不改，但列为待修）**：任务书 §2 直接点名 `brand-promo-video-generator`，模型在事件 39 自述「doc explicitly declares brand-promo-video-generator, load it」后**整场未加载 `brand-format-director`**（skill 加载序列 6 个无该壳），定向三问退化为写死答案 + `confirm_intent_card` 复述。v1 场「点名体裁仍先加载壳」的正例未在「点名 executor」这一形态下复现 ⇒ 消解句 / executor 回指对**点名 executor** 的入口覆盖不足，改法见台账 §17 P0-2。
 
 #### CV-430 · 验收结论传递：pitfalls / verification 分册 + 项目级 lessons（2026-11-04，待桌面验收）
 
@@ -2345,19 +2347,21 @@
 
 #### CV-436 · B-0 负例纪律纠偏：负例降级为验收可选测试手段（2026-11-05，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（瑞幸 C 档 `9853fa28` 场实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：v1 计划与 CV-431 把「交付前必须发负例 / 未执行不得结案」写成了流程纪律，属于把**测试手段**误装成**交付纪律**（0.1 批 A8 漏发负例 +245.7min 的教训被错误归因为「纪律没落实」，真问题是该纪律本身不该存在）。执行计划 §6 点名 10 处污染点一次纠偏：`code-driven-explainer/SKILL.md` 工作流第 5 步改「**交付前复述未决项**（体检告警逐条状态 / 未核源事实 / 能力边界）」；`verification.md §3` 改名「负例：验收阶段的可选测试手段」（不强制、不影响结案、附 22:57 纠偏注记）；`explainer-patterns.md` 纪律索引去负例项 + 自检清单改「验收批次若安排了负例测试（**可选**，不跑不算缺陷）」；`STATUS.md` §4.1 CV-431 标题与文件头描述同步改正；六体裁批量验收材料 §〇.5、问题修复计划 P5、问题清单 P-10/P-15、0.1 验收分析报告、英文重制分析、改动生效性评估 R5 全部加「已作废」注记（历史结论保留不改）；cv-details CV-431 与 changelog 加注。负例仍保留的唯一形态：C-4 验收批次可选补刀一次（D4 拍板）。
 - **涉及文件**：`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{verification,explainer-patterns}.md`、`docs/STATUS.md`、`docs/cv-details.md`、`docs/changelog.md`、`docs/plans/2026-11-04-六体裁批量验收材料.md`、`docs/2026-11-04-科普线问题修复计划.md`、`docs/2026-11-04-科普线问题清单与优先级.md`、`docs/2026-11-04-科普0.1验收分析报告.md`、`docs/2026-11-04-英文重制与A8补跑分析.md`、`docs/2026-11-04-科普线改动生效性评估.md`。
 - **验证**：全仓 grep「未执行不得结案 / 负例必发 / 交付前必须发负例」活跃面 = 0（残留全在历史台账且带注记）；skill 门禁 148·148 全绿（含 `skill-guardrail` / `skill-tool-refs` / `skill-discipline`）；SKILL.md 11,691 B ≤ 12 KB 闸。
+- **验收补记（2026-11-09，`9853fa28` 瑞幸 C 档）**：全片零负例、`turn/end: completed` 正常结案；交付卡逐条复述 4 条未决项（探针额度用尽 / CTA 段未复核 / 13 条体检告警 / 2 条 pending 事实），`pitfalls.md` 与 `verification.md` 被读取并按「额度用尽即收口，不再逐帧试错」执行 ⇒ 纠偏后的「负例可选 + 交付前复述未决项」流程在真实素材完整链上跑通。
 
 #### CV-437 · B-1 读图线整理：LLM 主读 / VLM 保底全仓对齐（2026-11-05，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（瑞幸 C 档 `9853fa28` 场实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：CV-435 只反转了禁令方向，B-1 把三层取证层级（① `read_image` 首选本地图 → ② `inspect_image` 精确数值 → ③ 后端 VLM 仅三种情况保底且文字不可当事实）铺满全部活跃面。**D6 便利层**（拍板：改回执、不动上游 harness）：`list_references` 回执逐条给「本地图 `assets/<文件名>`」提示 + 尾部一行读图路径说明，模型不再需要 `list_references` + `bash ls` 两步拼 `read_image` 路径（揽月湾实测多跑一趟的根因）；`video2vl` 描述补「本工具是保底通道：① 只有远端句柄 ② `read_image` 能力声明失效 ③ 需要第二意见，降级必须在交付明写『未做画面自检』」；`image_matting` 数值自检措辞改「判『抠干净没有』先看数值；需要目视再 `read_image` 本地产物」；`toolchain.md` §8 补「`@ref[id]` 找本地图的固定路径」三步法。历史台账只加「已作废」注记：cv-details CV-350（读图方案作废）、CV-068（前提过时）、伊甸园复盘、会话错误分布分析、backlog/archive。`skill-tool-refs` 门禁新增**组 8 豁免**：`read_image` 是 DSH 运行时原生工具不经本包注册，skill 层点名合法。
 - **涉及文件**：`src/host-tools.ts`（renderReferenceList + video2vl）、`src/host-tools-artifact.ts`、`skills/canvas-studio-creation/references/toolchain.md`、`tests/skill-tool-refs.test.mjs`、`docs/伊甸园会话复盘-20261029.md`、`docs/会话错误分布分析-2026-10-29.md`、`docs/cv-details.md`、`docs/canvas-ux-backlog.md`、`docs/archive-cv-completed.md`、`docs/canvas-studio-tools.md`、`docs/skill-features-inventory.md`、`docs/skill-quality-system-design-review-2026-10-23.md`、`docs/plans/REQ-036-复刻提效-真机复盘与开发计划-20261102.md`。
 - **验证**：旧「无视觉」措辞活跃面 = 0（残留全在历史台账且带注记）；skill 门禁 148·148 全绿；`render-tool-contract` F-16 与 `manifest-contract-doc` 断言保留通过（337·337）；双 tsc + build + verify:loader 绿。
+- **验收补记（2026-11-09，`9853fa28`）**：**D6 便利层真机生效** —— `list_references` 回执 5 张图逐条带「本地图 `assets/<uuid>.png`」并明示「不必再 bash ls 探测」；模型随后 34 次 `read_image` 全部直接给 `assets/` 路径，全会话未为找图跑过一次 `bash ls`。md 任务书也落在「画布文本节点（2）」分区，四分区托盘读回可用。边界：`video2vl` 保底口径 / `image_matting` 措辞本场未触发。
 
 #### CV-438 · B-2 #11 运动口径统一：trackMotionFeatures 单源（2026-11-05，待桌面验收）
 
@@ -2369,19 +2373,21 @@
 
 #### CV-439 · B-3 体检回执消费端：计数 + 前 5 条原文 + 落盘路径（2026-11-05，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（瑞幸 C 档 `9853fa28` 场实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：B-3 纠偏后只剩体检消费端这一半（负例硬闸整条撤销，D2 选项 A）。会话 15 实测：F-14 折叠后 13 条 `report.lint[]` 躺在结构化字段里，agent 一次没读 —— 折叠治住了上下文膨胀，也把「看到具体问题」折没了。修法三件：① 新 `src/lint-report.ts`（65 行）：`writeLintReport` 把完整清单（编号 / 定位 / 文案 / 建议）落盘项目 `build/lint-<jobId>.md`（失败返回 null **不阻断渲染**）；`lintReceiptLines` 纯函数出「体检 N 条 + 前 5 条原文 + 落盘路径」段（落盘失败明示出口，不冒造路径）。② `render_composition` 回执：`report.lint` 条目补 `message`、新增 `report.lintPath`；渲染报告统计行加 `体检=N 条`；正文与 spot 两条渲染路径都接 `lintReceiptLines`；折叠行改指「见下方渲染报告」。③ 交付复述侧由 CV-436 的「交付前复述未决项（体检告警逐条状态）」覆盖，skill 零改动。
 - **涉及文件**：`src/lint-report.ts`（新）、`src/host-tools.ts`（schema / 类型 / executor / 双渲染点 / 折叠行）、`tests/render-tool-contract.test.mjs`（+6：前 5 条与路径 / 落盘失败出口 / 空不出行 / 落盘 E2E / schema 声明 / F-14 文案更新）、`tests/file-size-guard.test.mjs`（棘轮三处补登：host-tools 4720→4752、client/index 3008→3010、studioClient 2745→2747，其中两处是 CV-435/B-1 漏登的补账）。
 - **验证**：render-tool-contract **21·21 全绿**；棘轮 3/3 绿；反向变异实证（lib 删 lintPath 渲染 ⇒ 「落盘路径必须可见」红，还原 ⇒ 绿）；双 tsc + build + verify:loader 绿。全量 smoke 待用户侧基线（P2）。
+- **验收补记（2026-11-09，`9853fa28`）**：5 次全片渲染回执均带「[编排体检] 命中 N 条：ML-02×… / ML-00（前 5 条原文与完整清单落盘路径见下方渲染报告；文案已折叠）」+ ⚠️ 逐条展开段；终版 13 条，交付卡逐条复述「ML-02×12 = 字幕轨天然硬切属设计意图；ML-00 = 段边界变更说明」。计数 / 前 5 条原文 / 落盘路径 / 交付复述四件齐。边界：模型未实际打开 `build/lint-*.md`，只消费了回执与展开段。
 
 #### CV-440 · B-4 数据溯源契约：dataSource/baseline + pending 事实桥（2026-11-05，待桌面验收）
 
-- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **状态**：已完成·桌面验收通过（瑞幸 C 档 `9853fa28` 场实证）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
 - **详情**：P-01/P-17（RUN-2 折线混基准）的契约层收口：折线前 8 点用 1951–1980 口径、后 3 点换 1850–1900，画面把 30 年升温画成 1.10 ℃（同口径真值约 0.83 ℃）；且 storyboard 里该事实自己写着 status:'pending'，与成片 manifest 之间无任何桥。四件：① **chart 契约**：ChartTrack 新增 dataSource（数据集 + 可复核入口）与 baseline（口径 / 基线说明），内联数值缺失 ⇒ 观察期 warning；source:'timeline'（片内真值）豁免。② **dataCard 收窄口径**（P-01 复核实测修正）：新 src/data-provenance.ts 的 looksLikeNumericFact —— 温标 / 百分比 / 量级等**可溯源数字**才触发（BPM / 时长 / 计数 / 日期等元数据豁免，防宽口径诱导编造出处糊弄闸）；dataSource:'observed'|'inline' = 诚实出口；一张卡只点名一次。③ **storyboard pending 桥**：readPendingFactWarning 读项目 01_facts.facts（原始读不走过载逻辑，坏 JSON / 缺文件容错 = 空串不挡渲染），渲染回执 warnings 点名「N 条 pending 事实 + 前 2 条 claim + 升级路径」（探针 / spot 不出）；pending 事实不得进成片（P-17）。④ **文档三处**：manifest-contract.md chart 表 + dataCard 节 + verification.md 取证方式表；gen-manifest-fields.mjs 重跑（生成物 +3 行）。**P5 拍板：全部观察期 warning，本轮不升 error**。
 - **涉及文件**：src/data-provenance.ts（新）、src/remotion/manifest.ts（两轨类型 + KNOWN_TRACK_KEYS + textCard 接线）、src/remotion/manifest-track-validate.ts（chart 观察期 + validateDataCardProvenance）、src/host-tools.ts（pending 桥接线，棘轮 4752→4758）、tests/manifest-data-provenance.test.mjs（新，14 条构造样本）、skills/code-driven-explainer/references/{manifest-contract.md,manifest-fields.generated.md,verification.md}。
 - **验证**：provenance 14·14 全绿（构造样本，不依赖具体项目）；fields-drift / manifest-contract-doc / render-tool-contract / motion-features / 门禁组 83·83；反向变异实证（短路 validateDataCardProvenance ⇒ 3 红，还原 ⇒ 绿）；双 tsc + build + verify:loader 绿。全量 smoke 待用户侧基线（P2）。观察期结论回填点：下一轮真机会话若 warning 噪声过高，收窄口径或提前升 error 交用户拍板。
+- **验收补记（2026-11-09，`9853fa28`）**：**pending 事实桥真机生效** —— 渲染回执「数据溯源：事实表有 2 条 pending（未核源）事实：…前 2 条 claim… pending 事实不得进成片（P-17）」；模型把「附件内嵌英文文案 + IIAC 奖项徽章」「门店 JEWEL / 营业时间 / 地址」标 `status:"pending"`，用 `sourceRect` 裁掉英文残字、深蓝色块盖住信息卡，文案一律不引用，交付卡复述为未决项。观察期 warning 口径（不升 error）噪声可接受。边界：本片无 chart / dataCard，`dataSource`/`baseline` 两半未触发。
 
 #### CV-441 · B-5 机制补完：P-02 / P-03 / P-05 / P-16（2026-11-05，待桌面验收）
 
@@ -2484,6 +2490,7 @@
 - **涉及文件**：`scripts/gen-component-contract.mjs`、`skills/code-driven-explainer/{SKILL.md,references/component-contract.generated.md}`。
 - **验证**：--check 一致；drift 测试 3/3；SKILL 15020B < 15KB 闸。**⚑ 待验收**：A2 真机读源码 22 次 > 12 目标（Chart.tsx 返工期为主），部分达标——契约覆盖面随缺口声明迭代。
 - **本轮补记（2026-11-09，状态仍「已修复·待验收」）**：品牌宣传 v1 暴露 4 个新的行为语义缺口（`textCard` 无 `color` 键 / `title` 变体硬编码 35% 黑遮罩且换行忽略 `box` / shape 的 `fx:stroke` 只产出文字描边、对几何无效 / `path` 轨忽略 `box`），按用户拍板补进 `scripts/gen-component-contract.mjs` 的「行为语义速查」并重生成 `component-contract.generated.md`（`--check` 一致、漂移闸 3/3 绿）。**不据此清状态**：本场读组件源码 17 次 > 12 目标，是第四次稳定反证；补充文档属产生路径修复，达标与否须由下一场真机读源码次数判定。
+- **第 6 次反证（2026-11-09，`9853fa28`，状态仍「已修复·待验收」）**：本场 `bash` 读组件契约 / builder 源码 **25 次 > 12 目标**（会话 19 为 22、v1 为 17，稳定反证）。**根因已摸准**：`gen-component-contract.mjs:112` 把「行为语义速查」放在 generated.md 开头第 1 节，但整场该段 **0 次命中**；模型必读入口是 `code-driven-explainer/SKILL.md:45` 点名的 `manifest-contract.md`（713 行整读分 4 次）+ `manifest-builder.mjs`（309 行整读），遇错才 grep generated.md（仅 `:509` 一次查 `KNOWN_TRACK_KEYS`/`zIndex`）。且 `manifest-builder.mjs:46-49` 的 `fail()` 根本不做本场 4 类校验（sourceRect 越界 / id 重复 / box×animate / z-order 均在宿主 `validateManifest`），模型 25 次 sed 是在找不存在的校验 ⇒ **继续往生成物尾段堆知识无效**，改法见台账 §17：必读入口前置 + 校验报错带修法。
 
 #### CV-453 · spec 编排闸：intent 前置 + scaffold 前置 + generatedBy 观察期（2026-11-08，scaffold 拒收真机实证）
 
@@ -2494,6 +2501,7 @@
 - **验证**：接线测试镜像 probe-budget 模式；反向变异（快照恒放行）2 条变红恢复 sha256 一致；直连 execute 的存量测试不受影响（闸只在包装器层）。**真机实证（A2）**：首轮 spotFrames 被闸拒收 → 模型立刻补 scaffold → 通过（拒收文案自愈链路成立）。
 - **二次回归（2026-11-09，`4cdaca33` 固定 low 场）**：15:30:33 intent 前置拒收 → 模型补 `confirm_intent_card` → 写 storyboard；15:38:02 scaffold 前置拒收 → 补 `scaffold_manifest` → 渲染放行。双闸自愈链路在 A2 场之外再次成立。
 - **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：**双闸第三次回归** —— 17:07:37 `write_storyboard` 被 intent 前置拒收 → 补 `confirm_intent_card`；17:12:17 首轮渲染被 scaffold 前置拒收 → 补 `scaffold_manifest` 后放行；17:15:19 box 口径校验拒收 animate 的 x/y → 模型改生成器。⚠️ **同场反例（状态不改）**：spec-gate 只验 intent / scaffold 出现过，`meta.generatedBy` 仅观察期 warning ⇒ 模型两次自认手写 `gen-v2~v5.mjs` 绕过 official builder 仍过关（1 次 SyntaxError + 2 次 file changed），已记入台账 §15，升硬闸与否待下一场观察。
+- **第 4 次回归（2026-11-09，`9853fa28`，状态不改）**：`write_storyboard` 被 intent 前置拒收（事件 143）→ 补 `confirm_intent_card`；首轮 `render_composition` 被 scaffold 前置拒收（事件 250，文案含「不要手写 manifest」）→ 补 `scaffold_manifest` → 走 `manifest-spec.json` + official `manifest-builder.mjs` 生成。**零手写 `gen-*.mjs`**，逆转 `66dae44d` 品牌 v1 的同场反例；`meta.generatedBy` 观察期未升硬闸，本场无绕过迹象。
 
 
 #### CV-454 · 桌面通知聚焦豁免 + max-tokens 专属可行动文案（2026-11-08，待真机确认接收）

@@ -22,7 +22,7 @@ import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
 import { registerWorkflowModePrompt } from './workflow-mode-prompt.js'
-import { noteThinkingHeader, setThinkingPolicyEnabled, setThinkingPolicySelectionApplier, type ThinkingSelection } from './thinking-policy.js'
+import { noteThinkingHeader } from './thinking-policy.js'
 import { registerActiveSkillsPrompt } from './active-skills-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
@@ -78,12 +78,6 @@ export const inject = ['webServer', 'tools', 'skills', 'settings', 'systemPrompt
  */
 export const Config = CanvasStudioConfig
 
-/** Session-controller `agents` 服务的最小结构（懒访问；上游类型不在本包依赖树内）。 */
-interface CanvasStudioAgentsService {
-  resolveAgent(sessionId: string): Promise<{ agent?: unknown; error?: unknown }>
-  selectForNextRequest(agent: unknown, selection: { provider: string; model: string; reasoningEffort?: string }): void
-}
-
 /** Host plugin body: the project registry, its routes, the media tools, and the creation skill. */
 export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 开发模式显式声明一次（设计文档 §8）：默认关闭——打包后的应用不设 NODE_ENV，
@@ -121,10 +115,6 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     errorVisibility: 'audience',
     // REQ-021：自动测试入口默认关闭（开关只控制可见性，无定时/自动触发）。
     testMode: false,
-    // CV-457：动态思考强度策略默认**关闭**（用户拍板「先固定 low」——固定档由设置页
-    // 思考强度承担，对照会话实证 low 全程粘住 header）。开启后 = storyboard 压 low +
-    // 失败升级有界降回（见 thinking-policy.ts 头注）。
-    thinkingPolicy: false,
   }
   // 0.2.1：配置由 Loader 经 Config schema 注入；字段为对象级 volatile，`get()` 读当前值。
   // base 仅作 schema 未解析出值时的兜底（正常路径下 schema default 已填满全部字段）。
@@ -198,39 +188,6 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   const syncDramaAuthRequired = (): void => {
     setDramaAuthRequired(source().supabaseUrl.trim() !== '')
   }
-  // CV-457：动态思考强度——档位落地通道 + 开关（live 读取，设置热切换不需要重启）。
-  //
-  // **为什么必须走 selectForNextRequest**（Session 21 实证）：运行中 agent 的内存档位
-  // （`selectionFor(agent).current` 的 `picked`）在首次 install 时一次性捕获，只
-  // `session.append('model/selection')` 不会让它变——请求永远回退 loggedHeader（缺省档）。
-  // 上游自己的切档命令（commands.selectModel → agents.selectForNextRequest）是**双写**。
-  // 本 applier 懒访问 `ctx.agents`（不进 inject：旧运行时缺该服务名时不能让插件装载失败，
-  // 抛错由策略层回退 session.append——CV-456 v1 行为，事件只进持久投影，重启重开会话才消费）。
-  // 刻意不走 `commands.selectModel`：它会 saveSelection 把 low 存成用户缺省档（污染设置）。
-  const agentsServiceOf = (): CanvasStudioAgentsService | undefined => {
-    const candidates = ctx as unknown as { agents?: unknown }
-    const agents = candidates.agents
-    if (agents === null || typeof agents !== 'object') return undefined
-    const shaped = agents as Partial<CanvasStudioAgentsService>
-    if (typeof shaped.resolveAgent !== 'function' || typeof shaped.selectForNextRequest !== 'function') return undefined
-    return shaped as CanvasStudioAgentsService
-  }
-  setThinkingPolicySelectionApplier((sessionId: string, selection: ThinkingSelection) => {
-    const agents = agentsServiceOf()
-    // 失败用 Promise.reject 信号（src/ 裸抛守卫：不写 `throw new`）；策略层 catch 后回退 append。
-    if (agents === undefined) return Promise.reject(new Error('agents 服务不可用（旧运行时）——回退 append 通道'))
-    return agents.resolveAgent(sessionId).then((found) => {
-      if (found !== null && typeof found === 'object' && 'error' in found && found.error !== undefined) {
-        return Promise.reject(found.error instanceof Error ? found.error : new Error(String(found.error)))
-      }
-      const agent = found !== null && typeof found === 'object' && 'agent' in found ? found.agent : undefined
-      if (agent === undefined) return Promise.reject(new Error(`agents.resolveAgent(${sessionId}) 未返回 agent`))
-      agents.selectForNextRequest(agent, selection)
-    })
-  })
-  const syncThinkingPolicy = (): void => {
-    setThinkingPolicyEnabled(source().thinkingPolicy === true)
-  }
   // 0.2.1 设置页策略：Canvas 有自定义客户端设置页（SettingsModal），故关闭自动生成页，
   // 避免与自定义页重复。`auto` 默认 true。
   ctx.effect(
@@ -243,14 +200,12 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   ctx.on('loader/volatile-update', () => {
     syncErrorVisibility()
     syncDramaAuthRequired()
-    syncThinkingPolicy()
     onStorageRootMaybeChanged()
   })
   // 无条件首次同步一次：监听回调**是否在装载期被调用属框架内部行为**，不能当
   // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
   syncErrorVisibility()
   syncDramaAuthRequired()
-  syncThinkingPolicy()
 
   // ── DramaServer 管理面 + 模型网关（方案 P2/P4，CV-356/357）────────────────
   // 登录后：auth/sync（用户 + 设备登记）→ /v1/models 拉目录 → 写 llm-pi-ai 网关行

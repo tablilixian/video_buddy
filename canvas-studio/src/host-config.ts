@@ -173,6 +173,13 @@ export interface CanvasStudioConfig {
    * 手点，绝不做任何定时/自动触发。运行期间也不改任何真实设置。
    */
   testMode: boolean
+  /**
+   * 动态思考强度策略（CV-456/457）。**默认 false**（2026-11-09 用户拍板「先固定 low」：
+   * 固定档由设置页思考强度承担，对照会话实证 low 全程粘住 header）。
+   * 开启后 = write_storyboard 成功压 low + 同名工具连续 2 失败升缺省、5 个工具结果有界降回；
+   * 档位经 `agents.selectForNextRequest` 双写落运行中会话（Session 21 实证只 append 不生效）。
+   */
+  thinkingPolicy: boolean
 }
 
 /**
@@ -226,6 +233,9 @@ export const CanvasStudioConfig = z.object({
 
   // 测试（REQ-021）：默认关闭 —— 日常用户界面上不出现自动测试入口。
   testMode: z.boolean().default(false),
+
+  // 动态思考强度（CV-457）：默认关闭 —— 固定档由设置页思考强度承担（用户拍板）。
+  thinkingPolicy: z.boolean().default(false),
 }).volatile()
 
 /** 插件 Config 值类型：对象级 volatile 包装后的运行时形态。 */

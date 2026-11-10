@@ -1,0 +1,463 @@
+{
+  "id": "b1b2-motiongit-replica",
+  "meta": {
+    "title": "编排复刻实验 · MotionGit B1+B2",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationInFrames": 1080,
+    "backgroundColor": "#0B1220",
+    "look": {
+      "contrast": 1.16,
+      "saturation": 0.94,
+      "brightness": 1.02,
+      "temperature": -0.22,
+      "vignette": 0.4,
+      "grain": 0.1
+    },
+    "lint": "off",
+    "generatedBy": "motiongit-b1b2-replica"
+  },
+  "global": {
+    "fontFamily": "Noto Sans SC",
+    "brandColor": "#7DB2FF"
+  },
+  "tracks": [
+    {
+      "type": "shape",
+      "id": "bg",
+      "startFrame": 0,
+      "durationInFrames": 1080,
+      "shape": "gradient",
+      "color": "#0B1220",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "fadeFrames": 0
+    },
+    {
+      "type": "shape",
+      "id": "bg-glow",
+      "startFrame": 12,
+      "durationInFrames": 498,
+      "shape": "circle",
+      "color": "#16233A",
+      "box": {
+        "x": 30,
+        "y": 42,
+        "w": 58,
+        "h": 58
+      },
+      "fadeFrames": 0,
+      "animate": {
+        "from": {
+          "opacity": 0
+        },
+        "to": {
+          "opacity": 0.6
+        },
+        "durationInFrames": 48,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b1-badge",
+      "startFrame": 7,
+      "durationInFrames": 473,
+      "variant": "subtitle",
+      "text": "{{badge}}",
+      "accentColor": "#7DB2FF",
+      "anim": "maskReveal",
+      "animOptions": {
+        "wordDelayFrames": 0
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 13.33,
+        "y": 16.67,
+        "w": 8.85,
+        "h": 3.89
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b1-keyword",
+      "startFrame": 30,
+      "durationInFrames": 450,
+      "variant": "title",
+      "text": "{{keyword}}",
+      "anim": "typewriter",
+      "animOptions": {
+        "wordDelayFrames": 3
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 25.26,
+        "y": 37.87,
+        "w": 33.33,
+        "h": 12.04
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b1-body",
+      "startFrame": 66,
+      "durationInFrames": 414,
+      "variant": "subtitle",
+      "text": "{{body}}",
+      "accentColor": "#E9ECEF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 14
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 33.33,
+        "y": 52.78,
+        "w": 46.88,
+        "h": 12.96
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b1-path",
+      "startFrame": 75,
+      "durationInFrames": 405,
+      "shape": "path",
+      "color": "#7DB2FF",
+      "strokeWidth": 0.5,
+      "fadeFrames": 0,
+      "d": "M 34.4 76.9 L 47.9 76.9 Q 52.6 74.1 56.3 69.4",
+      "draw": {
+        "to": 1,
+        "durationInFrames": 72,
+        "easing": "easeInOut"
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-badge",
+      "startFrame": 486,
+      "durationInFrames": 594,
+      "variant": "subtitle",
+      "text": "{{badge}}",
+      "accentColor": "#7DB2FF",
+      "anim": "maskReveal",
+      "animOptions": {
+        "wordDelayFrames": 0
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 13.33,
+        "y": 10.19,
+        "w": 8.85,
+        "h": 3.89
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-heading",
+      "startFrame": 501,
+      "durationInFrames": 579,
+      "variant": "title",
+      "text": "{{heading}}",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 14
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 19.06,
+        "y": 27.22,
+        "w": 21.88,
+        "h": 11.11
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-1-bg",
+      "startFrame": 534,
+      "durationInFrames": 546,
+      "shape": "rect",
+      "color": "#141B26",
+      "fadeFrames": 0,
+      "box": {
+        "x": 33.59,
+        "y": 34.26,
+        "w": 47.4,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 38.8,
+          "opacity": 0
+        },
+        "to": {
+          "x": 33.59,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-1-bar",
+      "startFrame": 534,
+      "durationInFrames": 546,
+      "shape": "rect",
+      "color": "#7DB2FF",
+      "fadeFrames": 0,
+      "box": {
+        "x": 9.95,
+        "y": 34.26,
+        "w": 0.21,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 15.16,
+          "opacity": 0
+        },
+        "to": {
+          "x": 9.95,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-1-no",
+      "startFrame": 534,
+      "durationInFrames": 546,
+      "variant": "subtitle",
+      "text": "{{card1.no}}",
+      "accentColor": "#7DB2FF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 8
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 12.5,
+        "y": 32.41,
+        "w": 4.69,
+        "h": 10.19
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-1-txt",
+      "startFrame": 534,
+      "durationInFrames": 546,
+      "variant": "subtitle",
+      "text": "{{card1.text}}",
+      "accentColor": "#E9ECEF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 10
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 32.29,
+        "y": 32.41,
+        "w": 36.46,
+        "h": 10.19
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-2-bg",
+      "startFrame": 544,
+      "durationInFrames": 536,
+      "shape": "rect",
+      "color": "#141B26",
+      "fadeFrames": 0,
+      "box": {
+        "x": 33.59,
+        "y": 45.37,
+        "w": 47.4,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 38.8,
+          "opacity": 0
+        },
+        "to": {
+          "x": 33.59,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-2-bar",
+      "startFrame": 544,
+      "durationInFrames": 536,
+      "shape": "rect",
+      "color": "#E8B26A",
+      "fadeFrames": 0,
+      "box": {
+        "x": 9.95,
+        "y": 45.37,
+        "w": 0.21,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 15.16,
+          "opacity": 0
+        },
+        "to": {
+          "x": 9.95,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-2-no",
+      "startFrame": 544,
+      "durationInFrames": 536,
+      "variant": "subtitle",
+      "text": "{{card2.no}}",
+      "accentColor": "#E8B26A",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 8
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 12.5,
+        "y": 43.52,
+        "w": 4.69,
+        "h": 10.19
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-2-txt",
+      "startFrame": 544,
+      "durationInFrames": 536,
+      "variant": "subtitle",
+      "text": "{{card2.text}}",
+      "accentColor": "#E9ECEF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 10
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 32.29,
+        "y": 43.52,
+        "w": 36.46,
+        "h": 10.19
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-3-bg",
+      "startFrame": 553,
+      "durationInFrames": 527,
+      "shape": "rect",
+      "color": "#141B26",
+      "fadeFrames": 0,
+      "box": {
+        "x": 33.59,
+        "y": 56.48,
+        "w": 47.4,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 38.8,
+          "opacity": 0
+        },
+        "to": {
+          "x": 33.59,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "shape",
+      "id": "b2-card-3-bar",
+      "startFrame": 553,
+      "durationInFrames": 527,
+      "shape": "rect",
+      "color": "#7DB2FF",
+      "fadeFrames": 0,
+      "box": {
+        "x": 9.95,
+        "y": 56.48,
+        "w": 0.21,
+        "h": 10.19
+      },
+      "animate": {
+        "from": {
+          "x": 15.16,
+          "opacity": 0
+        },
+        "to": {
+          "x": 9.95,
+          "opacity": 1
+        },
+        "durationInFrames": 33,
+        "easing": "easeOutCubic"
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-3-no",
+      "startFrame": 553,
+      "durationInFrames": 527,
+      "variant": "subtitle",
+      "text": "{{card3.no}}",
+      "accentColor": "#7DB2FF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 8
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 12.5,
+        "y": 54.63,
+        "w": 4.69,
+        "h": 10.19
+      }
+    },
+    {
+      "type": "textCard",
+      "id": "b2-card-3-txt",
+      "startFrame": 553,
+      "durationInFrames": 527,
+      "variant": "subtitle",
+      "text": "{{card3.text}}",
+      "accentColor": "#E9ECEF",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 10
+      },
+      "fadeFrames": 0,
+      "box": {
+        "x": 32.29,
+        "y": 54.63,
+        "w": 36.46,
+        "h": 10.19
+      }
+    }
+  ]
+}

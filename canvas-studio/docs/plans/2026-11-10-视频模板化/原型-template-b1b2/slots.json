@@ -1,0 +1,110 @@
+{
+  "templateId": "motiongit-kinetic-b1b2",
+  "contractVersion": "1.0",
+  "usage": "这是一支 18 秒、两段式的『关键词 → 三条要点』动画。**你只需要填 slots，不要改结构**。填完调 scaffold_manifest({templateId, slots}) 落盘，再 render_composition({manifestPath}) 出片。任何槽位超字数会**在编译前**被拦下并告诉你压到多少字。",
+  "slots": [
+    {
+      "id": "badge",
+      "label": "角标（两段共用）",
+      "format": "text",
+      "required": true,
+      "maxChars": 7,
+      "maxLines": 1,
+      "usage": "顶部角标，全片两段用同一句。写栏目名/系列名，2–4 字最佳。不要写成句子。",
+      "example": "编排实验"
+    },
+    {
+      "id": "keyword",
+      "label": "第一段主标题",
+      "format": "text",
+      "required": true,
+      "maxChars": 7,
+      "maxLines": 1,
+      "usage": "整片最大的一句话，是观众唯一会记住的那句。写核心动作或结论，不要带标点，不要写完整句子。",
+      "example": "从想法开始"
+    },
+    {
+      "id": "body",
+      "label": "第一段正文（两行）",
+      "format": "text",
+      "required": true,
+      "maxChars": 38,
+      "maxLines": 2,
+      "usage": "主标题下面的解释。**建议用 \\n 主动分成两行**：第一行说『做什么』，第二行说『得到什么』。两行字数尽量接近，视觉才平衡。",
+      "example": "把你的想法\n变成清晰的视觉故事"
+    },
+    {
+      "id": "heading",
+      "label": "第二段标题",
+      "format": "text",
+      "required": true,
+      "maxChars": 4,
+      "maxLines": 1,
+      "usage": "概括下面三条要点的标题。4 字最稳（如『三个要点』『三步走完』），超过会被拦。",
+      "example": "三个要点"
+    },
+    {
+      "id": "card1.no",
+      "label": "要点 1 · 序号",
+      "format": "text",
+      "required": false,
+      "default": "01",
+      "maxChars": 1,
+      "maxLines": 1,
+      "usage": "序号位。**用半角数字**（01/02/03），因为半角比汉字窄一半；写汉字只能容 1 个字。",
+      "example": "01"
+    },
+    {
+      "id": "card1.text",
+      "label": "要点 1 · 正文",
+      "format": "text",
+      "required": true,
+      "maxChars": 15,
+      "maxLines": 1,
+      "usage": "一条要点。一句话一个动作，不要句号，不要用逗号串两句。",
+      "example": "结构先固定下来"
+    },
+    {
+      "id": "card2.no",
+      "label": "要点 2 · 序号",
+      "format": "text",
+      "required": false,
+      "default": "02",
+      "maxChars": 1,
+      "maxLines": 1,
+      "usage": "同要点 1 的序号位。",
+      "example": "02"
+    },
+    {
+      "id": "card2.text",
+      "label": "要点 2 · 正文",
+      "format": "text",
+      "required": true,
+      "maxChars": 15,
+      "maxLines": 1,
+      "usage": "第二条要点。三条之间要有递进关系（是什么 → 怎么做 → 有什么好处），不要三条并列。",
+      "example": "动效跟着节奏走"
+    },
+    {
+      "id": "card3.no",
+      "label": "要点 3 · 序号",
+      "format": "text",
+      "required": false,
+      "default": "03",
+      "maxChars": 1,
+      "maxLines": 1,
+      "usage": "同要点 1 的序号位。",
+      "example": "03"
+    },
+    {
+      "id": "card3.text",
+      "label": "要点 3 · 正文",
+      "format": "text",
+      "required": true,
+      "maxChars": 15,
+      "maxLines": 1,
+      "usage": "第三条要点，落在『结果』或『可复用性』上收尾。",
+      "example": "一次成片可复用"
+    }
+  ]
+}

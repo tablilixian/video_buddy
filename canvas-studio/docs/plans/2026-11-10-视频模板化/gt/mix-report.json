@@ -1,0 +1,101 @@
+{
+  "normalConsumerEntry": true,
+  "sourceSFX": 312,
+  "selectedEvents": 7,
+  "sourcePunctuation": 24,
+  "sfxPolicy": "native",
+  "voice": "none",
+  "music": "none",
+  "video": "silent-with-audio.mp4",
+  "waveformEquivalence": "not asserted; synthesized source recipe",
+  "crossSceneTails": "sample ownership remapped, then shared reverb on the complete output; ordinary cut does not slice the SFX stem",
+  "movieBoundary": "trimmed at explicit movie end; negative source pre-roll is clipped at movie start",
+  "events": [
+    {
+      "source": {
+        "t": 250.58,
+        "type": "thud",
+        "g": 0.55,
+        "p": 0
+      },
+      "owner": "B1",
+      "call": "B1.hit/0",
+      "origin": "new expression",
+      "outputTime": 0.5800000000000125
+    },
+    {
+      "source": {
+        "t": 251.25,
+        "type": "write",
+        "g": 0.25,
+        "p": 0,
+        "d": 1.2
+      },
+      "owner": "B1",
+      "call": "B1.line/0",
+      "origin": "new expression",
+      "outputTime": 1.25
+    },
+    {
+      "source": {
+        "t": 257.6,
+        "type": "swoosh",
+        "g": 0.3,
+        "p": 0
+      },
+      "owner": "B1",
+      "call": "B1.exit/0",
+      "origin": "new expression",
+      "outputTime": 7.600000000000023
+    },
+    {
+      "source": {
+        "t": 260.9,
+        "type": "card",
+        "g": 0.3,
+        "p": -0.2
+      },
+      "owner": "B2",
+      "call": "B2.card/0",
+      "origin": "new expression",
+      "outputTime": 8.899999999999977
+    },
+    {
+      "source": {
+        "t": 261.06,
+        "type": "card",
+        "g": 0.3,
+        "p": 0.2
+      },
+      "owner": "B2",
+      "call": "B2.card/1",
+      "origin": "new expression",
+      "outputTime": 9.060000000000002
+    },
+    {
+      "source": {
+        "t": 261.22,
+        "type": "card",
+        "g": 0.3,
+        "p": -0.2
+      },
+      "owner": "B2",
+      "call": "B2.card/2",
+      "origin": "new expression",
+      "outputTime": 9.220000000000027
+    },
+    {
+      "source": {
+        "t": 269.6,
+        "type": "swipe",
+        "g": 0.3,
+        "p": 0
+      },
+      "owner": "B2",
+      "call": "B2.exit/0",
+      "origin": "new expression",
+      "outputTime": 17.600000000000023
+    }
+  ],
+  "coverageComplete": false
+}

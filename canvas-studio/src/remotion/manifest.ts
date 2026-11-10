@@ -796,6 +796,47 @@ export interface ManifestVoiceOver {
   volume?: number
 }
 
+/**
+ * sfx 的锚定定位：跟随某条轨的起点/终点。模板必用 —— 换例子、卡片位移时音效跟着走。
+ *
+ * ⚠️ 目标轨若用 `startAfter`（顺序衔接），原始输入里可能还没有 `startFrame`。
+ * 所以**校验阶段只查 trackId 存在性**，帧号解析留给渲染阶段（那时已
+ * `normalizeManifestTiming`）。`resolveSfxStartFrame` 拿到没有 `startFrame` 的轨会返回 null。
+ */
+export interface ManifestSfxAnchor {
+  /** 被锚定的轨 id。必须在 tracks[] 中存在，否则 error。 */
+  trackId: string
+  /** 锚到该轨的起点还是终点（end = startFrame + durationInFrames）。 */
+  at: 'start' | 'end'
+  /** 相对锚点的偏移（秒，可负）。缺省 0。 */
+  offsetSec?: number
+}
+
+/** `KNOWN_SFX_KEYS` / 校验规则见 `validateSfxList`。 */
+export interface ManifestSfx {
+  /** 音效素材 URL。与 tracks[].src 同一套同源约束（`validateAssetRefField`）。 */
+  src: string
+  /** 三定位之一（三者必须**恰好给一个**）。模板写法：跟随轨道。 */
+  anchor?: ManifestSfxAnchor
+  /** 三定位之二：成片绝对帧。GT 复刻验收用它（绕开秒→帧舍入）。 */
+  startFrame?: number
+  /** 三定位之三：成片绝对秒，渲染时 `Math.round(startSec * fps)`。跨 fps 复用靠它。 */
+  startSec?: number
+  /** 线性增益 0–2（缺省 1）。1 = 原音量。 */
+  gain?: number
+  /**
+   * 声明用声像 −1..1（0 = 居中）。**仅在素材由本仓合成库产出时生效**（pan 在合成期
+   * 烘入文件）；指向外部素材时发 warning（pan 被忽略）。MVP 不复刻 GT 声像。
+   */
+  pan?: number
+  /** 淡入（秒，缺省 0）。 */
+  fadeInSec?: number
+  /** 淡出（秒，缺省 0）。 */
+  fadeOutSec?: number
+  /** 可选溯源元数据：这份素材由哪个合成配方产出（渲染器不解释）。 */
+  type?: string
+}
+
 export interface ManifestAudio {
   /** BGM 资产 URL（复用 `compose_video` 的 `bgmNodeId` 语义）。 */
   bgmUrl?: string
@@ -821,6 +862,12 @@ export interface ManifestAudio {
    * 近似说明：旁白间隙不恢复 —— 字幕连续时 BGM 全程压低。
    */
   duck?: { amount?: number }
+  /**
+   * 音效事件轨。定位三选一（`anchor` / `startFrame` / `startSec`，互斥）。
+   * 素材由程序化合成库离线产出（零授权）；**运行时只引用文件，不做实时合成**
+   * —— 浏览器里跑不了我们的 DSP，且合成必须确定性。
+   */
+  sfx?: ManifestSfx[]
 }
 
 export interface ManifestGlobal {
@@ -971,7 +1018,11 @@ const KNOWN_PERCENT_POINT_KEYS = new Set(['x', 'y'])
 /** O-10：多轨旁白的条数上限（防一份 manifest 塞进上百条把渲染器音频层压垮）。 */
 const MAX_VOICE_OVER_CLIPS = 64
 
-const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'voiceOver', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck'])
+const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'voiceOver', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck', 'sfx'])
+/** sfx 单条的已知键（契约外字段只告警不阻断，与 KNOWN_* 同策略）。 */
+const KNOWN_SFX_KEYS = new Set(['src', 'anchor', 'startFrame', 'startSec', 'gain', 'pan', 'fadeInSec', 'fadeOutSec', 'type'])
+/** sfx 条数上限（对齐 MAX_VOICE_OVER_CLIPS 的量级）。 */
+const MAX_SFX_EVENTS = 64
 const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
 const KNOWN_DUCK_KEYS = new Set(['amount'])
 const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor', 'logo'])
@@ -1851,6 +1902,8 @@ export function validateManifest(input: unknown): ManifestValidation {
     } else {
       validateAssetRefField(audio.bgmUrl, 'audio.bgmUrl', errors)
       validateAssetRefField(audio.voiceOverUrl, 'audio.voiceOverUrl', errors)
+      // sfx 事件轨（0A）：三定位互斥 + 同源 + 范围校验。
+      validateSfxList(audio.sfx, input.tracks, input.meta, errors, warnings)
       // O-10：多轨旁白。与单轨 `voiceOverUrl` 互斥（同时给会重复播放同一句）。
       if (audio.voiceOver !== undefined) {
         if (audio.voiceOverUrl !== undefined) {
@@ -1993,6 +2046,201 @@ export interface ManifestAudioSummary {
   audibleSources: number
 }
 
+/**
+ * sfx 定位 → 绝对帧号。**唯一换算入口**（渲染、校验、验收脚本都调它）。
+ *
+ * 三种定位互斥：
+ * - `anchor`：相对某轨 `start`/`end` + `offsetSec`（模板写法，轨位移时自动跟随）
+ * - `startFrame`：绝对帧（GT 复刻验收，绕开秒→帧舍入）
+ * - `startSec`：绝对秒，`Math.round(startSec * fps)`（跨 fps 复用的唯一正确表示）
+ *
+ * 返回 `null` 表示定位不合法或无法解析（调用方负责报 error / 跳过）：
+ * - 三定位给 0 个或 ≥2 个
+ * - `anchor.trackId` 查不到，或目标轨尚无 `startFrame`（用了 `startAfter` 但未
+ *   `normalizeManifestTiming`）
+ * - 解析结果为负帧
+ */
+export interface SfxResolveContext {
+  fps: number
+  /** 锚定解析用。缺省时 `anchor` 一律返回 null（纯 sec/frame 定位不需要它）。 */
+  trackById?: Map<string, { startFrame: number; durationInFrames: number }>
+}
+
+export function resolveSfxStartFrame(sfx: ManifestSfx, ctx: SfxResolveContext): number | null {
+  const hasAnchor = sfx.anchor !== undefined
+  const hasFrame = sfx.startFrame !== undefined
+  const hasSec = sfx.startSec !== undefined
+  const given = (hasAnchor ? 1 : 0) + (hasFrame ? 1 : 0) + (hasSec ? 1 : 0)
+  if (given !== 1) return null
+
+  if (hasFrame) {
+    const frame = sfx.startFrame
+    if (typeof frame !== 'number' || !Number.isInteger(frame) || frame < 0) return null
+    return frame
+  }
+
+  if (hasSec) {
+    const sec = sfx.startSec
+    if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) return null
+    return Math.round(sec * ctx.fps)
+  }
+
+  const anchor = sfx.anchor
+  if (anchor === undefined) return null
+  if (typeof anchor.trackId !== 'string' || anchor.trackId === '') return null
+  if (anchor.at !== 'start' && anchor.at !== 'end') return null
+  const target = ctx.trackById?.get(anchor.trackId)
+  if (target === undefined) return null
+  const base = anchor.at === 'end' ? target.startFrame + target.durationInFrames : target.startFrame
+  const offset = anchor.offsetSec ?? 0
+  if (typeof offset !== 'number' || !Number.isFinite(offset)) return null
+  const frame = Math.round(base + offset * ctx.fps)
+  return frame >= 0 ? frame : null
+}
+
+/**
+ * 校验 `audio.sfx`。照 `audio.voiceOver` 的既有写法，行为差异只有两处：
+ * 1. **三定位恰好给一个**（0 个 / ≥2 个都 error）—— 叠在一起语义不明，
+ *    禁止"取优先级最高的那个"静默忽略。
+ * 2. 目标轨尚未 `startFrame`（`startAfter` 未解析）**不报错**：那是运行时才
+ *    确定的值，校验阶段只查 `trackId` 存在性。
+ */
+function validateSfxList(
+  value: unknown,
+  tracks: unknown,
+  meta: unknown,
+  errors: string[],
+  warnings: string[],
+): void {
+  if (value === undefined) return
+  if (!Array.isArray(value)) {
+    errors.push('audio.sfx 必须是数组（如 [{"src":"…","startSec":0.58}]）')
+    return
+  }
+  if (value.length === 0) {
+    errors.push('audio.sfx 为空数组 —— 没有音效就不要写这个字段')
+    return
+  }
+  if (value.length > MAX_SFX_EVENTS) {
+    errors.push(`audio.sfx 最多 ${MAX_SFX_EVENTS} 条（当前 ${value.length} 条）`)
+    return
+  }
+
+  const trackIds = new Set<string>()
+  if (Array.isArray(tracks)) {
+    for (const track of tracks) {
+      if (isRecord(track) && isNonEmptyString(track.id)) trackIds.add(track.id)
+    }
+  }
+
+  const fps = isRecord(meta) && typeof meta.fps === 'number' && Number.isFinite(meta.fps) && meta.fps > 0
+    ? meta.fps
+    : null
+  const totalFrames = isRecord(meta) && typeof meta.durationInFrames === 'number' && Number.isFinite(meta.durationInFrames)
+    ? meta.durationInFrames
+    : null
+
+  for (let index = 0; index < value.length; index += 1) {
+    const item: unknown = value[index]
+    const at = `audio.sfx[${index}]`
+    if (!isRecord(item)) {
+      errors.push(`${at} 必须是对象`)
+      continue
+    }
+
+    validateAssetRefField(item.src, `${at}.src`, errors)
+
+    const hasAnchor = item.anchor !== undefined
+    const hasFrame = item.startFrame !== undefined
+    const hasSec = item.startSec !== undefined
+    const given = (hasAnchor ? 1 : 0) + (hasFrame ? 1 : 0) + (hasSec ? 1 : 0)
+    if (given !== 1) {
+      errors.push(`${at} 必须且只能用一种定位：anchor / startFrame / startSec（当前给了 ${given} 个）`)
+    }
+
+    if (hasSec) {
+      const sec = item.startSec
+      if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) {
+        errors.push(`${at}.startSec 必须是 ≥0 的有限数（秒）`)
+      }
+    }
+
+    if (hasFrame) {
+      const frame = item.startFrame
+      if (typeof frame !== 'number' || !Number.isInteger(frame) || frame < 0) {
+        errors.push(`${at}.startFrame 必须是非负整数`)
+      }
+    }
+
+    if (hasAnchor) {
+      const anchor = item.anchor
+      if (!isRecord(anchor)) {
+        errors.push(`${at}.anchor 必须是对象（如 {"trackId":"b2-card-1","at":"start"}）`)
+      } else {
+        if (!isNonEmptyString(anchor.trackId)) {
+          errors.push(`${at}.anchor.trackId 必须是非空字符串`)
+        } else if (trackIds.size > 0 && !trackIds.has(anchor.trackId)) {
+          errors.push(`${at}.anchor.trackId "${anchor.trackId}" 在 tracks[] 中不存在`)
+        }
+        if (anchor.at !== 'start' && anchor.at !== 'end') {
+          errors.push(`${at}.anchor.at 必须是 "start" 或 "end"`)
+        }
+        if (anchor.offsetSec !== undefined
+          && (typeof anchor.offsetSec !== 'number' || !Number.isFinite(anchor.offsetSec))) {
+          errors.push(`${at}.anchor.offsetSec 必须是有限数（秒，可负）`)
+        }
+        for (const key of Object.keys(anchor)) {
+          if (key !== 'trackId' && key !== 'at' && key !== 'offsetSec') {
+            warnings.push(`${at}.anchor 含契约外字段 "${key}"（已忽略）。`)
+          }
+        }
+      }
+    }
+
+    if (item.gain !== undefined) {
+      const gain = item.gain
+      if (typeof gain !== 'number' || !Number.isFinite(gain) || gain < 0 || gain > 2) {
+        errors.push(`${at}.gain 必须在 0–2（1 = 原音量）`)
+      }
+    }
+
+    if (item.pan !== undefined) {
+      const pan = item.pan
+      if (typeof pan !== 'number' || !Number.isFinite(pan) || pan < -1 || pan > 1) {
+        errors.push(`${at}.pan 必须在 −1..1（0 = 居中）`)
+      }
+    }
+
+    for (const key of ['fadeInSec', 'fadeOutSec'] as const) {
+      const raw = item[key]
+      if (raw !== undefined && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || raw > 30)) {
+        errors.push(`${at}.${key} 必须是 0–30 的数值（秒）`)
+      }
+    }
+
+    // 超时长只 warning：音频轨短于成片是常态，但**完全落在片外**的音效不会响，
+    // 模型排查"没声音"要花很久，所以必须留一条痕迹。anchor 定位跳过（帧号运行时才定）。
+    if (fps !== null && totalFrames !== null && totalFrames > 0) {
+      const sec = item.startSec
+      const frame = item.startFrame
+      if (typeof sec === 'number' && Number.isFinite(sec) && sec >= 0) {
+        const resolved = Math.round(sec * fps)
+        if (resolved >= totalFrames) {
+          warnings.push(`${at}.startSec ${sec}s 换算为第 ${resolved} 帧，超出成片 ${totalFrames} 帧（该音效不会响）`)
+        }
+      } else if (typeof frame === 'number' && Number.isInteger(frame) && frame >= 0 && frame >= totalFrames) {
+        warnings.push(`${at}.startFrame ${frame} 超出成片 ${totalFrames} 帧（该音效不会响）`)
+      }
+    }
+
+    for (const key of Object.keys(item)) {
+      if (!KNOWN_SFX_KEYS.has(key)) {
+        warnings.push(`${at} 含契约外字段 "${key}"（已忽略）。`)
+      }
+    }
+  }
+}
+
 export function summarizeManifestAudio(manifest: CompositionManifest): ManifestAudioSummary {
   let mutedVideoTracks = 0
   let audibleSources = 0
@@ -2010,6 +2258,9 @@ export function summarizeManifestAudio(manifest: CompositionManifest): ManifestA
     if (audio.bgmUrl !== undefined) audibleSources += 1
     if (audio.voiceOverUrl !== undefined) audibleSources += 1
     if (Array.isArray(audio.voiceOver)) audibleSources += audio.voiceOver.length
+    // 0A：sfx 也是出声源。**必须算** —— 否则「只有音效」的片会被判 none，
+    // 画布角标显示"无声"，而实际有 7 个音效点（CV-334 踩过同类坑）。
+    if (Array.isArray(audio.sfx)) audibleSources += audio.sfx.length
   }
   return { mutedVideoTracks, audibleSources }
 }

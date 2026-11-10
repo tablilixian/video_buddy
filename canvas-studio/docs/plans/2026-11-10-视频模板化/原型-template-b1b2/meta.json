@@ -1,0 +1,47 @@
+{
+  "templateId": "motiongit-kinetic-b1b2",
+  "title": "关键词 → 三条要点（18s 两段式）",
+  "contractVersion": "1.0",
+  "family": "cold-tech-kinetic",
+  "genre": ["科普", "产品", "概念讲解"],
+  "useWhen": "内容是「一个核心判断 + 三条支撑」的结构，18 秒左右讲完，不需要实拍素材。适合技术科普、产品卖点、方法论拆解。",
+  "doNotUseWhen": "需要超过 3 条要点、需要展示实拍/产品图、需要 60 秒以上长叙事 —— 换别的模板，不要硬塞。",
+  "duration": {
+    "frames": 1080,
+    "fps": 60,
+    "seconds": 18,
+    "minSeconds": 15,
+    "maxSeconds": 20,
+    "note": "G1 整片模板，时长固定。内容讲不完就删字，不要拉长帧数（拉长会让动效节奏崩）。"
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "aspect": "16:9"
+  },
+  "assets": [],
+  "assetsNote": "零外部素材，纯代码绘制（形状 + 文字 + 路径动画）。素材判据恒过。",
+  "structure": {
+    "segments": ["hook", "body"],
+    "segmentNote": "两段式。hook = 角标 + 主标题 + 两行正文 + 装饰路径；body = 角标 + 段标题 + 三条要点（逐条入场）。"
+  },
+  "slotCount": 10,
+  "textTrackCount": 11,
+  "provenance": {
+    "source": "MotionGit #385712（B1+B2 段落）",
+    "license": "MIT",
+    "reproducedBy": "canvas-studio 真机复刻（18.000s / 1920×1080@60）",
+    "note": "manifest 骨架由 原型-manifest-b1b2.json 机械替换 11 条文本轨得到，结构零改动。"
+  },
+  "verification": {
+    "script": "原型-compile.mjs",
+    "checks": [
+      "占位符骨架直接过 validateManifest（0 error 0 warning）",
+      "原文回填后与原 manifest 整份 JSON 逐字节相同",
+      "换内容后结构（除 text 外）0 处差异",
+      "maxChars 由 box 几何自动审计，与人工估算 10/10 一致",
+      "体检开启时占位符 0 额外告警",
+      "同输入编译两次逐字节相同"
+    ]
+  }
+}

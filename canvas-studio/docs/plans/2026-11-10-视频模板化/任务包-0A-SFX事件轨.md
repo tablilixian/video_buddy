@@ -51,22 +51,37 @@ render_composition
 
 ## 2. 设计决策（照做，别改）
 
-### 决策 1：契约落 `manifest.audio.sfx[]`，用 **秒**不用帧
+### 决策 1：契约落 `manifest.audio.sfx[]`，**三种定位方式并存，互斥**
 
 ```jsonc
 "audio": {
   "sfx": [
-    { "src": "/canvas-studio/assets/sfx/hit.wav", "startSec": 0.58, "gain": 1.0, "pan": 0 },
-    { "src": "/canvas-studio/assets/sfx/whoosh.wav", "startSec": 7.76, "gain": 0.7, "pan": -0.3 }
+    { "src": "/canvas-studio/remotion/sfx/thud.wav", "startSec": 0.58, "gain": 0.55, "pan": 0 },
+
+    // 模板写法：跟着轨道走，模板被复用/整段位移时不用改
+    { "src": "/canvas-studio/remotion/sfx/card.wav",
+      "anchor": { "trackId": "b2-card-1", "at": "start", "offsetSec": 0.12 }, "gain": 0.3 },
+
+    // 帧精确写法：验收复刻 GT 时用，绕开秒→帧舍入争议
+    { "src": "/canvas-studio/remotion/sfx/swipe.wav", "startFrame": 1056, "gain": 0.3 }
   ]
 }
 ```
 
-**为什么用 `startSec` 而不是 `startFrame`**：
-- `audio.voiceOver` 用 `startFrame`，但那是**素材对齐**（旁白是整段录音，帧号要对齐到具体某句的起点）。
-- sfx 是**编排事件**，模板要跨 fps 复用（同一模板 30fps / 60fps 都要能播）。秒是唯一能跨的表示。
-- MotionGit 的音效事件表本身就是秒制（`{"t":4.65,"type":"hit"}`）。
-- **渲染时换算成帧**：`startFrame = round(startSec * fps)`。
+**为什么不是"只用帧"或"只用秒"**（2026-11-10 拍板，推翻本节旧版的"只用秒"）：
+
+| 定位方式 | 语义 | 谁用 | 优先级 |
+|---|---|---|---|
+| `anchor` | 相对某条轨的 `start`/`end` + `offsetSec` | **模板**（模板是骨架，音效必须跟着卡走） | 1（最高） |
+| `startFrame` | 成片绝对帧 | GT 复刻验收、需要帧精确的场合 | 2 |
+| `startSec` | 成片绝对秒 | 手写 manifest、跨 fps 复用 | 3 |
+
+- **必须支持 `anchor`**（K-8）：否则模板换个例子、卡片位移，音效就全错位。`host-tools.ts:4430` 已有同构的 anchor 思路可照抄。
+- **`startSec` 仍保留**：它是"物理时间"的唯一正确表示 —— 同一模板在 30fps / 60fps 下 `startSec` 不变而 `startFrame` 要变。旧版这个论证是对的。
+- **`startFrame` 必须加**：GT 真值 `9.060s × 60 = 543.6` 帧，与视觉入场 544 帧差 0.4 帧。要断言"音画帧域精确对齐"，秒制做不到（`round` 是唯一桥）。
+- **三者同时给 ≥2 个 ⇒ error**（叠在一起语义不明，必须拒收，不能"取优先级最高的那个"静默忽略）。
+
+> **与总表 P-5「帧为基准」的关系**：P-5 管的是**验收口径**（比对时一律换到帧域，不拿秒值互扣），本决策管的是**存储格式**（三种都存，按用途选）。两者不冲突，桥就是 `startFrame = anchor ? anchorFrame : round(startSec × fps)`。
 
 ### 决策 2：运行时**只认 `src`**；`type` 是可选元数据
 
@@ -90,7 +105,11 @@ render_composition
 
 ### 决策 4：素材同源约束不变
 
-`src` 必须满足与其它轨一样的同源约束（同源 `/canvas-studio/assets/...` 或项目资产目录内绝对路径），外链一律拒收。合成库要把 WAV **落到项目资产目录**（或 `canvas-studio/assets/sfx/`），再按相对/绝对路径引用。
+`src` 必须满足与其它轨一样的同源约束，外链一律拒收。两条合法路径：
+- **包内合成素材**：物理 `<pkg>/assets/sfx/*.wav`，URL `/canvas-studio/remotion/sfx/*.wav`（新增只读路由，见 §5.2 / P-1）
+- **用户自带素材**：项目资产目录内 `/<projectId>/<file>`（该路由要求**恰好两段**，不能有子目录）
+
+> ⚠️ **不要**写 `/canvas-studio/assets/sfx/x.wav`。`/canvas-studio/assets` 那条路由（`routes.ts:1229`）要求恰好两段 `/<projectId>/<file>`，会把 `sfx` 当成 projectId ⇒ 404。
 
 ---
 
@@ -100,15 +119,35 @@ render_composition
 
 ```ts
 /** manifest.ts —— 放在 ManifestAudio 上方 */
+
+/** sfx 的锚定定位：跟随某条轨的起点/终点。模板必用（换例子、卡片位移时不用改音效表）。 */
+export interface ManifestSfxAnchor {
+  /** 被锚定的轨 id。必须存在于 tracks[] 中，否则 error。 */
+  trackId: string
+  /** 锚到该轨的起点还是终点（end = startFrame + durationInFrames）。 */
+  at: 'start' | 'end'
+  /** 相对锚点的偏移（秒，可负）。缺省 0。 */
+  offsetSec?: number
+}
+
 export interface ManifestSfx {
   /** 音效素材 URL。与 tracks[].src 同一套同源约束（`validateAssetRefField`）。 */
   src: string
-  /** 绝对起点（秒，成片时间坐标）。渲染时按 fps 换算成帧。 */
-  startSec: number
+  /**
+   * 定位：**三者必须恰好给一个**（给 0 个或 ≥2 个都报 error）。
+   *   1. anchor     —— 模板写法，跟随轨道
+   *   2. startFrame —— 帧精确（GT 复刻验收）
+   *   3. startSec   —— 绝对秒，跨 fps 复用
+   */
+  anchor?: ManifestSfxAnchor
+  /** 绝对起点（帧，成片时间坐标）。与 startSec / anchor 互斥。 */
+  startFrame?: number
+  /** 绝对起点（秒，成片时间坐标）。渲染时按 fps 换算成帧。与 startFrame / anchor 互斥。 */
+  startSec?: number
   /** 线性增益 0–2（缺省 1）。1 = 原音量。 */
   gain?: number
   /** 声明用声像 −1..1（0 = 居中）。**仅在素材由本仓合成库产出时生效**；
-   *  指向外部素材时校验层发 warning（pan 被忽略）。 */
+   *  指向外部素材时校验层发 warning（pan 被忽略）。MVP 不复刻声像，验收不断言。 */
   pan?: number
   /** 淡入（秒，缺省 0）。 */
   fadeInSec?: number
@@ -120,9 +159,22 @@ export interface ManifestSfx {
 ```
 
 ```ts
+/**
+ * 把一条 sfx 解析成绝对帧号。**唯一换算入口**（渲染与校验都调它，不许各写一份）。
+ * 返回 null 表示定位不合法（调用方负责报 error）。
+ */
+export function resolveSfxStartFrame(
+  sfx: ManifestSfx,
+  ctx: { fps: number; trackById: Map<string, { startFrame: number; durationInFrames: number }> },
+): number | null
+```
+
+> **为什么要有 `resolveSfxStartFrame` 这个唯一入口**：三种定位方式 × 渲染/校验/验收脚本 = 6 处独立换算会漂。本仓已有 `startAfter` 的先例（`normalize-timing.ts` 统一解析），sfx 照同一模式做。
+
+```ts
 // ManifestAudio 内追加
   /**
-   * 音效事件轨。**秒制时间轴**（startSec），渲染时按 fps 换算成帧。
+   * 音效事件轨。定位三选一（anchor / startFrame / startSec）。
    * 素材由程序化合成库离线产出（零授权）；运行时只引用文件，不做实时合成。
    */
   sfx?: ManifestSfx[]
@@ -135,11 +187,14 @@ export interface ManifestSfx {
 | `sfx` 存在时必须是数组 | error |
 | `sfx` 为空数组 ⇒ error（「没有音效就别写这个字段」） | error |
 | `sfx` 条数 > 64 ⇒ error（对齐 `MAX_VOICE_OVER_CLIPS` 的量级） | error |
+| **`anchor` / `startFrame` / `startSec` 恰好给一个**（0 个或 ≥2 个） | error |
+| `anchor.trackId` 不存在于 `tracks[]` | error |
+| `anchor.at` 不是 `'start' \| 'end'` | error |
 | 每项 `src` 非空字符串且过 `validateAssetRefField`（同源） | error |
-| 每项 `startSec` 是有限数且 ≥ 0 | error |
+| 每项 `startSec` 是有限数且 ≥ 0；`startFrame` 是非负整数 | error |
 | 每项 `gain` 在 0–2（缺省 1） | error |
 | 每项 `pan` 在 −1..1（缺省 0） | error |
-| 每项 `startSec` 超出成片时长 ⇒ warning（别用 error，音频轨短于成片是常态） | warning |
+| 解析出的帧号超出成片时长 ⇒ warning（别用 error，音频轨短于成片是常态） | warning |
 | `pan ≠ 0` 且 `src` 指向外部素材（不在本仓合成库清单内） ⇒ warning | warning |
 | `sfx` 出现在 `KNOWN_AUDIO_KEYS` 里（否则整段会被判契约外字段） | — |
 
@@ -192,7 +247,7 @@ export interface ManifestSfx {
 > ⚠️ `src/host-tools.ts` 近期被并发会话改动过（`host-tools.ts` / `canvas-asset-attach.ts` / `tool-presentation.ts`）。动手前先 `git status` + 重读当前内容。**第一版用脚本产出，避免撞车**；等工具注册稳定后再决定是否注册为宿主工具（LLM 侧调用）。
 
 脚本职责：
-1. 读配方表 → 合成全部 voice → 写 WAV 到**项目资产目录**（`/canvas-studio/assets/sfx/` 或当前项目 `assets/`）
+1. 读配方表 → 合成全部 voice → 写 WAV 到**包内静态目录 `assets/sfx/`**（经 `/canvas-studio/remotion/sfx/*` 只读路由对外；用户自带音效才落项目资产目录）
 2. 输出一份**清单 JSON**（voice id → 落盘路径 → 时长 → 电平），供校验层判断「这个 src 是不是本仓合成的（pan 是否生效）」
 3. 可重复执行（幂等：文件已存在且参数未变则跳过）
 
@@ -206,9 +261,15 @@ export interface ManifestSfx {
 
 | 断言 | 期望 |
 |---|---|
-| `sfxStartFrame([{startSec:0.58}], 60)` | `[35]`（0.58×60 = 34.8 → 35） |
-| `sfxStartFrame([{startSec:7.76}], 30)` | `[233]`（7.76×30 = 232.8 → 233） |
-| `sfxStartFrame` 对同一 `startSec` 不同 fps | 换算后秒级误差 ≤ 1/120s |
+| `resolveSfxStartFrame({startSec:0.58}, {fps:60})` | `35`（0.58×60 = 34.8 → 35） |
+| `resolveSfxStartFrame({startSec:7.6}, {fps:30})` | `228`（7.6×30 = 228） |
+| `resolveSfxStartFrame({startSec:0.58}, {fps:30})` | `17`（0.58×30 = 17.4 → 17，**同一 startSec 换 fps 必须重算**） |
+| `resolveSfxStartFrame({startFrame:1056}, {fps:60})` | `1056`（`startFrame` 不随 fps 变） |
+| `resolveSfxStartFrame({anchor:{trackId:"b2-card-1",at:"start"}}, …)`，该轨 `startFrame=534` | `534` |
+| `resolveSfxStartFrame({anchor:{trackId:"b2-card-1",at:"start",offsetSec:0.1}}, {fps:60})` | `540`（534 + round(0.1×60)=6） |
+| `resolveSfxStartFrame({anchor:{trackId:"b2-card-1",at:"end"}}, …)`，该轨 `534+50` | `584` |
+| `resolveSfxStartFrame` 三种定位同时给 / 一个都不给 | `null`（调用方报 error） |
+| `resolveSfxStartFrame` 的 `anchor.trackId` 查不到 | `null` |
 | `sfxVolumeAt` 在 `startFrame` 处 | 等于 `gain`（淡入起点） |
 | `sfxVolumeAt` 在 `startFrame + fadeInSec×fps` 后 | 等于 `gain` |
 | `sfxVolumeAt` 在淡出区间 | 线性下降 |
@@ -216,51 +277,73 @@ export interface ManifestSfx {
 | DSP：`pan(x, 1)` 的 L/R | R = x, L = 0（√2 分配） |
 | DSP：`lowpass` / `highpass` 输出长度 | 与输入等长 |
 | WAV 写出的头 | RIFF/WAVE/fmt /data 块长度字段自洽；读回样本数 = 帧数×2 |
-| 合成出的 `hit.wav` | 时长 ∈ [0.15s, 0.6s]，峰值 ∈ [0.5, 1.0] |
-| `validateManifest`：`sfx` 合法 | ok=true, 0 error, 0 warning |
-| `validateManifest`：`sfx` 含 `src:"https://外链/x.wav"` | 报 error（同源约束） |
-| `validateManifest`：`sfx` 含 `gain: 5` | 报 error（0–2） |
-| `validateManifest`：`sfx` 含 `pan: 3` | 报 error（−1..1） |
+| 合成出的 `thud.wav` | 时长 ∈ [0.15s, 0.6s]，峰值 ∈ [0.5, 1.0] |
+| `validateManifest`：`sfx` 合法（带 `startSec`） | ok=true, 0 error, 0 warning |
+| `validateManifest`：三种定位同时给 | 报 error |
+| `validateManifest`：三种定位都不给 | 报 error |
+| `validateManifest`：`anchor.trackId` 不存在 | 报 error |
+| `validateManifest`：`src:"https://外链/x.wav"` | 报 error（同源约束） |
+| `validateManifest`：`gain: 5` | 报 error（0–2） |
+| `validateManifest`：`pan: 3` | 报 error（−1..1） |
 | `validateManifest`：`sfx: []` | 报 error |
 | `validateManifest`：`sfx` 存在但未加进 `KNOWN_AUDIO_KEYS` | **必测**：应报契约外字段 warning（防回归） |
+| **反向变异**：把 `resolveSfxStartFrame` 的 `round` 改 `floor` | 0.58@60 得 34 而非 35 ⇒ 上面的用例必须变红 |
+### 5.2 端到端（真值表 · 2026-11-10 已按 `gt/mix-report.json` 重写）
 
-### 5.2 端到端（真机）
+> ⚠️ **本节此前的一版是错的，已废弃。** 旧表（`hit@0.58 / pop@0.69 / typing@1.41 / whoosh@7.76 / hit@9.06,9.22,9.36 / swoosh@17.71`，共 8 条）来自「对 GT 音轨做 RMS 检波」的产物，把**混响尾**当成了独立事件，且漏检首个、尾部多检一个。
+> 权威数据是 GT 混音器自己输出的 `gt/mix-report.json`（`selectedEvents: 7`）。**不要再用 `视频模板化-基线与代码事实索引.md` §4.1 那 15 个"峰"。**
 
-1. 用 `原型-manifest-b1b2.json` 加 `audio.sfx`，**按 `视频模板化-基线与代码事实索引.md` §4.1 的 5 组事件**：
+#### 5.2.1 真值：7 条事件（`gt/mix-report.json`）
+
+GT 成片 1280×720@**60fps**，`source.t` 减去 B1 起点 250s 即为 `outputTime`。
+
+| # | owner | 调用点 | type | gain | pan | dur | `outputTime` | 帧@60 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | B1 | `B1.hit/0` | `thud` | 0.55 | 0 | — | 0.580 | **35** |
+| 2 | B1 | `B1.line/0` | `write` | 0.25 | 0 | **1.2** | 1.250 | **75** |
+| 3 | B1 | `B1.exit/0` | `swoosh` | 0.30 | 0 | — | 7.600 | **456** |
+| 4 | B2 | `B2.card/0` | `card` | 0.30 | −0.2 | — | 8.900 | **534** |
+| 5 | B2 | `B2.card/1` | `card` | 0.30 | +0.2 | — | 9.060 | **544**（543.6） |
+| 6 | B2 | `B2.card/2` | `card` | 0.30 | −0.2 | — | 9.220 | **553**（553.2） |
+| 7 | B2 | `B2.exit/0` | `swipe` | 0.30 | 0 | — | 17.600 | **1056** |
+
+**三条必须理解的事实**：
+
+1. **音效时刻 = 视觉入场帧，不是"偏后 9 帧"**。视觉三卡入场实测 **534 / 544 / 553 帧**（= 8.900 / 9.067 / 9.217 s），音效 `round(8.900×60)=534`、`round(9.060×60)=544`、`round(9.220×60)=553` ⇒ **帧域完全相等**。秒域那 0.007/0.003 的差是秒→帧舍入，不是设计偏移。
+2. **`write` 是一条 1.2 秒的长事件，不是 11 击打字簇。** 旧表的 `typing@1.41` 与"簇内间隔保持"这条验收一并作废。
+3. **第三个卡片音效是 `9.220` 不是 `9.360`。** `9.36 − 9.22 = 0.14 ≈ 一个事件间隔`，是"尾部多检一个"的典型指纹。
+
+#### 5.2.2 落盘 manifest
+
+用 `原型-manifest-b1b2.json` 加 `audio.sfx`（`src` 按 P-1 指向 `/canvas-studio/remotion/sfx/*.wav`，**不是** `/canvas-studio/assets/sfx/`）：
 
 ```jsonc
 "sfx": [
-  { "src": ".../hit.wav",   "startSec": 0.58,  "gain": 1.0, "pan": 0 },
-  { "src": ".../pop.wav",   "startSec": 0.69,  "gain": 0.45, "pan": -0.4 },
-  { "src": ".../typing.wav","startSec": 1.41,  "gain": 0.4, "pan": 0 },
-  { "src": ".../whoosh.wav","startSec": 7.76,  "gain": 0.7, "pan": -0.3 },
-  { "src": ".../hit.wav",   "startSec": 9.06,  "gain": 0.5, "pan": -0.6 },
-  { "src": ".../hit.wav",   "startSec": 9.22,  "gain": 0.5, "pan": 0.2 },
-  { "src": ".../hit.wav",   "startSec": 9.36,  "gain": 0.5, "pan": -0.6 },
-  { "src": ".../swoosh.wav","startSec": 17.71, "gain": 0.45, "pan": 0 }
+  { "src": "/canvas-studio/remotion/sfx/thud.wav",   "startSec": 0.580, "gain": 0.55, "pan": 0,    "type": "thud"   },
+  { "src": "/canvas-studio/remotion/sfx/write.wav",  "startSec": 1.250, "gain": 0.25, "pan": 0,    "type": "write"  },
+  { "src": "/canvas-studio/remotion/sfx/swoosh.wav", "startSec": 7.600, "gain": 0.30, "pan": 0,    "type": "swoosh" },
+  { "src": "/canvas-studio/remotion/sfx/card.wav",   "startSec": 8.900, "gain": 0.30, "pan": -0.2, "type": "card"   },
+  { "src": "/canvas-studio/remotion/sfx/card.wav",   "startSec": 9.060, "gain": 0.30, "pan": 0.2,  "type": "card"   },
+  { "src": "/canvas-studio/remotion/sfx/card.wav",   "startSec": 9.220, "gain": 0.30, "pan": -0.2, "type": "card"   },
+  { "src": "/canvas-studio/remotion/sfx/swipe.wav",  "startSec": 17.600,"gain": 0.30, "pan": 0,    "type": "swipe"  }
 ]
 ```
 
-2. 走 `render_composition`（**`manifestPath` 走文件，别内联**），成片落盘后：
+> `pan` 靠不同 `src` 变体是不行的（同一文件 L/R 已烘死）。**给 `card` 生成 pan=0 的中置版本即可** —— 本仓 `pan` 是声明字段，运行时不再处理（决策 3）。GT 那 ±0.2 的声像是 GT 混音器的处理，本仓 MVP 不复刻声像，**验收也不断言声像**。
 
-```sh
-ffprobe -v error -show_entries stream=codec_type,codec_name,sample_rate,channels -of csv=p=0 成片.mp4
-# 期望：video=h264 + audio=aac, 48000, 2
-```
+#### 5.2.3 断言（按此顺序跑，任一失败即停）
 
-3. **起音检测比对**（脚本见 `视频模板化-基线与代码事实索引.md` §4.1）：
-
-| 事件组 | GT 时刻 | 期望偏差 |
+| # | 断言 | 判据 |
 |---|---|---|
-| A | 0.580 | ≤ 1 帧（0.0167s） |
-| B | 1.410–2.290 | 起音 ≤ 1 帧；簇内间隔保持 |
-| C | 7.760 | ≤ 1 帧 |
-| D | 9.060 / 9.220 / 9.360 | **每个 ≤ 1 帧**，且三者间隔仍为 0.160s |
-| E | 17.710 | ≤ 1 帧 |
+| 1 | 成片有音轨 | `ffprobe` ⇒ `h264` + `aac` / 48000 / 2ch |
+| 2 | **事件帧号** | `round(startSec×60)` 逐条 = `[35, 75, 456, 534, 544, 553, 1056]`，**逐条精确相等**（不是 ±1 —— 帧域无舍入余量） |
+| 3 | 三卡音画对齐 | 卡片三事件帧 `[534,544,553]` 与视觉三卡入场帧 `[534,544,553]` **集合相等** |
+| 4 | 起音实测 | 从成片解 aac，对 7 个窗口做起音检测，实测起音帧与第 2 条**偏差 ≤ 1 帧**（这一条才允许 ±1，因为编解码有延迟） |
+| 5 | 事件窗口峰值 | 逐窗口峰值落在 GT 同窗口 ±6 dB |
+| 6 | 整片响度 | `ebur128` integrated **−24 ~ −18 LUFS**（GT 实测 −21.1）。**不要用 dB mean**：GT mean −33.1 在旧闸 −20~−9 之外，纯音效片天然低响度 |
+| 7 | 无额外静音 | 除 7 个事件窗外的区间不应有 > −60 dBFS 的峰（防"每帧都放了音效"这类错误） |
 
-4. **电平**：整片 mean 落在 −40 .. −25 dB，max 落在 −12 .. −2 dB（GT 实测 mean −33.1 / max −3.7）。
-
-> 验收脚本请写进 `canvas-studio/scripts/` 或测试目录，**名字里带 `sfx`**，便于后续模板回归复用。
+> 验收脚本写进 `canvas-studio/scripts/`，**名字带 `sfx`**，便于模板回归复用。脚本的期望值**必须从 `gt/mix-report.json` 读**，不要硬编码 —— 硬编码会让将来换 GT 时静默失准。
 
 ### 5.3 回归
 

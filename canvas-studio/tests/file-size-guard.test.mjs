@@ -221,7 +221,11 @@ export const FUNC_WHITELIST = {
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。
   // 2026-11-06 会话 18（任务 18）：回执按 landed 改口径 + 阶段二解锁提示 +5（2912 → 2917）。
-  'src/host-tools.ts#createStudioTools': { lines: 2917, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917' },
+  // 2026-11-10 香水样本 P0-2/P2-3：upload_image 契约纠偏（description 明写仅图片 + 非图片
+  // 硬拒接线）与 attach_canvas_asset 的 spread 接线，+4（2917 → 2921）。
+  // 消化路径：判据本身全在 canvas-asset-attach.ts（本函数只留一行调用）。upload_image 若
+  // 按 download_video 同款整体外置（它已无生成逻辑，只剩上传 + 回写 + 外链补节点），可回收本行数。
+  'src/host-tools.ts#createStudioTools': { lines: 2921, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

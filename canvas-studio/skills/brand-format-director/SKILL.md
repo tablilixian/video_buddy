@@ -1,6 +1,6 @@
 ---
 name: brand-format-director
-description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品牌宣传片 / brand promo / 新品发布 / 官网展示 / 应用与店铺宣传 / 社媒品牌推广 / logo 短片」类需求，先用定向三问对齐（素材现实 / 投放场景 / 时长画幅语言），再按链路路由表把任务分派给下游 executor（brand-promo-video-generator 风格链 / code-driven-explainer 动效图形链）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「素材现实 / 投放场景 / 时长画幅语言」三问。本 skill 只做定向与调度，不复述素材纪律与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：品牌宣传、品牌片、brand promo、新品发布、宣传片、logo 短片。
+description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品牌宣传片 / brand promo / 新品发布 / 官网展示 / 应用与店铺宣传 / 社媒品牌推广 / logo 短片」类需求，先用定向三问对齐（素材现实 / 投放场景 / 时长画幅语言），再按链路路由表把任务分派给下游 executor（brand-promo-video-generator 风格链 / code-driven-explainer 动效图形链）。用户点名下游 executor 时本壳仍须先加载做定向——点名只决定「用哪条链」，不替代「素材现实 / 投放场景 / 时长画幅语言」三问。本 skill 只做定向与调度，不复述素材纪律与节拍细则；上游是 canvas-studio-creation 总纲，不改变其流程与审批语义。触发词：品牌宣传、品牌片、brand promo、新品发布、宣传片、logo 短片。不适用：已有真实产品、以功能/卖点/结构展示为主 ⇒ product-format-director。
 ---
 
 # 品牌宣传体裁编排（brand-format-director）
@@ -21,6 +21,8 @@ description: 品牌宣传体裁的 L2 编排壳（format director）。凡「品
 3. **期望时长与画幅**（缺省 15s / 30s / 60s 三档 + 16:9 或 9:16）。
 
 问完即在回复中复述定向结论（素材现实 / 场景 / 时长画幅语言）再开工。
+
+**体裁归属（先判壳再开工）**：**虚构 / 概念品牌且身份资产由用户授权生成**（logo / 瓶身 / 字标 / 广告词都要你造）、片子以**品牌气质与叙事**为主 ⇒ 走本壳品牌链；**已有真实产品与官方素材**、以**功能 / 卖点 / 结构展示**为主 ⇒ 属 `product-format-director`。两壳同时命中（「新品发布」两边都列触发词）时按 `references` 之外的唯一裁决表 `canvas-studio-creation/references/clarification.md` §"体裁壳互斥判据" 判，**不靠模型自选**。
 
 > **答案已给全的形态（2026-11-09 真机回归补）**：任务书 / brief 已把三问答案写死、写了「不要反问」、或已点名下游 executor 时，**本壳仍须先加载**：用给定答案复述定向结论即可，不必再 `ask_user_choice`，但**不得跳过本壳直接开工**。点名只决定链路，不替代定向。
 

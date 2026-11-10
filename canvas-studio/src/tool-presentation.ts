@@ -73,6 +73,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   media_probe: { tier: 'A', title: '媒体探针', icon: '探' },
   evidence_grid: { tier: 'A', title: '证据网格', icon: '证' },
   download_video: { tier: 'A', title: '视频下载', icon: '载' },
+  // 2026-11-10 香水样本 P0-2：本地现成产物 → 画布节点（不是生成，是登记）。
+  attach_canvas_asset: { tier: 'A', title: '登记到画布', icon: '登' },
   // CV-445（S3/S4，rea-video 吸收批）：生成单元规划 / 自动对比片。
   plan_generation_units: { tier: 'A', title: '生成单元规划', icon: '划' },
   make_compare: { tier: 'A', title: '对比片', icon: '比' },

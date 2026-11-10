@@ -50,7 +50,7 @@ const SKILLS_DIR = join(ROOT, 'skills')
  *  host-tools-audio.ts —— analyze_beats/snap_cuts_to_beats 经 defineAudioTools 工厂展开注册
  *  （host-tools.ts:3030 只剩展开调用），名字只在该文件源文本出现；漏列时门禁表 41 vs 真实 43，
  *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'skills/placeholder-tools.ts']
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'host-tools-canvas-asset.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -677,4 +677,107 @@ test('P0-3 报错带修法：sourceRect 越界 / 轨道 id 重复不再是「只
     'sourceRect 越界报错没给修法 —— 模型会回去 sed 源码找校验')
   assert.match(manifest, /id 重复[\s\S]{0,220}(换唯一 id|画布节点 id)/u,
     '轨道 id 重复报错没给修法 —— 同上')
+})
+
+// ── 2026-11-10 · 香水样本 P0-1：**体裁壳互斥判据**（拍板 A）──────────────
+//
+// 事故（`docs/plans/2026-11-09-待验收清账台账-多轮.md` §21.3 P0-1）：
+// 两壳触发词都含「新品发布 / 宣传片」，用户「为一款香水做发布，商品样子 / 广告词 / logo
+// 都由你生成」**同时命中两壳**，agent 顺手选了 `product-format-director`
+// ⇒ `brand-format-director` / `brand-promo-video-generator` 整场 0 次加载，
+// 品牌真实性纪律、叙事骨架、节拍与语言口径全部空转。
+//
+// 11-09 的 P0-2（上一组）只修了「点名 executor 仍要跳壳」，**没修「两个壳都能命中」**——
+// 因为描述层压根没有互斥判据，模型只能按「哪个更像」猜。
+//
+// 本组钉三处（缺一处判据就断链）：
+//   ① 两壳 description 各带「不适用」边界 + 指向对家壳 + 判据关键词；
+//   ② 总纲跳过规则给指针（模型第一个动作加载总纲，这是必命中面）；
+//   ③ 判据正文落 `clarification.md`（总纲只剩 161B 余量、15KB 闸不可破 ⇒ 细则必须下沉）。
+//
+// ⚠️ 能离线断言的只是「判据在不在、指没指对家」；**模型真会按它裁决**须真机样本 A 验收。
+const SHELL_MUTEX_TARGET = {
+  'brand-format-director': 'product-format-director',
+  'product-format-director': 'brand-format-director',
+}
+
+/**
+ * 互斥边界的**可判形态**：三件缺一不可 ——
+ * ①「不适用」字样（说明这是边界而不是触发词）；② 指向**对家壳**的名字；③ 一句判据关键词。
+ * 抽成纯函数是为了让哨兵能把事故前文案直接喂进来（同 CV-452 第 6 次反证写法）。
+ */
+function mutexClausePresent(description, other) {
+  if (!description.includes('不适用')) return false
+  if (!description.includes(other)) return false
+  return /身份资产|官方素材|品牌气质|卖点/u.test(description)
+}
+
+test('P0-1 体裁互斥①：两壳 description 各带「不适用」边界，并指向对家壳', () => {
+  for (const [shell, other] of Object.entries(SHELL_MUTEX_TARGET)) {
+    const description = frontmatterDescription(shell)
+    assert.ok(
+      mutexClausePresent(description, other),
+      `${shell}: description 缺互斥边界 —— 两壳同时命中时模型只能靠「哪个触发词更像」猜（P0-1 事故）`,
+    )
+    assert.ok(
+      description.includes('不适用'),
+      `${shell}: 边界必须以「不适用」起句，否则读起来仍像触发词`,
+    )
+    assert.ok(description.length <= 500, `${shell}: description 超 500 字符（${description.length}）`)
+  }
+})
+
+test('P0-1 体裁互斥②：总纲跳过规则给指针，且不写死 skill 名', () => {
+  const { lines, start } = masterBody()
+  const idx = lines.findIndex((line, i) => i >= start && line.startsWith('**跳过规则**'))
+  assert.ok(idx >= 0, '总纲正文找不到「跳过规则」段 —— 互斥判据没有落点')
+  const line = lines[idx]
+
+  assert.ok(line.includes('clarification.md'), '跳过规则没指向 `clarification.md` —— 判据无细则可读')
+  assert.ok(line.includes('体裁壳互斥判据'), '跳过规则没点名判据小节 —— 模型不会去翻分册找它')
+  assert.ok(/裁决/u.test(line), '跳过规则没写「须先裁决」—— 只是并列提到两壳，等于没约束')
+
+  // CV-319 判据二：会因新增 skill 而过期的规则不写进总纲 ⇒ 指针里只点分册、不点 skill 名。
+  const hardcoded = knownSkillNames().filter(name => line.includes(name))
+  assert.deepEqual(
+    hardcoded, [],
+    '总纲跳过规则写死了 skill 名 —— 两壳边界属「会因新增体裁而过期」的规则，应留在分册：\n'
+    + hardcoded.join('\n'),
+  )
+})
+
+test('P0-1 体裁互斥③：判据正文在 clarification.md（两条判据 + 正反例 + 不靠自选）', () => {
+  const lines = readFileSync(
+    join(SKILLS_DIR, 'canvas-studio-creation', 'references', 'clarification.md'), 'utf8',
+  ).split('\n')
+  const head = lines.findIndex(line => line.startsWith('## 体裁壳互斥判据'))
+  assert.ok(head >= 0, 'clarification.md 缺「体裁壳互斥判据」节 —— 总纲的指针是死的')
+  const next = lines.findIndex((line, i) => i > head && line.startsWith('## '))
+  const section = lines.slice(head, next > head ? next : lines.length).join('\n')
+
+  assert.ok(section.includes('brand-format-director'), '判据节没点名 brand 壳')
+  assert.ok(section.includes('product-format-director'), '判据节没点名 product 壳')
+  assert.ok(/身份资产/u.test(section), '判据节缺判据①（身份资产由谁生成）')
+  assert.ok(/卖点/u.test(section), '判据节缺判据②（品牌叙事 vs 功能卖点）')
+  assert.ok(/正例/u.test(section) && /反例/u.test(section), '判据节缺正反例 —— 模型无法据此对号入座')
+  assert.ok(/不靠模型自选|不靠.*自选/u.test(section), '判据节没写「不靠模型自选」—— 等于把裁决权还给模型')
+})
+
+test('P0-1 体裁互斥哨兵：事故前文案 / 半截边界必须判红（门禁不得恒真）', () => {
+  // 事故前的真实形态：只有触发词，没有任何「不适用」边界。
+  const legacy = [
+    '品牌宣传体裁的 L2 编排壳（format director）。触发词：品牌宣传、品牌片、brand promo、新品发布、宣传片、logo 短片。',
+    '产品讲解体裁的 L2 编排壳（format director）。触发词：产品讲解、产品广告、新品发布广告、product ad。',
+  ]
+  for (const text of legacy) {
+    for (const other of Object.values(SHELL_MUTEX_TARGET)) {
+      assert.equal(mutexClausePresent(text, other), false,
+        `事故前文案仍被判通过 ⇒ 断言命中了别处的无关文字（门禁失效）：${text.slice(0, 20)}…`)
+    }
+  }
+  // 半截边界：写了「不适用」却没指对家 / 指了壳却没有判据关键词 —— 都不算数。
+  assert.equal(mutexClausePresent('不适用：见产品壳。', 'product-format-director'), false,
+    '「不适用」但没点名对家壳仍判通过 ⇒ 模型不知道去哪')
+  assert.equal(mutexClausePresent('不适用：走 product-format-director。', 'product-format-director'), false,
+    '指了对家壳但没给判据关键词仍判通过 ⇒ 边界不可裁决')
 })

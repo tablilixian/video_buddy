@@ -118,6 +118,10 @@ export const WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
   'write_storyboard',
   // C4 质检：不产生媒体产物，但会把 qc 结论写回被检节点，需要 reloadCanvas。
   'qc_shot',
+  // 2026-11-10 香水样本 P0-2：`attach_canvas_asset` 把本地现成产物登记成画布节点。
+  // 它不是生成（没有「生成中」占位可言），但**必须**触发 reloadCanvas ——
+  // 漏登记的后果与 CV-130 同款：节点已写进 canvas.json，画布要切窗口才出现。
+  'attach_canvas_asset',
 ])
 
 /**

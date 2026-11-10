@@ -84,6 +84,10 @@ import { defineArtifactTools } from './host-tools-artifact.js'
 import { defineRemakeTools } from './host-tools-remake.js'
 import { defineDataTools } from './host-tools-data.js'
 import { defineSeriesTools } from './host-tools-series.js'
+// 2026-11-10 香水样本 P0-2：本地现成产物 → 画布节点（attach_canvas_asset）。
+// 与 upload_image 的分工写在该工具描述与 canvas-asset-attach.ts 头注。
+import { defineCanvasAssetTools } from './host-tools-canvas-asset.js'
+import { nonImageUploadReason } from './canvas-asset-attach.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment } from './audio-cut.js'
@@ -2493,11 +2497,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'upload_image',
       description:
-        '将图片上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。'
+        '将**图片**上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。'
+        + '\n\n⚠️ **仅图片**（png / jpg / webp / gif / bmp）。mp4 / mov / mp3 等非图片一律拒收 —— 本工具**只上传、不创建画布节点**：'
+        + '要把现成的视频 / 音频挂到画布，用 `attach_canvas_asset`（本地路径 → 画布节点）；视频页链接用 `download_video`。'
         + '\n\nREQ-037/CV-408：传外部图片链接（http/https）时会自动落一个参考图片节点（进素材托盘、可登记故事板 §07）；产物 URL 与重复导入会按 URL 去重，不建新节点。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
-        imageUrl: { type: 'string' as const, required: true, description: '图片 URL（通常是 image_generate 的产物 URL）' },
+        imageUrl: { type: 'string' as const, required: true, description: '**仅图片** URL（通常是 image_generate 的产物 URL）。视频 / 音频会被硬拒，改走 attach_canvas_asset' },
       },
       output: {
         schema: {
@@ -2511,6 +2517,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
       async execute(args, exec) {
         const a = args as { imageUrl: string }
+        // P2-3（2026-11-10 香水样本）：先按类型拦。此前 `.mp4` 也能「成功」拿到句柄，
+        // 模型据此以为画布有节点 —— 契约含糊直接制造了 5 步无效流程 + 一次越权改盘。
+        const refused = nonImageUploadReason(a.imageUrl)
+        if (refused !== null) throwError('CS-USER-ERR', { message: refused, detail: 'non-image upload rejected' })
         // CR-01：先解析项目再上传（跨项目资产一律拒读）；CV-031b：回写 filename 保住 filename→节点血缘。
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = await uploadImage(a.imageUrl, exec.signal, portOf(), registry, projectId)
@@ -4772,6 +4782,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     // 2026-11-03：REQ-036 复刻客户端能力批（media_probe / evidence_grid / download_video）
     // 外置到 host-tools-remake.ts（行数棘轮，host-tools-artifact 同款先例）。
     ...defineRemakeTools({ registry, resolveProjectId }),
+    // 2026-11-10 香水样本 P0-2：本地现成产物 → 画布节点（外置，判据见 canvas-asset-attach.ts）。
+    ...defineCanvasAssetTools({ registry, resolveProjectId }),
     defineTool({
       name: 'inspect_image',
       description:

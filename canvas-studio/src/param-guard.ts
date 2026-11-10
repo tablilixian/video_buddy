@@ -312,6 +312,18 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // 真风险是路径逃逸 / 写坏项目目录，由 `manifest-file.ts` 的包含校验拒收
   // （`..` 逃逸、同前缀兄弟目录、指向目录本身一律 CS-USER-ERR）。
   writeTo: '写入路径（相对项目根或绝对路径），不是读取句柄；合法性由 manifest-file.ts 的目录包含校验拒收',
+  // —— 批次 1（2026-11-10）attach_canvas_asset：本地现成产物登记 ——
+  // `path` 与 videoPath / filePath 同判：它指向**磁盘上已经存在的文件**，合法性靠
+  // 三重实测（stat 存在性 + 非空 + 体积上限、魔数复核内容、扩展名分类），
+  // 通用占位尺子在这里只会误伤（绝对路径天然长且含符号，`/path/to/x.mp4` 反而是
+  // 本工具要拒收的具体形态，由 `isAbsolute` + stat ENOENT 给更准的文案）。
+  path: '绝对路径（本地现成图片 / 视频 / 音频文件），execute 拒收 http(s) 与相对路径，存在性 / 非空 / 体积上限 / 魔数由 stat + classifyFile + sniffMediaKind 逐项实测，无文本占位形态（与 videoPath 同判）',
+  // `kind` 是枚举，且必须与扩展名互相印证（不一致即拒收）—— 不存在「先写个占位词」的形态。
+  kind: '枚举（image / video / audio），与文件扩展名不一致即拒收，其余取值由 resolveKind 显式拒收',
+  // 画布像素尺寸：只作为「模型刚探测过、省一次 ffmpeg」的旁证，非法值当没给（回落实测）。
+  width: '数值（画布像素宽），非法 / 非正数视为「没给」，回落 probeMediaInfo 实测或出厂默认节点尺寸',
+  height: '数值（画布像素高），同 width',
+  asReference: '布尔开关（是否同时进参考素材池，缺省 false ⇒ 产物节点不进引用链）',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

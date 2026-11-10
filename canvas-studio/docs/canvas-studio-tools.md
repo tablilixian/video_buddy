@@ -66,7 +66,7 @@
 | `video2vl` | text | `video2vl` | **视频理解**（Qwen3-VL，CV-230）：按时间轴逐镜头描述运镜 / 景别 / 节奏 / 主体动作 |
 | `asr2txt` | text + 落盘 JSON | `asr2txt` | **语音转写**（CV-448）：音频 / 视频 → 文字，词级转写 JSON 落盘供 `evidence_grid.transcriptPath` 直食；99 语种、中文一般、**不支持方言** |
 | `qc_shot` | text | `image2vl` | 逐镜一致性质检，结论写回画布节点 |
-| `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用） |
+| `upload_image` | filename | `upload` | **唯一上传端点**。**仅图片**（CV-2026-11-10 香水样本 P2-3）：mp4 / mp3 等非图片**硬拒**并回执指路 `attach_canvas_asset`；本工具**只上传、不创建画布节点** |
 | `video_generate` | video | `image2videofl2va`（**恒定**，CV-269 拆分） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
 | `video_composite` | video | `image2videoref2va`（**恒定**，CV-269 拆分） | H3 路线；多参考 + 参考视频 / 参考音频 |
 | `video_rerender` | video | 同该节点原工具（`fl2va` / `ref2va`） | **同参数升档重出**：只换 `resolution`、提示词零改动、原址覆盖（见 §A9.1） |
@@ -83,10 +83,11 @@
 | `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
-### C. 画布 / 流程管控（13 个，不调后端）
+### C. 画布 / 流程管控（14 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
+| `attach_canvas_asset` | **本地现成产物 → 画布节点**（2026-11-10 香水样本 P0-2，落 `src/host-tools-canvas-asset.ts` 工厂 + `src/canvas-asset-attach.ts` 判据）：把**已经存在**的产物（上一轮合成好的成片 / 手写脚本产出的 mp4 / 用户现成素材）一步挂上画布——`saveLocalAssetBytes` 落项目资产（进资产账）+ `appendCanvasNode`（`writeCanvas` 写口的追加面，入队 + merge-protect）建同源节点。扩展名分类（`classifyFile`）+ **魔数复核**（防 `.png` 里装 mp4）+ 分类型体积上限；显式 `kind` 与扩展名不一致即拒收。`duration` 缺省由 `probeMediaInfo` 实测；`asReference=true` 才进素材托盘与 §07。**存在理由**：本场会话给「用户想看的草稿是本地 mp4」这件事**没有合规工具**，模型于是手写 manifest 被拒 → `node -e` 直改 `canvas.json`（绕开合并保护与资产账）。工具名同时登记在 `asset-capture.ts` 的 `WORKFLOW_TOOLS`（结算触发 `reloadCanvas`，漏登记 = 落盘了画布不刷新） |
 | `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本号 / 状态 / 时长） |
 | `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点（三段返回） |
 | `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |

@@ -147,7 +147,8 @@ function guardSpecGate(toolName: string, sessionKey?: string): void {
     throwError('CS-USER-ERR', {
       message: gate.missing === 'intent'
         ? '先调 `confirm_intent_card` 核对意图（放手跑下不弹卡不等待），再 `write_storyboard` → `scaffold_manifest` → 渲染。'
-        : '先 `scaffold_manifest` 出骨架（M1：落地后 20 分钟内首片），把内容表填进 `build/manifest-spec.json` 跑 builder 生成 `build/manifest.json`，再渲染。**不要手写 manifest**——会绕过 builder 字段契约（四季片复盘 P-06）。',
+        : '先 `scaffold_manifest` 出骨架（M1：落地后 20 分钟内首片），把内容表填进 `build/manifest-spec.json` 跑 builder 生成 `build/manifest.json`，再渲染。**不要手写 manifest**——会绕过 builder 字段契约（四季片复盘 P-06）。'
+          + '若你只是想把**已经存在的现成产物**（上一轮合成好的 mp4 / 手写脚本产出的文件）挂到画布上给用户看，**不要**再走 manifest 这条路：用 `attach_canvas_asset`（本地路径 → 画布节点），它经画布唯一写口落盘；更不要手改 `canvas.json` 绕过合并保护。',
     })
   }
 }

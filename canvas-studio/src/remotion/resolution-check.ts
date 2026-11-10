@@ -57,15 +57,20 @@ export function placementResolutionWarning(
  * 容差缺省 0.6s：吸收 H3 按帧率量化的尾数（CV-140：请求 5s → 实测 5.167s）。
  * 短了会留空洞 / 拉伸；长了会被裁或逼出临场溶解 —— 两种都该在落位时决策。
  */
+/** P2-2（2026-11-10）：窗口是落卡时的规划值，成片真值由 ffprobe / manifest 帧窗决定。 */
+const PLANNED_WINDOW_NOTE = '（分镜窗口是落卡时的**规划值**；成片实际时长以 ffprobe 真值 / manifest 帧窗为准，两者可能不同）'
+
 export function placementDurationWarning(durationSec: number, windowSec: number, toleranceSec = 0.6): string | null {
   if (!Number.isFinite(durationSec) || !Number.isFinite(windowSec) || durationSec <= 0 || windowSec <= 0) return null
   const delta = durationSec - windowSec
   if (Math.abs(delta) <= toleranceSec) return null
   if (delta < 0) {
     return `[时长][落位] 素材 ${durationSec.toFixed(2)}s 覆盖不了分镜窗口 ${windowSec.toFixed(2)}s（差 ${Math.abs(delta).toFixed(2)}s）`
+      + PLANNED_WINDOW_NOTE
       + ` —— 渲染会留空洞或拉伸。决策点：重出更长素材 / 缩窗 / 与相邻镜溶解补齐。`
   }
   return `[时长][落位] 素材 ${durationSec.toFixed(2)}s 比分镜窗口 ${windowSec.toFixed(2)}s 长 ${delta.toFixed(2)}s`
+    + PLANNED_WINDOW_NOTE
     + ` —— 多出部分会被裁掉，或需要预留转场帧消化。决策点：按窗口裁切 / 预留溶解 / 缩短重出。`
 }
 

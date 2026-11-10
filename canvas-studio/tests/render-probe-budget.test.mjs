@@ -33,7 +33,7 @@ beforeEach(() => resetProbeBudget())
 
 const probe = (projectId) => ({ projectId, probe: true, manifestPath: '/tmp/m.json' })
 const spot = (projectId, frames = [100, 200]) => ({ projectId, spotFrames: frames, manifestPath: '/tmp/m.json' })
-const full = (projectId) => ({ projectId, quality: 'draft', manifestPath: '/tmp/m.json' })
+const delivery = (projectId) => ({ projectId, quality: 'standard', manifestPath: '/tmp/m.json' })
 
 /** 一次**成功**的调用：前置检查通过后记账。 */
 function succeed(args, sessionKey) {
@@ -60,7 +60,7 @@ test('探针前 3 次放行，第 4 次抛 CS-USER-ERR 并给出降级出口', (
   assert.ok(caught, '第 4 次必须拒收')
   assert.equal(caught.code, 'CS-USER-ERR')
   assert.match(caught.message, /用满 3 次/)
-  assert.match(caught.message, /quality:"draft"/, '拒收文案必须指向降级出口，而不是只说"不行"')
+  assert.match(caught.message, /quality:"standard"/, '拒收文案必须指向交付档定稿出口，而不是只说"不行"')
   assert.equal(probeUsage('p1'), PROBE_LIMIT, '被拒的那次不记账（它本来就没产出，也进不了 execute）')
 })
 
@@ -86,7 +86,7 @@ test('spot 调用不清零计数（旧实现在这里把额度洗掉）', () => 
 test('真全片渲染不清零、只开启 1 次成片后批注', () => {
   succeed(probe('p1'))
   succeed(probe('p1'))
-  succeed(full('p1'))
+  succeed(delivery('p1'))
   assert.equal(probeUsage('p1'), 2, '出片不清零历史额度')
   assert.equal(hasDelivered('p1'), true)
   assert.doesNotThrow(() => succeed(spot('p1')), '成片后第 1 次批注放行')
@@ -99,10 +99,10 @@ test('真全片渲染不清零、只开启 1 次成片后批注', () => {
 
 test('全片渲染本身不受闸限制，也不能洗掉批注配额', () => {
   for (let i = 0; i < 4; i += 1) {
-    assert.doesNotThrow(() => succeed(full('p1')), '超时续渲不能被闸挡住')
+    assert.doesNotThrow(() => succeed(delivery('p1')), '超时续渲不能被闸挡住')
   }
   succeed(spot('p1'))
-  for (let i = 0; i < 3; i += 1) succeed(full('p1'))
+  for (let i = 0; i < 3; i += 1) succeed(delivery('p1'))
   assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-USER-ERR',
     '反复渲全片换不来新的批注额度')
 })
@@ -234,4 +234,75 @@ test('接线：会话键从 exec.agent.session.header.id 取（删掉即退回�
     )
   }
   assert.equal(entered, PROBE_LIMIT * 2)
+})
+
+// ── 2026-11-10 · P1-1（瑞幸 C 档 `9853fa28` 真机回归）─────────────────────
+//
+// 事故：旧口径把 `quality:"draft"` 草稿也算「出了全片」⇒ 第一版草稿就打开成片后
+// 批注额度，第 1 次结构探针被误记成批注、第 2 次即拒收，尾部 CTA 446–609 帧全程
+// 没验到。代码与 verification.md / SKILL.md / 任务书三处口径互相打架。
+//
+// 现在：draft 不触发 delivered，结构探针 ≤3 独立计数；交付档之后才有 1 次批注。
+// 反向变异靶：把 render-probe-budget.ts 的 isDeliveryRender 改成恒 true 即退回旧
+// 口径，本组断言必须变红（见台账 §19）。
+const draft = (projectId) => ({ projectId, quality: 'draft', manifestPath: '/tmp/m.json' })
+
+test('P1-1 结构探针与成片后批注分开计数：首版 draft 不打开批注额度', () => {
+  succeed(draft('p-v2'))
+  assert.equal(hasDelivered('p-v2'), false, 'draft 是草稿，不是成片')
+  succeed(spot('p-v2'))
+  succeed(draft('p-v2'))
+  succeed(spot('p-v2')) // 每轮渲完 draft 后的结构探针仍属草稿期
+  assert.equal(probeUsage('p-v2'), 2)
+  assert.equal(annotationUsage('p-v2'), 0, '草稿期探针一次都不该吃批注额度')
+  assert.equal(hasDelivered('p-v2'), false)
+})
+
+test('P1-1 交付档之后只放行 1 次批注，第 2 次拒收且渲草稿不洗额度', () => {
+  succeed(draft('p-v2'))
+  succeed(spot('p-v2'))
+  succeed(delivery('p-v2'))
+  assert.equal(hasDelivered('p-v2'), true)
+  assert.doesNotThrow(() => succeed(spot('p-v2')), '成片后第 1 次批注放行（可覆盖 CTA 段）')
+  assert.equal(annotationUsage('p-v2'), ANNOTATION_LIMIT)
+  succeed(draft('p-v2'))
+  const caught = capture(() => guardProbeBudget('render_composition', spot('p-v2')))
+  assert.equal(caught?.code, 'CS-USER-ERR')
+  assert.match(caught.message, /turn\/end/)
+})
+
+test('P1-1 闸没被削弱：结构探针 3 次用满仍拒，单会话总探针 ≤4', () => {
+  for (let i = 0; i < PROBE_LIMIT; i += 1) succeed(spot('p-v2'))
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-USER-ERR',
+    '草稿期第 4 次结构探针必须拒')
+  succeed(delivery('p-v2'))
+  assert.doesNotThrow(() => succeed(spot('p-v2')), '交付后批注仍可用')
+  assert.equal(probeUsage('p-v2'), PROBE_LIMIT + ANNOTATION_LIMIT, '单会话最多 3 结构 + 1 批注')
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-USER-ERR')
+})
+
+test('P1-1 接线：draft→spot 迭代经唯一入口放行，交付档后第 2 次批注被拒', async () => {
+  let entered = 0
+  const wrapped = wrapStudioToolDefinition({
+    name: 'render_composition',
+    execute: async () => {
+      entered += 1
+      return { ok: true }
+    },
+  })
+  const noPid = (extra) => ({ manifestPath: '/tmp/m.json', ...extra })
+  await wrapped.execute(noPid({ quality: 'draft' }), {})
+  for (let i = 0; i < PROBE_LIMIT; i += 1) {
+    assert.deepEqual(await wrapped.execute(noPid({ spotFrames: [100, 200] }), {}), { ok: true },
+      `第 ${i + 1} 次结构探针应到达 execute（旧口径第 2 次就会被拒）`)
+  }
+  await wrapped.execute(noPid({ quality: 'standard' }), {})
+  await wrapped.execute(noPid({ spotFrames: [600] }), {})
+  await assert.rejects(
+    () => wrapped.execute(noPid({ spotFrames: [609] }), {}),
+    (error) => error.code === 'CS-USER-ERR',
+    '第 2 次批注必须被唯一入口拒收',
+  )
+  assert.equal(entered, PROBE_LIMIT + 3,
+    '2 次全片渲染 + 3 次结构探针 + 1 次批注进了 execute；被拒那次零副作用')
 })

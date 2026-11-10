@@ -46,7 +46,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **先出片，再丰富**（下节 R0–R6）：拿到骨架就渲一版 `quality:"draft"`，之后每轮只加一层、每轮都出片 → 见下一节。**不要等 manifest 写完才渲**。
 5. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
-   **首轮渲染就用 `spotFrames` 探针**（~1.5s vs 全片 ~25s）逐条判据取代表帧；全片 draft 只用于交付前定稿 → `references/verification.md`。
+   **首轮渲染就用 `spotFrames` 探针**取代表帧；draft 草稿只作迭代、**不算成片**，交付档定稿后还有 1 次批注探针补 CTA 尾帧 → `references/verification.md`。
 6. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
    **交付前复述未决项**：体检告警逐条状态 / 未核源事实 / 模型自身能力边界 → `references/verification.md`。
 
@@ -61,7 +61,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 | R2/R3 | 视觉主体 | 改 spec → `bash` → `render(draft)` → `spotFrames` | 数据卡不超框、数字与源一致 |
 | R4 | 运动 | spec 补 animate / kenBurns / transition → `render(draft)` | 帧间有变化、无闪背景 |
 | R5 | 声音 | `tts` 真值 → spec.audio → `render(standard)` | 句起点误差 ≤1 帧 |
-| R6 | 定稿 | `render(high)` → `spotFrames` ×6 → `read_image` | 未决项已复述 |
+| R6 | 定稿 | `render(high)` → `spotFrames`（成片后仅 1 次，取尾段）→ `read_image` | 未决项已复述 |
 
 - **M1 合格线（三条全中）**：① 字幕是真文案（不是 recipe 占位「【开场提问】…」）；② 段边界来自旁白**真值**；③ `quality:"draft"` 且非 probe。
 - **单轮 ≤8 次工具调用、≤3 轨**；超了就降级收尾保住当前版本，不许「再做一点」。

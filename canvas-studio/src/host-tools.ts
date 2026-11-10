@@ -653,8 +653,13 @@ function nearMissAssetHint(assetsDir: string, missing: readonly string[]): strin
 }
 
 /** 把产物结果渲染成模型可读的文本块。 */
-function renderResult(_args: unknown, value: unknown): ContentBlock[] {
+function renderResult(args: unknown, value: unknown): ContentBlock[] {
   const result = value as GenerateResult
+  // P1-4（2026-11-10）：draft 是半分辨率草稿（0.5 scale），落的是会被就地替换的
+  // 草稿节点、不进版本链。回执原先只给尺寸数字，模型可能把粗片当交付档 ⇒ 首行标注。
+  const draftTag = (args as { quality?: unknown } | null)?.quality === 'draft'
+    ? '[草稿 draft · 半分辨率 · 勿作交付] '
+    : ''
   const duration = result.duration !== undefined ? `, ${result.duration}s` : ''
   // CV-155：标签从「Drama 文件名」改为「后端产物名」并附上正确用法 —— 旧措辞让模型
   // 以为这个值可以链式传下去，实测它就是 image2vl / qc_shot 那 13 次 0.1s 500 的来源。
@@ -666,7 +671,7 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
   const superseded = result.superseded !== undefined && result.superseded.length > 0
     ? `；已取代 ${result.superseded.length} 个旧版本（不再进默认合成）`
     : ''
-  return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
+  return [{ type: 'text', text: `${draftTag}已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
 }
 
 /** 分镜卡标题（节点血缘里 toolName 为分镜卡（`isShotCard`）的祖先）。 */
@@ -1113,12 +1118,34 @@ interface CanvasNote {
   title: string
   source: string
   text: string
+  /** P2-3：文本附件在 assets/ 下的落盘文件名（拿不到 url 时缺省）。 */
+  file?: string
 }
 
 function clipNoteText(text: string): string {
   return text.length > NOTE_TEXT_LIMIT
     ? `${text.slice(0, NOTE_TEXT_LIMIT)}…（已截断，全文 ${text.length} 字符）`
     : text
+}
+
+/**
+ * P2-3（2026-11-10）：把画布文本节点转成回执条目，并给出 assets/ 落盘文件名。
+ *
+ * md / txt 附件落盘在 assets/ 下，但 `notes[].text` 只给 2000 字预览；模型过去要先
+ * `bash find *.md` 才能拿到全文。这里与图片「本地图」同口径直接把文件名带回执。
+ * 放在模块级而非 `createStudioTools` 内联：`file-size-guard` 的函数跨度棘轮只准减不准增。
+ */
+function canvasNoteOf(node: StudioCanvasNode) {
+  const parts = (node.url ?? '').split('/').filter(Boolean)
+  const idx = parts.indexOf('assets')
+  const localFile = idx >= 0 ? parts[idx + 2] : parts.at(-1)
+  const file = typeof localFile === 'string' && /\.(md|txt|markdown)$/i.test(localFile) ? localFile : null
+  return {
+    title: node.title ?? '文本',
+    source: node.toolName ?? node.kind,
+    text: clipNoteText(node.text!.trim()),
+    ...(file !== null ? { file } : {}),
+  }
 }
 
 /** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
@@ -1195,7 +1222,14 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
     )
   }
   if (v.notes.length > 0) {
-    const lines = v.notes.map((n, i) => `${i + 1}. 【${n.source}】${n.title}：${n.text}`)
+    const lines = v.notes.map((n, i) => {
+      // P2-3（2026-11-10）：md/txt 附件正文回执只给 2000 字预览，模型过去要
+      // `bash find *.md` 才能拿到全文路径 ⇒ 直接把本地文路径随节点给出。
+      const hint = n.file !== undefined
+        ? `\n   本地文 assets/${n.file}（上面是 2000 字预览；全文用 read(file_path=<会话 cwd>/assets/${n.file})，不必 bash find）`
+        : ''
+      return `${i + 1}. 【${n.source}】${n.title}：${n.text}${hint}`
+    })
     parts.push(`画布文本节点（${v.notes.length}）：\n${lines.join('\n')}`)
   }
   return [{ type: 'text', text: parts.join('\n\n') }]
@@ -2557,11 +2591,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             && typeof node.text === 'string' && node.text.trim().length > 0)
           .sort((left, right) => right.createdAt - left.createdAt)
           .slice(0, MAX_NOTES_RETURNED)
-          .map((node) => ({
-            title: node.title ?? '文本',
-            source: node.toolName ?? node.kind,
-            text: clipNoteText(node.text!.trim()),
-          }))
+          .map(canvasNoteOf)
         // REQ-001：全局资产库清单（四分类分组字段由 render 排版；id 带 `lib:` 前缀
         // —— agent 拿到即可逐字填 `@ref[lib:<id>]`，无需再拼命名空间）。
         const libraryItems = (await library.list()).map((asset) => ({

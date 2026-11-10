@@ -11,9 +11,18 @@
  * 完全绕过闸；更糟的是旧实现把任何非 probe 调用当成「出了全片」并 `delete` 计数，
  * 一次 spot 调用就能把已用额度清零 ⇒ 闸形同虚设。
  *
- * 现在：两条路径都算探针；只有**既无 probe 又无 spotFrames** 的真全片渲染才标记
- * 「已出片」；已出片后只放行 **1 次**批注探针，用满即拒收，且计数永不清零。
+ * 现在：两条路径都算探针；只有**既无 probe 又无 spotFrames** 的真全片渲染才可能标记
+ * 「已交付」；已交付后只放行 **1 次**批注探针，用满即拒收，且计数永不清零。
  * 全片渲染本身不受闸限制（超时续渲是唯一出片路径，不能被闸挡住）。
+ *
+ * ⚠️ P1-1 口径修正（2026-11-10，瑞幸 C 档 `9853fa28` 真机）：旧实现把**任何**非探针
+ * 渲染（含 `quality:"draft"` 草稿）都置 `delivered=true` ⇒ 文档要求「首轮渲染就用
+ * spotFrames + 每轮必渲 draft」时，第一版草稿就把成片后批注额度打开，第 1 次结构探针
+ * 被误算成「成片后批注」，第 2 次即拒收 ⇒ 尾部 CTA 446–609 帧全程没验到。
+ * 现在 `delivered` 只由**交付档**触发（`quality` = standard / high / 缺省 standard）；
+ * `quality:"draft"` 是半分辨率草稿（0.5 scale，`compose.ts` 就地替换、不进版本链），
+ * 不触发批注闸。于是两桶额度语义清晰：
+ *   **结构探针 ≤3（草稿 / 交付前）+ 成片后批注 ≤1（交付档之后）** = 单会话最多 4 次。
  *
  * 额度**只在对图片有产出时扣**（2026-11-06 修正）：前置检查
  * {@link guardProbeBudget} 只判不收，成功返回后由 {@link commitProbeBudget} 记账。
@@ -38,7 +47,7 @@ export const ANNOTATION_LIMIT = 1
 interface BudgetState {
   /** 累计探针类调用（含被拒收的，避免靠拒绝循环绕闸）。 */
   probes: number
-  /** 是否已经发起过一次真全片渲染（成败不论，入口处判不到结果）。 */
+  /** 是否已经发起过一次**交付档**全片渲染（成败不论，入口处判不到结果）。 */
   delivered: boolean
   /** 成片后已用掉的批注探针次数。 */
   annotations: number
@@ -88,6 +97,20 @@ function isProbeCall(args: object): boolean {
     || (Array.isArray(input.spotFrames) && input.spotFrames.length > 0)
 }
 
+/**
+ * 只有「交付档」才标记成片落地（P1-1）。
+ *
+ * `quality:"draft"` 是半分辨率草稿（0.5 scale + 低码率），落的是会被就地替换的
+ * 草稿节点、不进版本链；把它当「成片」会让文档要求的「首轮 spotFrames + 每轮
+ * 渲 draft」在第一次草稿后就撞上批注闸（真机 CTA 段因此未复核）。
+ * 宿主工单结算时 `quality` 缺省按 `'standard'`（`host-tools.ts`），故缺省也算交付档。
+ *
+ * ⚠️ 反向变异靶：把这里改成恒 `true` 就退回旧口径，P1-1 行为断言必须变红。
+ */
+function isDeliveryRender(args: object): boolean {
+  return (args as { quality?: unknown }).quality !== 'draft'
+}
+
 /** 当前探针用量（测试与埋点用；不改状态）。`key` 缺省读兜底桶。 */
 export function probeUsage(key?: string): number {
   return stateOf(key ?? KEY_FALLBACK).probes
@@ -98,7 +121,7 @@ export function annotationUsage(key?: string): number {
   return stateOf(key ?? KEY_FALLBACK).annotations
 }
 
-/** 是否已发起过全片渲染（测试与埋点用；不改状态）。 */
+/** 是否已发起过交付档全片渲染（测试与埋点用；不改状态）。 */
 export function hasDelivered(key?: string): boolean {
   return stateOf(key ?? KEY_FALLBACK).delivered
 }
@@ -135,15 +158,16 @@ export function guardProbeBudget(toolName: string, args: unknown, sessionKey?: s
 
   if (state.probes >= PROBE_LIMIT) {
     throwError('CS-USER-ERR', {
-      message: `本会话探针已用满 ${PROBE_LIMIT} 次（第 ${state.probes + 1} 次被拒收）。`
+      message: `本会话结构探针已用满 ${PROBE_LIMIT} 次（第 ${state.probes + 1} 次被拒收）。`
         + '按 verification.md 的硬闸：把剩余问题记成未决项，'
-        + '转 `quality:"draft"` 渲全片落画布看整体，成片后只允许 1 次批注——不要继续逐帧试错。',
+        + '转交付档 `quality:"standard"` / `"high"` 定稿（`quality:"draft"` 只是草稿、不会重置额度），'
+        + '交付档之后还有 1 次成片后批注探针——不要继续逐帧试错。',
     })
   }
 }
 
 /**
- * 工具执行**成功**后记账：探针 +1，真全片渲染标记 `delivered`。
+ * 工具执行**成功**后记账：探针 +1，交付档全片渲染标记 `delivered`。
  *
  * 唯一入口 `wrapStudioToolDefinition` 在 `execute` 正常返回后调用；抛错的调用不记账
  *（校验失败 / 宿主失联 / 用户打断都不消耗额度，理由见 {@link guardProbeBudget}）。
@@ -155,8 +179,9 @@ export function commitProbeBudget(toolName: string, args: unknown, sessionKey?: 
   const state = stateOf(keyOf(args, sessionKey))
 
   if (!isProbeCall(args)) {
-    // 真全片渲染：只标记，绝不清零。反复渲全片换不来新的批注额度。
-    state.delivered = true
+    // 只有交付档才标记「已交付」；draft 是草稿，不打开批注额度。
+    // 计数永不清零 —— 反复渲草稿 / 交付档都换不来新的批注次数。
+    if (isDeliveryRender(args)) state.delivered = true
     return
   }
 

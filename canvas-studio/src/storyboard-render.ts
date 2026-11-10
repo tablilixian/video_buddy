@@ -463,8 +463,17 @@ function renderSound(sections: StoryboardSections, ctx: DiffContext): string {
 }
 
 function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl, canvasNodeIds?: ReadonlySet<string>): string {
-  const assets = sections['07_assets']
-  if (assets.length === 0) return emptySection('还没有素材清单。')
+  const all = sections['07_assets']
+  // CV-459：user 条目已在「参考素材」专节展示（数据仍以本节为唯一事实源，此处只是
+  // 显示过滤）—— 素材清单保持「待备素材单」的语义，避免同一批条目两个页签重复刷屏。
+  const assets = all.filter((asset) => asset.source !== 'user')
+  const userCount = all.length - assets.length
+  const userNote = userCount === 0
+    ? ''
+    : `<p class="note">另有 <b>${String(userCount)}</b> 项用户上传的参考已在 <a href="#ref">参考素材</a> 节展示；本节只列制作待备的素材。</p>`
+  if (assets.length === 0) {
+    return emptySection(all.length === 0 ? '还没有素材清单。' : `没有待备素材 —— 全部 ${String(all.length)} 项都是用户上传的参考。`) + userNote
+  }
   return `<table class="plain"><thead><tr><th style="width:40%">素材</th><th style="width:78px">类型</th><th style="width:84px">状态</th><th>引用</th></tr></thead><tbody>${
     assets.map((asset: StoryboardAsset) => {
       const url = media === undefined ? undefined : media(asset.ref)
@@ -479,7 +488,7 @@ function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: Med
       <td>${marked(ctx, `07 素材.${asset.name}.引用`, `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>${stale ? ' <span class="pill stale">引用失效：画布节点已删除</span>' : ''}`)}</td>
     </tr>`
     }).join('')
-  }</tbody></table>`
+  }</tbody></table>${userNote}`
 }
 
 function renderConstraints(sections: StoryboardSections, ctx: DiffContext): string {

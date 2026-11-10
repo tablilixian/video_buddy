@@ -158,3 +158,26 @@ test('本节不参与九节完成度：§07 有 1 条 user 素材时进度仍为
   assert.ok(html.includes('已填充 <b>1 / 9</b>'), '派生节不得改变完成度分母与分子')
   assert.ok(!html.includes('/ 10'), '不得出现 10 节口径')
 })
+
+test('§07 素材清单显示过滤：user 条目不列表（已在参考素材节），generated 照常', () => {
+  const html = renderStoryboard(docWithAssets([
+    userImage,
+    { name: 'Look 卡', type: 'image', status: 'ready', ref: { kind: 'canvasNode', id: 'n-look' }, neededBy: [], source: 'generated' },
+  ]), { mediaUrl: () => '/x.png' })
+  const start = html.indexOf('id="s7"')
+  const end = html.indexOf('id="s8"')
+  assert.ok(start > 0 && end > start, '应存在素材清单节')
+  const s7 = html.slice(start, end)
+  assert.ok(!s7.includes('主视觉参考'), 'user 条目不在素材清单表中（显示过滤，数据不动）')
+  assert.ok(s7.includes('Look 卡'), '非 user 条目照常列出')
+  assert.ok(s7.includes('参考素材'), '应带指向参考素材节的说明行')
+})
+
+test('§07 全部是 user 条目时：空表 + 指引文案', () => {
+  const html = renderStoryboard(docWithAssets([userImage]))
+  const start = html.indexOf('id="s7"')
+  const end = html.indexOf('id="s8"')
+  const s7 = html.slice(start, end)
+  assert.ok(s7.includes('没有待备素材'), '应说明没有待备素材')
+  assert.ok(s7.includes('全部 1 项都是用户上传的参考'), '应说明条目去向')
+})

@@ -36,6 +36,7 @@ function norm(raw) {
   if (/进行中/.test(s)) return '进行中';
   if (/已撤回|误判/.test(s)) return '已撤回（误判）';
   if (/已否决/.test(s)) return '已否决';
+  if (/历史批次|证据缺失|冻结/.test(s)) return '历史批次·证据缺失';
   if (/仅设计/.test(s)) return '仅设计';
   if (/待复现/.test(s)) return '待复现';
   if (/待拍板|拟立项|已立项|暂缓/.test(s)) return '待拍板';
@@ -78,7 +79,7 @@ const designCount = sec5.filter((l) => /^\|/.test(l) && !/^\|\s*-/.test(l) && !/
 // ---------- 聚合 ----------
 const ORDER = [
   '已完成', '已修复·待验收', '进行中', '已完成·待验收',
-  '待处理', '待拍板', '待复现', '仅设计', '已撤回（误判）', '已否决', '已分配·未登记',
+  '待处理', '待拍板', '待复现', '历史批次·证据缺失', '仅设计', '已撤回（误判）', '已否决', '已分配·未登记',
 ];
 const buckets = {};
 for (const [cv, e] of entries) (buckets[e.status] ||= []).push(cv);

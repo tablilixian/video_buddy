@@ -42,6 +42,7 @@
 ---
 
 #### CV-362 · inspect_image 像素级图像检测工具 + 先粗后精纪律
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·验收中（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -50,6 +51,7 @@
 - **落地/验收**：tsc×2 全绿；定向套件（inspect-image / tool-presentation / param-guard / error-system-guards / skill-tool-refs / skill-discipline / tool-registry）70/70；**全量 test:smoke 2111/2111、基线外新增 0**。**验收中**：重启桌面 → 对项目素材（如表体图）调 `inspect_image(mode:"bbox-dark")` 确认返回的画布百分比与实际屏幕区吻合；确认总纲「先粗后精」注入生效。
 
 #### CV-361 · render_composition 传路径通道 + 尾部截断校验
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -60,6 +62,7 @@
 
 
 #### CV-360 · 压缩摘要请求输出超网关上限致 18 连败
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -68,6 +71,7 @@
 - **落地/验收**：gateway 单测 5/5（含新增守卫：每个模型行 maxTokens=32768 且 < 65536）；tsdown + `tsc -p tsconfig.json` + `tsc -p tsconfig.client.json --emitDeclarationOnly` 全绿；cordis.patch.yml 用 yaml 解析器验证 compaction-basic 节点形状 `{config: {maxTokens: 32768}}`。**待桌面验收**：重启桌面 → 跑一次长会话（或直接复现 189K+ 上下文）→ 确认 `compaction/end` 不再带 error、出现 `compaction/summary` 成功事件。**遗留（纵深防御，另立项）**：压缩持续失败对用户可见的警示条 + `compaction/summary-error` 降级监听（N 连败后持久收缩选区重试）；DramaServer 侧 400 应带字段名与上限值（服务端立项）。
 
 #### CV-359 · 渲染工单滞留改派 + 画布页轮询保活
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -76,6 +80,7 @@
 - **落地/验收**：验证链四步全绿（typecheck / build / verify:loader / `test:smoke` **2095·2095**），新增 10 条断言全过；**反向变异**（决策表 hold 行改成 stop / 接管不补装看门狗 / 去掉 clientClaimedAt 判据）各红一条，用例注释写明。**探针实测（Electron 43.4.0）**：窗口冷启 **124~155ms**（« 3s warmup 预算 ⇒ 桌面 11 连败期间窗口更可能是自报 `unsupported` 后停手，新日志下次可直接判）；真实渲染出片 250ms/20208 字节；改派全链路 15.6s 接管 → 出片 → 无超时。**待桌面验收**：重启桌面 → 对话里让 agent 出一条 draft 成片（画布页开着）→ 出片；再关掉画布页只留对话 → 再出一条 → 15s 内改派日志出现 → 仍出片；日志里若见「渲染窗口自报 unsupported」即新问题（WebCodecs 在桌面隐藏窗口不可用），另行排查。
 
 #### CV-358 · 余额接真实数据：只读路由与左栏卡
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B15，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -84,6 +89,7 @@
 - **落地/验收**：验证链四步全绿（typecheck / build / verify:loader / `test:smoke` **2085·2085**），新增 16 条断言全过。**反向变异三条各红一条**：陈旧标记失效 ⇒ `markCreditsStale` 用例红；失败时清空旧值 ⇒ 429 保留旧值用例红；升级钮改成可点 ⇒ REQ-030 守卫红。**旧守卫同步**：REQ-030 ③ 原本断言「StudioFrame 里有 `csCreditsUpgrade" disabled`」并盯着静态占位，卡体抽出后改判据 —— 升级钮仍必须 disabled 且**不得接 onClick**，并新增「不得再出现 `1,000` 假分母」「主数字必须取 `available_balance`」「`csCreditsStale`/`csCreditsHint`/`csCreditsRowBtn` 三个新类必须与 styles 成对」。**待桌面验收**：登录后左栏出现四位小数余额（与 `GET /v1/credits/balance` 一致）→ 跑一次生成 → 数字下降（不必等 30s）；点卡片强刷；断网/503 时数字保留并标灰；登出后数字消失。
 
 #### CV-357 · DramaServer 模型网关接入 LLM（方案 P4）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B15，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收 + L6 真实链路（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -92,6 +98,7 @@
 - **落地/验收**：验证链四步全绿（gateway 测试 5 条全过；裸抛守卫拦下 2 处 `throw new Error` → 改状态返回）。**⚠️ 桌面二轮实测（2026-10-22）修正落行路径**：configEditor.edit 的 Loader 全量重放被「2 entries did not activate」（hmr 缺 `--expose-internals` / product-telemetry 缺 `DSH_CLIENT_VERSION`，桌面壳历史遗留，与网关无关）整体拒绝并回滚 → 网关行无法落地，重放期插件反复重挂疑似引发窗口闪退观感。**改走 `settings.mutate`**（桌面「模型」页同一条写路径：llm-pi-ai 用户层 volatile 写 → volatile-update 热重注册，不做全量重放、不依赖其它 entry 激活状态），`mergeGatewayConfig` 随之退役（路径 op 取代整段合并）；编排层目录回调失败时清 `catalogFetchedAt` 允许下次推送重试。**待桌面验收**：登录后设置 → 模型「DramaServer 官方模型」区块点亮（模型列表 + 设为默认）；聊天页模型选择器出现 DramaServer 组；L6：`DRAMA_ACCESS_TOKEN=… node scripts/live-e2e-management.mjs`。
 
 #### CV-356 · 登录 bootstrap 管理面编排（方案 P2）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B15，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -101,6 +108,7 @@
 - **残余（2026-10-23 核对）**：方案 P2 原计划的 `refreshBalance()` 与 credits TTL 缓存**未实现** —— `drama-management.ts` 的 `creditBalance()` 至今无调用方。该项与 P3 的余额路由/UI 合并推进（见方案 §0.5 / §P3「积分落地清单」），不单独立项。
 
 #### CV-355 · 管理面协议客户端与设备标识（方案 P1）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B15，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -109,6 +117,7 @@
 - **落地/验收**：验证链四步全绿；客户端测试 4 条（错误信封 429 Retry-After / sync 形状与 device body / models null → []）+ 设备测试 2 条（复用 / 损坏重生成 / 0600）。**待桌面验收**：登录后 `$DSH_HOME/canvas-studio/device.json` 生成且重启不变；服务端设备记录 `name=VideoBuddy Desktop`。
 
 #### CV-354 · 模型设置页 0.2.1 断线修复 + DramaServer 官方区块 + 折叠行重设计
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B15，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -157,6 +166,7 @@
 - **落地/验收**：2026-10-15 落地（提交 `8fc99b4905`，18 文件 +1199/−31，**已推送 origin/dev**）。`tests/auth-loopback.test.mjs` **5 条（真 HTTP）**；**真机验收通过（2026-10-15）**。后续阶段（P2 token 通道 / P2.1 前置闸 / P2.2 聊天闸）见 CV-314~CV-316；下一阶段 P3 计费拦截待后台给额度接口（拦截点唯一 `wrapStudioToolDefinition`）。
 
 #### CV-312 · skill 入库：bible-story-director（圣经故事导演 · 故事名 → 九节拍摄定稿）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -165,6 +175,7 @@
 - **落地/验收**：2026-10-13 落地（提交 `3e2a0cdecc`，9 文件 / 928 行），**待桌面验收** —— 在 DSH 桌面丢「用圣经故事做个短片：大卫与歌利亚」，看是否命中本 skill、是否先给可读拆解稿、分笔写完后是否停在「确认落地」门等你点；另一推荐试样「浪子回头」（考验压缩策略，60s 必须选切口）。验证：反向变异闭环（改坏 4 处 → 4/4 真红 → 还原 5/5 绿）/ 全量 `node --test` **1603·1603、失败 0** / `verify-client-loader` ✓ / 总纲 21323 / 21504 字节（仍在 21KB 闸内，余量 181B）
 
 #### CV-311 · §02「点开看原图」跳出系统浏览器（会报错/无反应）→ 改 app 内缩放浮层（推翻 CV-307 拍板）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -173,6 +184,7 @@
 - **落地/验收**：2026-10-13 落地，待桌面验收（点样张 → 浮层可缩放平移 → 三种方式关闭，全程不离开 app）
 
 #### CV-294 · 首页对话式创建认领时 .draft- 目录就地改名为项目名 + 宿主 workspace/会话重建（方案 A）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12a，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -180,6 +192,7 @@
 - **涉及文件**：`src/projects.ts`（createClaimingDir / claimedDirTarget / rollbackRename）、`src/client/index.ts`（claimAndSend 重建段）、`src/storage-info.ts` / `src/routes.ts` / `src/client/SettingsModal.tsx`（注释与文案跟改）、`tests/lobby-claim.test.mjs`、`tests/projects-dir.test.mjs`
 
 #### CV-292 · 启动清扫早于「资产库位置」hydration，自定义根用户从未被清扫 → 首页落点补扫
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12a，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -187,6 +200,7 @@
 - **涉及文件**：`src/projects.ts`（sweptRoots / sweepOnceForCurrentRoot / ensureDraftDir 入口）、`src/routes.ts`、`tests/projects-dir.test.mjs`、`tests/{library-route,storage-info-route,resolve-refs-route,retired-assets-cleanup}.test.mjs`
 
 #### CV-291 · 首页 draft 落点复用优先 + 启动清扫窗口 7→1 天
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12a，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -194,6 +208,7 @@
 - **涉及文件**：`src/projects.ts`（ensureDraftDir / findReusableDraftDir / DRAFT_SWEEP_GRACE_MS）、`tests/projects-dir.test.mjs`、`tests/lobby-claim.test.mjs`
 
 #### CV-275 · skill 入库：action-scene-director（动作场面导演）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -201,6 +216,7 @@
 - **涉及文件**：`skills/action-scene-director/` / `src/skill-catalog.ts`
 
 #### CV-274 · skill 入库：cinematic-moves（运镜词汇库）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -215,6 +231,7 @@
 - **涉及文件**：—
 
 #### CV-278 · 带字图路由纪律知识层对齐：Qwen 一步直出为首选，自动 image_fix 降级为兜底
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -222,6 +239,7 @@
 - **涉及文件**：`skills/canvas-studio-creation/references/prompt-writing.md` / `skills/krea2-turbo-writing/SKILL.md` / `skills/krea2-edit-writing/SKILL.md` / `tests/skill-discipline.test.mjs`
 
 #### CV-277 · 废弃视频事件修复批（揽月湾真机取证，Bug 表 BUG-011013）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -229,6 +247,7 @@
 - **涉及文件**：—
 
 #### CV-276 · 结构评审 P0 落地：门禁接入 + 基线红名单机读 + Agent 入口
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -236,6 +255,7 @@
 - **涉及文件**：`scripts/run-smoke.mjs`（新）/ `tests/baseline-red.json`（新）/ `package.json`（根 + 本包）/ `AGENTS.md`（根 + 本包）
 
 #### CV-247 · BUG-010 收口：上传回执卡从视频泛化到音频与文字（首屏 / 首条消息前拖文件不再「没反应」）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B11，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -243,6 +263,7 @@
 - **涉及文件**：`src/client/project-store.ts`(MediaUploadItem/mediaUploads/四 action) / `src/client/StudioFrame.tsx`(三类三段回执 + `newUploadId`) / `src/client/VideoUploadBar.tsx`→`MediaUploadBar.tsx` / `src/client/contracts.ts` / `src/client/index.ts`(槽 id) / `src/client/styles.ts`(`csUploadChipExt`) / `tests/media-upload-wiring.test.mjs`(改名 + 2 例) / `docs/tracking.md`(BUG-010) / `docs/acceptance-test-cases.md`(V 组)
 
 #### CV-245 · BUG-002 收口：agent 侧的音频裁切入口 cut_audio（Host 本地 ffmpeg）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -250,6 +271,7 @@
 - **涉及文件**：`src/audio-cut.ts`(新) / `src/host-tools.ts`(`cut_audio` 工具 + `music_generation`·`audioRefs` 描述互提) / `src/param-guard.ts` / `src/asset-capture.ts` / `skills/canvas-studio-creation/references/toolchain.md` / `docs/canvas-studio-tools.md` / `docs/tracking.md`(BUG-002) / `docs/acceptance-test-cases.md`(K-8~K-10) / `tests/audio-cut.test.mjs`(新)
 
 #### CV-240 · 质检退出生成过程 + 视频批量编排写入 skill + SKILL.md 上限 15KB→20KB
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -257,6 +279,7 @@
 - **涉及文件**：`skills/canvas-studio-creation/SKILL.md` / `skills/canvas-studio-creation/references/toolchain.md` / `skills/canvas-studio-creation/references/consistency.md` / `src/host-tools.ts`（qc_shot 描述）/ `tests/skill-catalog.test.mjs`（20KB 闸）
 
 #### CV-239 · 取消不是故障：打断类调用的画布占位直接移除（ABORTED_BEFORE_DISPATCH / TOOL_ABORTED / 新码 CS-GEN-207 三形态）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -264,6 +287,7 @@
 - **涉及文件**：`src/errors/catalog.ts`（CS-GEN-207）/ `src/error-system.ts`（makeCanvasError）/ `src/providers/executor.ts` / `src/generate-queue.ts` / `src/generate.ts`（dramaPost 归一 + abort 透传）/ `src/asset-capture.ts` / `src/client/index.ts` / `tests/{asset-capture,generate,video-provider-registry}.test.mjs` / `docs/video-chain.md`
 
 #### CV-238 · 视频链路两项修复（句柄形态前置校验 + 自愈判定结构化）+ 新增链路契约文档 docs/video-chain.md
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -271,6 +295,7 @@
 - **涉及文件**：`src/generate.ts`（looksLikeCanvasNodeId + isBadReferenceError 结构化 + httpStatus）/ `src/host-tools.ts`（resolveRefValue 拦截）/ `src/errors/catalog.ts`（CS-USER-002）/ `tests/filename-consumability.test.mjs` / `tests/generate.test.mjs` / `docs/video-chain.md`（**新**）
 
 #### CV-237 · Drama 后端 0.5.0 异步视频任务接入（提交 202 + job_id → 轮询 → 取结果；30s 独立轮询；jobs.json 台账断线续查；放开连续提交多镜头）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -278,6 +303,7 @@
 - **涉及文件**：`src/providers/drama.ts` / `src/providers/types.ts` / `src/video-jobs.ts`（**新**）/ `src/generate.ts` / `src/config.ts` / `src/errors/catalog.ts` / `src/routes.ts` / `src/queue-view.ts` / `src/client/index.ts` / `src/host-tools.ts` / `scripts/probe-video-jobs.mjs`（**新**）/ `docs/api-probe/video-jobs-20260924/`（**新**）/ `docs/api.md` / tests×8
 
 #### CV-236 · H3 预检 R7「<Picture N> 编号不连续」从 ERROR 降为 WARN（只提示、不阻断生成）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -285,6 +311,7 @@
 - **涉及文件**：`src/h3-ir-validate.ts` / `src/host-tools.ts` / `skills/h3-prompt-writing/references/format-ref2va.md` / `tests/h3-ir-precheck.test.mjs`
 
 #### CV-235 · 工具入参「占位值」守卫：模型给引用类入参填占位串，一路走到 SSRF 校验 / 后端才失败，报出文不对题的错
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -292,6 +319,7 @@
 - **涉及文件**：`src/param-guard.ts`（**新**）、`src/text-guard.ts`、`src/errors/catalog.ts`、`src/tool-error-boundary.ts`、`tests/param-guard.test.mjs`（**新**）
 
 #### CV-234 · 错误可见性「诊断开关」（设置 → 诊断）+ 一处关键认知更正：audience 管不到对话流（D1）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -299,6 +327,7 @@
 - **涉及文件**：`src/error-system.ts` / `src/host-config.ts` / `src/index.ts` / `src/client/SettingsModal.tsx` / `src/client/StudioFrame.tsx` / `tests/error-system-guards.test.mjs`
 
 #### CV-233 · 统一错误处理系统全量落地：错误码化 + 双轴路由 + 五条展示通道 + 开发者细节默认隐身
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B10，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -307,6 +336,7 @@
 - **落地/验收**：2026-09-23
 
 #### CV-219 · health 探针 fail-closed 误判
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -314,6 +344,7 @@
 - **涉及文件**：`src/generate.ts` + `tests/health.test.mjs`
 
 #### CV-223 · 「整理布局」升级镜位泳道：行 = 镜号，行内从左到右 分镜卡 → 场景图×k → 关键帧 → 视频/托盘 → 末帧
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -321,6 +352,7 @@
 - **涉及文件**：`src/canvas-view.ts`（computeArrangeLayout 重写：镜位泳道 + 兜底；2026-09-22 去掉 headRows 偏移、镜 1 对齐首行、`ARRANGE_GAP_X` 48→80）/ `tests/canvas-arrange.test.mjs`（重写 8→13，验收后 +1 = 14 条）
 
 #### CV-220 · 宿主侧从来没有生成队列 —— 后端同步单任务 × 占位截止只剩 60s 余量 ⇒ 排在后面的请求「还没轮到」就被判「生成超时」
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -328,6 +360,7 @@
 - **涉及文件**：`src/generate-queue.ts`（新） / `src/queue-view.ts`（新） / `src/generate.ts`（`generationLabelOf` + `callDrama` 排队） / `src/routes.ts`（只读队列端点） / `src/client/{api.ts,index.ts,project-store.ts,StudioFrame.tsx}`（轮询 + 顺延 + 投影） / `src/client/canvas/{CanvasSurface.tsx,CanvasNode.tsx}`（遮罩文案） / `tests/generate-queue.test.mjs`（新，13 条）
 
 #### CV-218 · image2fix 自动兜底的修复 prompt 形态错误 —— 只喂字符清单 ⇒ 丢掉位置锚点
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -335,6 +368,7 @@
 - **涉及文件**：`src/text-detection.ts` / `src/host-tools.ts` / `tests/text-detection.test.mjs`（10→21 条） / `tests/fixtures/text-spec/`（新：正例原文 + 人工确认的目标修复 prompt） / `scripts/probe-image2fix-ab.mjs`（新：A/B 真机探针，含 health 夹心） / 5 个 skill 文件
 
 #### CV-217 · 画布上反复多出一张正文只有「占位」二字的「文案」卡 —— 模型「先占位、后回填」的坏习惯 × write_script 每次调用都新建节点 ⇒ 占位卡永远没人替换它
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -342,6 +376,7 @@
 - **涉及文件**：`src/text-guard.ts`（新） / `src/host-tools.ts`（两个写入工具 + description） / `src/client/project-store.ts`（载入清洗） / `tests/text-guard.test.mjs`（新，10 条） / `tests/generate.test.mjs`（夹具由占位串改为合法文案）
 
 #### CV-216 · 放手跑下仍弹出点选卡片：卡片的有无由「模型调了什么工具」决定，而不是由「Host 是否真的在问」决定
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -349,6 +384,7 @@
 - **涉及文件**：`src/studio-defaults.ts` / `src/question-result.ts`（新） / `src/client/question-capture.tsx` / `src/client/styles.ts` / `skills/canvas-studio-creation/references/clarification.md` / `tests/question-result.test.mjs`（新）
 
 #### CV-215 · 把「后端同步单任务」纪律真正传达给模型 + 收口 CV-135 遗漏的上传超时
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -356,6 +392,7 @@
 - **涉及文件**：`src/config.ts`（+`DRAMA_SERIAL_HINT`）/ `src/host-tools.ts`（4 处描述 + video_composite 6→9）/ `src/generate.ts`（+`UPLOAD_TIMEOUT_MS` + upload 补 dispatcher/超时）/ `src/host-config.ts`（maxParallel 定性）/ `src/client/SettingsModal.tsx`（maxParallel 提示）/ `skills/canvas-studio-creation/SKILL.md`（第 7 步措辞）/ `skills/canvas-studio-creation/references/toolchain.md`（新节 + 6→9）/ `tests/long-request.test.mjs`（+上传档不变量）/ `tests/skill-guardrail.test.mjs`（+2 守卫）/ `docs/STATUS.md`
 
 #### CV-202 · image2fix 文字修复端点：探针 + 工具接入 + skill 全套
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -363,6 +400,7 @@
 - **涉及文件**：`src/config.ts` / `src/generate.ts`（image_fix 分支 + pngSizeOf + display let 化）/ `src/host-tools.ts`（+image_fix）/ `src/node-params.ts` / `src/approval-gate.ts` / `scripts/probe-image2fix.mjs`（新）/ `docs/api-probe/image2fix-20260918/`（新）/ `tests/generate.test.mjs`（+5）/ `tests/visual-tokens.test.mjs`（C10 翻正）/ `skills/krea2-turbo-writing` / `skills/krea2-edit-writing` / `skills/canvas-studio-creation/references/{prompt-writing,toolchain}.md` / `skills/music-video-subtitle-generator` / `skills/co-op-game-intro-generator` / `docs/api.md` / `docs/canvas-studio-api-usage.md` / `docs/canvas-studio-tools.md` / `docs/STATUS.md`
 
 #### CV-201 · 内置 ffmpeg：装机即全功能（补上 app 唯一的外部二进制缺口）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -370,6 +408,7 @@
 - **涉及文件**：`dsh-plugin-desktop/scripts/ffmpeg-bundle.ts`（新）/ `scripts/fetch-ffmpeg.ts`（新）/ `scripts/after-pack.ts`（新）/ `scripts/verify-licenses.mjs` / `package.json`（extraResources + dist 前置 + afterPack）/ `THIRD_PARTY_NOTICES.md` / `canvas-studio/src/ffmpeg-run.ts` / `canvas-studio/tests/ffmpeg-bundled.test.mjs`（新）/ `dsh-plugin-desktop/tests/ffmpeg-bundle.spec.ts`（新）/ `start-canvas-studio.sh` / `docs/archive/plans/bundled-ffmpeg.md`
 
 #### CV-200 · 启动脚本两处幂等判据指向幽灵路径 ⇒ 条件恒为真
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -377,6 +416,7 @@
 - **涉及文件**：`start-canvas-studio.sh` / `canvas-studio/tests/skills-single-source.test.mjs`
 
 #### CV-199 · skill 内容源整合为单一事实源：删 skills-local/ + 删 sync 脚本 + 移除 minimax-h3 子模块
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -384,6 +424,7 @@
 - **涉及文件**：`skills-local/`（删除 71 文件）/ `scripts/sync-minimax-skills.mjs`（删除）/ `package.json` / `tests/skills-single-source.test.mjs`（新）/ 8 个测试文件 / `src/skills/minimax-skills.ts` / `src/index.ts` / `src/style-tokens.ts` / `.gitmodules` / `start-canvas-studio.sh` / `scripts/package.mjs` / `docs/skill-expansion-spec.md` 等 6 份文档
 
 #### CV-198 · 节点内容复制到系统剪贴板
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -391,6 +432,7 @@
 - **涉及文件**：`src/clipboard-copy.ts` / `tests/clipboard-copy.test.mjs` / `scripts/probe-clipboard.mjs` / `scripts/preview-clipboard.mjs`
 
 #### CV-197 · 节点类型的色彩身份
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -398,6 +440,7 @@
 - **涉及文件**：`src/client/canvas/labels.ts` / `src/client/canvas/CanvasNode.tsx` / `src/client/styles.ts` / `tests/kind-visual.test.mjs` / `scripts/preview-kind.mjs`
 
 #### CV-196 · 质检与预检体验优化：视频预检「先修后拦」+ 语义规则降 WARN + qc_shot 放手跑自动跳过 + 回合末汇总纪律
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -405,6 +448,7 @@
 - **涉及文件**：`src/h3-ir-validate.ts`（prepareH3IrPrompt + 三处降 WARN）/ `src/host-tools.ts`（两视频工具接入 + qc_shot 跳过 + 描述同步）/ `src/quality-check.ts`（QC_AUTO_MODE_NOTICE）/ `skills-local/canvas-studio-creation/references/{consistency,toolchain}.md` / `skills-local/effect-test-runner/SKILL.md`（qc_shot 自动跳过备注）/ `tests/h3-ir-{validate,precheck}.test.mjs` / `tests/quality-check.test.mjs` / `docs/STATUS.md`
 
 #### CV-195 · 补齐三条重放链路：music_generation / character_sheet / extract_last_frame
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（2026-09-17）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -416,6 +460,7 @@
   - **修法要点**：✅ 2026-09-17：三条链路统一走「原地换一版」—— 抽 `overwriteNodeAsset`（清 `error` 残留、保 id / 位置 / 血缘 / 编组）+ `replayDetachedAsset`（snake_case 入参翻译，`retryOf` 必填，缺失报「只支持原地重试」）；BGM 换新音频文件、四视图复用原资产卡锚点 id（**不新开第二张卡**，卡被删则明确报错不静默降级）、抽帧重探时长后换末帧。+8 用例（含 `REPLAYABLE_TOOLS` ↔ `generateAsset` 分支的**双向守卫**）
 
 #### CV-193 · 生视频编排优化：逐镜关键帧改「按需，默认不出」+ 参考组合「必须 ≥3 张」陷阱修复 + T10 双路线对照用例与 R002 直调首跑
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -423,6 +468,7 @@
 - **涉及文件**：`skills-local/canvas-studio-creation/`（SKILL.md + shot-format / consistency / toolchain / look）、`skills-local/effect-test-runner/`（SKILL.md + fixtures.md + assets×3 新增）、`src/client/ProjectList.tsx`（+T10）、`docs/effect-tests/视频效果验证测试用例与轮次记录.md`（T10 节 + T1/T1b 勘误 + R002 行）、`docs/effect-tests/runs/直调T10-R001/`（报告 + 产物）、`docs/STATUS.md`
 
 #### CV-192 · 文生图提示词 skill 切换 Krea2 Turbo：新增 krea2-turbo-writing（旧 z-image skill 保留但加「已弃用 · 历史存档」转介）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -430,6 +476,7 @@
 - **涉及文件**：skills-local/krea2-turbo-writing/（新）、canvas-studio-creation（SKILL.md + 3 分册）、krea2-edit-writing、oriental-mythic-visual-director、z-image-prompt-writing + qwen-image-edit-writing（存量转介补正）、src/skill-catalog.ts、src/generate.ts、docs/api.md、docs/canvas-studio-api-usage.md、docs/api-probe/krea2-turbo-20260916/（新）、docs/STATUS.md
 
 #### CV-189 · image2image 参考槽位 3→4（后端切 Krea2 Edit 工作流）+ 新增 krea2-edit-writing 提示词 skill（旧 qwen skill 保留）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -437,6 +484,7 @@
 - **涉及文件**：`src/generate.ts`（slice(0,4) + 文案 + 注释）/ `src/host-tools.ts`（4 处描述）/ `src/skill-catalog.ts`（+krea2 条目）/ `skills-local/krea2-edit-writing/SKILL.md`（新）/ `skills-local/z-image-prompt-writing/SKILL.md` / `skills-local/canvas-studio-creation/SKILL.md` + `references/prompt-writing.md` / `skills/`（sync 重建）/ `tests/generate.test.mjs`（2 条契约翻新）/ `docs/canvas-studio-tools.md` / `docs/api.md` / `docs/canvas-studio-api-usage.md` / `docs/STATUS.md`
 
 #### CV-188 · 视频侧「声明的分辨率 ≠ 真实产物」修复：落盘改用 ffmpeg 实测像素（不猜）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -444,6 +492,7 @@
 - **涉及文件**：`src/ffmpeg-run.ts`（+`probeMediaInfo` / `MediaInfo`，`probeMediaDuration` 改薄封装）/ `src/generate.ts`（`mediaSize` 三处口径 + import）/ `src/host-tools.ts`（`width`/`height`/`warnings` 描述）/ `tests/resolution-tier.test.mjs`（+I/J 两组 + `findRealFfmpeg` 兜底）/ `docs/archive/plans/resolution-tier-dev.md`（§3.3.1）/ `docs/STATUS.md`
 
 #### CV-187 · 分辨率三档分级（480p / 768p / 2k）：删隐式升档 + 图片侧首次获得档位 + 默认改 768p
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -451,6 +500,7 @@
 - **涉及文件**：`src/config.ts`（`OUTPUT_SIZE` / `DEFAULT_RESOLUTION` / `isVideoResolution` / `sizeForAspectRatio` 加档位参数）/ `src/providers/types.ts`（枚举收窄 4→3）/ `src/providers/fal.ts`（三档直通 + `LEGACY_RESOLUTION` + `normalizeResolution()`，删升档 hack）/ `src/generate.ts`（`resolutionOf()` 档位决策：工具参数 > 全局设置 > 默认；档位驱动像素）/ `src/host-tools.ts`（两处视频 enum/描述提成共用常量 + `image_generate` 新增 `resolution` + `COMPOSED_FALLBACK` 同源）/ `src/host-config.ts` / `src/index.ts` / `src/client/SettingsModal.tsx` / `tests/resolution-tier.test.mjs`（新，A~H 组）/ `tests/generate.test.mjs` / `tests/video-provider-fal.test.mjs` / `scripts/probe-resolution-tiers.mjs`（新）/ `docs/archive/plans/resolution-tier.md` / `docs/archive/plans/resolution-tier-dev.md` / `docs/api.md` / `docs/canvas-studio-api-usage.md` / `docs/canvas-studio-tools.md` / `docs/plans/video-provider-abstraction.md`（§5.3 勘误 + Q2 推翻）/ `skills-local/canvas-studio-creation/references/toolchain.md` / `skills-local/z-image-prompt-writing/SKILL.md` / `plan.md` / `docs/STATUS.md`
 
 #### CV-186 · 血缘压暗恢复：判据重做（距离三档）+ 生命周期改绑手势
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -458,6 +508,7 @@
 - **涉及文件**：`src/canvas-lineage.ts`（`canvasSpotlight` 重写：`hopDistances` 双向 BFS + `containmentCluster` + 两道阀）/ `src/brand.ts`（`--cs-dim-near` 0.75）/ `src/client/styles.ts`（`.csNodeNear` + `.csNodeDimmed`）/ `src/client/canvas/CanvasNode.tsx`（`dimmed` → `tier`）/ `src/client/canvas/CanvasSurface.tsx`（`spotDragIds` 手势态 + `tierOf` 投影）/ `tests/canvas-lineage.test.mjs`（重写 13 用例）/ `tests/visual-tokens.test.mjs`（反向守卫翻正）/ `scripts/preview-spotlight.mjs`（新，含独立 ORACLE）/ `scripts/verify-previews.mjs`（+1 组）/ `scripts/probe/drive.mjs`（断言 6c 更正 + 新增按下不压暗）/ `docs/STATUS.md`
 
 #### CV-185 · 「整理布局」按视口整形（列宽按列自适应 + 行数上限开子列）+ 适配视野的可读下限
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -465,6 +516,7 @@
 - **涉及文件**：`src/canvas-view.ts`（列宽/行数搜索 + `computeFitView` + `FIT_MIN_SCALE`/`FIT_PADDING`/`CanvasViewport`）/ `src/client/canvas/CanvasSurface.tsx`（适配改调纯函数、返回 `FitResult`、新增 `viewportSize()`、`onFitClamped` 回调）/ `src/client/project-store.ts`（`autoArrange(projectId, viewport?)`）/ `src/client/StudioFrame.tsx`（传视口 + 被下限挡住时提示 + 打开项目时不打扰）/ `tests/canvas-arrange.test.mjs`（新 9 用例）/ `scripts/preview-arrange.mjs`（新，预览台）/ `scripts/verify-previews.mjs`（+1 组）/ `docs/STATUS.md`
 
 #### CV-184 · 新节点落点收口（单一实现 + 无血缘冲突检测）+ 生成后把新节点带进视野
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -472,6 +524,7 @@
 - **涉及文件**：`src/canvas-placement.ts`（新）/ `src/generate.ts` / `src/compose.ts` / `src/host-tools.ts` / `src/video-frames.ts` / `src/client/index.ts` / `src/client/project-store.ts` / `src/canvas-view.ts` / `src/client/canvas/CanvasSurface.tsx` / `src/client/StudioFrame.tsx` / `tsconfig.client.json` / `tests/canvas-placement.test.mjs`（新 9 用例）/ `docs/STATUS.md`
 
 #### CV-183 · 托盘拖动时里面的图片「消失」（松手又回来）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -479,6 +532,7 @@
 - **涉及文件**：`src/client/styles.ts`（+豁免规则）/ `src/client/canvas/CanvasNode.tsx`（+`csNodeTray`）/ `src/client/canvas/CanvasSurface.tsx`（注释）/ `tests/group-tray.test.mjs`（+CV-183 守卫）/ `scripts/preview-tray.mjs`（新）/ `scripts/verify-previews.mjs`（+1 组）/ `docs/STATUS.md`
 
 #### CV-182 · 新建项目对话框精修 + 顺带查出的播放弹窗标题栏回归 + 首屏「跟正式画布和谐」（DD-10，三处一起）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -486,6 +540,7 @@
 - **涉及文件**：`src/client/styles.ts` / `src/client/ProjectList.tsx` / `src/client/SlateBar.tsx`（新） / `src/client/StudioFrame.tsx` / `src/project-context.ts` / `src/brand-copy.ts` / `scripts/preview-create.mjs`（新） / `scripts/verify-previews.mjs` / `tests/visual-tokens.test.mjs`（+7 守卫） / `tests/project-context.test.mjs`（+3 用例） / `docs/STATUS.md`
 
 #### CV-181 · 视觉升维收口 · E 区三解（删死样式 / 悬空分组回落 / 孤儿会话撤修）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -493,6 +548,7 @@
 - **涉及文件**：`src/project-sections.ts`（新） / `tests/project-sections.test.mjs`（新 7 用例） / `src/client/ProjectList.tsx` / `src/client/styles.ts`（净删 ~2.5KB 死样式） / `tests/visual-tokens.test.mjs`（+2 守卫 + 空转基线首 4 项） / `docs/STATUS.md` / `docs/visual-direction-ui-closeout.md`
 
 #### CV-180 · C3「真波形」其实一直是降级条：Host 侧 PCM 字节上限把可解码时长锁死在 12.8 秒
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -500,6 +556,7 @@
 - **涉及文件**：`src/waveform-host.ts`（流式切片取峰，撤 `MAX_PCM_BYTES`） / `tests/waveform.test.mjs`（+2 用例） / `docs/STATUS.md`
 
 #### CV-173 · 视觉升维 DD-08 左侧栏（「工具面板 → 制作现场」第五批）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「视觉升维右栏」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -507,6 +564,7 @@
 - **涉及文件**：`src/brand.ts` / `src/client/styles.ts` / `src/client/{ProjectList,StudioFrame,UserCard}.tsx` / `src/client/{ProjectRowMenu,RailStrip}.tsx`（新）/ `src/{relative-time,project-cover,project-row,workflow-stage}.ts` / `tests/project-row.test.mjs`（新）/ `scripts/preview-rail.mjs`（新）/ `scripts/verify-previews.mjs` / `docs/{STATUS,visual-direction-plan,visual-direction-execution-plan,visual-direction-ui-closeout}.md`
 
 #### CV-163 · 视觉升维 DD-04a 时间轴 + DD-05 叙事 + DD-06 首屏（「工具面板 → 制作现场」第四批，三批合并立项）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B7，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -515,6 +573,7 @@
 - **落地/验收**：`src/timeline-layout.ts`（新）/ `src/client/canvas/CanvasTimeline.tsx` / `src/client/StudioFrame.tsx` / `src/client/styles.ts` / `tests/timeline.test.mjs` / `tests/visual-tokens.test.mjs` / docs
 
 #### CV-160 · 时间轴把「成片」当成片段：预计时长重复计入 + 成片递归叠加
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B6，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -522,6 +581,7 @@
 - **涉及文件**：src/shot-versions.ts / src/compose-selection.ts / src/host-tools.ts / src/client/canvas/{CanvasTimeline.tsx,styles.ts} / tsconfig.client.json / tests/compose-selection.test.mjs
 
 #### CV-152 · 风格质检基准（Look Phase 4 / L4，编号沿用 [look-asset-plan.md](./look-asset-plan.md) 附录 A 预留）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -529,6 +589,7 @@
 - **涉及文件**：src/quality-check.ts / src/host-tools.ts / skills-local + skills 双副本（look.md、toolchain.md）/ tests/quality-check.test.mjs / docs/canvas-studio-tools.md
 
 #### CV-151 · 预设降级收口 + 预设自带 Look tokens（Look Phase 3 / L3，编号沿用 [look-asset-plan.md](./look-asset-plan.md) 附录 A 预留）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -536,6 +597,7 @@
 - **涉及文件**：src/style-grid.ts（新）/ src/client/question-capture.tsx / tsconfig.client.json / skills-local + skills 双副本（style-presets.md）/ tests/style-grid.test.mjs（新）/ docs/look-asset-plan.md
 
 #### CV-159 · 样张重出不取代旧样张
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -543,6 +605,7 @@
 - **涉及文件**：src/{shot-versions,generate,host-tools}.ts / src/client/canvas/CanvasContextMenu.tsx / skills-local/canvas-studio-creation/references/{look,toolchain}.md / tests/shot-versions.test.mjs / docs/canvas-studio-tools.md
 
 #### CV-158 · 2b 命名重载消歧
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -550,6 +613,7 @@
 - **涉及文件**：skills-local/canvas-studio-creation/{SKILL.md,references/{clarification,look}.md} / docs/look-asset-plan.md
 
 #### CV-157 · Look 卡资产化（Look Phase 2 / L2）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -557,6 +621,7 @@
 - **涉及文件**：src/{generate,host-tools,style-tokens}.ts / skills-local/canvas-studio-creation/{SKILL.md,references/{look,consistency,toolchain}.md} / tests/look-card.test.mjs / docs/{canvas-studio-tools,api,look-asset-plan}.md
 
 #### CV-156 · H3 IR 模式判定「双轨」冲突
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B6，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -564,6 +629,7 @@
 - **涉及文件**：src/h3-ir-validate.ts / src/host-tools.ts / scripts/validate-h3-ir.mjs / skills-local/h3-prompt-writing/SKILL.md / skills-local/canvas-studio-creation/references/toolchain.md / tests/h3-ir-precheck.test.mjs
 
 #### CV-154 · 会话分析脚本值形态族漏报修复
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「Look批早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -571,6 +637,7 @@
 - **涉及文件**：scripts/analyze-session.mjs / docs/api-probe/{session-20260911,2026-09-11-filename-consumability.md}
 
 #### CV-147 · 工具集收敛 26→22 + 生视频工具改显式 H3 端点描述
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B5，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -600,6 +667,7 @@
   - **修法要点**：见决策点 D3（已拍板延后，并入「多版素材择优」工作流）
 
 #### CV-006 · compose 无法排除片段、无 BGM 选择器
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -607,6 +675,7 @@
 - **涉及文件**：src/compose-selection.ts（新）/ src/contracts/canvas.ts / src/canvas-view.ts / src/client/StudioFrame.tsx / src/client/canvas/CanvasTimeline.tsx / src/client/styles.ts / tests/compose-selection.test.mjs（新）
 
 #### CV-007 · 时间轴语义混乱（非媒体混排、无总时长）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -660,6 +729,7 @@
 - **涉及文件**：generate.ts / video-style.ts
 
 #### CV-046 · 注册表跨实例互踩（数据完整性）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -696,6 +766,7 @@
 - **涉及文件**：host-tools.ts / contracts/project.ts / question-capture.tsx
 
 #### CV-050 · 分镜重复提交堆积
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -707,6 +778,7 @@
   - **修法要点**：✅ 2026-09-17：按 D4 方案 A 将 `buildShotCards` 提为可测纯函数 `mergeShotCards(existing, sourceIds, shots, mint)` —— 按 `shotCardNumberOf` 解析的镜号匹配旧卡，复用 id 与位置**只更新文案**；新镜号新建且用共享 `boxesOverlap` 避让已占格；多余旧镜号卡**保留不删**（防下游 `shotRefs` 断链）；新行省略时长时清掉旧 `declaredDuration` / `declaredFrames`（防旧值冒充新值）；工具结果写明「新建 N 张 / 复用 M 张」。+8 用例
 
 #### CV-051 · 关键帧阶段无打回
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -718,6 +790,7 @@
   - **修法要点**：✅ 2026-09-17：新增 `reject_keyframes` 动作 —— 确认条内加意见输入框（占位「不满意哪里？」）+「打回重出」按钮；状态回 `executing`（**必须离开 `keyframe_review`**，否则重出走 `image_generate` 会被 `PRODUCING_TOOLS` 闸拦死）+ 带意见唤醒 AI 重出，重出后**再次**弹确认条；`approval-gate` / `approval-notice` 文案同步。+3 用例（含全链路接线守卫）
 
 #### CV-052 · 模式切换把状态误翻回 drafting
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -749,6 +822,7 @@
 - **涉及文件**：project-store / CanvasNode
 
 #### CV-056 · 切模式解除等待后不唤醒 agent
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -760,6 +834,7 @@
   - **修法要点**：✅ 2026-09-01：`setWorkflowMode` 切换前快照 `before.state`，等待类 → `executing` 时复用 wakeAgent 发「继续」（对齐 `confirmKeyframes` 写法）
 
 #### CV-057 · 视频播放浮层无进度条无控制按钮（只有点击切播放/暂停）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -771,6 +846,7 @@
   - **修法要点**：✅ 2026-09-01：浮层自绘控制条落地（可拖进度 pointer-capture + 当前/总时长 + 播放暂停按钮 + 音量 slider + 静音切换），仍不挂原生 controls（CV-044 硬约束约束住双击全屏路径）
 
 #### CV-058 · 上传图片无任何选项
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -782,6 +858,7 @@
   - **修法要点**：✅ 2026-09-01：空态引导改为真实路径「上传后在节点详情面板点『标记为参考』」
 
 #### CV-059 · 工具栏改版：删设置按钮（拍板：设置入口 = app 左下角全局入口）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -793,6 +870,7 @@
   - **修法要点**：✅ 2026-09-01：设置按钮移除（TOOLBAR_VISIBILITY.settings=false，prop 保留接线）；三按钮移至最右图标组（内联 SVG 16px stroke 2，title/aria-label 保留，图层/小地图开关态高亮 csToolbarIconActive）
 
 #### CV-060 · 应用名迁移半途：标题栏 + productName 仍是「DSH Desktop」，托盘/更新已叫 VideoBuddy，两处不一致
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -811,6 +889,7 @@
 - **涉及文件**：host-tools.ts / contracts/project.ts / question-capture.tsx / styles.ts / creation-spec.ts
 
 #### CV-064 · lobby 三态布局
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -818,6 +897,7 @@
 - **涉及文件**：StudioFrame.tsx / styles.ts / LobbyHero.tsx（新）/ brand-copy.ts / scripts/preview-lobby.mjs（新）/ project-store.ts / client/index.ts
 
 #### CV-065 · 技能广场 UI
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -825,6 +905,7 @@
 - **涉及文件**：SkillCard/Carousel/Market.tsx（新）/ SkillCatalog（新）/ CanvasToolbar / styles
 
 #### CV-066 · skill 激活链路
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -832,6 +913,7 @@
 - **涉及文件**：projects.ts / routes.ts / api.ts / project-store.ts / ActiveSkillChips.tsx（新）/ contracts.ts / StudioFrame.tsx
 
 #### CV-067 · 竖屏成片在画布被横屏框裁切
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -843,6 +925,7 @@
   - **修法要点**：✅ 2026-09-02：抽 `src/canvas-aspect.ts` 统一「分辨率→显示框」换算（generate 的 previewSizeOf + StudioFrame 的 longSide480/onMediaNatural 三处合一，消 1:1 漂移）；compose 落盘按真实分辨率换算（9:16→267×480），缺分辨率才回退占位；+7 契约测试（172/172 绿）
 
 #### CV-069 · 左栏底部用户信息区缺失（竞品对标）→ UserCard 组件 + popover（主题/设置接真实功能，其余挂待接入）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -854,6 +937,7 @@
   - **修法要点**：✅ 2026-09-02 落地：`UserCard.tsx`（字母渐变 SVG 头像 + popover；主题三态 = 真实 ctx.theme，设置 = 打开 SettingsModal；积分/订阅/帮助组 reserved 入口 + 待接入角标，「接入飞书/微信」未接入 badge）；`USER_MOCK` 假数据收敛 brand-copy.ts。方案见 backlog CV-069
 
 #### CV-071 · 技能卡悬停操作浮层 + 查看详情（竞品 DA-2）→ hover「使用 + 查看详情」+ 二级详情弹窗
+> **2026-11-10 状态修正**：转「待处理」（开放缺陷/横向欠账，台账 §19.5）——开放缺陷/横向欠账项，非待验收。
 
 - **状态**：待修复（弹窗未显示 GIF 预览）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -865,6 +949,7 @@
   - **修法要点**：✅ 2026-09-02 落地：hover 浮层「查看详情」+ 二级详情弹窗（标题/说明/分类/注册名/使用按钮；Escape 先关弹窗再关广场）
 
 #### CV-073 · 「我的 Skill」视角（竞品 DA-4）→ 侧栏视图 + × 卸载，复用 CV-066 链路
+> **2026-11-10 状态修正**：转「待处理」（开放缺陷/横向欠账，台账 §19.5）——开放缺陷/横向欠账项，非待验收。
 
 - **状态**：待修复（我的 Skill 视图缺陷）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -887,6 +972,7 @@
   - **修法要点**：2026-09-02 用户拍板先不处理；做前需再拍板诚实性方案
 
 #### CV-079 · 生成产物自动编组（竞品 DA-10）→ attachShotGroup 纯函数按分镜卡血缘并入「分镜 N · 素材」组
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -898,6 +984,7 @@
   - **修法要点**：✅ 2026-09-02 落地：`attachShotGroup` 纯函数——有分镜卡血缘时并入「分镜 N · 素材」组（sourceIds 记分镜卡 id 去重复用，组框随成员包围盒扩展），无分镜卡保持旧行为；存量节点不追溯拉组。+2 单测
 
 #### CV-080 · 生成节点命名精准化（竞品 DA-11）→ mediaNodeTitle 纯函数（镜号优先，回退 prompt 摘要）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -909,6 +996,7 @@
   - **修法要点**：✅ 2026-09-02 落地：命名 helper 纯函数——分镜卡镜号优先（`分镜 N · 关键帧/视频`）、无镜号取 prompt 前 12 字摘要、皆缺回退泛化标签；单镜拆分节点命名 `单镜 N`。+1 单测
 
 #### CV-081 · 文本节点选中可滚动（竞品 DA-12）→ 选中态 overflow-y:auto + Surface wheel 对可滚正文放行
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -920,6 +1008,7 @@
   - **修法要点**：✅ 2026-09-02 落地：选中态 `.csNodeSelected .csNodeBody` overflow-y:auto + overscroll-behavior:contain；Surface wheel handler 对「可滚动的选中正文 / textarea」放行（不劫持平移缩放），不可滚时画布行为不变
 
 #### CV-082 · 视频 hover 自动播放（竞品 DA-13）→ 150ms 延迟 muted+loop，模块级单实例
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -931,6 +1020,7 @@
   - **修法要点**：✅ 2026-09-02 落地：hover 150ms 延迟 muted+loop 播放（模块级单实例登记防多视频同时播），离开 pause+归零；loading/失败/错误不播、prefers-reduced-motion 降级、卸载清理；双击仍开浮层
 
 #### CV-083 · 视频时长角标（竞品 DA-14）→ loadedmetadata 现算 m:ss（不落盘）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -963,6 +1053,7 @@
   - **修法要点**：待 CV-006/040/043 前置落地再评估。本批未动
 
 #### CV-086 · 项目分组管理（竞品 DA-17）→ 用户拍板做，2026-09-03 由 CV-091 落地（用户自定义分组 + 折叠，非拖拽归组）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（由 CV-091 实现）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -985,6 +1076,7 @@
   - **修法要点**：落产物增量写 + 打开补写；**红线：列表禁全量加载 canvas.json**。本批未动
 
 #### CV-088 · Lobby 个性化问候（竞品 DA-19）→ LobbyHero 增「你好，{USER_MOCK.name}」行
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -1007,6 +1099,7 @@
   - **修法要点**：用户反馈「框选还是不好用」。CV-089 已排除 dim 干扰（原 dim 错挂在拖动上）。待做两项：① **命中预览高亮** —— 框选期间实时给相交节点加轻描边（Figma 行为），让用户松手前就知道选了谁；② **给 marquee 加 pointer capture** —— 出界不取消、回界继续框（CV-008/CR-060 当时刻意不捕获以防误选，现判据偏严苛）。拍板后再动
 
 #### CV-091 · 左侧栏用户自定义分组 + 折叠
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -1018,6 +1111,7 @@
   - **修法要点**：✅ 已落地：① 契约 `StudioProject.groupId?` + `StudioProjectGroup{id,name,order}`；② `ProjectRegistry` 独立 `groups.json`（`GROUPS_VERSION=1`，缺失/损坏降级空数组，零迁移风险），`create(name,groupId?)` 校验分组存在，增 `listGroups/createGroup/renameGroup/deleteGroup/moveProjectToGroup`（删组组内项目回落未分组）；③ `routes.ts` 新增 `ROUTE_GROUPS`（GET/POST/PATCH/DELETE，复用 authority + same-origin 校验）；④ `ProjectList.tsx` 重写——顶部双按钮 + 未分组桶 + 各分组 section（折叠头 `▾/▸`、双击重命名、hover `[+]` 组内新建、`×` 删组、空态），行内 `csProjectMove` 下拉归组；⑤ `styles.ts` 补 `csProjectGroup*`/`csProjectMove`/`csProjectRowActions`/`csProjectListActions` 等 15 类。验证链全绿：typecheck（Host+Client）✓ / build（tsdown + tsc）✓ / test:smoke **195/195** ✓。**待桌面验收**：重启桌面新建分组 → 折叠/展开持久化、组内新建、移动到分组、双击改名、删组回落未分组
 
 #### CV-092 · 新建项目改弹窗（竞品截图风格）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -1025,6 +1119,7 @@
 - **涉及文件**：client/ProjectList.tsx / styles.ts
 
 #### CV-095 · 新增图像侧两个提示词规范 skill
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1032,6 +1127,7 @@
 - **涉及文件**：skills-local/{z-image-prompt-writing,qwen-image-edit-writing}/SKILL.md / skills/ 同步副本 / skills-local/canvas-studio-creation/SKILL.md / src/skill-catalog.ts
 
 #### CV-096 · 品牌图标正式稿（V2 Aperture Squircle）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1039,6 +1135,7 @@
 - **涉及文件**：scripts/build-brand-assets.mjs / assets/brand/ / src/client/brand/LogoMark.tsx / src/brand.ts
 
 #### CV-101 · 东方异境视觉导演 skill 外挂试跑（第三方 MJ skill 接入验证）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B3，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1046,6 +1143,7 @@
 - **涉及文件**：skills-local/oriental-mythic-visual-director/{SKILL.md,references/oriental-director-v0.3.md} / src/skill-catalog.ts
 
 #### CV-102 · 无 fork 附件旁路 + 上传标题唯一化 + 画布刷新白名单补漏
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B3，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1053,6 +1151,7 @@
 - **涉及文件**：src/index.ts / src/reference-token.ts / src/client/index.ts / src/client/StudioFrame.tsx / src/asset-capture.ts
 
 #### CV-103 · C1 一致性资产锚点（自 WL 仓库收敛）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1060,6 +1159,7 @@
 - **涉及文件**：src/contracts/canvas.ts / src/projects.ts / src/generate.ts / src/host-tools.ts / tests/{asset,reference,asset-capture}.test.mjs
 
 #### CV-111 · character_sheet 参考图失效自愈
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1067,6 +1167,7 @@
 - **涉及文件**：src/generate.ts / tests/character-sheet.test.mjs（新）
 
 #### CV-120 · creative-mechanisms 按风格打通（机制库「沉睡」修复）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「风格映射早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1074,6 +1175,7 @@
 - **涉及文件**：skills-local/h3-prompt-writing/{SKILL.md, references/creative-mechanisms.md} / skills/h3-prompt-writing/（同步产物）
 
 #### CV-121 · 总纲拆分 + 风格优先原则（B2，方案 Z + 优先级反转）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B4，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1081,6 +1183,7 @@
 - **涉及文件**：skills-local/canvas-studio-creation/{SKILL.md, references/×7} / skills/canvas-studio-creation/（同步产物）/ tests/{skill-catalog,skill}.test.mjs
 
 #### CV-122 · character_sheet 去 splitegrid 依赖：四视图拼图整图作唯一锚点
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「风格映射早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1095,6 +1198,7 @@
 - **涉及文件**：已降级·待后台支持
 
 #### CV-127 · 音乐提示词规范 skill + music_generation 工具增强（音频生成规划 A+B）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B4，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1102,6 +1206,7 @@
 - **涉及文件**：skills-local/music-prompt-writing/{SKILL.md,references/*.md} / src/{skill-catalog,generate,host-tools}.ts / tests/{music-prompt-writing,music-generation}.test.mjs / skills/（同步产物）
 
 #### CV-128 · 画布音频节点显示 + 就地播放（kind='audio' 独立成类，不再复用 video）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B4，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1109,6 +1214,7 @@
 - **涉及文件**：src/{contracts/canvas,projects,canvas-actions,generate}.ts / src/client/{canvas/CanvasNode,canvas/LayerPanel,canvas/LayerDetailPanel,canvas/Minimap,canvas/labels,project-store}.tsx/.ts / src/client/styles.ts / tests/music-generation.test.mjs
 
 #### CV-129 · H3 官方音频通道按标准落地（audio reference / audio reuse / 原生音轨）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B4，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1116,6 +1222,7 @@
 - **涉及文件**：src/audio-reference.ts / src/providers/{types,capability,drama,fal,reference}.ts / src/{generate,host-tools}.ts / skills-local/{h3-prompt-writing,canvas-studio-creation} / tests/{audio-reference,video-provider-drama,video-provider-fal-refs}.test.mjs
 
 #### CV-130 · 画布音频体验四件套（生成后即时刷新 / 歌词上画布 / 可拖进度条 / 双击播放器窗口）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B4，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1137,6 +1244,7 @@
 - **涉及文件**：docs/video-mode-selection-plan.md
 
 #### CV-133 · 生成请求的超时配置被 undici 300s 隐形上限架空（配置失效）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B5，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：✅ 已修复·待验收（CV-135 落地）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1151,6 +1259,7 @@
 - **涉及文件**：docs/api.md / src/providers/drama.ts / src/host-tools.ts / skills-local/canvas-studio-creation/ / tests/video-provider-*.test.mjs
 
 #### CV-135 · 长请求传输层：把 Node 内置 fetch 的隐形 300s 上限抬到 900s（= CV-133 的落地修法）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B5，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1158,6 +1267,7 @@
 - **涉及文件**：src/long-request.ts（新）/ src/generate.ts / tests/long-request.test.mjs（新）
 
 #### CV-136 · 视频画幅收敛为 16:9 / 9:16 两档（去掉 1:1）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B5，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1165,6 +1275,7 @@
 - **涉及文件**：src/providers/{types,drama,fal}.ts / src/generate.ts / src/host-tools.ts / src/plan-prompt.ts / docs/api.md
 
 #### CV-137 · 上传端点统一（uploadimage 已下线 404 → 切到 POST /api/v1/generate/upload）+ 上传链路实测校准
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B5，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1172,6 +1283,7 @@
 - **涉及文件**：src/config.ts / src/generate.ts / docs/api.md / docs/canvas-studio-api-usage.md / docs/canvas-studio-tools.md / tests/upload-endpoint.test.mjs（新）/ tests/{video-style,character-sheet}.test.mjs
 
 #### CV-116 · 风格映射四处漂移（11 vs 8）+ 未命中选项被整个吞掉
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「风格映射早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1179,6 +1291,7 @@
 - **涉及文件**：src/client/question-capture.tsx / src/client/styles.ts / src/skill-catalog.ts / assets/style-demos/（+2 GIF）/ tsconfig.client.json
 
 #### CV-117 · catalog 一致性测试补反向断言
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「风格映射早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1186,6 +1299,7 @@
 - **涉及文件**：tests/skill-catalog.test.mjs
 
 #### CV-118 · hidden 拆生命周期语义
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「风格映射早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1193,6 +1307,7 @@
 - **涉及文件**：src/skill-catalog.ts / tests/skill-catalog.test.mjs
 
 #### CV-104 · C2 注入纪律（lockedPrompt 逐字节复用 + 资产卡覆盖）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1200,6 +1315,7 @@
 - **涉及文件**：src/host-tools.ts / src/projects.ts / src/generate.ts / skills-local+skills/canvas-studio-creation/SKILL.md / tests/{asset,reference}.test.mjs
 
 #### CV-108 · 镜位版本链与失效标注（返工片段不再混入成片）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B3，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1207,6 +1323,7 @@
 - **涉及文件**：src/shot-versions.ts（新）/ src/contracts/canvas.ts / src/generate.ts / src/compose.ts / src/host-tools.ts / src/client/canvas/{CanvasNode,CanvasContextMenu}.tsx / src/client/{StudioFrame.tsx,styles.ts} / skills-local+skills/canvas-studio-creation/SKILL.md / tests/shot-versions.test.mjs（新）
 
 #### CV-107 · C5 合成统一（调色 pass + BGM 淡入淡出）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1214,6 +1331,7 @@
 - **涉及文件**：src/compose.ts / src/host-tools.ts / skills-local+skills/canvas-studio-creation/SKILL.md / tests/compose.test.mjs
 
 #### CV-106 · C4 质检闭环（逐镜 VLM 自检 + 预算熔断）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1221,6 +1339,7 @@
 - **涉及文件**：src/quality-check.ts（新）/ src/host-tools.ts / src/contracts/canvas.ts / src/asset-capture.ts / skills-local+skills/canvas-studio-creation/SKILL.md / tests/quality-check.test.mjs（新）
 
 #### CV-105 · C3 尾帧链（同场景连续镜头的像素级衔接）
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「C1~C5一致性早期」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1228,6 +1347,7 @@
 - **涉及文件**：src/video-frames.ts（新）/ src/host-tools.ts / src/generate.ts / src/contracts/canvas.ts / src/asset-capture.ts / skills-local+skills/canvas-studio-creation/SKILL.md / tests/video-frames.test.mjs（新）
 
 #### CV-093 · 技能广场隐藏前两个基础技能
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B2，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -1243,6 +1363,7 @@
 - **落地/验收**：2026-09-21 补登
 
 #### CV-203 · image_generate 移除 negativePrompt 参数（代码 + skill + 文档收口
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B8，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1266,6 +1387,7 @@
 - **涉及文件**：[canvas-lineage-completion-plan.md](./canvas-lineage-completion-plan.md)（§CV-208）
 
 #### CV-209 · H3 原生音轨成为多镜主声轨
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1273,6 +1395,7 @@
 - **涉及文件**：`src/providers/drama.ts` / `skills/canvas-studio-creation/SKILL.md`（第 9 步）/ `src/generate.ts` / `docs/audio-generation-plan.md`
 
 #### CV-210 · 质检全景表收敛
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1280,6 +1403,7 @@
 - **涉及文件**：`skills/canvas-studio-creation/SKILL.md` / `skills/canvas-studio-creation/references/consistency.md`
 
 #### CV-211 · 出图后 QC 链（image2vl 逐字复述 → image_fix）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1287,6 +1411,7 @@
 - **涉及文件**：`skills/canvas-studio-creation/references/prompt-writing.md`（§含文字图片的出图后 QC 链 / §与旧 CV-211 的兼容）/ `src/text-detection.ts`
 
 #### CV-212 · 含文字 prompt 自动 image_fix 触发
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1301,6 +1426,7 @@
 - **涉及文件**：`src/skills/placeholder-tools.ts` / `docs/canvas-studio-tools.md` §D
 
 #### CV-214 · VLM 输出不可当事实警告
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B9，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1408,6 +1534,7 @@
 
 
 #### CV-317 · skill 工具引用语义门禁 + 修 5 处 stale
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：既有 5 道 skill 门禁全是**结构门禁**（文件在不在、名字合不合法、长度够不够），**不检查 skill 正文里引用的工具是否真的存在**。本条建立第一道语义对账门禁 `tests/skill-tool-refs.test.mjs`：① 从 `src/host-tools.ts` + `src/skills/placeholder-tools.ts` 提取**真实注册工具表**；② 扫 `skills/**` 的 `.md/.txt/.yaml` 取 snake_case 词；③ 候选不在注册表 → 查豁免表 → 仍不在即红。豁免表按 6 组理由分类（上游 H3 IR 字段名 / 上游 Hub 工具名 / 已下线工具的历史记录 / 工具参数名 / 后端工作流标识 / 测试 fixture 空断言），**禁止无理由放行**。
 - **顺带修的 5 处 stale**（门禁之外的存量缺陷）：总纲「提交即停手」与「放手跑」两处写「三个 submit 工具」（REQ-022 后只剩 `submit_keyframes_for_approval`）；总纲安全底线① 引用已下线的 `submit_screenplay`；`direct-street-interview-video` 与 `stage-startle-to-truce-encounter` 写「分镜/关键帧审批节奏」而分镜门已下线。
@@ -1415,12 +1542,14 @@
 - **落地·验收**：6 条断言全绿；**负向变异 2/2 真红**（注入幽灵工具名 `totally_ghost_tool_xyz` → 幽灵检测红；还原 → 全绿）。「豁免表自身不腐烂」断言开工至今触发 3 次，每次都抓到真腐烂（CV-318 删 skill 后 `guidance_scale` 无处出现、CV-321b 下沉后 `generate_audio` 无处出现），每次都已从豁免表移除 —— 证明该断言不是装饰。
 
 #### CV-318 · 删除两个死 skill
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：`z-image-prompt-writing`（4,891 B）与 `qwen-image-edit-writing`（5,842 B）自 CV-192 / CV-189 起就被 `krea2-turbo-writing` / `krea2-edit-writing` 取代，运行时路由早已改指新条，**且 catalog 里两者的 summary 与取代者逐字相同**。判定为死条目，删除目录 + catalog 条目。
 - **涉及文件**：`skills/z-image-prompt-writing/`、`skills/qwen-image-edit-writing/`（整目录）、`src/skill-catalog.ts`
 - **落地·验收**：skill 数 23→21。核对 `minimax-skill.test.mjs` 的 `EXPECTED_NAMES`（只硬编码 9 个上游来源 skill）与 `skills-single-source.test.mjs` 的 `UPSTREAM_META`/`UPSTREAM_REFS` 均不含这两条，删除不影响任何既有断言。`docs/` 里的历史提及属归档记录，未动。
 
 #### CV-319 · 能力槽位化（总纲不再点名 skill）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：总纲过去硬写「纯文生图 → 加载 `krea2-turbo-writing`」这类映射。新增一个知识型 skill 就必须改总纲 —— 这正是「放开用户上传后总纲必然过期」的机制。本条把映射移进 `references/toolchain.md` §**能力槽位绑定表**，总纲只写「先查绑定表加载对应 skill」。同时把总纲「核心规则」里的 **12 条平台事实**（两类 filename、同步/异步、画幅、`sourceUrls`/`shotRefs`、无视觉能力、附件转存、资产库 `lib:uuid`、产物 URL 用途、`image_fix` 分工）下沉到 `toolchain.md` §平台事实清单 —— 它们是平台契约不是创作纪律，且跟着后端版本走。
 - **6 个槽位**：`video-prompt` / `image-t2i` / `image-edit` / `audio-music` / `audio-voice` / `camera-language`
@@ -1428,12 +1557,14 @@
 - **落地·验收**：7 条断言全绿。**负向变异 2/2 真红**：绑定表改指不存在的 `ghost-skill-not-exist` → 幽灵绑定检测红；只往总纲加一句 `加载 h3-prompt-writing` → 「总纲不得硬编码槽位 skill 名」红。注：首次变异用 `ghost_skill_xyz`（带下划线）导致整行解析失败、只测到「槽位空缺」而非幽灵检测，已换成合法 kebab 名重做。
 
 #### CV-320 · 五类 skill 的角色声明规范化
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：原先只有 5 个 skill 在正文里显式声明角色，其余 16 个没有 —— **有声明的这 5 个是随手的，不是设计**。结果是「哪些是决策型、哪些是知识型」在正文里没有可判定的标记。统一了位置（frontmatter 之后第一节）与三要素（自己在轴上是什么、与总纲的分工边界、下级细则何时加载），并检查了另外 16 个：明显是决策型的补声明，明显是知识型的不补（避免形式化膨胀）。
 - **涉及文件**：`skills/{bible-story-director,action-scene-director,direct-street-interview-video,stage-startle-to-truce-encounter,effect-test-runner}/SKILL.md`
 - **落地·验收**：与 CV-317 同批验证；桌面验收见 §4.1。
 
 #### CV-321 · 总纲骨架瘦身 + 上限双指标冻结
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **现状基线**：`SKILL.md` 21,323 B。「标准工作流」一节 9,898 B（47.0%，**353 字节/行**，模型能读、**人 review 不了**，而「review 时直接看 diff」是 `skill-expansion-spec.md §4` 的核心工程原则）。
 - **改动 1（骨架瘦身）**：21,323 → **10,235 B（−52%）**。工作流 11 步各留一行 + 分册指针；「核心规则 13 条」→ 「安全协议 5 条」；入口分流下沉 `clarification.md`；分次写体验下沉 `screenplay.md`；`prompt-writing.md` 补齐三条降级骨架（总纲承诺的兑现）。**分册总量基本不变，变的是骨架与分册的分工。**
@@ -1454,6 +1585,7 @@
 - **落地·验收**：`check` 全绿。**未做到**：5 个超大 skill 的「≤6 KB」目标只做到 3 个（brand-promo 7,285 / minimalist 7,400 / paper-collage 6,852 略超），取舍理由是**优先零知识丢失**（门禁阈值设在 12 KB，全部远低于门）；`handdrawn-live-video-generator` 仍 refs=0（6.7 KB 未超门，按最小一致改动未强拆）。
 
 #### CV-322 · 渐进披露门禁 + 大文件拆解 + 撤下中文镜像
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：`skill-expansion-spec.md` §1.3 要求 SKILL.md 保持精简入口、细节放 `references/`，但 5 个 skill **既超 10 KB 又 `references/` 为空**，是全仓最严重的渐进披露违规。新建 `tests/skill-progressive-disclosure.test.mjs` 8 条断言：入口级体积上限 12 KB、**分册正文的引用也不得断链**（补 `minimax-skill.test.mjs` 只守 SKILL.md 的那一层）、不得引用已下线审批工具、不得自建 HITL 审批门、风格 skill 必须写立场声明、声明了 `references/` 却没有文件等于没声明。
 - **拆解**：5 个违规 skill 拆出 **18 本 references**（minimalist 6 本、papercraft 5、paper-collage 4、music-video 4、brand-promo 4），按语义聚类而非机械切块。
@@ -1462,6 +1594,7 @@
 - **落地·验收**：8 条全绿。**负向变异 2/2 真红**：注入 `先调用 submit_storyboard_for_approval 等用户确认后再生成视频` → 「已下线审批工具」+「自建 HITL 审批门」双红；注入英文变体 `ask_user_choice the user to confirm … do not generate until the user confirms` → 命中第二条并报出文件行号与原文；造一个 `SKILL.cn.md` 镜像 → 「第二事实源」红。
 
 #### CV-323 · 激活集注入 system prompt
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：技能广场的「装载」是**纯 UI 概念**（`skills.json` + chips），与 skill 注册、与模型能否加载**完全无关** —— 注册是全局静态的，模型看到的是整份 catalog。于是有个说不出口的缺口：**用户在界面上替项目挑好的技能，模型不知道**；表现是用户勾选形同虚设、模型自己加载了用户也无从察觉。
 - **做法**：新建 `src/active-skills-prompt.ts`，注册 system prompt 小节（`canvas-studio:active-skills`，order 154，接在已占用的 150~153 之后避免位移既有相对顺序）。`text` 传**函数形态**（`PromptSection.text` 支持 `string | (context) => string`，`asset-library-prompt.ts:96-104` 已有先例），按会话 cwd 取清单。同步 provider 不能 async，故用**模块级 per-cwd 缓存**桥接，`agent/created` 预热 + provider 内兜底自愈。写入侧 `POST /canvas-studio/active-skills` 成功后调 `invalidateActiveSkillsPromptCache()`。
@@ -1469,6 +1602,7 @@
 - **落地·验收**：9 条断言全绿。清单去重并**剔除总纲**（它由路由小节强制加载，不该要求用户勾选）、catalog 无此条目时**显式暴露**为「残留旧记录」而非静默漏掉、文本不含 `{{variable}}`（`renderPrompt` 对未知引用直接抛错）。缓存失效由测试直接读 `routes.ts` 源码断言（**写完不失效 = 用户勾掉 skill 后模型这一轮仍按旧清单行事**）。
 
 #### CV-324 · 元数据单源化（新建 platform.yaml）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情（用户拍板方案 A）**：`src/skill-catalog.ts` 的 `SKILL_CATALOG` 与 `skills/` 目录是两份东西，一致性只靠测试兜底 —— **漏补表不会有任何报错，用户上传的 skill 会静默消失在广场里**。新建 `skills/<name>/platform.yaml`（21 份）作为平台展示元数据的单一事实源，内容从 catalog 条目**程序化提取**（脚本逐字搬运，非手抄；`demo` / `h3` / `stage` 一并迁移，漏了会让 GIF 预览与「试跑」角标消失）。新增 `role`（`knowledge` / `decision`）与 `slot` 两个为放开上传预留的字段。
 - **硬约束**：`meta.yaml` **一个字节都没动** —— 它是上游 `MiniMax-H3` 署名（author/source/version）的唯一载体，`skill-expansion-spec.md` 记着「第三方许可全文入库」仍是未关闭待办。`meta.yaml` 只在**上游来源**的 skill 上存在；用户上传的 skill 只有 `platform.yaml`，这是合法态。
@@ -1479,6 +1613,7 @@
 - **涉及文件**：`skills/*/platform.yaml`（21 新）、`src/skill-catalog.ts`、`tests/skill-platform-meta.test.mjs`（新）、`tests/skill-catalog.test.mjs`、`tests/skill-role-consistency.test.mjs`（新）
 
 #### CV-325 · 用户上传契约（仅知识型槽位）
+> **2026-11-10 状态修正**：转「待处理」（开放缺陷/横向欠账，台账 §19.5）——开放缺陷/横向欠账项，非待验收。
 
 - **详情（用户拍板 D1/D2）**：第一阶段**只开放知识型槽位**。frontmatter 必须声明 `role: knowledge` + `slot: <6 个槽位之一>`；`role` 缺失或非 `knowledge` 一律**拒绝**并给出明确原因。**槽位冲突内置优先**：用户 skill 声明了已被内置占用的槽位 → **允许入库但不参与绑定**，并说明是哪个内置 skill 挡住了 —— 用户的工作不白做，装机行为不受干扰。
 - **为什么先做契约不做端点**：开放上传的**前置**是让内置 skill 体系先自洽（CV-317~322），不是先造一个能上传的空壳。真接端点时 `validateUpload` 就是端点该调用的**唯一判据**，规则不在端点里再写第二遍。
@@ -1486,6 +1621,7 @@
 - **涉及文件**：`src/skill-upload-contract.ts`（新）、`docs/skill-user-upload-contract.md`（新）、`tests/skill-upload-contract.test.mjs`（新）
 
 #### CV-326 · 用户 skill 四条安全协议
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B12，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：写进总纲常驻小节，**四条预写死、不举任何具体 skill 例子**：① 不得改变流程顺序与审批语义 ② 不得改变工具契约 ③ 不得绕过一致性硬约束 ④ 槽位冲突时内置实现优先。**为什么强调不举例**：一旦写成「比如 `music-prompt-writing` 不能……」，这条就从协议退化成硬编码 —— 新增 skill 时又得回来改总纲，判据二失效。有断言守着（逐个扫 `skills/` 真实目录名比对，例外只放行 `role: knowledge` 这种**契约字段**引用）。
 - **诚实边界（必须写清，否则验收会被误读成「全部已强制」）**：
@@ -1500,6 +1636,7 @@
 - **落地·验收**：`check` 全绿。**不能声称已验证的**：方案里的验收项「恶意 skill 加载后安全底线仍生效（关键帧门仍拦）」需真实上传链路，**待上传端点落地后桌面验收**。
 
 #### CV-327 · REQ-034 B3 工具链：`render_composition`（代码驱动合成 / Remotion CSR）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-034 走**路线 B（CSR）** —— 编码发生在**客户端渲染进程**（`@remotion/web-renderer` 的 `renderMediaOnWeb`，OpenH264/WASM 软编，复用 Electron 自带 Chromium），宿主不渲染、不起 headless-shell、不随包 `@remotion/compositor-*` 平台二进制。宿主 `render_composition` 只做四步：**校验 → 建内存工单 → 等客户端回写 → 落盘 + 探真值 + 混音**。
   - `src/remotion/render-job.ts`（新，工单桥）：模块级内存 `Map`（不落工单文件）；`runRenderJob({projectId, manifest, fps?, signal?})` 建单后阻塞等回写；`pendingRenderJobFor(projectId)` / `commitRenderJob(registry, jobId, {bytes, warnings?})`（`saveLocalAssetBytes` 落 `remotion-<newAssetId()>.mp4` + `probeMediaInfo` 探真值）/ `cancelRenderJob(jobId, {failed?, reason?})` / `activeRenderJobCount()`。超时 **10 min**（`RENDER_JOB_TIMEOUT_MS`）→ `CS-RENDER-TIMEOUT`；客户端编码失败 → `CS-RENDER-002`；撤单/打断 → `CS-GEN-207`。
@@ -1526,6 +1663,7 @@
 - **落地·验收**：`typecheck` 三连 + `build` + `verify:loader` + `test:smoke` **全绿（tests 1729 / pass 1729 / fail 0，基线 0、名外新增 0）**；六处 skill 门禁（`skill-platform-meta` / `skill-progressive-disclosure` / `skill-tool-refs` / `skill-role-consistency` / `skill-catalog` / `minimax-skill`）定向 43 条全绿。**桌面验收未做**（同 B3，与 Z-1~Z-3 澄清环节预览一并验）。
 
 #### CV-328 · REQ-034 R1：随包中文字体（构建期子集 + 宿主只读路由 + 渲染前就绪闸门）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-034 的**最后一块地基**。devdoc §8.3 已定「方案 C 混合」（构建期子集中文随包 + 运行期同源 `@font-face` + `document.fonts.load` 就绪闸 + 缺省离线兜底），但此前的状态是**「口径已写、机制未落」**——`src/remotion/fonts.ts` 不存在、中文子集不存在 ⇒ 验收 **Z-6**（成片字幕卡中文**不 fallback**）与 **Z-10**（断网下中文观感与联网一致）**无法整条验**。R1 把该机制落地；**字体下载链路（非 MVP 外部前置，依赖 Drama 后端新增 `/fonts/` 路由）仍不做**。
 - **源字体选型（决定性理由＝许可）**：选 **Noto Sans SC**（`@expo-google-fonts/noto-sans-sc@0.4.4` 的全量静态 TTF）而非思源黑体。思源黑体带 **OFL 保留字体名（RFN）`with Reserved Font Name 'Source'`**，而子集化属 Modified Version、**必须改名**；实测 `preserveNameIds: []` **仍保留保留字体名**（name 表 9 条记录、familyName 照旧）⇒ 零成本合规路径只有换源。Noto Sans SC 族名本身不含 `'Source'`，**无 RFN 债**，`OFL.txt` 原样随附即可。
@@ -1544,6 +1682,7 @@
 - **文档回填**：devdoc 新增 **§0.6**（R1 落地回填，含 F1~F7 事实表）+ **§8.3.1**（落地状态表）；§0.5 验收状态段把「字体未落地」移出未做列表、`1729·1729` → `1745·1745`；目录头「唯一未决 S9」作废（§0.5 已记 S9 关闭）；阶段 2/6 的相关 checklist 由 `[ ]` 改 `[x]`。验收用例 §29.1 字体条目由「⚠️ 尚未落地」改「✅ 已落地（R1）…Z-6/Z-10 现可整条验」。
 
 #### CV-329 · REQ-034 R6：成片合成二择路由接线（总纲 + 分册 + 承接链）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **缺口（「能力存在但用不上」）**：总纲第 10 步「成片合成」**只写 `compose_video`**；而 `render_composition`（CV-327 B3）的承接 skill `code-driven-explainer` 走 `role: decision` / `slot: general`，**不进 `toolchain.md` 的能力槽位绑定表** ⇒ **总纲根本不指向这条分支**。模型只能靠 ①用户在画布勾选（激活集注入 order 154）②catalog description 自主加载 两条侥幸路径 —— **R1~R4 做得再对，真实对话里也可能一次都触发不到**。
 - **改动三处（缺一处路由就是断的）**：
@@ -1558,6 +1697,7 @@
 - **附带治理（同批，非 R6 功能改动）**：STATUS 文件头按归档文件自述的「**header 只保留最近 3 条**」把最老 4 条（CV-317~326 / CV-313~316 / CV-312 / CV-311）**原样搬迁**到 `archive/status-header-history.md` ⇒ STATUS **59372 → 56006 B**；§0.2 编号指引里 R1 时留下的「用户上传线请从 CV-329 起」已失效（本轮 CV-329 已被占用），改为「**以 §4.1 水位为准取号**」。
 
 #### CV-330 · 素材物化层 + 缺素材硬失败（REQ-034 R3/R4）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **缺口（跨契约静默失败，R3 的核心）**：`CompositionManifest` 的 `src` 契约**同时放行**「同源资产 URL」与「本地绝对路径」（`isAllowedManifestAssetRef` 判据＝以 `/` 开头且非 `//`），且 **skill 三处明文教模型可以填本地路径**（`code-driven-explainer/SKILL.md`、`references/manifest-contract.md`、`references/fonts.md`）。但 CSR 渲染跑在**客户端渲染进程的浏览器环境**，`<Video src="/Users/...">` 被当作 origin 根下路径 → `http://<origin>/Users/...` → **404**；更糟的是 `asset-check.ts` 对非前缀 src **`continue` 跳过核对** ⇒ **校验放行 + 核对跳过 + 渲染 404 三重静默叠加**（`fonts.md` 自己就写着「不同源会静默 404、最难查」）。
 - **修法 ① 物化层（R3，拍板走 A · 不缩能力）**：新增 `src/remotion/materialize.ts` —— `materializeManifestSources(manifest, assetsDir, projectId)` 遍历 `tracks[].src` / `audio.bgmUrl|voiceOverUrl` / `global.fonts[].src` 三类字段：同源 URL 原样保留；**位于本项目 `assetsDir` 内**的本地绝对路径 → 物化为 `ASSET_URL_PREFIX + projectId + '/' + basename`；**域外**路径记入 `rejected`（带中文原因），由调用方硬失败。**全部同源时原样返回入参对象**（零拷贝、零副作用 —— 不引入文件拷贝这类带副作用的行为）。
@@ -1574,6 +1714,7 @@
 
 
 #### CV-331 · 用户上传 skill 契约改造
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「用户上传skill」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1582,6 +1723,7 @@
 - **落地/验收**：提交 `784d9b8cbc`（用户上传 skill 全链路 CV-331~333）。`tsc` 三连 exit 0；**全量 `test:smoke` 本批未跑**（实现与测试同批写完从未跑全量，欠账由 CV-335 清）。
 
 #### CV-332 · 用户上传 skill 落盘与广场
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「用户上传skill」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1590,6 +1732,7 @@
 - **落地/验收**：同 CV-331 提交 `784d9b8cbc`。
 
 #### CV-333 · 用户上传 skill 导入链路
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「用户上传skill」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1598,6 +1741,7 @@
 - **落地/验收**：同 CV-331 提交 `784d9b8cbc`；2 条用例问题（slug 取错 / 多选输入写错）由 CV-335 修。
 
 #### CV-334 · Remotion 帧级动画能力补齐
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1606,6 +1750,7 @@
 - **落地/验收**：提交 `24fa085175` + 回归修复 `bcd8d67c54`（契约外字段告警误报全量字段）。`yarn check` 由 8 红降 6 红；`tests/manifest.test.mjs` 16/16；残余 6 红归属 CV-331~333 批，由 CV-335 清。
 
 #### CV-335 · 清 CV-331~333 批 6 条全量欠账
+> **2026-11-10 冻结**：历史批次·证据缺失（台账 §19.3 组「用户上传skill」）——不假称通过，恢复验证时按批次补证据后转已完成。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1614,6 +1759,7 @@
 - **落地/验收**：提交 `0d39c6ca63`。`tsc` 三连 exit 0；定向 7 文件 112 测 / 110 过 / 2 红（沙箱拒临时目录删除 EPERM，非断言失败）。
 
 #### CV-336 · animateStateAt 多段关键帧插值修复
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1622,6 +1768,7 @@
 - **落地/验收**：本批（与 CV-337 同批）。`tests/remotion-timing.test.mjs` 扩 4 断言共 **18/18**（公转 / 呼吸 / 跨段叠加 / 单段回归）；manifest 校验 **0 错 0 警**；桌面验证台 `S10_BUNDLE_ONLY=1` 打包通过。
 
 #### CV-337 · motion 能力主题无关通用化
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B13，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1646,6 +1793,7 @@
 - **落地/验收**：提交 `4017f8f908`。`SKILL.md` **9.4KB**（< 11KB 闸，`skill-catalog` 10 断言全绿）；夹具 23 轨 / 420 帧单 manifest 覆盖全部新原语。
 
 #### CV-340 · 长片渲染队列与进度通道（D1）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B14，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1710,6 +1858,7 @@
 - **落地/验收**：提交 `4017f8f908`。分类表随 `remotion-timing-phase2` 覆盖；重试路径在真渲失败场景才走到，归入桌面验收。
 
 #### CV-348 · compose 旁白音轨判定（D6）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B14，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1718,6 +1867,7 @@
 - **落地/验收**：提交 `4017f8f908`。`compose-mix-role` 7 断言（toolName 判据 / 关键词兜底 / 旁白满音量 / 无 afade / 短于成片仅提示 / 构成 8 值 / 覆盖口）。
 
 #### CV-349 · 覆盖层主题随切换实时刷新（REQ-022 故事板覆盖层修正）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B14，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1726,6 +1876,7 @@
 - **落地/验收**：接线守卫 `storyboard-theme-live` 2 例（注入面契约 + index 接线到 `theme/change`；覆盖层订阅快照并据它派生色板与 iframe URL）。验证链全绿：typecheck / 沙箱三段 build / verify:loader / `test:smoke` **1877·1877、基线 0**。**⚑ 待桌面验收**：设置里切浅色/深色，覆盖层应立即换色（无需关闭再打开），深↔浅各来回一次。
 
 #### CV-363 · REQ-035 渲染可靠性 P0：认领/改派/看门狗 + 工单诊断 + 字段语义
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1740,6 +1891,7 @@
 - **落地/验收**：提交 `8d378f14fa`。tsc 三套全过；新增 10 条 + 既有渲染相关 43 条全绿；全量 smoke **2119·2119、基线外新增 0**。**⚑ 待桌面验收**：见 `plans/REQ-035-真机验收清单-20261024.md` Z-1..Z-7。**注意：本条推翻 CV-359 的「claim 过就永不改派」判据**。
 
 #### CV-364 · 编排体检去重/呼吸豁免 + inspect_image 能力对齐 + 资产生命线
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1751,6 +1903,7 @@
 - **落地/验收**：提交 `ed1831d6c0`。motion-lint +3、inspect-image +4（含「bbox 退化」与「region 命中」双向）；全量 smoke **2132·2132 全绿**。
 
 #### CV-365 · 16 条引擎契约入库（文档↔源码守卫）+ skill 纪律补强
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1762,6 +1915,7 @@
 - **落地/验收**：提交 `30c5a51166`。全量 smoke **2143·2143 全绿**（+11）。踩点：文档原本**没有** `inspect_image` 提及，新守卫的「引导不能删」断言一开始红，顺手补了像素定位引导。
 
 #### CV-366 · REQ-035 G1–G4 skill/工具可理解性审计收口
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1777,6 +1931,7 @@
 - **踩点**：**改工具描述前必须先 grep 测试断言** —— 上述 7 条短语被三个测试文件钉死，删了直接红（这次就是靠它发现的）。
 
 #### CV-367 · 故事板强约束 L1–L4（单一放行点 + auto 落地 + 状态自愈 + 老项目迁移）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1792,6 +1947,7 @@
 - **连带修**：`tests/workflow-gate.test.mjs`（假 registry 补 `storyboardFile`；放行类用例改用真实落地，因为「只翻 state 就放行」这条路径已不存在）、`tests/approval-gate.test.mjs`（改断言方向：产线拦截已迁出，加回来会红）、`tests/quality-check.test.mjs` / `filename-consumability.test.mjs` / `text-guard.test.mjs`（只测工具自身行为，顶部关闸）。
 
 #### CV-368 · shotcraft 本地化 P0/P1（逐点取色 / 布局表 / 分组坐标 / 契约分册 / 卡册）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1813,6 +1969,7 @@
   - **B5 字体性能**：等真机 `prepareMs` 基线（没有基线就动打包链等于蒙眼改构建）。
 
 #### CV-369 · 素材就绪门禁 + 卡片素材需求 + 片型配方（"每次临时组织素材"的结构性解法）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -1830,6 +1987,7 @@
 - **未做**：**素材复用跨片**（同一主角/场景图在多个项目复用 —— 资产库已有 `@ref[lib:…]`，但没有"按角色/场景检索"的入口）；**抠图/裁切工具**（会话 #5 用户明确要求过，属能力缺口，需单独立项）。
 
 #### CV-370 · shotcraft 吸收 R3：第二批镜头卡 F1–F10（取证 24/24 通过）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1839,6 +1997,7 @@
 - **取证**：24/24 通过（Q12 批次）
 
 #### CV-371 · SFX 品类 12 个 + 授权账本（shotcraft 吸收 R4）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1847,6 +2006,7 @@
 - **边界**：SFX 仅作选型建议（agent 汇报给用户外部补配），渲染链不消费。
 
 #### CV-372 · BGM 卡点建议器 beat-suggest.mjs（shotcraft 吸收 R5）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P3
@@ -1855,6 +2015,7 @@
 - **涉及文件**：`scripts/beat-suggest.mjs`
 
 #### CV-373 · 渲染看门狗活性语义 + 预览闸门三修（会话6 根因群）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待桌面验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1869,6 +2030,7 @@
 - **测试**：新增回归 2 条（心跳推迟死线 / 0 心跳不回退进度）；全量 2217·2217，smoke 门禁 0 新增红。
 
 #### CV-374 · 风格库分册 style-library.md（30 条纯知识风格行）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1880,6 +2042,7 @@
 - **测试**：新增守卫 `tests/style-library.test.mjs` 4 条（头部计数对账 / 4 列齐全 + 5 项 tokens 顺序 / 三表防撞 / 四处接线在场）；`skill-catalog` 的 `CREATION_BOOKLETS` 登记。定点 8 套 66/66 全绿；全量 smoke 名单外新增红 0（唯一红为并行会话在途的 `generate.test.mjs` 落点断言，与本条无关）。
 
 #### CV-375 · 资产名唯一准入点（CR-01/CR-02 收敛 8 份白名单）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0（本机任意文件外传）
@@ -1900,6 +2063,7 @@
 - **已知遗留**：全量 `test:smoke` 在本沙箱复跑出现 **311 条 `hookFailed EPERM` 假红** —— 沙箱 Security Center 开始拦截测试 `finally` 里的临时目录删除（连工作区内 `.tmp-smoke/**` 都拦，单跑同样红，`CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD` 在这一层无效）。**源码已是终态且曾跑出 0 失败**，需用户在自有终端复跑确认。
 
 #### CV-376 · `@ref`/`shotRefs` 解析容错（资产名 · 截断标题 · sbRef）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B16，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1（一次分镜失败连带 5 个节点标红；转录实测 18 次）
@@ -1919,6 +2083,7 @@
 
 
 #### CV-377 · CV-040 收口主线：AudioTimeline 统一模型 + 止血 + 多镜从零装配
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B17，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0（计划正本 [audio-timeline-plan-20261028.md](./plans/audio-timeline-plan-20261028.md) §1.4 三组 ffmpeg 实测，基线取证见 [audio-baseline-20261028.md](./plans/audio-baseline-20261028.md)）
@@ -1930,6 +2095,7 @@
 - **涉及文件**：`src/audio-timeline.ts`（新）/ `src/audio-compose.ts`（新）/ `src/compose.ts` / `src/remotion/manifest.ts` / `src/contracts/canvas.ts` / `tests/audio-hints-doc.test.mjs`（新）/ `tests/compose-audio-pad.test.mjs`（新）/ `tests/audio-compose.test.mjs`（新）/ `tests/compose.test.mjs`（79-89 唯一例外断言 + CV-138 env 化）/ `scripts/probe/*`（新）。
 
 #### CV-378 · 时间轴只读音频轨 + 混音面板 + 导出前预检 + 音频抽屉
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B17，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1（D-04 只读首版；拖拽留 S3b）
@@ -1938,6 +2104,7 @@
 - **涉及文件**：`src/client/canvas/CanvasTimeline.tsx` / `src/client/AudioMixPanel.tsx`（新）/ `src/client/AudioDrawer.tsx`（新）/ `src/client/styles-audio.ts`（新——styles.ts 棘轮零增长）/ `src/client/StudioFrame.tsx`（+7 行接线，file+func 棘轮显式登记）/ `src/compose-selection.ts`（nodeAudioOverride / buildNodeAudioTimeline / composeAudioPrecheck 客户端+Host 共用）/ `src/compose.ts`（装配读节点覆盖）。
 
 #### CV-379 · 声音规划第 2d 步 + audio-first / beat-editing 分册 + mv-production skill
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B17，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1（把「纪律」换成「可填参数」；S4）
@@ -1946,6 +2113,7 @@
 - **涉及文件**：`skills/canvas-studio-creation/SKILL.md` / `skills/canvas-studio-creation/references/audio-first.md`（新）/ `skills/music-prompt-writing/references/beat-editing.md`（新）/ `skills/mv-production/`（新）/ `src/host-tools.ts` / `src/skill-catalog.ts`。
 
 #### CV-380 · 本地节拍分析 + analyze_beats / snap_cuts_to_beats 工具（G2 机器验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B17，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1（从「能配乐」到「能对拍」；S5）
@@ -1954,6 +2122,7 @@
 - **涉及文件**：`src/beat-analyze.ts`（新）/ `src/host-tools-audio.ts`（新）/ `src/host-tools.ts` / `src/generate.ts` / `src/contracts/canvas.ts` / `src/param-guard.ts` / `src/tool-presentation.ts` / `tests/beat-analyze.test.mjs`（新）/ `tests/tool-registry.test.mjs` / `scripts/probe/beat.probe.mjs`（新）。
 
 #### CV-381 · music_generation variants 多版抽卡（D-06 仅显式）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B17，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1962,6 +2131,7 @@
 - **涉及文件**：`src/host-tools.ts` / `src/host-tools-audio.ts` / `src/generate.ts`。
 
 #### CV-382 · 资产交付内存基线 + CR 台账对账（CR-004 收口 + 双轨统一 + 机器闸）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -1971,6 +2141,7 @@
 - **涉及文件**：`src/routes.ts`（净 +39 行，文件 3495→3531 / registerStudioRoutes 2833→2868 棘轮显式登记）/ `tests/asset-range.test.mjs`（新）/ `tests/code-review-ledger.test.mjs`（新）/ `scripts/probe/asset-memory.probe.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）/ `docs/code-review/README.md` + `docs/code-review/01-host-core.md`（对账）。
 
 #### CV-383 · 渲染窗口一单一个：复用必挂（真机取证 + 探针复现）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -1996,6 +2167,7 @@
 ---
 
 #### CV-385 · 渲染能力基准 bench 收口：10/10 出片 + S1/S2 压力 + 02S 真 Skia 冒烟（2026-10-30~31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：独立子工程 `scripts/capability-bench/`（产品代码零改动，新代码只在本目录）：bundle → 同源静态服务（`/pool/<key>` 整段路径）→ Electron（`renderMediaOnWeb`，OpenH264）→ H1~H5 硬检查 → contact sheet → verdict/README/INDEX/DECISIONS。**十项能力轴 10/10 出片全绿**（`--repeat=2` 逐帧 md5 全等，772/772）；**S1 压力**三采样点（1080p60×300f / 1080p30×1800f / 720p30×5400f，4–6ms/帧，RSS≤151MB；60fps 容器填充为 H3 校准项 D21）；**S2 稳定性**三窗口连渲 15/15 CV<20%，节流档（BENCH_ALLOW_THROTTLE=1）不减速 ⇒ web-renderer 帧步进不依赖 rAF；**02S 真 Skia 冒烟**：CanvasKit wasm 直绘 `<canvas>` 出片 ✓（SKSL runtime shader 逐帧驱动），rn-skia 组件层不出画 ✗（2.x 要 React 19 内部；锁 1.12.4 + react-native-web 别名 + AssetRegistry 垫片 + fs:false + pool 整段路径 locateFile + JSX 小写成宿主元素陷阱；A6 ref-vs-capture 竞速记降级）。
 - **四个新实证的渲染器边界**（A1~A10 归因表）：① `mix-blend-mode` 无视（A9）；② clock 的 conic mask 无视 + flipX 的 perspective 丢失（A2，clip-path polygon 修法已演示）；③ html-in-canvas 全量捕获丢 WebGL canvas 内容，默认模式反而正常（#01 证据）；④ `useVideoTexture` 的 `<video>` 永不 loaded（28s delayRender 超时）。
@@ -2004,26 +2176,31 @@
 - **提交**：`eeafc4f2f0` / `7bb727d82b` / `b3690cdf34` / `47ac208ffd` / `0aa9ce81d6` / `69a3a73a3f`。
 
 #### CV-386 · CSR 渲染写法护栏：三条硬约束机检落守卫测试（2026-10-31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：`tests/csr-writing-guard.test.mjs` 把 bench 实证的三条 CSR 写法硬约束变成机检：① `<Audio>/<Video>` 禁从 `remotion` 核心包导入（web-renderer 抛 `Html5Audio is not supported`，必须 `@remotion/media`）；② `backgroundImage: url()` 必须配 preload/delayRender 配对检查（web-renderer 不等待图片加载，首帧黑场）；③ 逐文件扫描 src/remotion 违例即红。`AGENTS.md` 编码约束同步 +3 行。
 - **提交**：`b446d6958d`。
 
 #### CV-387 · 转场收口：clock/flipX 坏点修复 + zoomBlur/linearBlur/crossWarp 三近似（2026-10-31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：① clock 转场改 `clockFanPolygon`（12 点起顺时针、半径 150% 的 clip-path polygon，绕开 conic mask 被 web-renderer 无视的 A2 边界；分摊步进 ≤10°/段）；② flipX 的 `perspective()` 被丢弃（rotateY 呈平扁化）⇒ 改 `scaleXPercent` 正弦/余弦模拟翻转挤压；③ TrackTransitionOverride 新增 `filter` 字段承载 **zoomBlur / linearBlur / crossWarp** 三近似（参数取 bench 实测值；manifest EFFECTS +3），rotateY 恒等化（`scaleXPercent:1`）；`Transition.tsx` 消费 scaleXPercent+filter、删 perspective/preserve-3d。skill effect 全表同步。棘轮 timing.ts 1315→1384 显式登记。
 - **提交**：`79594c49fa`（坏点修复）/ `441748566d`（三近似）。
 
 #### CV-388 · chart 数据图表轨 + source:'timeline' 时间线数据源（2026-10-31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：① **ChartTrack**（variant bars/dual、labels 1–32、值非负且非全零、dual 必须给 lineValues；`components/Chart.tsx` 纯帧函数柱状+折线+错峰生长：stagger=min(8,dur×0.02) / grow 26 / line reveal 30%→55%；resolveAnimatedStyle+box+useFontFamilyStack 复用既有排版底座）；② **source:'timeline'**：数据从 video 轨 ffprobe 真值推导（`chart-data.ts` 纯函数：按 startFrame 排序、每镜时长秒数 2dp、dual 折线=累计、labels 自动 镜1..n；Root 传参，组件不接触 manifest），与内联数据互斥、无 video 轨拒收。skill manifest-contract chart 节同步。棘轮 manifest.ts 1928→2157 显式登记。
 - **提交**：`9b0942f93d`（chart 轨）/ `a1c73c6d00`（timeline 源）。
 
 #### CV-389 · caption 词级卡拉OK字幕轨（能量谷对齐 ±1–3 帧）（2026-10-31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：① **`word-timing.ts`** 离线能量谷对齐纯函数：10ms RMS 包络 → 语音门控（12%）→ 字间谷检测（深度 <35% 峰值、最小间隙 80ms、平谷取尾部=下一字起音点）→ 比例间隙内插（最大余数法）→ 均匀窗兜底；实测 ±1–3 帧 @30fps；② **`components/Caption.tsx`** 三态卡拉OK（未读/当前/已读，charStyle）+ measureText 模块级同步折行 + 自播旁白（Audio 从 `@remotion/media`）；③ 显式 `words` 逃生口（与能量谷推导二选一，长度必须 = countSpokenChars）；④ 音轨构成计入出声源（summarizeManifestAudio）；⑤ SKILL.md 边界句改写（「不做词级字幕对齐」→「词级走 caption 轨：能量谷推导或显式 words；句级硬切仍走 textCard」）+ `references/subtitle-timing.md` 词级章节；⑥ **另交付 D1**：`docs/plans/TTS-词级时间戳接口需求-20261031.md`（方案 A `words`+audioDuration / 方案 B `/align` 端点，精度 ±66ms，转交后端）。
 - **提交**：`f41676d34d`（caption 轨）/ `7a11c5b307`（D1 文档）。
 
 #### CV-390 · audioViz 分频段模式 bandSplit（六级低通级联）（2026-10-31，REQ-034 延伸，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B18，依据锚点见台账 §19.1/§19.2）。
 
 - **内容**：`bandSplit` + `bandColors`：BAND_WINDOWS_AT_48K 六级 box 低通级联（窗口随采样率缩放）、前缀和低通 + 残差 RMS 拆低/中/高能量、自峰值归一化；柱高取各自频段包络（`bandWaveformBars`，取样契约与 waveformBars 同构 + smoothed 泛型 EMA），柱色按频段六色族（低蓝→高红，bench #06 实测）；仅 bandSplit 时走频段路径 ⇒ **老 manifest 解码路径一字不变**；line 模式/gradient 同给告警。
 - **提交**：`32163fc0d9`。
@@ -2042,6 +2219,7 @@
 ---
 
 #### CV-392 · image 轨 sourceRect 精灵图子区域裁切（REQ-036 R-2）（2026-10-31，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **需求**：REQ-036 爆款复刻 R-2 —— 精灵图（Sprite Sheet）物料复用：一张拼图素材切多块，多条 image 轨各取一格（方案 `docs/plans/REQ-036-爆款复刻-需求转化计划-20261031.md` §二.R-2）。
 - **语义**：`ImageClipTrack.sourceRect: {x,y,w,h}` 百分比 0–100（与 box 同口径），四字段全必填；圈出的子区域按既有 `fit` 语义（cover/contain/kenburns）铺进轨道层 ——「把圈出的区域当作这张图」；不写 = 整图，**老 manifest 逐帧不变**。
@@ -2053,6 +2231,7 @@
 - **涉及文件**：`src/remotion/sprite.ts`（新）/ `src/remotion/manifest.ts`（+11）/ `src/remotion/components/ImageClip.tsx`（65→106 行）/ `tests/sprite-rect.test.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）/ `scripts/capability-bench/compositions/11-sprite-rect.tsx`（新）+ `specs.mjs` + `compositions/entry.tsx` / 文档四处。
 
 #### CV-393 · textCard `fx:'outline'` 镂空描边字（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **需求**：REQ-036 复刻复盘批 —— 甜品复刻会话实测：品牌站大字常态是镂空描边（填充透明 + 粗描边），引擎无现成档位。
 - **语义**：`textCard.fx: 'outline'` = 填充透明（`textFill: 'transparent'`）+ 奶油白 6px 粗描边（`textStroke: '6px rgba(240,243,247,0.96)'`）+ 阴影。描边色 v1 固定 —— `currentColor` 会随填充一起变透明，故给具体色值；要别的描边色走 accentColor 场景外自绘（已知边界，契约写明）。
@@ -2063,6 +2242,7 @@
 - **涉及文件**：`src/remotion/manifest.ts` / `src/remotion/timing.ts` / `src/remotion/components/TextCard.tsx` / `tests/fx-outline.test.mjs`（新）/ `tests/file-size-guard.test.mjs`（棘轮登记）。
 
 #### CV-394 · `image_matting` 纯色底抠透明底工具（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **需求**：REQ-036 复刻复盘批 —— 生图模型（Krea2/Qwen）不吐 alpha，提示词「透明背景」只得白底/纯色底；agent 手搓伪透明拼贴在成片留棋盘格残边。
 - **语义**：内置 ffmpeg `colorkey` 滤镜把单一底色转真 alpha：`key`（white/black/green/magenta/#RRGGBB，缺省 white）+ `similarity`（抠取宽度 0–1，缺省 0.28，底色不纯提 0.35–0.5）+ `blend`（边缘羽化 0–1，缺省 0.12）。产物 `<原名>-alpha.png` 落源图同目录，image 轨直引；标准链路 = 生图提示词固定「纯白背景」→ 本工具 → `inspect_image mode:"profile"` 核 colorType=6。边界 = 只抠单一底色，毛发/透明玻璃等软边题材质量一般。
@@ -2073,6 +2253,7 @@
 - **涉及文件**：`src/image-matting.ts`（新）/ `src/host-tools.ts`（+51）/ `src/param-guard.ts` / `src/tool-presentation.ts` / `tests/image-matting.test.mjs`（新）/ `tests/tool-registry.test.mjs` / `tests/file-size-guard.test.mjs`（棘轮登记）/ 文档三处。
 
 #### CV-395 · viral-remake 动效拆解复盘：元素列 + 独立轨铁律 + 缓动速查（REQ-036 复刻复盘批）（2026-11-02，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **需求**：REQ-036 复刻复盘批 —— 甜品复刻会话 v1-v7 实测翻车点：只拆版式不拆运动，复刻退化成静态卡轮播（PPT 感）；缓动全缺省 linear 没有生命感。
 - **语义**：① 拆解表五列 → **六列**，新增「元素与动效」列（逐元素回答：什么在动 / 怎么动（方向·幅度）/ 什么曲线 / 和谁联动）；② **铁律：画面上每个会动的元素 = 一条独立轨**（禁整帧烤图 fade 轮播；烘焙底图只允许用于参考片确实完全静止的版式底，其上仍拆可动元素）；③ **缓动速查 §3.5**：弹跳 backOut / 柔滑 spring / 快出缓停 easeOutCubic~Expo / 离场 easeIn / 往复 easeInOut / linear 仅机械运动（人物/产品/标题禁用），每条 animate 显式选档；④ 透明素材与镂空字链路入映射表（CV-393/CV-394 消费端）。
@@ -2099,24 +2280,28 @@
 - **涉及文件**：`src/contracts/billing.ts`（新）/ `src/billing-state.ts`（新）/ `src/client/refresh-signal.ts`（新）/ `src/client/billing-store.ts`（新）/ `src/client/billing-copy.ts`（新）/ `src/client/BillingPage.tsx`（新）/ `src/routes.ts` / `src/drama-management.ts` / `src/account-format.ts` / `src/generate.ts` / `src/errors/catalog.ts` / `src/index.ts` / `src/brand-copy.ts` / `src/client/api.ts` / `src/client/StudioFrame.tsx` / `src/client/UserCard.tsx` / `src/client/CreditsCard.tsx` / `src/client/styles.ts` / `tests/billing-{contract,state,routes}.test.mjs`（新）/ `tests/account-format.test.mjs` / `tests/user-identity-switch.test.mjs` / `tests/visual-tokens.test.mjs` / `tests/file-size-guard.test.mjs` / `docs/api-probe/billing-20261102/`（新）。
 
 #### CV-397 · media_probe 媒体探针工具（REQ-036 C3）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：拆解表头部需要时长/fps/音轨，响度对齐需要参考片 LUFS —— 此前散装在 `ffmpeg -i` 与 ebur128 临场拼命令里（SKILL §4 靠临场拼命令）。新模块 `src/media-probe.ts`：`parseContainer`（Input 行 tag 逗号表**优先取与扩展名一致**的 tag，mp4 文件报 mp4 而非链头 mov）/ `parseFpsFromVideoLine`（`30 fps` / `29.97 fps` / `30000/1001 fps` 三形态）/ `parseMediaMeta`（分辨率与 hasAudio 复用 `parseFfmpegStreams`，不复制实现）/ `probeMedia`（statSync 前置拒收 + 响度仅在 hasAudio 时测，失败 `audioLoudnessLufs: null` + 原因不阻塞）。**刻意不依赖 ffprobe**：随包分发只有 ffmpeg 单二进制，ffprobe 在打包产物里不存在（开发机 PATH 上有也不能当产品依赖）。第 39 号工具（REQ 文档写 38 系成文时 teardown_store 未占号，按惯例顺延），壳在 `host-tools-remake.ts`（host-tools-artifact 同款棘轮先例）。
 - **测试**：`tests/media-probe.test.mjs` 9 条 —— 解析纯函数用真机 ffmpeg stderr 样本；真 ffmpeg E2E（lavfi 音视频样本断言 duration/fps/lufs 范围；无声样本断言 hasAudio=false + loudnessNote=无音轨；文件不存在/非普通文件守卫）。
 - **真机验收**：对真实参考片探一次，数值与手拼 ffmpeg -i 一致。
 
 #### CV-398 · evidence_grid 证据网格工具（REQ-036 C2）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：拆解靠 `inspect_image` 逐帧轮询（甜品会话实测几十次调用才拼出一段）且画面与口播对不上。新模块 `src/evidence-grid.ts`，一次调用产出「时间标注网格图 + 结构化清单 JSON + 实测切点」。管线四个非显然点全部真机实测钉死：① **`select` 自适应间隔采样**（`isnan(prev_selected_t)+gte(t,prev_selected_t+I)`）保留**实测帧 PTS** —— `fps` 滤镜会把 pts 重写成整点，实测弃用；② `showinfo` 跟在 select 后回读每个被选中帧的 pts_time，JSON 清单与图上烧录同源；③ **`-vsync 0` 必须**：image2 缺省 CFR 会把首页复制到每一页（实测 14 格出了 3 张相同页）；④ tile 满页即出一帧 + EOF 冲刷残页。`drawtext` 烧 `%{pts\:hms}` 时间戳 + 台词词标签（半开窗口 `gte*lt` 防帧落词尾时两词标签重叠）；`drawbox enable` 精确命中采样帧（实测 3.9–4.1 窗口只框中 4.000 格）。切点检测**复用 teardown-verify 同一 `findSwitchPoints`**（导出 `teardownFingerprintOf` 供证据目录同源指纹，不复制实现）；`transcriptPath` 可选（ASR 词级转写 schema §2.3 形状校验，不传即纯时间戳网格 —— 与后台 ASR 互不等待）；宽窄两级采样（缺省整片 1s/格，密集段传 passes 0.1–0.3s/格二次调用）；产物落 `dshHomePath('canvas-studio')/evidence/<指纹>/`（teardown_store 同源）+ `evidence-grid.json`（每格 timestampSec/page/row/col/label）；单网格 ≤48 格自动分页、总量 ≤480 格显式报错。**随包新增全量 Noto Sans SC Regular TTF（10MB，`assets/fonts/noto-sans-sc-regular.ttf`）**：drawtext 需实体字体文件，woff2 不适用（REQ §2.3 定死方案；源即 build-font-subset 的 `.cache/font-source` 同一份 TTF）。
 - **测试**：`tests/evidence-grid.test.mjs` 13 条 —— 纯函数双向变异（采样展开含浮点下标乘法/分页行列/词标签/滤镜链 argv 顺序/showinfo 解析）+ 真 ffmpeg E2E（红蓝绿 3×3s：19 计划格实测 18（10fps 末帧 8.9s、9.0 tick 无帧如实少一格）、2 页、页文件名带页码与时间范围、cutPoints 与 teardown 同源 deepEqual、转写词标签进清单、markCuts=false 出纯时间戳网格）+ 产物目检（切点红框落格正确）。
 - **真机验收**：对固定样本出 2 页网格 + 与 verify_teardown 回核口径一致（同一检测函数已保证）。
 
 #### CV-399 · download_video 视频下载工具（REQ-036 C1）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：viral-remake 前置自检「链接 → 让用户给文件，不承诺抓取」，用户拿抖音/B站链接说「复刻这条」第一步就断。新模块 `src/video-download.ts`：`classifyVideoUrl`（http/https + 主机后缀白名单：douyin.com/iesdouyin.com、bilibili.com/b23.tv、youtube.com/youtu.be/youtube-nocookie.com；其余显式报「暂不支持该站点」）/ `classifyDownloadFailure`（登录/不可用/超时/网络/未知五类可读文案）/ `buildYtDlpArgs`（--no-playlist 单条、mp4 优先格式链、`--print after_move:filepath` 拿产物路径）。**yt-dlp 二进制运行时按需下载**：版本钉死 2026.10.26 + 官方 SHA2-256SUMS（darwin universal2 / linux x64+arm64 / win32 x64+arm64 五份 checksum 随版本入库），落 `dshHomePath('canvas-studio')/bin/yt-dlp/<版本>/`，**缓存命中也复检 sha256**，不进安装包（体积+合规）；下载失败给手动放置指引（URL+目标路径+期望 sha256）。产物走 `saveLocalAssetBytes` 唯一入口（进资产历史）+ 画布视频节点（kind=video、frameSizeOf 实测框、与 compose 成片节点同形态）；`expectedDurationSec` 产物校验（容差 max(2s, 20%)，防错下成图集/短预告/合集）；yt-dlp 执行复用 runFfmpeg 通用 runner（同一份实现不复制），`ytDlpPath` 可注入桩测。第 41 号工具；工具描述含版权提示（仅用于自备参考素材的拆解复刻，复刻产出默认替换原素材）。v1 边界：不带 cookie/登录态、不做直播流与合集批量。
 - **测试**：`tests/video-download.test.mjs` 11 条 —— 白名单三站+短链域、非法/非白名单反向变异、平台 checksum 配齐守卫（防钉版本忘配校验和）、argv 形态、错误五分类、容差函数 + 桩 yt-dlp 全链路三例（下载→探测→落资产+节点 / 时长校验失败 / 需登录），无网络依赖。
 - **真机验收**：下载一条 B站公开视频 → assetPath 被 media_probe / evidence_grid / 抽帧链路直接消费。
 
 #### CV-400 · manifest 相对锚定 anchor 字段（REQ-036 C4）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B19，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：manifest 事件锚绝对帧 —— 变体替换文案后词数变化 → 能量谷重排 → 时机漂移只能人工重调（SKILL §5 自曝），是「批量裂变」质量不稳的根因。新纯函数模块 `src/remotion/anchor.ts`：`TrackAnchor`（ref/phrase/word?/from?/offsetFrames?）；`groupWordsByPhrase`（caption text 按句末标点 `。！？!?；;…` 与换行分句，词窗口按句分组）；`explicitWordWindows`（显式 words 轨内相对帧 → 绝对帧，长度不符回退 null 同 Caption 口径）/ `envelopeWordWindows`（能量谷包络 → 绝对帧）；`resolveAnchor` 全分支 fail-fast（phrase/word 越界错误含 ref 与索引，**绝不静默回退 0 帧**）；`collectAnchorIssues`（宿主 validateManifest 与客户端**同一份实现**：anchor 与 startFrame 互斥 / ref 必须是 caption 轨 / 被锚轨必须带 src / phrase·word 越界，全部硬失败）；`applyAnchorResolution`（组合期把锚字段折算成数值 startFrame = 绝对帧 − 轨道起点，anchor 字段删除，渲染器只认数字；无锚轨道原对象引用零拷贝）。客户端接线：Root.tsx `useAnchorResolution`（无锚零开销逐像素同路；有锚等词级 timing 就绪再渲，`useEnvelope` delayRender 闸；解析失败 throw 渲染硬失败）；包络解码从 Caption.tsx 抽出 `components/audio-envelope.ts` 共用（同一份实现不复制）。manifest 集成：KNOWN_ANIMATE/DRAW/COLOR_SHIFT_KEYS +anchor + 子键契约外扫描；scaffold_manifest 描述 + manifest-contract.md §anchor 登记（REQ §4.3）。`timingSegments` 双闸不动（拆解段仍是绝对时间基准）。
 - **测试**：`tests/remotion-anchor.test.mjs` 12 条 —— 分句分组/显式与包络双路/resolveAnchor 全分支（start/end × 整句/单词 × 正负 offset × 越界）/validateManifest 五类硬失败（互斥/ref 缺/无 src/phrase 越/word 越）/applyAnchorResolution 折算与零拷贝 + **双版 manifest 断言**（同一 anchor 结构 + 5 字 vs 11 字两套文案 → 事件均落对应词窗口 ±2 帧内，REQ §4.4 验收的 node 层等价，走与浏览器同一条 applyAnchorResolution 管线）。**偏差登记**：真 TTS 双版渲染的 bench 探针 = 真机验收项（两条 TTS 资产需真机自产录制）。
@@ -2151,26 +2336,31 @@
 - **验证**：变异验证（单点删 adopt_canvas_as_storyboard → 精确变红）；6 门禁文件 53/53 绿。
 
 #### CV-405 · download_video 标参考 + §07 用户参考登记纪律（REQ-037 R2/R5）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B20，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-037 批次 1。**R2**：`download_video` 产物节点自动 `isReference:true` + `referenceRole:'source'`（新增角色，`contracts/canvas.ts` 联合类型扩展）——链接下载的参考视频不标身份就进不了素材托盘与 §07 引用链（立项痛点：首页发视频链接，画布/故事板均无处回看）；工具回执与描述同步「已标为参考素材」。**R5**：`write_storyboard` 的 assets 段口径与参数描述补「**用户提供的参考素材必须登记** `source:"user"` + `ref:{kind:"canvasNode",id}` + `status:"ready"`，漏登 = 用户找不到自己给的素材；口述文字参考先落便签节点再引用」；总纲第 4 步补一行指针；`toolchain.md` 新增 §「参考素材登记」三条口径（§07 是引用不是副本、节点已标身份直接引用、登记必写 source:user）。
 - **验证**：corepack yarn typecheck 通过；行为验收并入 REQ-037 桌面验收窗口（首页链接 → download_video → 素材托盘可见 → §07 出现 source:user 条目）。
 
 #### CV-406 · 参考身份泛化 + 素材托盘四分区 + list_references 扩（REQ-037 R1）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B20，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-037 批次 2。**客户端**：`ReferenceTray` 升级素材托盘——图片/视频/音频/文本四分区（空分区不渲染），每项带查看（图预览浮层 / 音视频播放浮层 / 文本托盘内展开收起）、角色 chip（ROLE_LABELS 新增 `source`=源参考）、强度滑块、「引用到对话」与「移除」；新 `onOpenNode` 回调接 StudioFrame 既有播放/预览浮层。**托盘入口重新启用**：2026-10-08 的关闭拍板由 REQ-037（2026-11-03）正式反转，`StudioFrame.referenceNodes` 数据源去掉 `kind==='image'` 限制（所有 `isReference` 节点进托盘）。**Host 侧**：`list_references` 泛化到四类节点（references 每项加 `kind`；**filename 只对图片类要求**——视频/音频/文本节点用 url 直连，不再误导 agent 跑 upload_image）；空态与渲染措辞同步「可用参考素材」。
 - **验证**：corepack yarn typecheck 通过；真机验收 = 素材托盘四分区各放一件素材查看/播放/展开 + 引用到对话。
 
 #### CV-407 · 附件点击再落（待落画布条）（REQ-037 R4）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B20，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-037 批次 3。**反转 2026-09-05（附件自动标参考落卡）与 2026-09-13（静默落卡）两个拍板**（2026-11-03 REQ-037 拍板）：项目内发附件**发送时不再自动落卡**——`divertAttachments` 改为 `stashLobbyFiles` 登记进暂存（复用 lobbyStash 机制与文件句柄表，零第二套登记实现），用户点「待落画布」条的「落进画布」才落。**占位说明进正文**：agent 必须知道「附件存在但未落卡」与提醒落卡的纪律（`LobbyStashResult` 新增 `acceptedNames` 支撑准确名单；未收件——类型不支持 / 超限额——名单一并进正文）。**UI**：StudioFrame 中栏画布上方「待落画布」条（暂存为空不渲染），「落进画布」按钮经新 `LOBBY_LAND_STASH_EVENT` 交 index.ts `landLobbyStash`（失败件自动留在条上，落成即消失）。**首页路径不变**：发送第一句话仍自动落暂存素材（claimAndSend 内 landLobbyStash 顺序闸不动）。
 - **验证**：typecheck 通过；`tests/lobby-stash.test.mjs` CV-261 行为门禁按新契约改写（旁路必须复用暂存 / 发送时禁止自动落卡 / 事件消费 / 占位说明），11·11 绿；全量 smoke 见 STATUS 头注。
 
 #### CV-408 · 图片链接落参考节点 + 故事板 §07 引用失效标红（REQ-037 R3/R5）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B20，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：REQ-037 批次 4。**R3**：`upload_image` 收到 `http(s)` 外链时自动补一个画布参考图片节点（`ensureExternalImageNode`：`isReference` + `referenceRole:'image'`，Drama filename 直带；按「精确 URL 或 URL 末段」双口径查重——产物 URL 与重复导入不建新节点；本地路径不在此列）——治「链接参考三处无痕」（画布 / 素材托盘 / §07 登记链路随即可用）；工具描述与 toolchain.md 行同步。**R5 对账**：`renderStoryboard` 新增 `canvasNodeIds` 选项（routes 侧 `storyboardCanvasNodeIds` 读画布提供，读失败降级为不对账不阻断），§07 的 `canvasNode` 引用指向已删除节点时就地渲染「引用失效：画布节点已删除」红标（`.pill.stale`，双主题 `--red`/`--red-soft`）——「账面还在、实物没了」的漂移必须可见。
 - **验证**：typecheck 通过；真机验收 = 发图片链接 → 画布出节点进素材托盘；删除 §07 引用的节点 → 覆盖层标红。
 
 #### CV-409 · ShapeTrack.pivot 旋转轴心（指针/仪表盘/偏心自转）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B21，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：`ShapeTrack.pivot`（50,50 缺省 = 盒中心）；轴心静止落点 = box 中心 + (pivot−50)% × 盒尺寸；path 轨轴心按画布百分比。`shape-geometry.ts` 新 `pivotOriginStyle` 纯函数；`Shape.tsx` 三分支接线；manifest.ts 撞 2187 行棘轮 → `lintZOrder` 拆到新文件 `manifest-lint.ts`。解锁指针甩弧/罗盘偏心自转/仪表盘。
 - **验证**：测试 `tests/remotion-shape-pivot.test.mjs` 含反向变异（守卫关掉必须变红）；真机分项验收通过（pivot 三帧核对）。
@@ -2181,6 +2371,7 @@
 - **验证**：skill 守卫测试全绿（catalog 快照深等 / platform-meta / progressive-disclosure）；真机整片验收 = 六大体裁路线 §一 0.1，通过后 0.3 转正。
 
 #### CV-411 · chart line 独立折线 + dataCard countUp 数位滚动（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B21，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：chart `variant:'line'` 独立折线（区别于 bar）；dataCard `countUp` 数位滚动——新纯函数 `src/remotion/count-up.ts` 的 `countUpTextAt`（45 帧缓出、前后缀/小数位对齐），TextCard 接线。
 - **验证**：测试 `tests/chart-line-countup.test.mjs`；真机分项验收通过（新四卡跑通）。
@@ -2191,11 +2382,13 @@
 - **验证**：测试 `tests/remotion-callout-reveal.test.mjs`（P3 时 3 用例红系测试断言写错已修：缺省时长 18 帧、spotlight 半径 74.375%）；真机负例补刀 = anchor 越界必须拒收（校验拒收已验）。
 
 #### CV-413 · 技能广场「体裁编排」分类 + 编排壳去重瘦身（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B21，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：`SKILL_CATEGORY_IDS` 加 `'format'`（体裁编排，置于 spec 前），编排壳挪组换 compass 图标——解决技能广场科普双 skill 同类重叠；explainer-format-director 去重瘦身。
 - **验证**：skill-catalog 快照深等 + platform-meta 守卫绿（改 catalog/yaml 后先 `yarn build` 再跑）。
 
 #### CV-414 · 科普复盘收尾批（指示优先/音色澄清/1:1 翻转）（2026-11-03，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 B21，依据锚点见台账 §19.1/§19.2）。
 
 - **详情**：总纲 `canvas-studio-creation/SKILL.md` 新增「用户明确指示压过项目预设/配方缺省」原则；`code-driven-explainer/SKILL.md` 音色人格澄清（未指定不得从资产库自挑）+ 草稿先行 + 预算前置（12206B / 闸 12288B）；`explainer-patterns.md` §流程纪律 + 三结构模板；`providers/types.ts` CV-136 注释翻转（1:1 拍板支持，接入属路线阶段 2.1）；新建 `docs/六大体裁推进路线-20261103.md`（剩余五体裁 SSOT，含科普会话实录复盘四问落地：references 按需读 / 机器判据与审美边界 / 草稿先行 / 音色澄清）。
 - **验证**：`yarn build` 绿 + skill 守卫 9 测试 2669·2669 全绿（status-shape 闸含）。
@@ -2265,6 +2458,7 @@
 - **验证**：`yarn check` 全绿；真机整片验收 = 阶段 3.4（连续两集）。
 
 #### CV-427 · animate 窗口静态校验（2026-11-04，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 拍口径，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -2293,6 +2487,7 @@
 - **回归反证（2026-11-09，`9853fa28`，状态不改，但列为待修）**：任务书 §2 直接点名 `brand-promo-video-generator`，模型在事件 39 自述「doc explicitly declares brand-promo-video-generator, load it」后**整场未加载 `brand-format-director`**（skill 加载序列 6 个无该壳），定向三问退化为写死答案 + `confirm_intent_card` 复述。v1 场「点名体裁仍先加载壳」的正例未在「点名 executor」这一形态下复现 ⇒ 消解句 / executor 回指对**点名 executor** 的入口覆盖不足，改法见台账 §17 P0-2。
 
 #### CV-430 · 验收结论传递：pitfalls / verification 分册 + 项目级 lessons（2026-11-04，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 拍口径，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P0
@@ -2320,6 +2515,7 @@
 - **验证**：`yarn check` 全绿；文件大小守卫绿（棘轮已登记）。
 
 #### CV-433 · ML-10 改屏幕时间口径 + ML-04 往复豁免按可见幅度收紧（2026-11-04，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P2
@@ -2338,6 +2534,7 @@
 
 
 #### CV-435 · 读图能力恢复：网关模型行 image 声明 + 视觉禁令反转（2026-11-04，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -2364,6 +2561,7 @@
 - **验收补记（2026-11-09，`9853fa28`）**：**D6 便利层真机生效** —— `list_references` 回执 5 张图逐条带「本地图 `assets/<uuid>.png`」并明示「不必再 bash ls 探测」；模型随后 34 次 `read_image` 全部直接给 `assets/` 路径，全会话未为找图跑过一次 `bash ls`。md 任务书也落在「画布文本节点（2）」分区，四分区托盘读回可用。边界：`video2vl` 保底口径 / `image_matting` 措辞本场未触发。
 
 #### CV-438 · B-2 #11 运动口径统一：trackMotionFeatures 单源（2026-11-05，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 波1，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -2390,6 +2588,7 @@
 - **验收补记（2026-11-09，`9853fa28`）**：**pending 事实桥真机生效** —— 渲染回执「数据溯源：事实表有 2 条 pending（未核源）事实：…前 2 条 claim… pending 事实不得进成片（P-17）」；模型把「附件内嵌英文文案 + IIAC 奖项徽章」「门店 JEWEL / 营业时间 / 地址」标 `status:"pending"`，用 `sourceRect` 裁掉英文残字、深蓝色块盖住信息卡，文案一律不引用，交付卡复述为未决项。观察期 warning 口径（不升 error）噪声可接受。边界：本片无 chart / dataCard，`dataSource`/`baseline` 两半未触发。
 
 #### CV-441 · B-5 机制补完：P-02 / P-03 / P-05 / P-16（2026-11-05，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 拍口径，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1
@@ -2407,6 +2606,7 @@
 - **验收补记（2026-11-09，`66dae44d` 品牌宣传第一版）**：六壳工程纪律节三要点在真机全部落地 —— 三层取证层级（`read_image` 看图为主、`inspect_image` 只定位数值、`image2vl` 未当事实）、交付前复述未决项（体检 N 条 + lint 落盘清单）、数据判据未用 `pending`/`inline` 冒充事实。段 A「工程改动半边」由此拿到 §5.2 协作循环的真机证据。**保留**：打勾仍按 §5.2 需用户判定报告，本条只证明工程纪律在真机被遵守。
 
 #### CV-443 · 读图线补漏收尾：B-1 漏项清账 + 分册/散点取证层级对齐（2026-11-05，待桌面验收）
+> **2026-11-10 批量桌面验收（记账式清账）**：用户按清账台账 §19 口径整批确认通过（批 拍口径，依据锚点见台账 §19.1/§19.2）。
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
 - **优先级**：P1

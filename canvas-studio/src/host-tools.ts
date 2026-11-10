@@ -3992,7 +3992,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         characters: { type: 'string' as const, description: '可选 JSON：角色设定数组（人读 profile 与机读 gen 分离）' },
         sound: { type: 'string' as const, description: '可选 JSON：声音设计（BGM 参数 + 音效点）' },
         facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
-        assets: { type: 'string' as const, description: '可选 JSON：素材采购单（只存引用）。**`status:"pending"` 会阻断落地**（先备齐再动手）；每条可写 `neededBy`（服务哪些 shot）与 `source`（generated/user/library/stock）；确实不要的标 `"waived"`。**用户上传 / 链接下载的参考素材必须以 `source:"user"` + 画布节点引用登记进来**（用户在故事板回看参考的唯一位置）' },
+        assets: { type: 'string' as const, description: '可选 JSON：素材采购单（只存引用）。**`status:"pending"` 会阻断落地**（先备齐再动手）；每条可写 `neededBy`（服务哪些 shot）与 `source`（generated/user/library/stock）；确实不要的标 `"waived"`。**用户上传 / 链接下载的参考素材必须以 `source:"user"` + 画布节点引用登记进来**（故事板「参考素材」节即渲染这批条目，用户回看参考的位置）' },
         constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
         awaitingLanding: { type: 'boolean' as const, description: '**收尾笔必传 true**：本次写完后，本次规划已没有更多要写的节（该空的节已显式传过空内容）。**confirm 模式**：阻断项清零后 Host 自动结束你的回合、把裁决权交给覆盖层；**auto 模式：阻断项清零后 Host 立即自动落地**（画布出现分镜卡、直接进产出阶段，此后不能再整体重写故事板）。有阻断项时本参数无效（会照常报阻断清单）。中间笔不要传，否则会把自己还没写的节砍在半路' },
       },

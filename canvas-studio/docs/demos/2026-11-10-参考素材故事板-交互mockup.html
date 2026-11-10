@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>小山海 · 品牌宣传片 · 故事板（参考素材节 · 无 JS 锚点版）</title>
+<style>
+  :root{
+    --bg:#111113; --card:#1a1a1e; --card2:#202026; --card3:#26262d;
+    --tx:#e8e8ea; --tx2:#a8a8b0; --tx3:#71717a;
+    --line:rgba(232,232,234,.10); --line2:rgba(232,232,234,.16);
+    --brand:#b8a06a; --brand2:#d4bc8a; --brand-dim:rgba(184,160,106,.14);
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    --ok-dim:rgba(74,222,128,.10); --warn-dim:rgba(251,191,36,.10); --bad-dim:rgba(248,113,113,.12);
+    --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--tx);font:14px/1.6 "SF Pro Text","PingFang SC",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:90px}
+  a{color:var(--brand2);text-decoration:none}
+
+  /* ── 顶条 ── */
+  .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;
+    padding:12px 24px;background:rgba(17,17,19,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .logo{width:26px;height:26px;border-radius:8px;background:var(--brand-dim);border:1px solid var(--brand);
+    display:flex;align-items:center;justify-content:center;color:var(--brand2);font-size:13px}
+  .brand{font-weight:600;font-size:15px}
+  .vchip{font-size:12px;color:var(--tx2);border:1px solid var(--line2);border-radius:999px;padding:2px 10px}
+  .landed{font-size:12px;color:var(--ok);background:var(--ok-dim);border:1px solid rgba(74,222,128,.3);border-radius:999px;padding:2px 10px}
+  .spacer{flex:1}
+
+  /* ── 页签：锚点定位（与现网一致），新增「参考素材」不带编号 ── */
+  .tabs{position:sticky;top:51px;z-index:40;display:flex;gap:6px;flex-wrap:wrap;
+    padding:10px 24px;background:rgba(17,17,19,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .tabs a{font-size:12.5px;color:var(--tx2);border:1px solid var(--line);border-radius:999px;
+    padding:5px 13px;background:var(--card);transition:border-color .12s}
+  .tabs a:hover{border-color:var(--brand);color:var(--brand2)}
+  .tabs a.user{border-color:rgba(74,222,128,.4)}
+  .tabs a.user::after{content:"用户";font-size:10px;color:var(--ok);margin-left:6px;border:1px solid rgba(74,222,128,.35);border-radius:999px;padding:0 5px}
+  .tabs a .no{color:var(--tx3);margin-right:4px;font-size:11px}
+
+  .doc{max-width:1080px;margin:0 auto;padding:0 24px}
+  .eyebrow{padding-top:34px;font-size:12px;letter-spacing:.18em;color:var(--brand);text-transform:uppercase}
+  h1{font-size:26px;font-weight:700;margin:6px 0 4px}
+  h1 .metrics{font-size:13px;font-weight:400;color:var(--tx3);margin-left:12px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 0}
+  .chip{font-size:12px;color:var(--tx2);border:1px solid var(--line);border-radius:999px;padding:3px 12px;background:var(--card)}
+  .chip b{color:var(--tx);font-weight:600}
+  .progress{display:flex;align-items:center;gap:12px;margin-top:14px;font-size:12px;color:var(--tx3)}
+  .dotbar{flex:1;height:4px;border-radius:2px;background:var(--card2);overflow:hidden}
+  .dotbar i{display:block;height:100%;width:100%;background:var(--brand)}
+
+  section{scroll-margin-top:118px;padding-top:36px}
+  .sec-eyebrow{font-size:12px;color:var(--tx3);letter-spacing:.12em}
+  section h2{font-size:19px;font-weight:650;margin:2px 0 16px}
+  h2 .sub{font-size:13px;font-weight:400;color:var(--tx3);margin-left:10px}
+  .note{font-size:12px;color:var(--tx3);margin-top:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px}
+  .sheet{border-left:2px solid var(--brand-dim);padding-left:16px;margin-bottom:8px}
+  .sheet>.sec-eyebrow{color:var(--brand)}
+
+  /* ── 参考素材节 ── */
+  .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .acard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+    display:flex;flex-direction:column;transition:border-color .12s}
+  .acard:hover{border-color:var(--line2)}
+  .acard.wide{grid-column:1/-1;flex-direction:row;align-items:stretch}
+  .thumb{position:relative;aspect-ratio:16/9;background:var(--card2);border-bottom:1px solid var(--line);display:block;overflow:hidden}
+  .wide .thumb{width:190px;aspect-ratio:auto;border-bottom:none;border-right:1px solid var(--line);flex:0 0 auto}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .zoomhint{position:absolute;right:8px;top:8px;background:rgba(17,17,19,.8);border:1px solid var(--line2);
+    border-radius:999px;padding:1px 9px;font-size:10.5px;color:var(--tx2)}
+  .meta{padding:12px 14px;display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
+  .name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .t{font-size:11px;color:var(--tx2);border:1px solid var(--line2);border-radius:999px;padding:0 9px;background:var(--card2)}
+  .t.user{color:var(--ok);border-color:rgba(74,222,128,.35);background:var(--ok-dim)}
+  .pill{margin-left:auto;font-size:11px;font-weight:600;border-radius:999px;padding:1px 10px;border:1px solid}
+  .pill.ok{color:var(--ok);border-color:rgba(74,222,128,.4);background:var(--ok-dim)}
+  .pill.wait{color:var(--warn);border-color:rgba(251,191,36,.4);background:var(--warn-dim)}
+  .pill.bad{color:var(--bad);border-color:rgba(248,113,113,.4);background:var(--bad-dim)}
+  .foot{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;
+    border-top:1px solid var(--line);font-size:12px;color:var(--tx3)}
+  .act{color:var(--brand2);font-weight:600}
+  .act:hover{text-decoration:underline}
+  /* 原生播放器 */
+  video,audio{display:block;width:100%}
+  .wide .vid{padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:8px;justify-content:center}
+  .wide audio{height:36px}
+  /* 文字素材折叠 */
+  details.brief{margin:10px 14px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}
+  details.brief summary{cursor:pointer;padding:9px 13px;font-size:12.5px;color:var(--tx2);list-style:none}
+  details.brief summary::before{content:"▸ ";color:var(--brand)}
+  details.brief[open] summary::before{content:"▾ "}
+  details.brief pre{padding:2px 15px 13px;font:13px/1.9 "PingFang SC",sans-serif;color:var(--tx2);white-space:pre-wrap}
+  /* 待上传 */
+  .acard.pend{border-style:dashed;border-color:rgba(251,191,36,.35)}
+  .pendbox{aspect-ratio:16/9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--tx3);font-size:12px;text-align:center}
+  .pendbox .plus{font-size:22px;color:var(--warn);opacity:.8}
+  /* 引用失效 */
+  .acard.stale{border-color:rgba(248,113,113,.35)}
+  .stalebox{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+  .stalebox svg{width:100%;height:100%}
+  /* 已放弃折叠 */
+  .waived{margin-top:14px}
+  .waived summary{font-size:12px;color:var(--tx3);cursor:pointer;padding:8px 14px;
+    border:1px dashed var(--line);border-radius:var(--radius);list-style:none}
+  .waived summary:hover{color:var(--tx2)}
+  .waived .wrow{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-top:none;border-radius:0 0 var(--radius) var(--radius);font-size:12.5px;color:var(--tx3)}
+  .empty-hint{margin-top:14px;border:1px dashed var(--line);border-radius:var(--radius);padding:12px 16px;font-size:12px;color:var(--tx3);text-align:center}
+
+  /* ── 表格 / 内容节 ── */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;font-weight:600;color:var(--tx3)}
+  tr:last-child td{border-bottom:none}
+  .fk{color:var(--tx3);font-size:12px;white-space:nowrap}
+  .mono{font:11.5px/1.5 "JetBrains Mono",monospace;color:var(--tx2)}
+  .st-ok{color:var(--ok);font-size:12px;white-space:nowrap}
+  .st-todo{color:var(--warn);font-size:12px;white-space:nowrap}
+  .rowthumb{width:96px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;margin-top:6px}
+  .tokengrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .token{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .token h4{font-size:12px;color:var(--brand);letter-spacing:.08em;margin-bottom:6px}
+  .token p{font-size:13px;color:var(--tx2)}
+  .swatches{display:flex;gap:6px;margin-top:8px}
+  .sw{width:26px;height:26px;border-radius:6px;border:1px solid var(--line2)}
+  .narr{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+  .narr:last-child{border-bottom:none}
+  .narr .idx{color:var(--brand);font:600 12px/20px "JetBrains Mono",monospace;flex:0 0 34px}
+  .narr .len{margin-left:auto;color:var(--tx3);font-size:12px;flex:0 0 auto}
+  .constrain{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+  .constrain:last-child{border-bottom:none}
+  .constrain .no{color:var(--brand);font:600 12px/20px "JetBrains Mono",monospace}
+
+  /* ── 大图 lightbox：纯 CSS :target，无 JS ── */
+  .lb{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;
+    background:rgba(8,8,10,.88);backdrop-filter:blur(4px);padding:32px}
+  .lb:target{display:flex}
+  .lbbox{max-width:900px;width:100%;max-height:88vh;background:var(--card);border:1px solid var(--line2);
+    border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+  .lbhead{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+  .lbhead b{font-size:14px}
+  .lbhead .x{margin-left:auto;color:var(--tx3);font-size:16px;padding:2px 8px}
+  .lbhead .x:hover{color:var(--tx)}
+  .lbbody{overflow:auto}
+  .lbbody img{width:100%;display:block;max-height:74vh;object-fit:contain;background:#000}
+
+  .about{margin-top:40px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+  .about summary{cursor:pointer;padding:12px 18px;font-size:13px;color:var(--tx2);list-style:none}
+  .about summary::before{content:"▸ ";color:var(--brand)}
+  .about[open] summary::before{content:"▾ "}
+  .about-body{padding:0 18px 16px;font-size:12.5px;color:var(--tx3)}
+  .about-body ul{padding-left:18px;margin-top:8px}
+  .about-body li{margin-bottom:4px}
+  .about-body b{color:var(--tx2)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">⛶</div>
+  <div class="brand">小山海 · 品牌宣传片</div>
+  <span class="vchip">v3</span>
+  <span class="landed">已落地</span>
+  <span class="spacer"></span>
+  <span class="vchip">schema v2 · mockup</span>
+</div>
+
+<div class="tabs">
+  <a href="#s0"><span class="no">00</span>创意理解</a>
+  <a class="user" href="#ref">参考素材</a>
+  <a href="#s1"><span class="no">01</span>素材与事实</a>
+  <a href="#s2"><span class="no">02</span>视觉规范</a>
+  <a href="#s3"><span class="no">03</span>旁白设计</a>
+  <a href="#s4"><span class="no">04</span>分镜脚本</a>
+  <a href="#s5"><span class="no">05</span>角色设定</a>
+  <a href="#s6"><span class="no">06</span>声音设计</a>
+  <a href="#s7"><span class="no">07</span>素材清单</a>
+  <a href="#s8"><span class="no">08</span>硬约束</a>
+</div>
+
+<div class="doc">
+  <div class="eyebrow">故事板 · STORYBOARD</div>
+  <h1>小山海<span class="metrics">3 分镜 · 6 shot · 20s</span></h1>
+  <div class="chips">
+    <span class="chip">画幅 <b>16:9</b></span>
+    <span class="chip">题材 <b>品牌宣传</b></span>
+    <span class="chip">分镜 <b>3</b></span>
+    <span class="chip">shot <b>6</b></span>
+    <span class="chip">参考素材 <b>6</b></span>
+    <span class="chip">硬约束 <b>4</b></span>
+  </div>
+  <div class="progress">
+    <span>已填充 <b>10 / 10</b> 节</span>
+    <span class="dotbar"><i></i></span>
+    <span>内容已齐</span>
+  </div>
+
+  <!-- ═══ 00 创意理解 ═══ -->
+  <section id="s0">
+    <div class="sec-eyebrow">00 · 创意理解</div>
+    <h2>一句话意图</h2>
+    <div class="card">
+      <p style="font-size:15px">把山海，收进一寸静里。一支以「静」为名的东方香水，用一束轮廓光把瓶身从夜里托出来。</p>
+      <div class="note">季节 / 时间 / 地域前提：当代都市 · 雨后深夜 · 东方静气</div>
+    </div>
+    <div class="card" style="border-left:2px solid var(--brand)">
+      <div class="sec-eyebrow" style="margin-bottom:6px">用户原话（画布 BRIEF 节点 · CV-296）</div>
+      <p style="color:var(--tx2);font-size:13.5px">"想要那种电影级的静物感，一瓶香水立在湿石上，外面是雨夜。不要热闹，要安静的高级。"</p>
+    </div>
+  </section>
+
+  <!-- ═══ 参考素材（新增节 · 无编号 · 从 §07 派生 source=user） ═══ -->
+  <section id="ref">
+    <div class="sec-eyebrow">参考素材 · 用户上传</div>
+    <h2>对话里上传的参考附件<span class="sub">6 项 · 渲染时从 §07 按 source=user 派生，不新增契约字段</span></h2>
+
+    <div class="agrid">
+
+      <!-- 图片 1：主视觉 → :target 大图 -->
+      <div class="acard">
+        <a class="thumb" href="#lb1">
+          <img src="ref-assets/ref-visual.png" alt="品牌主视觉参考" />
+          <span class="zoomhint">点击看大图</span>
+        </a>
+        <div class="meta">
+          <div class="name">品牌主视觉参考.png</div>
+          <div class="tags"><span class="t">图片</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+        </div>
+        <div class="foot"><span>用于 S2 · S3</span><a class="act" href="#lb1">查看大图</a></div>
+      </div>
+
+      <!-- 图片 2：静物特写 -->
+      <div class="acard">
+        <a class="thumb" href="#lb2">
+          <img src="ref-assets/ref-still.png" alt="电影级静物参考" />
+          <span class="zoomhint">点击看大图</span>
+        </a>
+        <div class="meta">
+          <div class="name">电影级静物参考.png</div>
+          <div class="tags"><span class="t">图片</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+        </div>
+        <div class="foot"><span>用于 S2a 构图</span><a class="act" href="#lb2">查看大图</a></div>
+      </div>
+
+      <!-- 图片 3：品牌视觉板 -->
+      <div class="acard">
+        <a class="thumb" href="#lb3">
+          <img src="ref-assets/ref-board.png" alt="品牌视觉板" />
+          <span class="zoomhint">点击看大图</span>
+        </a>
+        <div class="meta">
+          <div class="name">品牌视觉板（logo + 广告词 + 香调）.png</div>
+          <div class="tags"><span class="t">图片</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+        </div>
+        <div class="foot"><span>用于 §01 §03 依据</span><a class="act" href="#lb3">查看大图</a></div>
+      </div>
+
+      <!-- 视频：原生播放器 -->
+      <div class="acard wide">
+        <div class="thumb" style="cursor:default;display:flex;align-items:center;justify-content:center">
+          <img src="ref-assets/ref-still.png" alt="视频首帧" style="opacity:.55" />
+          <span class="zoomhint" style="top:auto;bottom:8px">00:15 · 480p</span>
+        </div>
+        <div class="vid">
+          <div class="name" style="white-space:normal">产品氛围参考.mp4</div>
+          <div class="tags"><span class="t">视频</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+          <!-- 实际渲染：<video controls src="…assets/{projectId}/ref-video.mp4">，无 JS -->
+          <video controls preload="metadata" src="ref-assets/ref-video.mp4" poster="ref-assets/ref-still.png"></video>
+        </div>
+        <div class="foot"><span>用于全片节奏</span><span>原生播放器 · 支持拖动</span></div>
+      </div>
+
+      <!-- 音频：原生播放器 -->
+      <div class="acard wide">
+        <div class="thumb" style="cursor:default;display:flex;align-items:center;justify-content:center">
+          <svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="24" fill="none" stroke="var(--line2)"/><rect x="21" y="15" width="14" height="21" rx="3" fill="none" stroke="var(--tx3)"/><circle cx="28" cy="41" r="2.5" fill="var(--tx3)"/></svg>
+        </div>
+        <div class="vid">
+          <div class="name" style="white-space:normal">BGM 氛围参考.mp3</div>
+          <div class="tags"><span class="t">音频</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+          <audio controls preload="metadata" src="ref-assets/ref-bgm.mp3"></audio>
+        </div>
+        <div class="foot"><span>00:21 · 用于 §06 声音设计依据</span><span>原生播放器</span></div>
+      </div>
+
+      <!-- 文字：details 内联全文，无 JS -->
+      <div class="acard wide">
+        <div class="thumb" style="cursor:default;display:flex;align-items:center;justify-content:center">
+          <svg width="60" height="60" viewBox="0 0 60 60"><rect x="14" y="8" width="32" height="44" rx="4" fill="none" stroke="var(--tx3)"/><path d="M21 20 h18 M21 28 h18 M21 36 h12" stroke="var(--tx3)" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div class="vid">
+          <div class="name" style="white-space:normal">创意说明.txt</div>
+          <div class="tags"><span class="t">文字</span><span class="t user">用户上传</span><span class="pill ok">已就绪</span></div>
+          <details class="brief">
+            <summary>展开全文（渲染时由 Host 读文件内联，无 fetch）</summary>
+            <pre>这支片子的气质关键词是「静」。
+
+画面上我想要电影级的静物感：一瓶香水立在湿石上，
+周围是暗的，只有一束轮廓光把瓶身从黑里托出来。
+不要热闹，不要人群，宁可空。
+
+节奏一定要慢。每个镜头至少四秒，让光自己走。
+水面只许有极轻的涟漪，涟漪散开就是剪辑点。
+
+声音方面，环境垫底要低到几乎意识不到，
+旁白像自言自语，不要广告腔。
+
+结尾只留 logo 和广告语「把山海，收进一寸静里」，
+一秒就好，干净收掉。</pre>
+          </details>
+        </div>
+        <div class="foot"><span>428 字 · 用于 §00 依据</span><span>内联展示</span></div>
+      </div>
+
+      <!-- 待上传 -->
+      <div class="acard pend">
+        <div class="pendbox"><span class="plus">+</span>场景空镜 · 雨夜街道<br>用于 S1a · 用户说要自己拍</div>
+        <div class="meta">
+          <div class="name" style="color:var(--tx2)">场景空镜 · 雨夜街道</div>
+          <div class="tags"><span class="t">图片</span><span class="pill wait">待上传</span></div>
+        </div>
+        <div class="foot"><span>落地门禁会拦到补齐</span><a class="act" href="#ref">去上传</a></div>
+      </div>
+
+      <!-- 引用失效 -->
+      <div class="acard stale">
+        <div class="thumb" style="cursor:default">
+          <div class="stalebox"><svg viewBox="0 0 200 113" preserveAspectRatio="none"><rect width="200" height="113" fill="var(--card2)"/><path d="M50 25 L150 88 M150 25 L50 88" stroke="var(--bad)" stroke-width="2.5" opacity=".65"/></svg></div>
+        </div>
+        <div class="meta">
+          <div class="name" style="color:var(--tx2)">旧版 logo 图.png</div>
+          <div class="tags"><span class="t">图片</span><span class="pill bad">引用失效</span></div>
+        </div>
+        <div class="foot"><span>画布节点已删除（CV-408 对账）</span><a class="act" href="#ref">重新关联</a></div>
+      </div>
+    </div>
+
+    <details class="waived">
+      <summary>已放弃 1 项 ▾</summary>
+      <div class="wrow"><span>片头倒计时素材</span><span style="margin-left:auto">用户改口：不要倒计时，直接进正片</span></div>
+    </details>
+
+    <div class="empty-hint">空态示例：本节没有任何素材时显示 —— 「在对话里上传参考图 / 视频 / 音频 / 文字，会自动登记到这里。」</div>
+  </section>
+
+  <!-- ═══ 01 素材与事实 ═══ -->
+  <section id="s1">
+    <div class="sec-eyebrow">01 · 素材与事实</div>
+    <h2>事实核查表（agent 搜集，每条带来源）</h2>
+    <div class="card">
+      <table>
+        <tr><td>香调：前调水生矿物感，中调雪松、白茶，后调岩兰草、海盐</td><td class="fk">品牌资料（用户视觉板）</td><td class="st-ok">已核实</td></tr>
+        <tr><td>规格 50ml EAU DE PARFUM，广告语「把山海，收进一寸静里」</td><td class="fk">品牌资料（用户视觉板）</td><td class="st-ok">已核实</td></tr>
+        <tr><td>目标人群 25–40 岁都市白领，夜间场景使用占比高</td><td class="fk">电商评论摘要</td><td class="st-ok">已核实</td></tr>
+        <tr><td>竞品 A 的主视觉也是暗调静物</td><td class="fk">—</td><td class="st-todo">待核实 → 不落画布</td></tr>
+      </table>
+    </div>
+    <p class="note">这一节是「信息」不是「文件」——搜不到的标待核实，落地时丢弃，不虚构。</p>
+  </section>
+
+  <!-- ═══ 02 视觉规范 ═══ -->
+  <section id="s2">
+    <div class="sec-eyebrow">02 · 视觉规范</div>
+    <h2>5 项 tokens → 冻结成 Look 卡</h2>
+    <div class="tokengrid">
+      <div class="token"><h4>色彩</h4><p>墨绿近黑基底 + 香槟金高光，低饱和</p>
+        <div class="swatches"><span class="sw" style="background:#0d1f1a"></span><span class="sw" style="background:#14332b"></span><span class="sw" style="background:#c9a962"></span><span class="sw" style="background:#e8dcc0"></span></div></div>
+      <div class="token"><h4>光线</h4><p>单一硬光源，边缘轮廓光，深阴影</p></div>
+      <div class="token"><h4>材质</h4><p>磨砂玻璃、湿石反光、烫金线</p></div>
+      <div class="token"><h4>镜头语汇</h4><p>缓推 + 微距特写，浅景深，f/2.0 观感</p></div>
+      <div class="token"><h4>节奏</h4><p>每镜 ≥ 4s，剪在涟漪散开处</p></div>
+    </div>
+  </section>
+
+  <!-- ═══ 03 旁白设计 ═══ -->
+  <section id="s3">
+    <div class="sec-eyebrow">03 · 旁白设计</div>
+    <h2>旁白只写一次，分镜按句引用</h2>
+    <div class="card">
+      <div class="narr"><span class="idx">N1</span><span>山与海退到一瓶之内。</span><span class="len">4.0s</span></div>
+      <div class="narr"><span class="idx">N2</span><span>光落在它身上，夜就静了。</span><span class="len">3.5s</span></div>
+      <div class="narr"><span class="idx">N3</span><span>把山海，收进一寸静里。</span><span class="len">3.5s</span></div>
+    </div>
+    <p class="note">N3 = 广告语原句，出处：用户视觉板（§01 已核实）。</p>
+  </section>
+
+  <!-- ═══ 04 分镜脚本 ═══ -->
+  <section id="s4">
+    <div class="sec-eyebrow">04 · 分镜脚本</div>
+    <h2>3 分镜 · 6 shot（含 1 备份拍）</h2>
+    <div class="card">
+      <table>
+        <tr><th>镜</th><th>shot</th><th>画面</th><th>旁白</th><th>时长</th></tr>
+        <tr><td rowspan="2">S1 雨夜开场</td><td>1a</td><td>雨夜街景空镜，霓虹在湿地面拉长（素材待上传）</td><td>N1</td><td>4s</td></tr>
+        <tr><td>1b</td><td>窗边剪影，石面水汽</td><td>N1</td><td>3s</td></tr>
+        <tr><td rowspan="2">S2 静物登场</td><td>2a</td><td>香水瓶立于湿石，单一轮廓光（参考：静物参考.jpg）</td><td>N2</td><td>5s</td></tr>
+        <tr><td>2b</td><td>微距：金线反光，涟漪散开</td><td>N2</td><td>4s</td></tr>
+        <tr><td rowspan="2">S3 收束</td><td>3a</td><td>黑场浮现 logo + 广告语（参考：主视觉.png）</td><td>N3</td><td>3s</td></tr>
+        <tr><td>3b · 备份</td><td>3a 的替代拍：瓶身特写淡出</td><td>N3</td><td>3s</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══ 05 角色设定 ═══ -->
+  <section id="s5">
+    <div class="sec-eyebrow">05 · 角色设定</div>
+    <h2>无人物出演 · 两个"声音/手"角色</h2>
+    <div class="card">
+      <table>
+        <tr><th>角色</th><th>人读描述</th><th>锁定提示词（落画布）</th></tr>
+        <tr><td>旁白声音</td><td>低沉、克制、语速慢，气声多</td><td class="mono">narrator: low calm female voice, whispery, slow pace</td></tr>
+        <tr><td>出镜手模</td><td>仅手部入镜，持瓶，肤色冷白</td><td class="mono">hand model, pale cool skin tone, holding bottle, macro</td></tr>
+      </table>
+    </div>
+    <p class="note">人读描述只上这份文档；落画布的只有机器要吃的「锁定提示词」。</p>
+  </section>
+
+  <!-- ═══ 06 声音设计 ═══ -->
+  <section id="s6">
+    <div class="sec-eyebrow">06 · 声音设计</div>
+    <h2>声音预算表</h2>
+    <div class="card">
+      <table>
+        <tr><th>BGM</th><th>值</th></tr>
+        <tr><td>风格</td><td>ambient，稀疏单音（依据：用户 BGM 氛围参考.mp3）</td></tr>
+        <tr><td>BPM</td><td>68</td></tr>
+        <tr><td>响度</td><td>-16 LUFS</td></tr>
+        <tr><td>侧链避让</td><td>旁白出现时 BGM -6dB</td></tr>
+      </table>
+      <div class="note">音效点：雨声环境（S1 全程 · 低电平）／ 水滴一声（S2b · 剪辑点）</div>
+    </div>
+  </section>
+
+  <!-- ═══ 07 素材清单（保持原样：机器事实源，含全部来源） ═══ -->
+  <section id="s7">
+    <div class="sec-eyebrow">07 · 素材清单</div>
+    <h2>全片素材账本<span class="sub">保持原样 —— 机器事实源 + 落地门禁读它；用户参考已在前一节按 source=user 派生展示</span></h2>
+    <div class="card">
+      <table>
+        <tr><th style="width:44%">素材</th><th style="width:70px">类型</th><th style="width:84px">状态</th><th>引用</th></tr>
+        <tr><td>品牌主视觉参考.png<div><img class="rowthumb" src="ref-assets/ref-visual.png" alt="" /></div></td><td>image</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-visual.png</td></tr>
+        <tr><td>电影级静物参考.png<div><img class="rowthumb" src="ref-assets/ref-still.png" alt="" /></div></td><td>image</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-still.png</td></tr>
+        <tr><td>品牌视觉板.png<div><img class="rowthumb" src="ref-assets/ref-board.png" alt="" /></div></td><td>image</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-board.png</td></tr>
+        <tr><td>产品氛围参考.mp4</td><td>video</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-video.mp4</td></tr>
+        <tr><td>BGM 氛围参考.mp3</td><td>audio</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-bgm.mp3</td></tr>
+        <tr><td>创意说明.txt</td><td>text</td><td><span class="st-ok">已就绪</span></td><td class="mono">file:ref-brief.txt</td></tr>
+        <tr><td>场景空镜 · 雨夜街道</td><td>image</td><td><span class="st-todo">待上传</span></td><td class="mono">—</td></tr>
+        <tr><td>Look 卡 · 暗调静物基调</td><td>image</td><td><span class="st-ok">已就绪</span></td><td class="mono">canvasNode:n-look</td></tr>
+        <tr><td>雨夜街道 b-roll</td><td>video</td><td><span class="st-todo">待生成</span></td><td class="mono">canvasNode:n-broll</td></tr>
+        <tr><td>片尾 logo 动画</td><td>video</td><td><span class="st-todo">待生成</span></td><td class="mono">canvasNode:n-logo</td></tr>
+      </table>
+    </div>
+    <p class="note">落地门禁读这张表：pending 不补齐（或明确 waived），不让落地。</p>
+  </section>
+
+  <!-- ═══ 08 硬约束 ═══ -->
+  <section id="s8">
+    <div class="sec-eyebrow">08 · 硬约束</div>
+    <h2>4 条 · 违反即返工</h2>
+    <div class="card">
+      <div class="constrain"><span class="no">C1</span><span>全片不出现日光 —— 所有镜头时间前提为 22:00–02:00</span></div>
+      <div class="constrain"><span class="no">C2</span><span>瓶身 logo 朝向统一正面，微距镜不变形</span></div>
+      <div class="constrain"><span class="no">C3</span><span>旁白语速 ≤ 3.5 字/秒，尾字不截</span></div>
+      <div class="constrain"><span class="no">C4</span><span>成片响度 -16 LUFS，最大真峰 -1 dBTP</span></div>
+    </div>
+  </section>
+
+  <details class="about">
+    <summary>技术说明与各节写法（mockup 版）</summary>
+    <div class="about-body">
+      <p>本页为 REQ-037 延伸的<b>交互效果稿</b>：「参考素材」节不进 storyboard.json，渲染时从 §07 按 source=user 派生。全页<b>无 JS</b>，与现网渲染约束一致：</p>
+      <ul>
+        <li><b>页签</b> —— 锚点定位滚动，与现网一致；新节锚点 <span class="mono">#ref</span> 不带编号，其余 00–08 不动。</li>
+        <li><b>大图</b> —— 纯 CSS <span class="mono">:target</span> lightbox，关闭即回到参考素材节。</li>
+        <li><b>视频 / 音频</b> —— 原生 <span class="mono">&lt;video controls&gt;</span> / <span class="mono">&lt;audio controls&gt;</span>，引用项目 assets 路由的真实文件。</li>
+        <li><b>文字</b> —— Host 渲染时读文件内联进 <span class="mono">&lt;details&gt;</span>，无 fetch。</li>
+        <li><b>引用失效</b> —— 复用 CV-408 对账；<b>待上传</b>复用落地门禁语义。</li>
+      </ul>
+    </div>
+  </details>
+</div>
+
+<!-- ═══ :target 大图弹层（无 JS） ═══ -->
+<div class="lb" id="lb1">
+  <div class="lbbox">
+    <div class="lbhead"><b>品牌主视觉参考.png</b><span class="vchip">用户上传 · 用于 S2·S3</span><a class="x" href="#ref">✕ 关闭</a></div>
+    <div class="lbbody"><img src="ref-assets/ref-visual.png" alt="品牌主视觉参考" /></div>
+  </div>
+</div>
+<div class="lb" id="lb2">
+  <div class="lbbox">
+    <div class="lbhead"><b>电影级静物参考.png</b><span class="vchip">用户上传 · 用于 S2a 构图</span><a class="x" href="#ref">✕ 关闭</a></div>
+    <div class="lbbody"><img src="ref-assets/ref-still.png" alt="电影级静物参考" /></div>
+  </div>
+</div>
+<div class="lb" id="lb3">
+  <div class="lbbox">
+    <div class="lbhead"><b>品牌视觉板（logo + 广告词 + 香调）.png</b><span class="vchip">用户上传 · §01/§03 依据</span><a class="x" href="#ref">✕ 关闭</a></div>
+    <div class="lbbody"><img src="ref-assets/ref-board.png" alt="品牌视觉板" /></div>
+  </div>
+</div>
+
+</body>
+</html>

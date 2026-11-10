@@ -2719,3 +2719,12 @@
 - **详情**：翻拍会话实证三 bug 链——GitHub 直连 30MB 组件挂 1886s 才报错（组件 fetch 无超时）、错误对象 String() 序列化成 `[object Object]` 吞掉真因（网络慢 16KB/s 误报成「组件缺失」）、Node fetch 不读系统代理（默认档自愈靠 curl -x 才成功）。四修：①组件 fetch 加 `AbortSignal.timeout(120s)`；②直连失败自动走 ghfast.top 镜像（真机实证可用）；③fetch 双候选全挂且检测到代理环境变量时 execFile curl 兜底（真机自愈链同款）；④非 Error 对象走 JSON.stringify 截断。文案写明已尝试链路 + 「放置路径以本条文案为准」（沙箱与宿主 HOME/DSH_HOME 可能不同——双 home 错位实测）。
 - **涉及文件**：`src/video-download.ts`。
 - **验证**：video-download 11 测试全绿；全量 smoke 0 失败。**⚑ 待验收**：真机删 bin 缓存后重调 download_video ⇒ 组件在超时内经镜像/代理到位。
+
+#### CV-458 · 故事板「参考素材」派生节（2026-11-10，REQ-037 延伸）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **一句话问题**：用户在对话里上传的参考附件（图/视频/音频/文字），登记进 §07 后在故事板里只显示 `ref:id` 一行字 —— 图片看不到缩略、视频音频播不了、文字读不到，「登记了」不等于「看得见」。
+- **方案**：**零契约改动**的渲染层派生节。九节 / schemaVersion / SECTION_GUIDE / 完成度分母（9）全部不动；新增 `<section id="ref">` 插在 §00 之后，tab 不带编号带「用户」角标，内容 = §07 中 `source:"user"` 且未 waived 条目的卡片网格。四格式四形态（全无 JS）：图片 → 纯 CSS `:target` lightbox 大图；视频/音频 → 原生 `<video>/<audio> controls`（assets 路由已有 Range 支持）；文字 → 路由侧读文件内联 `<details>`（新文件 `storyboard-user-text.ts`，白名单扩展 + 256KB 截断 + 逐条降级）。状态完备：ready/pending 门禁语义照搬、引用失效复用 CV-408 对账、waived 折算成节尾一行说明、空态引导「在对话里上传…自动登记到这里」。登记纪律本身 REQ-037/CV-405 已落（工具描述 + SKILL.md + toolchain.md 三处），本条只补「看得见」。
+- **涉及文件**：`src/storyboard-render.ts`（`userReferenceAssets` / `renderUserReferences` / tab 插入 / STYLE 段 / `options.textFor`）、`src/storyboard-user-text.ts`（新文件，文字读取器）、`src/routes.ts`（+3 行接线）、`tests/storyboard-user-references.test.mjs`（新文件，9 条用例）、`tests/file-size-guard.test.mjs`（routes 棘轮 3654→3657 / registerStudioRoutes 2969→2970 显式登记）。
+- **验证**：typecheck / build / verify:loader 全绿；新测试 9/9；全量 smoke **0 失败**（失败集合 ⊆ 空基线）。**⚑ 待桌面验收**：造一个含 user 附件的项目 → 打开故事板「参考素材」节 → 图片点开大图 / 视频音频可播 / 文字可展开；§07 仍为全量账本且落地门禁行为不变。

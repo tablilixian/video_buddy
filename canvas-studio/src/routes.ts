@@ -23,6 +23,7 @@ import { isLibCategory } from './contracts/asset-library.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, handlesOfAssetFile, unlinkValuesInPromptJson, type GenerateParams } from './generate.js'
 import { gcProjectAssets, gcLibraryAssets, deleteUnreferencedAssets, collectReferencedBasenames, basenameOfUrl } from './asset-gc.js'
 import { isAssetFileName } from './asset-path.js'
+import { storyboardUserTextResolver } from './storyboard-user-text.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { resolveRefFilenames } from './reference-resolve.js'
@@ -2155,6 +2156,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
                 // 创意先行：把 refImage / lookRef / §07 引用解析成缩略图 URL。
                 // 画布读失败降级为不渲染图（纯文本渲染），不阻断整个文档。
                 mediaUrl: await storyboardMediaResolver(registry, projectId),
+                // REQ-037 延伸：「参考素材」节 text 型 user 引用 → 内联全文（读失败降级）。
+                textFor: await storyboardUserTextResolver(registry, projectId, load.document),
                 // REQ-037/CV-408：§07 canvasNode 引用失效对账（画布读失败降级为不对账）。
                 canvasNodeIds: await storyboardCanvasNodeIds(registry, projectId),
                 // CV-296：用户原始创意（画布 BRIEF 节点全文）展示进 §00；读失败同上降级。

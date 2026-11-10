@@ -491,6 +491,103 @@ function renderConstraints(sections: StoryboardSections, ctx: DiffContext): stri
     <div class="constraint"><span class="no">${String(index + 1).padStart(2, '0')}</span><span>${marked(ctx, `08 硬约束.硬约束[${String(index + 1)}]`, orDash(item))}</span></div>`).join('')
 }
 
+// ────────────────────────────── 参考素材（派生节） ──────────────────────────────
+
+/**
+ * 「参考素材」节的派生判据：§07 里 `source:"user"` 且未放弃的条目。
+ *
+ * 这节**不进契约**（九节与 schemaVersion 不动，无迁移成本）：数据始终以 §07 为
+ * 唯一事实源，本节只是换个角度看 —— 登记纪律（工具描述 + skill 总纲，REQ-037/CV-405）
+ * 保证用户参考以 `source:"user"` 入册，这里负责让它「看得见、打得开」。
+ * `waived`（用户明确放弃的参考）不出现在卡片里，只在节尾折算成一行说明。
+ */
+export function userReferenceAssets(sections: StoryboardSections): readonly StoryboardAsset[] {
+  return sections['07_assets'].filter((asset) => asset.source === 'user' && asset.status !== 'waived')
+}
+
+/** §07 素材类型 → 中文标签（卡片角标用）。 */
+const ASSET_TYPE_LABEL: Readonly<Record<StoryboardAsset['type'], string>> = {
+  text: '文字', image: '图片', video: '视频', audio: '音频',
+}
+
+/** 单条参考素材的媒体区：按类型给「打得开」的形态（全部无 JS）。 */
+function referenceMedia(
+  asset: StoryboardAsset,
+  index: number,
+  media: MediaUrl,
+  textFor: ((ref: StoryboardAssetRef) => string | undefined) | undefined,
+): string {
+  const url = media === undefined ? undefined : media(asset.ref)
+  const refLine = `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>`
+  if (asset.type === 'image') {
+    // 大图用纯 CSS `:target` lightbox（无 JS）；URL 解析不到就退回引用行，不留死链。
+    if (url === undefined) return `<div class="refmedia refmedia-empty">${refLine}</div>`
+    const lbId = `ref-lb-${String(index)}`
+    return `<a class="refmedia" href="#${lbId}" title="点击看大图"><img src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" loading="lazy" /></a>`
+  }
+  if (asset.type === 'video' && url !== undefined) {
+    return `<div class="refmedia"><video controls preload="metadata" src="${escapeHtml(url)}"></video></div>`
+  }
+  if (asset.type === 'audio' && url !== undefined) {
+    return `<div class="refmedia"><audio controls preload="metadata" src="${escapeHtml(url)}"></audio></div>`
+  }
+  if (asset.type === 'text') {
+    const content = textFor === undefined ? undefined : textFor(asset.ref)
+    if (content === undefined || content.trim() === '') return `<div class="refmedia refmedia-empty">${refLine}</div>`
+    return `<details class="refbrief"><summary>展开全文</summary><pre>${escapeHtml(content)}</pre></details>`
+  }
+  return `<div class="refmedia refmedia-empty">${refLine}</div>`
+}
+
+/**
+ * 渲染「参考素材」派生节（插在 §00 之后）：用户参考在故事板里回看的入口。
+ *
+ * 覆盖的状态：ready / pending（门禁语义照搬 §07）/ 引用失效（CV-408 对账）/
+ * waived（节尾一行说明）/ 空态（引导去对话里上传）。文字条目由 `textFor`
+ * 内联全文；媒体 URL 由 `mediaUrl` 解析，解析不到一律降级为引用行不抛错。
+ */
+function renderUserReferences(
+  sections: StoryboardSections,
+  ctx: DiffContext,
+  media: MediaUrl,
+  textFor: ((ref: StoryboardAssetRef) => string | undefined) | undefined,
+  canvasNodeIds?: ReadonlySet<string>,
+): string {
+  const waivedCount = sections['07_assets'].filter((asset) => asset.source === 'user' && asset.status === 'waived').length
+  const waivedNote = waivedCount === 0
+    ? ''
+    : `<p class="note">另有 <b>${String(waivedCount)}</b> 项用户参考已标「放弃」（§07 中 status=waived），不再展示。</p>`
+  const assets = userReferenceAssets(sections)
+  if (assets.length === 0) {
+    return emptySection('还没有用户上传的参考素材。在对话里上传参考图 / 视频 / 音频 / 文字，agent 会以 source:"user" 登记进 §07，自动出现在这里。') + waivedNote
+  }
+  const lightboxes: string[] = []
+  const cards = assets.map((asset, index) => {
+    // CV-408 同款对账：账面（§07）还在、实物（画布节点）没了就地标红。
+    const stale = asset.ref.kind === 'canvasNode' && canvasNodeIds !== undefined && !canvasNodeIds.has(asset.ref.id)
+    const statusPill = asset.status === 'ready'
+      ? '<span class="pill ok">已就绪</span>'
+      : '<span class="pill todo">待上传</span>'
+    const stalePill = stale ? ' <span class="pill stale">引用失效：画布节点已删除</span>' : ''
+    const neededBy = asset.neededBy.length === 0
+      ? '全片通用'
+      : `用于 ${escapeHtml(asset.neededBy.join(' · '))}`
+    const mediaHtml = referenceMedia(asset, index, media, textFor)
+    if (asset.type === 'image' && media !== undefined && media(asset.ref) !== undefined) {
+      lightboxes.push(`<div class="lb" id="ref-lb-${String(index)}"><figure><img src="${escapeHtml(media(asset.ref) ?? '')}" alt="${escapeHtml(asset.name)}" /></figure><a class="lb-close" href="#ref">✕ 关闭</a></div>`)
+    }
+    return `<div class="refcard${asset.type === 'video' || asset.type === 'audio' || asset.type === 'text' ? ' wide' : ''}">
+      ${mediaHtml}
+      <div class="refmeta">
+        <div class="refname">${marked(ctx, `07 素材.${asset.name}`, escapeHtml(asset.name))}</div>
+        <div class="reftags"><span class="pill">${escapeHtml(ASSET_TYPE_LABEL[asset.type])}</span><span class="pill">用户上传</span>${statusPill}${stalePill}</div>
+        <div class="refneed">${neededBy}</div>
+      </div>
+    </div>`
+  }).join('')
+  return `<div class="refgrid">${cards}</div>${lightboxes.join('')}${waivedNote}`
+}
+
 // ────────────────────────────── 文档骨架 ──────────────────────────────
 
 /** 对比模式入参（由 `diffSections` 的结果直接喂进来）。 */
@@ -514,6 +611,12 @@ export interface StoryboardRenderOptions {
    * 由路由侧读画布后提供解析函数。
    */
   readonly mediaUrl?: ((ref: StoryboardAssetRef) => string | undefined) | undefined
+  /**
+   * §07 `text` 型引用 → 文件全文（路由侧读盘提供；渲染保持零 IO）。
+   * 「参考素材」节的文字条目用它内联全文（`<details>` 折叠，无 fetch 无 JS）；
+   * 省略 / 返回 `undefined` = 该条只显示引用，不展开正文。
+   */
+  readonly textFor?: ((ref: StoryboardAssetRef) => string | undefined) | undefined
   /**
    * 当前项目画布节点 id 集合（路由侧读画布提供；省略 = 不做失效对账）。
    * REQ-037/CV-408：§07 的 `canvasNode` 引用若指向已不存在的节点，渲染层就地
@@ -784,6 +887,41 @@ section.sheet + section.sheet{border-top:1px solid var(--sep);padding-top:26px}
   details.about{display:none}
   details.prompt[open] summary,details.prompt summary{color:#666}
 }
+/* ── 参考素材派生节（REQ-037 延伸）：卡片网格 + 无 JS lightbox ── */
+.tab-user{font-size:10px;color:var(--green);border:1px solid rgba(143,191,127,.4);border-radius:999px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.refgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.refcard{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden;display:flex;flex-direction:column}
+.refcard.wide{grid-column:1/-1;flex-direction:row;align-items:stretch}
+.refcard.wide .refmedia{width:200px;flex:0 0 auto;border-bottom:none;border-right:1px solid var(--line)}
+.refcard.wide .refbrief{flex:1;margin:10px 12px}
+.refmedia{display:block;position:relative;aspect-ratio:16/9;background:var(--card2);border-bottom:1px solid var(--line);min-height:64px}
+.refcard.wide .refmedia{aspect-ratio:auto}
+a.refmedia:hover{border-color:var(--amber-line)}
+.refmedia img{width:100%;height:100%;object-fit:cover;display:block}
+.refmedia video,.refmedia audio{display:block;width:100%;height:auto}
+.refmedia video{max-height:220px;background:#000}
+.refcard.wide .refmedia{display:flex;flex-direction:column;justify-content:center;padding:10px 12px}
+.refmedia audio{height:36px}
+.refmedia-empty{display:flex;align-items:center;justify-content:center;padding:8px 10px;overflow-wrap:anywhere;text-align:center}
+.refmeta{padding:11px 13px;display:flex;flex-direction:column;gap:6px;flex:1}
+.refname{font-weight:700;font-size:13.5px;overflow-wrap:anywhere}
+.reftags{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.refneed{color:var(--tx3);font-size:11.5px}
+details.refbrief{border:1px solid var(--line);border-radius:9px;background:var(--card2)}
+details.refbrief summary{cursor:pointer;padding:8px 12px;font-size:12.5px;color:var(--tx2);list-style:none}
+details.refbrief summary::before{content:"▸ ";color:var(--amber)}
+details.refbrief[open] summary::before{content:"▾ "}
+details.refbrief pre{padding:2px 14px 12px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--tx2);font-size:12.5px;line-height:1.8}
+/* 大图查看：纯 CSS :target，无 JS；关闭即回 #ref 节。 */
+.lb{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;
+background:rgba(15,14,12,.9);padding:32px;margin:0}
+.lb:target{display:flex}
+.lb figure{margin:0;max-width:920px;max-height:86vh;display:flex}
+.lb img{max-width:100%;max-height:80vh;object-fit:contain;border-radius:10px;border:1px solid var(--line2)}
+.lb-close{position:fixed;top:18px;right:26px;color:var(--tx2);font-size:13px;background:var(--card);
+border:1px solid var(--line2);border-radius:999px;padding:5px 14px;text-decoration:none}
+.lb-close:hover{color:var(--tx)}
+@media (max-width:680px){.refcard.wide{flex-direction:column}.refcard.wide .refmedia{width:100%;border-right:none;border-bottom:1px solid var(--line)}}
 `
 
 /**
@@ -813,11 +951,20 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     ? `<span class="doc-badge">故事板 · ${escapeHtml(versionLabel)}</span>`
     : `<span class="doc-badge on">已落地 ${escapeHtml(options.landedVersion)} · 只读回看</span>`
 
+  // 「参考素材」派生节（REQ-037 延伸）：tab 插在 §00 之后、不带编号。
+  // 它不是契约节 —— 不进 sectionFilled / SECTION_GUIDE / diff 计数（差异仍记在 §07），
+  // 点亮判据独立：§07 里有 source=user 的未放弃条目就算已填充。
+  const userRefs = userReferenceAssets(sections)
+  const refTab = `<a class="tab${userRefs.length > 0 ? ' on' : ' miss'}" href="#ref">参考素材<span class="tab-user">用户</span></a>`
   const tabs = STORYBOARD_SECTION_TABS.map((tab, index) => {
     const count = diffCountBySection.get(tab.id) ?? 0
     const badge = count === 0 ? '' : `<span class="badge">▲${String(count)}</span>`
     return `<a class="tab${filled[index] === true ? ' on' : ' miss'}" href="#${tab.id}">${escapeHtml(tabText(tab.label))}${badge}</a>`
-  }).join('')
+  }).reduce<string[]>((acc, html, index) => {
+    if (index === 1) acc.push(refTab)
+    acc.push(html)
+    return acc
+  }, []).join('')
 
   const diffBar = diffView === undefined
     ? ''
@@ -897,6 +1044,9 @@ ${filledCount === 0 ? `
 
   <section class="sheet" id="s0"><div class="sec-eyebrow">00</div><h2>创意理解</h2>
     <p class="sub">一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。</p>${renderSourceIdea(options.sourceIdea)}${renderCreative(sections, ctx)}</section>
+
+  <section class="sheet" id="ref"><div class="sec-eyebrow">参考素材 · 用户上传</div><h2>参考素材</h2>
+    <p class="sub">你在对话里上传的参考附件（§07 中 source=user 的条目，派生视图）：图片点开看大图，视频 / 音频直接播放，文字展开阅读。agent 生成与待备的素材不在这里 —— 见 <a href="#s7">§07 素材清单</a>。</p>${renderUserReferences(sections, ctx, options.mediaUrl, options.textFor, options.canvasNodeIds)}</section>
 
   <section class="sheet" id="s1"><div class="sec-eyebrow">01</div><h2>素材与事实</h2>
     <p class="sub">搜索核实来的事实锚点，每条带来源；搜不到的标「待核实」，<b>落地时会被丢弃</b>。</p>${renderFacts(sections, ctx)}</section>

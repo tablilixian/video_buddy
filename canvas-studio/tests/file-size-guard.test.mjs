@@ -116,7 +116,9 @@ export const FILE_WHITELIST = {
   // 复刻提效批（2026-11-02）：/remotion/commit 透传 spot=1，+3（3637 → 3640）。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds（§07 引用失效对账）+ 接线 +14，
   // 3640 → 3654 显式登记。
-  'src/routes.ts': 3654,
+  // REQ-037 延伸（2026-11-10）：「参考素材」派生节接线 —— textFor 选项 + 读取器 import
+  // +3（3654 → 3657 显式登记）；读取器本体在 storyboard-user-text.ts（新文件）。
+  'src/routes.ts': 3657,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
@@ -202,7 +204,7 @@ export const FUNC_WHITELIST = {
   'src/client/styles.ts#STUDIO_STYLES': { lines: 11137, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
-  'src/routes.ts#registerStudioRoutes': { lines: 2969, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）' },
+  'src/routes.ts#registerStudioRoutes': { lines: 2970, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；REQ-037 延伸 textFor 接线 +1（2026-11-10）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。

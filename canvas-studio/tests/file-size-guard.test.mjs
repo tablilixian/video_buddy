@@ -68,7 +68,9 @@ export const FILE_WHITELIST = {
   // 2026-11-06 会话 18（任务 17 终态错误卡）：`.csErrorCard` position:relative + 终态中性条
   // `.csErrorKindTerminal` + 关闭键 `.csErrorDismiss`，+29（11125 → 11154）显式登记。
   // 消化路径：随既有「按域拆 CSS」计划把 `.csError*` 段整体外提，不新立拆分批。
-  'src/client/styles.ts': 11154,
+  // CV-460（2026-11-11）补登：0A-3 音频构成 9 值枚举同步角标样式（sfx 位 +3，
+  // 11154 → 11157）——上一批（2896bd380c）漏登，本次跑闸暴露后补。
+  'src/client/styles.ts': 11157,
   // CV-394（2026-11-02）：+image_matting 工具定义 +34 净行（4401 → 4435）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 工具参数 + spot 载荷分支 + alpha 标记接线
   // +51（4435 → 4486）显式登记。
@@ -119,7 +121,9 @@ export const FILE_WHITELIST = {
   // REQ-037 延伸（2026-11-10）：CV-458 textFor 接线 +3（3654 → 3657）；CV-459 用户参考
   // 确定性登记路由（判据在 storyboard-user-refs.ts 新文件，此处只留接线）+29（3657 → 3686）
   // 显式登记。
-  'src/routes.ts': 3686,
+  // CV-460（2026-11-11）补登：0A-6 sfx 只读路由（ROUTE_REMOTION_SFX + REMOTION_SFX_DIR +
+  // 分发接线，3686 → 3737）——上一批（398d9a792b）漏登，本次跑闸暴露后补。
+  'src/routes.ts': 3737,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
@@ -158,7 +162,10 @@ export const FILE_WHITELIST = {
   // collectAnchorIssues 集成（校验主体在 anchor.ts 新文件），+12（2175 → 2187）显式登记。
   // 六大体裁路线阶段 1.1：ManifestGlobal.logo 键 + JSDoc，+2（2187 → 2189）显式登记。
   // 六大体裁路线阶段 4.1：ChartTrack pie/donut/gauge 扩型（variant JSDoc + gaugeMax/palette），+7（2189 → 2196）显式登记。
-  'src/remotion/manifest.ts': 2196,
+  // CV-460（2026-11-11）补登：0A-1/0A-2 SFX 事件轨契约 + 校验（ManifestSfx/Anchor 接口 +
+  // KNOWN_SFX_KEYS + validateSfxList 主体，2196 → 2395）+ 0A-7 fadeOutSec JSDoc 口径（+3），
+  // 合计 +202 → 2398 —— 上一批（0abcb297ef）漏登，本次跑闸暴露后补。
+  'src/remotion/manifest.ts': 2398,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
@@ -189,7 +196,10 @@ export const FILE_WHITELIST = {
   // 泛型抽取，+52 净行。1384 → 1436 显式登记。
   // CV-393（2026-11-02）：`outline` 镂空字 fx 折算分支（+11 净行：FxStyle.textFill 字段
   // + outline case），1436 → 1447 显式登记。
-  'src/remotion/timing.ts': 1447,
+  // CV-460（2026-11-11）：0A-7 sfx 音量包络 `sfxVolumeAt`（+53 净行：SfxVolumeOptions
+  // 接口 + 纯函数 + 域头注释），1447 → 1500 显式登记。消化路径：随音频域拆分
+  // （audioVolumeAt/sfxVolumeAt 可整体外提到 audio-envelope.ts）一起外提。
+  'src/remotion/timing.ts': 1500,
   // 订阅与积分（2026-11-02）：三个计费请求封装（快照/checkout/portal）+ 错误信封
   // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
   // 复刻提效批（2026-11-02）：PendingStudioRenderJob.spotFrames + commit spot 参数，+7（1339 → 1346）。
@@ -205,10 +215,10 @@ export const FUNC_WHITELIST = {
   // 订阅与积分（2026-11-02）：订阅页样式段 +266（10717 → 10983），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：素材托盘四分区 + 待落画布条样式 +67（10983 → 11050）。
   // 2026-11-06 会话 18（任务 17）：终态错误卡样式 +27（11110 → 11137），与文件棘轮同批登记。
-  'src/client/styles.ts#STUDIO_STYLES': { lines: 11137, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；阶段 6 拆分时本条随之消失' },
+  'src/client/styles.ts#STUDIO_STYLES': { lines: 11140, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；CV-460 0A-3 九值枚举角标 +3 补登（上批漏登）；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
-  'src/routes.ts#registerStudioRoutes': { lines: 2997, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；CV-458 textFor 接线 +1、CV-459 用户参考登记路由 +27（2026-11-10）' },
+  'src/routes.ts#registerStudioRoutes': { lines: 3041, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；CV-458 textFor 接线 +1、CV-459 用户参考登记路由 +27（2026-11-10）；CV-460 0A-6 sfx 只读路由 +44 补登（上批漏登，2026-11-11）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。

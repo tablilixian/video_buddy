@@ -298,6 +298,7 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
             durationInFrames={manifest.meta.durationInFrames}
             fps={manifest.meta.fps}
             duckWindows={duckWindows}
+            tracks={manifest.tracks}
           />
         ) : null}
       </AbsoluteFill>

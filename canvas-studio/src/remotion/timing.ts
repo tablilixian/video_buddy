@@ -1395,6 +1395,59 @@ export function audioVolumeAt(frame: number, options: AudioEnvelopeOptions): num
   return clamp01(base * factor)
 }
 
+// ─────────────────── 0A · CV-460 · sfx 音量包络 ───────────────────
+
+/**
+ * sfx 音量包络（`AudioTrack` 渲染 `audio.sfx[]` 用，与 `audioVolumeAt` 同风格：
+ * 纯函数、逐帧确定、零音频分析）。
+ *
+ * - 淡入：`[startFrame, startFrame + fadeInFrames)` 线性 `0 → gain`，完成帧起即满音量
+ *   （对齐 ffmpeg `afade` 与 `audioVolumeAt` 的既有约定）。
+ * - 淡出：**只有调用方显式给了 `durationInFrames`（素材时长）才生效** —— 在
+ *   `[end - fadeOutFrames, end)` 线性 `gain → 0`。渲染器 MVP 拿不到素材时长
+ *   （只在 `assets/sfx/manifest.json`，NodeNext 下渲染代码无法干净静态引入），
+ *   故渲染侧只接淡入；淡出留给知道时长的调用方（单测 / 将来的清单接线）。
+ * - **不接闪避**：音效是点缀，被 BGM 的闪避包络压住就听不见了（0A-7 精确落点明确）。
+ * - `gain` 按契约收在 0–2（>1 = 增益），**不做** `clamp01` —— 增益超过 1 是合法口径。
+ */
+export interface SfxVolumeOptions {
+  /** 事件起点（绝对帧，`resolveSfxStartFrame` 的产物）。 */
+  startFrame: number
+  fps: number
+  /** 线性增益 0–2（缺省 1）。 */
+  gain?: number
+  /** 淡入（秒，缺省 0）。 */
+  fadeInSec?: number
+  /** 淡出（秒，缺省 0）；仅当同时给了 `durationInFrames` 才生效。 */
+  fadeOutSec?: number
+  /** 素材时长（帧）。给了才解析淡出区间；不给则整段播完都保持 `gain`。 */
+  durationInFrames?: number
+}
+
+export function sfxVolumeAt(frame: number, options: SfxVolumeOptions): number {
+  const fps = Number.isFinite(options.fps) && options.fps > 0 ? options.fps : 30
+  const rawGain = typeof options.gain === 'number' && Number.isFinite(options.gain) ? options.gain : 1
+  const gain = Math.min(2, Math.max(0, rawGain))
+  const startFrame = Number.isFinite(options.startFrame) ? options.startFrame : 0
+  if (!Number.isFinite(frame) || frame < startFrame) return 0
+  const fadeIn = Math.max(0, Math.round((options.fadeInSec ?? 0) * fps))
+  if (fadeIn > 0 && frame < startFrame + fadeIn) {
+    return gain * clamp01((frame - startFrame) / fadeIn)
+  }
+  const duration = typeof options.durationInFrames === 'number' && Number.isFinite(options.durationInFrames)
+    ? Math.max(1, Math.floor(options.durationInFrames))
+    : null
+  if (duration !== null) {
+    const end = startFrame + duration
+    if (frame >= end) return 0
+    const fadeOut = Math.max(0, Math.min(duration, Math.round((options.fadeOutSec ?? 0) * fps)))
+    if (fadeOut > 0 && frame > end - fadeOut) {
+      return gain * clamp01((end - frame) / fadeOut)
+    }
+  }
+  return gain
+}
+
 // ─────────────────── 三期 W6-1 · 抽帧位置（宿主与客户端共用） ───────────────────
 
 /**

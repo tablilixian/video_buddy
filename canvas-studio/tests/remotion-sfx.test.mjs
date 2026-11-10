@@ -18,6 +18,7 @@ import {
 } from '../lib/remotion/manifest.js'
 import { timelineFromManifestAudio } from '../lib/audio-compose.js'
 import { compositionFromTimeline } from '../lib/audio-timeline.js'
+import { sfxVolumeAt } from '../lib/remotion/timing.js'
 
 /**
  * 校验必过的最小 manifest（纯呈现轨，不依赖素材文件）。
@@ -390,4 +391,50 @@ test('0A-3：sfx 的 gain/fade 传递到段上（gain 不丢）', () => {
   assert.equal(seg.gain, 0.3)
   assert.equal(seg.fadeInSec, 0.05)
   assert.equal(seg.fadeOutSec, 0.1)
+})
+
+// ─────────────────── 0A-7 · sfxVolumeAt（渲染音量包络，timing.ts） ───────────────────
+
+test('0A-7：无 fade —— 起点帧即 gain（任务包 §5.1 断言 1 的缺省口径），起点前与 NaN 为 0', () => {
+  assert.equal(sfxVolumeAt(100, { startFrame: 100, fps: 60 }), 1)
+  assert.equal(sfxVolumeAt(150, { startFrame: 100, fps: 60 }), 1, '起点后整段保持 gain')
+  assert.equal(sfxVolumeAt(99, { startFrame: 100, fps: 60 }), 0)
+  assert.equal(sfxVolumeAt(Number.NaN, { startFrame: 100, fps: 60 }), 0)
+})
+
+test('0A-7：显式 gain 生效；>1 放行（增益口径），>2 收敛回契约上限', () => {
+  assert.equal(sfxVolumeAt(100, { startFrame: 100, fps: 60, gain: 0.3 }), 0.3)
+  assert.equal(sfxVolumeAt(100, { startFrame: 100, fps: 60, gain: 1.5 }), 1.5)
+  assert.equal(sfxVolumeAt(100, { startFrame: 100, fps: 60, gain: 5 }), 2)
+})
+
+test('0A-7：淡入线性 0→gain，完成帧起满音量（任务包 §5.1 断言 2）', () => {
+  const startFrame = 100
+  const fadeInFrames = Math.round(0.5 * 60) // 30
+  const opts = { startFrame, fps: 60, gain: 0.8, fadeInSec: 0.5 }
+  assert.equal(sfxVolumeAt(startFrame, opts), 0, '淡入起点 = 0')
+  assert.ok(
+    Math.abs(sfxVolumeAt(startFrame + 15, opts) - 0.4) < 1e-9,
+    '区间中点 = gain 的一半（线性）',
+  )
+  assert.equal(sfxVolumeAt(startFrame + fadeInFrames, opts), 0.8, '完成帧起 = gain')
+  assert.equal(sfxVolumeAt(startFrame + fadeInFrames + 7, opts), 0.8)
+})
+
+test('0A-7：淡出需要显式 durationInFrames —— 给了才线性降、片尾为 0（任务包 §5.1 断言 3）', () => {
+  const end = 220
+  const opts = { startFrame: 100, fps: 60, gain: 1, fadeOutSec: 0.5, durationInFrames: 120 }
+  assert.equal(sfxVolumeAt(end, opts), 0, '片尾帧 = 0')
+  // afade 约定：淡出区间起点（边界帧）保持满音量，`frame > end - fadeOut` 才开始下降。
+  assert.equal(sfxVolumeAt(end - 30, opts), 1, '淡出区间起点的边界帧保持 gain')
+  assert.ok(
+    Math.abs(sfxVolumeAt(end - 15, opts) - 0.5) < 1e-9,
+    '淡出中点 = gain 的一半（线性下降）',
+  )
+  assert.equal(sfxVolumeAt(end - 31, opts), 1, '淡出区间之外保持 gain')
+})
+
+test('0A-7：不给 durationInFrames —— fadeOutSec 不生效（渲染器 MVP 口径，D-16）', () => {
+  const opts = { startFrame: 100, fps: 60, gain: 0.9, fadeOutSec: 0.5 }
+  assert.equal(sfxVolumeAt(1000, opts), 0.9)
 })

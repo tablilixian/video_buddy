@@ -17,8 +17,9 @@
 import type React from 'react'
 import { Sequence } from 'remotion'
 import { Audio } from '@remotion/media'
+import { resolveSfxStartFrame } from '../../audio-timeline.js'
 import type { ManifestAudio } from '../manifest.js'
-import { audioVolumeAt, type AudioDuckWindow } from '../timing.js'
+import { audioVolumeAt, sfxVolumeAt, type AudioDuckWindow } from '../timing.js'
 
 /** 与 `compose.ts` 对齐：有原生音轨时 BGM 只作铺底。 */
 const BGM_MIX_VOLUME = 0.35
@@ -26,13 +27,26 @@ const BGM_MIX_VOLUME = 0.35
 const BGM_VOLUME = 0.8
 const VOICE_VOLUME = 1
 
+/** sfx 锚定解析所需的轨真值（`resolveSfxStartFrame` 的查表来源，窄结构类型）。 */
+export type SfxAnchorTrack = {
+  id: string
+  startFrame: number
+  durationInFrames: number
+}
+
 export const AudioTrack: React.FC<{
   audio: ManifestAudio
   hasNativeAudio: boolean
   durationInFrames: number
   fps: number
   duckWindows?: readonly AudioDuckWindow[]
-}> = ({ audio, hasNativeAudio, durationInFrames, fps, duckWindows = [] }) => {
+  /**
+   * sfx 锚定解析用（决策 D-15：渲染器内折算，不在宿主侧回写 manifest）。渲染器拿到的
+   * manifest 已归一化（宿主侧 `normalizeManifestTiming` 已跑），`track.startFrame`
+   * 必有数字 —— **不要再 normalize**（会二次位移）。
+   */
+  tracks?: readonly SfxAnchorTrack[]
+}> = ({ audio, hasNativeAudio, durationInFrames, fps, duckWindows = [], tracks = [] }) => {
   const bgmVolume = audio.mix?.bgmVolume ?? (hasNativeAudio ? BGM_MIX_VOLUME : BGM_VOLUME)
   const voiceVolume = audio.mix?.voiceVolume ?? VOICE_VOLUME
   // 闪避只作用于 BGM（旁白本身就是被让路的那一路）。
@@ -46,6 +60,8 @@ export const AudioTrack: React.FC<{
     duckAmount,
     duckWindows,
   }
+  // 0A · CV-460：sfx 锚定解析的查表（`anchor.trackId` → 轨真值）。
+  const trackById = new Map(tracks.map((track) => [track.id, track] as const))
   return (
     <>
       {audio.bgmUrl ? (
@@ -71,6 +87,35 @@ export const AudioTrack: React.FC<{
           <Audio src={clip.src} volume={clip.volume ?? voiceVolume} />
         </Sequence>
       ))}
+      {/*
+        0A · CV-460：音效事件轨（`audio.sfx[]`）。**纯追加** —— 上面的 bgm / voiceOver
+        分支一行未动。定位三选一由 `resolveSfxStartFrame` 统一折算（唯一入口，`anchor`
+        用 `trackById` 查表）；解析失败**静默跳过** —— 校验层已在 write 时拒收非法定位，
+        渲染期 throw 会把整片炸成黑屏，代价远大于少一声响（D-15）。
+        音量走 `sfxVolumeAt`（fade-in 线性包络），不接 BGM 的闪避包络 —— 音效是点缀，
+        被闪避压住就听不见了。`<Audio>` 在 `<Sequence>` 内的 volume 回调拿到的是
+        **相对帧**（0 = 素材起点；remotion 的 `useFrameForVolumeProp` 对正数 from 的
+        Sequence 返回 `frame + 0`），换算成绝对帧再进包络。
+      */}
+      {(audio.sfx ?? []).map((sfx, index) => {
+        const startFrame = resolveSfxStartFrame(sfx, { fps, trackById })
+        if (startFrame === null) return null
+        return (
+          <Sequence key={`sfx-${String(index)}`} from={startFrame} layout="none">
+            <Audio
+              src={sfx.src}
+              volume={(frame: number) =>
+                sfxVolumeAt(startFrame + frame, {
+                  startFrame,
+                  fps,
+                  gain: sfx.gain ?? 1,
+                  fadeInSec: sfx.fadeInSec ?? 0,
+                })
+              }
+            />
+          </Sequence>
+        )
+      })}
     </>
   )
 }

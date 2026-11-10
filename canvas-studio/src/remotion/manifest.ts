@@ -831,7 +831,11 @@ export interface ManifestSfx {
   pan?: number
   /** 淡入（秒，缺省 0）。 */
   fadeInSec?: number
-  /** 淡出（秒，缺省 0）。 */
+  /**
+   * 淡出（秒，缺省 0）。⚠️ 渲染器 MVP 只接**淡入**（`sfxVolumeAt`，startFrame 相对、
+   * 不需要时长）；淡出区间锚在素材结尾，而素材时长渲染器不可知（只在
+   * `assets/sfx/manifest.json`），所以淡出要由显式给了 `durationInFrames` 的调用方启用。
+   */
   fadeOutSec?: number
   /** 可选溯源元数据：这份素材由哪个合成配方产出（渲染器不解释）。 */
   type?: string

@@ -145,8 +145,10 @@ const resultSchema = {
     // CV-334（D6）：扩到 8 值 —— 加「旁白位」，否则纯代码片的旁白只能显示成「纯 BGM」。
     audioComposition: {
       type: 'string' as const,
-      enum: ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'none'] as const,
-      description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / native+voiceOver=环境声+旁白 / native+bgm+voiceOver=三者叠混 / bgm=纯 BGM / voiceOver=只有旁白（纯代码片）/ bgm+voiceOver=BGM+旁白 / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
+      // 0A（CV-460）：扩到 9 值 —— 加 sfx（只有音效）。sfx 不参与正交展开，
+      // 只在「三者皆无」时出现，但它必须能阻止纯音效片被标成 none。
+      enum: ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'sfx', 'none'] as const,
+      description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / native+voiceOver=环境声+旁白 / native+bgm+voiceOver=三者叠混 / bgm=纯 BGM / voiceOver=只有旁白（纯代码片）/ bgm+voiceOver=BGM+旁白 / sfx=只有音效（无原生声、无 BGM、无旁白） / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
     },
     frames: {
       type: 'array' as const,

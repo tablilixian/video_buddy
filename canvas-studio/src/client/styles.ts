@@ -3886,7 +3886,10 @@ button.csNodeHeadAlert:hover {
 }
 
 .csNodeAudioMix[data-audio='native+voiceOver'],
-.csNodeAudioMix[data-audio='native+bgm+voiceOver'] {
+.csNodeAudioMix[data-audio='native+bgm+voiceOver'],
+/* 0A（CV-460）：只有音效。与「有旁白」同档淡色 —— 语义都是「我们额外叠上去的声音」，
+   与 none 的错误红明确区分（模板片不该显示成「成片无声」）。 */
+.csNodeAudioMix[data-audio='sfx'] {
   background: color-mix(in srgb, var(--cs-accent, #7c6cff) 13%, transparent);
   color: color-mix(in srgb, var(--cs-accent, #7c6cff) 58%, var(--dsw-alias-label-primary));
 }

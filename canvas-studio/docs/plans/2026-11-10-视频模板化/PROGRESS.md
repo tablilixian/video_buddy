@@ -5,7 +5,7 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-10 22:50 · 阶段：**0A 进行中（契约+校验完成）**
+最后更新：2026-11-10 23:20 · 阶段：**0A 进行中（契约+校验+派生完成，剩合成库/素材/路由/接线）**
 
 ---
 
@@ -34,7 +34,11 @@
   - 覆盖：三定位恰好一个 · anchor.trackId 存在 · anchor.at 枚举 · gain 0–2 · pan −1..1 · 空数组 error · 条数上限 · 外链拒收 · 契约外字段只 warning · 超时长 warning
   - 验收：`tests/remotion-sfx.test.mjs` **33/33 绿**；相邻 `remotion-anchor` + `remotion-render-job` **20/20 绿**
   - **反向变异已做**：`round`→`floor` ⇒ 2 条舍入用例变红；关掉"三定位恰好一个" ⇒ 3 条用例变红 ✅
-- [ ] **0A-3 音频区分**（`summarizeManifestAudio` 已计入 sfx；**还差** `audio-compose.ts` 的 `timelineFromManifestAudio` 与 `contracts/canvas.ts:110` 八值枚举）：`summarizeManifestAudio` 计入 sfx；`StudioAudioComposition`（`src/contracts/canvas.ts:110` 八值枚举）加 sfx 位
+- [x] **0A-3 音频区分**：`summarizeManifestAudio` 计入 sfx；`timelineFromManifestAudio` 产出 `role:'sfx'` 段；枚举 8 → **9 值**（加 `sfx`）
+  - 关键决策：sfx **不参与**「原生/BGM/旁白」三布尔正交展开（否则 8 → 16 值，角标文案爆炸）；它只在三者皆无时把 `none` 顶掉
+  - **发现枚举有 3 处副本**（`contracts/canvas.ts` 类型+2 张文案表 / `host-tools.ts:148` 工具 schema enum / `client/styles.ts` 角标样式），已全部同步为 9 值
+  - 换算实现迁移到 `audio-timeline.ts` 单源（`manifest.ts` 改为 re-export）——否则会与 `audio-compose` 成环，且派生/渲染会各算一套
+  - 验收：`remotion-sfx` **41/41 绿**；音频相关 6 个测试文件 **69/69 绿**（含 `audio-hints-doc` 的「9 键齐全」守卫，它先按设计变红、同步后转绿）：`summarizeManifestAudio` 计入 sfx；`StudioAudioComposition`（`src/contracts/canvas.ts:110` 八值枚举）加 sfx 位
   - 验收：仅 sfx 的 manifest 不得判为 `none`（否则画布角标显示"无声"）
 - [ ] **0A-4 合成库**：新建 `src/audio-sfx/`（DSP：`pan`/`lowpass`/`highpass`/`envelope`/`wav` 写出），照 `gt/native_audiolib.py` 逐原语移植
   - 验收：WAV 头自洽、读回样本数 = 帧数×2、`pan(x,1)` 的 L=0

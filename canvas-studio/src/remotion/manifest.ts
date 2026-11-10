@@ -2046,65 +2046,12 @@ export interface ManifestAudioSummary {
   audibleSources: number
 }
 
-/**
- * sfx 定位 → 绝对帧号。**唯一换算入口**（渲染、校验、验收脚本都调它）。
- *
- * 三种定位互斥：
- * - `anchor`：相对某轨 `start`/`end` + `offsetSec`（模板写法，轨位移时自动跟随）
- * - `startFrame`：绝对帧（GT 复刻验收，绕开秒→帧舍入）
- * - `startSec`：绝对秒，`Math.round(startSec * fps)`（跨 fps 复用的唯一正确表示）
- *
- * 返回 `null` 表示定位不合法或无法解析（调用方负责报 error / 跳过）：
- * - 三定位给 0 个或 ≥2 个
- * - `anchor.trackId` 查不到，或目标轨尚无 `startFrame`（用了 `startAfter` 但未
- *   `normalizeManifestTiming`）
- * - 解析结果为负帧
- */
-export interface SfxResolveContext {
-  fps: number
-  /** 锚定解析用。缺省时 `anchor` 一律返回 null（纯 sec/frame 定位不需要它）。 */
-  trackById?: Map<string, { startFrame: number; durationInFrames: number }>
-}
+// sfx 定位换算的**唯一实现**在 `audio-timeline.ts`（纯函数层）。放那里而不是这里的原因：
+// manifest → audio-compose → audio-timeline 已是既有依赖方向，反向 import 会成环，
+// 而 audio-compose 派生 segments 时也必须用同一份换算（否则渲染与派生两套口径）。
+export { resolveSfxStartFrame } from '../audio-timeline.js'
+export type { SfxLocateInput, SfxResolveContext } from '../audio-timeline.js'
 
-export function resolveSfxStartFrame(sfx: ManifestSfx, ctx: SfxResolveContext): number | null {
-  const hasAnchor = sfx.anchor !== undefined
-  const hasFrame = sfx.startFrame !== undefined
-  const hasSec = sfx.startSec !== undefined
-  const given = (hasAnchor ? 1 : 0) + (hasFrame ? 1 : 0) + (hasSec ? 1 : 0)
-  if (given !== 1) return null
-
-  if (hasFrame) {
-    const frame = sfx.startFrame
-    if (typeof frame !== 'number' || !Number.isInteger(frame) || frame < 0) return null
-    return frame
-  }
-
-  if (hasSec) {
-    const sec = sfx.startSec
-    if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) return null
-    return Math.round(sec * ctx.fps)
-  }
-
-  const anchor = sfx.anchor
-  if (anchor === undefined) return null
-  if (typeof anchor.trackId !== 'string' || anchor.trackId === '') return null
-  if (anchor.at !== 'start' && anchor.at !== 'end') return null
-  const target = ctx.trackById?.get(anchor.trackId)
-  if (target === undefined) return null
-  const base = anchor.at === 'end' ? target.startFrame + target.durationInFrames : target.startFrame
-  const offset = anchor.offsetSec ?? 0
-  if (typeof offset !== 'number' || !Number.isFinite(offset)) return null
-  const frame = Math.round(base + offset * ctx.fps)
-  return frame >= 0 ? frame : null
-}
-
-/**
- * 校验 `audio.sfx`。照 `audio.voiceOver` 的既有写法，行为差异只有两处：
- * 1. **三定位恰好给一个**（0 个 / ≥2 个都 error）—— 叠在一起语义不明，
- *    禁止"取优先级最高的那个"静默忽略。
- * 2. 目标轨尚未 `startFrame`（`startAfter` 未解析）**不报错**：那是运行时才
- *    确定的值，校验阶段只查 `trackId` 存在性。
- */
 function validateSfxList(
   value: unknown,
   tracks: unknown,

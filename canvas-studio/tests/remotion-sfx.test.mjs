@@ -16,6 +16,8 @@ import {
   summarizeManifestAudio,
   validateManifest,
 } from '../lib/remotion/manifest.js'
+import { timelineFromManifestAudio } from '../lib/audio-compose.js'
+import { compositionFromTimeline } from '../lib/audio-timeline.js'
 
 /**
  * 校验必过的最小 manifest（纯呈现轨，不依赖素材文件）。
@@ -302,4 +304,90 @@ test('0A：sfx 条数逐条计数（3 条 → audibleSources 至少 3）', () =>
     },
   }
   assert.equal(summarizeManifestAudio(manifest).audibleSources, 3)
+})
+
+// ───────────────── ⑤ 音频构成派生（0A-3） ─────────────────
+//
+// 这一节守住的核心：**纯音效片不能显示成「无声」**。
+// 枚举是「原生/BGM/旁白」三布尔正交展开，sfx 不参与展开（否则 8 → 16 值），
+// 但必须能在三者皆无时把 none 顶掉。
+
+function derive(manifest) {
+  return compositionFromTimeline(timelineFromManifestAudio(manifest))
+}
+
+test('0A-3：★ 纯音效片派生为 sfx，不是 none（角标曾显示"成片无声"）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [],
+    audio: { sfx: [{ src: OK_SRC, startSec: 0.58 }] },
+  }
+  assert.equal(derive(manifest), 'sfx')
+})
+
+test('0A-3：真·无声片仍是 none（sfx 不能把 none 全都顶掉）', () => {
+  assert.equal(derive({ meta: { fps: 60 }, tracks: [], audio: undefined }), 'none')
+  assert.equal(derive({ meta: { fps: 60 }, tracks: [], audio: {} }), 'none')
+})
+
+test('0A-3：sfx 不参与正交展开 —— native + sfx 仍为 native', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [{ id: 'v1', type: 'video', src: '/p/a.mp4', startFrame: 0, durationInFrames: 600 }],
+    audio: { sfx: [{ src: OK_SRC, startSec: 0.58 }] },
+  }
+  assert.equal(derive(manifest), 'native')
+})
+
+test('0A-3：旁白 + sfx 仍为 voiceOver（sfx 不抢主音源判定）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [],
+    audio: { voiceOver: [{ src: '/p/vo.mp3', startFrame: 0 }], sfx: [{ src: OK_SRC, startSec: 1 }] },
+  }
+  assert.equal(derive(manifest), 'voiceOver')
+})
+
+test('0A-3：sfx 每条独立成段，startSec 由 resolveSfxStartFrame 换算（0.58@60 → 35 帧 → 0.583s）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [],
+    audio: { sfx: [{ src: OK_SRC, startSec: 0.58 }] },
+  }
+  const timeline = timelineFromManifestAudio(manifest)
+  const sfxSegs = timeline.segments.filter((seg) => seg.role === 'sfx')
+  assert.equal(sfxSegs.length, 1, '每条 sfx 必须独立成段')
+  assert.equal(sfxSegs[0].startSec, 0.583, '35/60 = 0.5833… 取三位小数')
+})
+
+test('0A-3：anchor 定位在派生里也用轨的真实 startFrame（不是 0）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [{ id: 'b2-card-1', type: 'textCard', startFrame: 534, durationInFrames: 50 }],
+    audio: { sfx: [{ src: OK_SRC, anchor: { trackId: 'b2-card-1', at: 'start' } }] },
+  }
+  const sfxSegs = timelineFromManifestAudio(manifest).segments.filter((seg) => seg.role === 'sfx')
+  assert.equal(sfxSegs.length, 1)
+  assert.equal(sfxSegs[0].startSec, 8.9, '534/60 = 8.9')
+})
+
+test('0A-3：anchor 指向不存在的轨 → 派生里静默跳过（校验层已报 error，不重复报）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [],
+    audio: { sfx: [{ src: OK_SRC, anchor: { trackId: 'ghost', at: 'start' } }] },
+  }
+  assert.equal(timelineFromManifestAudio(manifest).segments.filter((seg) => seg.role === 'sfx').length, 0)
+})
+
+test('0A-3：sfx 的 gain/fade 传递到段上（gain 不丢）', () => {
+  const manifest = {
+    meta: { fps: 60 },
+    tracks: [],
+    audio: { sfx: [{ src: OK_SRC, startFrame: 100, gain: 0.3, fadeInSec: 0.05, fadeOutSec: 0.1 }] },
+  }
+  const seg = timelineFromManifestAudio(manifest).segments.find((x) => x.role === 'sfx')
+  assert.equal(seg.gain, 0.3)
+  assert.equal(seg.fadeInSec, 0.05)
+  assert.equal(seg.fadeOutSec, 0.1)
 })

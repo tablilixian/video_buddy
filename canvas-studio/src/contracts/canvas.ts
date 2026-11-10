@@ -116,6 +116,12 @@ export type StudioAudioComposition =
   | 'voiceOver'
   | 'bgm+voiceOver'
   | 'none'
+  /**
+   * 0A（CV-460）：**只有音效**。sfx 是装饰层，不参与「原生/BGM/旁白」三布尔正交展开
+   * （否则 8 值 → 16 值，角标文案爆炸）。它只在这个位置出现一次：三者皆无但
+   * `audio.sfx[]` 非空 —— 否则模板片/纯音效片会被标成「无声」，而实际有 7 个音效点。
+   */
+  | 'sfx'
 
 /**
  * CV-143：音轨构成的中文标签。放共享契约而非各端各写一份——Host 的工具结果
@@ -129,6 +135,7 @@ export const AUDIO_COMPOSITION_LABELS: Readonly<Record<StudioAudioComposition, s
   bgm: '纯 BGM',
   voiceOver: '旁白',
   'bgm+voiceOver': 'BGM + 旁白',
+  sfx: '仅音效',
   none: '无声',
 }
 
@@ -142,7 +149,8 @@ export const AUDIO_COMPOSITION_HINTS: Readonly<Record<StudioAudioComposition, st
   bgm: '多镜拼接，BGM 为唯一声轨（各镜原生声按镜混排在 BGM 之下）',
   voiceOver: '无视频轨（纯代码片），成片只有旁白',
   'bgm+voiceOver': '无原生环境声，BGM 与旁白叠混',
-  none: '无任何声源（无原生音轨、无 BGM、无旁白），成片无声',
+  sfx: '无原生音轨、无 BGM、无旁白，成片只有音效事件（模板片的常态）',
+  none: '无任何声源（无原生音轨、无 BGM、无旁白、无音效），成片无声',
 }
 
 /**
@@ -152,7 +160,7 @@ export const AUDIO_COMPOSITION_HINTS: Readonly<Record<StudioAudioComposition, st
  * timelineFromComposition 只读反推，不写回、不迁移。
  */
 export const AUDIO_COMPOSITION_DERIVATION =
-  '音轨构成由音频时间轴（AudioTimeline）的段角色自动派生：有原生环境声段 → 含「native」，有配乐段 → 含「bgm」，有旁白段 → 含「voiceOver」，全无 → 「none」。' +
+  '音轨构成由音频时间轴（AudioTimeline）的段角色自动派生：有原生环境声段 → 含「native」，有配乐段 → 含「bgm」，有旁白段 → 含「voiceOver」，三者皆无但有音效段 → 「sfx」，四者全无 → 「none」。' +
   '老项目无时间轴数据时按已落盘构成只读反推，不影响展示。'
 
 /** One canvas node (a generation result or a manual annotation). */

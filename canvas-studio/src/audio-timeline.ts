@@ -262,7 +262,61 @@ export const AUDIO_DELIVERY_CHANNELS = 2
  * 保留为兼容包装转调本函数）。`compositionFromTimeline` 也落到这里 —— 枚举从时间轴
  * 的段角色集合推出，不再手工传三个布尔。
  */
-export function compositionFromPresence(input: { hasNative: boolean; hasBgm: boolean; hasVoiceOver: boolean }): StudioAudioComposition {
+/** sfx 定位输入。结构化类型 —— 与 `ManifestSfx` 兼容，但此层**不能** import manifest
+ * （manifest → audio-compose → audio-timeline 已成链，反向依赖会成环）。 */
+export interface SfxLocateInput {
+  anchor?: { trackId: string; at: 'start' | 'end'; offsetSec?: number }
+  startFrame?: number
+  startSec?: number
+}
+
+export interface SfxResolveContext {
+  fps: number
+  /** 锚定解析用。缺省时 `anchor` 一律返回 null（纯 sec/frame 定位不需要它）。 */
+  trackById?: Map<string, { startFrame: number; durationInFrames: number }>
+}
+
+/**
+ * sfx 定位 → 绝对帧号。**唯一换算入口**（渲染、校验、派生、验收脚本都调它）。
+ *
+ * - `anchor`：相对某轨 `start`/`end` + `offsetSec`（模板写法，轨位移时自动跟随）
+ * - `startFrame`：绝对帧（GT 复刻验收，绕开秒→帧舍入）
+ * - `startSec`：绝对秒，`Math.round(startSec * fps)`（跨 fps 复用的唯一正确表示）
+ *
+ * 返回 `null` = 定位不合法或无法解析（三定位非恰好一个 / trackId 查不到 /
+ * 目标轨尚无 startFrame（用了 startAfter 但未 normalize）/ 结果为负帧）。
+ */
+export function resolveSfxStartFrame(sfx: SfxLocateInput, ctx: SfxResolveContext): number | null {
+  const hasAnchor = sfx.anchor !== undefined
+  const hasFrame = sfx.startFrame !== undefined
+  const hasSec = sfx.startSec !== undefined
+  if ((hasAnchor ? 1 : 0) + (hasFrame ? 1 : 0) + (hasSec ? 1 : 0) !== 1) return null
+
+  if (hasFrame) {
+    const frame = sfx.startFrame
+    return typeof frame === 'number' && Number.isInteger(frame) && frame >= 0 ? frame : null
+  }
+
+  if (hasSec) {
+    const sec = sfx.startSec
+    if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) return null
+    return Math.round(sec * ctx.fps)
+  }
+
+  const anchor = sfx.anchor
+  if (anchor === undefined) return null
+  if (typeof anchor.trackId !== 'string' || anchor.trackId === '') return null
+  if (anchor.at !== 'start' && anchor.at !== 'end') return null
+  const target = ctx.trackById?.get(anchor.trackId)
+  if (target === undefined) return null
+  const base = anchor.at === 'end' ? target.startFrame + target.durationInFrames : target.startFrame
+  const offset = anchor.offsetSec ?? 0
+  if (!Number.isFinite(offset)) return null
+  const frame = Math.round(base + offset * ctx.fps)
+  return frame >= 0 ? frame : null
+}
+
+export function compositionFromPresence(input: { hasNative: boolean; hasBgm: boolean; hasVoiceOver: boolean; hasSfx?: boolean }): StudioAudioComposition {
   const { hasNative, hasBgm, hasVoiceOver } = input
   if (hasNative) {
     if (hasBgm && hasVoiceOver) return 'native+bgm+voiceOver'
@@ -273,6 +327,9 @@ export function compositionFromPresence(input: { hasNative: boolean; hasBgm: boo
   if (hasBgm && hasVoiceOver) return 'bgm+voiceOver'
   if (hasBgm) return 'bgm'
   if (hasVoiceOver) return 'voiceOver'
+  // 0A：**只有音效**的片不能判 none。sfx 不是「主音源」，不参与正交展开
+  // （否则 8 值 → 16 值），但它必须能阻止「成片无声」的误判。
+  if (input.hasSfx === true) return 'sfx'
   return 'none'
 }
 
@@ -283,6 +340,7 @@ export function compositionFromTimeline(timeline: Pick<AudioTimeline, 'segments'
     hasNative: roles.has('native'),
     hasBgm: roles.has('bgm'),
     hasVoiceOver: roles.has('voiceOver'),
+    hasSfx: roles.has('sfx'),
   })
 }
 
@@ -301,6 +359,7 @@ export function timelineFromComposition(composition: StudioAudioComposition, dur
   if (parts.has('native')) segments.push({ url: '', startSec: 0, role: 'native' })
   if (parts.has('bgm')) segments.push({ url: '', startSec: 0, role: 'bgm' })
   if (parts.has('voiceOver')) segments.push({ url: '', startSec: 0, role: 'voiceOver' })
+  if (parts.has('sfx')) segments.push({ url: '', startSec: 0, role: 'sfx' })
   return { fps: 0, durationSec, segments }
 }
 

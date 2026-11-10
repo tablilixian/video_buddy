@@ -19,7 +19,7 @@
  * 留在 compose.ts（兼容包装，老单测逐字符判据仍成立）。
  */
 import type { AudioTimeline, AudioSegment } from './audio-timeline.js'
-import { resolveAudioTimeline, describeTimeline, AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS } from './audio-timeline.js'
+import { resolveAudioTimeline, describeTimeline, AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS, resolveSfxStartFrame } from './audio-timeline.js'
 
 /**
  * CV-141：单镜「环境声 + BGM」叠混时的 BGM 音量。
@@ -315,6 +315,20 @@ export interface ManifestAudioLike {
   fadeInSeconds?: number
   fadeOutSeconds?: number
   duck?: { amount?: number }
+  /**
+   * 0A：音效事件轨。**每条独立成段**（起点各不相同，不能合并）。
+   * 定位三选一，由 `resolveSfxStartFrame` 解析；解析失败的在派生里跳过
+   * （校验层已报 error，这里不重复报）。
+   */
+  sfx?: ReadonlyArray<{
+    src?: string
+    anchor?: { trackId: string; at: 'start' | 'end'; offsetSec?: number }
+    startFrame?: number
+    startSec?: number
+    gain?: number
+    fadeInSec?: number
+    fadeOutSec?: number
+  }>
 }
 
 /**
@@ -325,6 +339,8 @@ export interface ManifestAudioLike {
  * video / image / 表现轨不读这些字段。
  */
 export interface ManifestTracksLike {
+  /** 轨 id（0A 起用于 sfx 的 `anchor.trackId` 解析；此前本接口不需要它）。 */
+  id?: string
   type: string
   /** caption 轨：该句旁白音频 URL（本轨自带 `<Audio>` 播放，不经 ffmpeg 混音）。 */
   src?: string
@@ -405,6 +421,46 @@ export function timelineFromManifestAudio(manifest: {
         role: 'voiceOver',
         ...(clip.volume !== undefined ? { gain: clip.volume } : {}),
         ...(duckAmount !== undefined && duckAmount > 0 ? { duckAmount } : {}),
+      })
+    }
+  }
+  // 0A（CV-460）：音效事件轨。**每条独立成段** —— 起点各不相同，合并会丢事件。
+  // anchor 定位需要目标轨帧号 ⇒ 先建 id → 帧号映射（增量：只有本字段非空才建）。
+  if (audio !== undefined && Array.isArray(audio.sfx) && audio.sfx.length > 0) {
+    const trackById = new Map<string, { startFrame: number; durationInFrames: number }>()
+    for (const track of manifest.tracks) {
+      if (typeof track.id === 'string' && track.id.length > 0) {
+        trackById.set(track.id, {
+          startFrame: typeof track.startFrame === 'number' ? track.startFrame : 0,
+          durationInFrames: typeof track.durationInFrames === 'number' ? track.durationInFrames : 0,
+        })
+      }
+    }
+    for (const item of audio.sfx) {
+      if (item === undefined || item === null) continue
+      const url = item.src
+      if (typeof url !== 'string' || url.length === 0) continue
+      // fps 未知（0）时 anchor / startSec 都无从换算，只有 startFrame 直接可用 ——
+      // 仍然调同一个 resolveSfxStartFrame，不在这里另造一套换算。
+      const startFrame = fps > 0
+        ? resolveSfxStartFrame(
+            {
+              ...(item.anchor !== undefined ? { anchor: item.anchor } : {}),
+              ...(item.startFrame !== undefined ? { startFrame: item.startFrame } : {}),
+              ...(item.startSec !== undefined ? { startSec: item.startSec } : {}),
+            },
+            { fps, trackById },
+          )
+        : (typeof item.startFrame === 'number' ? item.startFrame : null)
+      // 解析失败的在派生里跳过：校验层已报 error，这里重复报只会刷屏。
+      if (startFrame === null) continue
+      segments.push({
+        url,
+        startSec: fps > 0 ? Math.round((startFrame / fps) * 1000) / 1000 : 0,
+        role: 'sfx',
+        ...(item.gain !== undefined ? { gain: item.gain } : {}),
+        ...(item.fadeInSec !== undefined ? { fadeInSec: item.fadeInSec } : {}),
+        ...(item.fadeOutSec !== undefined ? { fadeOutSec: item.fadeOutSec } : {}),
       })
     }
   }

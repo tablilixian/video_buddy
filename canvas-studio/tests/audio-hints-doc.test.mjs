@@ -83,8 +83,10 @@ test('AUDIO_COMPOSITION_HINTS：不再宣称「环境声已丢弃」，bgm/none 
   assert.ok(AUDIO_COMPOSITION_HINTS.none.includes('无任何声源'), `none 文案应说明是无任何声源，实得「${AUDIO_COMPOSITION_HINTS.none}」`)
 })
 
-test('AUDIO_COMPOSITION_LABELS/HINTS：8 键齐全（新增枚举漏文案当场红）', () => {
-  const enums = ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'none']
+test('AUDIO_COMPOSITION_LABELS/HINTS：9 键齐全（新增枚举漏文案当场红）', () => {
+  // 0A（CV-460）：9 值 —— 加 sfx（只有音效）。sfx 不参与正交展开，
+  // 只在「原生/BGM/旁白」三者皆无时出现。
+  const enums = ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'sfx', 'none']
   assert.deepEqual(Object.keys(AUDIO_COMPOSITION_LABELS).sort(), [...enums].sort())
   assert.deepEqual(Object.keys(AUDIO_COMPOSITION_HINTS).sort(), [...enums].sort())
 })
@@ -98,8 +100,10 @@ test('AUDIO_COMPOSITION_DERIVATION：说明「枚举由时间轴派生」并指�
 // ---------------------------------------------------------------------------
 // 3. timelineFromComposition（D-03：老数据只读反推，不写回）
 // ---------------------------------------------------------------------------
-test('timelineFromComposition：8 枚举反推后重新派生回原值（roundtrip），且不带时间/来源信息', () => {
-  const enums = ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'none']
+test('timelineFromComposition：9 枚举反推后重新派生回原值（roundtrip），且不带时间/来源信息', () => {
+  // 0A（CV-460）：9 值 —— 加 sfx（只有音效）。sfx 不参与正交展开，
+  // 只在「原生/BGM/旁白」三者皆无时出现。
+  const enums = ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'sfx', 'none']
   for (const composition of enums) {
     const timeline = timelineFromComposition(composition)
     assert.equal(compositionFromTimeline(timeline), composition, `${composition} 反推→派生应回原值`)

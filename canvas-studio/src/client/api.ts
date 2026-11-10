@@ -821,6 +821,25 @@ export async function uploadStudioVideo(
 }
 
 /**
+ * REQ-037 延伸（CV-459）：落盘成功的附件**确定性**登记进故事板 §07（`source:"user"`）。
+ *
+ * 与 upload-media 同一拍由落卡链路调用（landStudioFiles 的消费方）；失败由调用方
+ * catch 留日志 —— 登记失败不阻断画布落卡，agent 登记纪律（CV-405）仍是兜底。
+ */
+export async function registerStoryboardUserRefs(
+  projectId: string,
+  items: readonly { name: string; kind: string; assetFile: string }[],
+  signal?: AbortSignal,
+): Promise<{ registered: number; skipped: number; rejected: readonly string[] }> {
+  return readJson(await fetch('/canvas-studio/storyboard/register-user-refs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, items }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
  * 拆分画布上**已有的视频节点**（右键「拆分视频」）：Host 对该资产抽帧 + 风格归纳。
  *
  * 与上传分开是刻意的：上传只落节点，拆分是**派生动作** —— 用户想不想拆、拆哪个、

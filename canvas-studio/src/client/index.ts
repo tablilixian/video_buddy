@@ -29,7 +29,7 @@ import { bumpStoryboardRev } from './storyboard-signal.js'
 import { refreshCreditsAfterGeneration } from './credits-store.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
-import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
+import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, registerStoryboardUserRefs, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
 // 2026-10-23：渲染轮询的拍内决策表（纯函数，tests/render-poll-gate.test.mjs 钉住）。
 import { decideRenderPollStep } from '../render-poll-gate.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
@@ -455,6 +455,8 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     tokens: readonly string[]
     /** 图片的待后台提升清单（Drama 句柄预热）。 */
     deferred: readonly DeferredAsset[]
+    /** 落盘成功的附件（CV-459）：调用方据此把文件确定性登记进故事板 §07。 */
+    refs: readonly { name: string; kind: MediaKind; assetFile: string }[]
   }
   /**
    * 把一批本地文件落进某项目的画布（**四类**：图片 / 视频 / 音频 / 文本）。
@@ -557,6 +559,20 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     const landed = files.map(() => false)
     const tokens: string[] = []
     const deferred: DeferredAsset[] = []
+    // CV-459：落盘成功 = assets/ 里有实物 → 汇给调用方登记进故事板 §07（source:"user"）。
+    // assetFile 载荷缺（video 只回 url）时从资产 URL 尾段取 —— URL 由 Host 资产路由生成，
+    // 尾段即磁盘文件名（isAssetFileName 白名单保证 ASCII 安全段）。
+    const refs: { name: string; kind: MediaKind; assetFile: string }[] = []
+    for (const item of prepared) {
+      if (item === null) continue
+      const original = files[item.index]
+      if (original === undefined) continue
+      refs.push({
+        name: original.name,
+        kind: item.kind,
+        assetFile: item.assetFile ?? decodeURIComponent(item.url.split('/').pop() ?? ''),
+      })
+    }
     for (const item of prepared) {
       if (item === null) continue
       if (item.kind === 'image') {
@@ -618,7 +634,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       // 后台预热：不阻塞发送；完成后把 filename 回填节点并落盘。
       if (deferred.length > 0) promoteDeferredAssets(projectId, deferred)
     }
-    return { landed, tokens, deferred }
+    return { landed, tokens, deferred, refs: refs.filter((ref) => ref.assetFile !== '') }
   }
   const divertAttachments = async (
     files: readonly File[],
@@ -683,6 +699,14 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       return ''
     }
     const outcome = await landStudioFiles(projectId, pairs.map((pair) => pair.file), signal)
+    // CV-459：落盘成功 = 文件已进 assets/ → 同拍确定性登记进故事板 §07（source:"user"），
+    // 登记不再依赖 agent 记得写（CV-458 解决「看得见」，这里解决「一定在」）。失败只留
+    // 日志：画布节点与待落画布条语义不变，agent 登记纪律（CV-405）仍是兜底。
+    if (outcome.refs.length > 0) {
+      void registerStoryboardUserRefs(projectId, outcome.refs, signal).catch((cause: unknown) => {
+        ctx.logger.warn(`canvas-studio: register user refs failed (canvas landing unaffected): ${cause instanceof Error ? cause.message : String(cause)}`)
+      })
+    }
     const done = pairs.filter((_, index) => outcome.landed[index] === true).map((pair) => pair.item)
     const kept = pairs.filter((_, index) => outcome.landed[index] !== true).map((pair) => pair.item)
     const consumed = [...done, ...ghosts]

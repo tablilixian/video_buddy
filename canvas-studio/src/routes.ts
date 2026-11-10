@@ -24,6 +24,7 @@ import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, h
 import { gcProjectAssets, gcLibraryAssets, deleteUnreferencedAssets, collectReferencedBasenames, basenameOfUrl } from './asset-gc.js'
 import { isAssetFileName } from './asset-path.js'
 import { storyboardUserTextResolver } from './storyboard-user-text.js'
+import { registerUserReferenceAssets } from './storyboard-user-refs.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { resolveRefFilenames } from './reference-resolve.js'
@@ -98,6 +99,7 @@ const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
 /** REQ-022（CV-293）：拍摄定稿只读覆盖层（prefix + 手动解析 `{projectId}.html`）。 */
 const ROUTE_STORYBOARD = '/canvas-studio/storyboard'
+const ROUTE_STORYBOARD_USER_REFS = '/canvas-studio/storyboard/register-user-refs'
 /** 该 prefix 下的写类动作（POST + 同源校验）；其余路径都是只读。 */
 const STORYBOARD_WRITE_ACTIONS: ReadonlySet<string> = new Set(['archive', 'restore', 'rename', 'land'])
 /**
@@ -1983,6 +1985,33 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'style demo not found' })
+      }
+    }}),
+
+    // REQ-037 延伸（CV-459）：用户附件落盘（开始创作消费首页暂存 / 点「落进画布」）
+    // 后由客户端调用，把文件**确定性**登记进 §07（source:"user"）——登记不再依赖
+    // agent 记得写。判据与写入在 storyboard-user-refs.ts（新文件，本文件行数棘轮只留
+    // 接线）；全部失败路径降级为 outcome 响应，不阻断画布落卡链路。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_STORYBOARD_USER_REFS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort())) {
+        sendJson(res, 405, { error: 'register-user-refs requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      req.once('aborted', () => controller.abort())
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; items?: unknown }
+        if (typeof body.projectId !== 'string' || body.projectId === '' || !Array.isArray(body.items)) {
+          sendJson(res, 400, { error: '缺少 projectId 或 items' })
+          return
+        }
+        sendJson(res, 200, await registerUserReferenceAssets(registry, body.projectId, body.items as never))
+      } catch (cause) {
+        sendRouteFailure(res, cause, 400, '参考素材登记失败，请稍后重试。')
       }
     }}),
 

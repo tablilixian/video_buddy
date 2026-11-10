@@ -2728,3 +2728,12 @@
 - **方案**：**零契约改动**的渲染层派生节。九节 / schemaVersion / SECTION_GUIDE / 完成度分母（9）全部不动；新增 `<section id="ref">` 插在 §00 之后，tab 不带编号带「用户」角标，内容 = §07 中 `source:"user"` 且未 waived 条目的卡片网格。四格式四形态（全无 JS）：图片 → 纯 CSS `:target` lightbox 大图；视频/音频 → 原生 `<video>/<audio> controls`（assets 路由已有 Range 支持）；文字 → 路由侧读文件内联 `<details>`（新文件 `storyboard-user-text.ts`，白名单扩展 + 256KB 截断 + 逐条降级）。状态完备：ready/pending 门禁语义照搬、引用失效复用 CV-408 对账、waived 折算成节尾一行说明、空态引导「在对话里上传…自动登记到这里」。登记纪律本身 REQ-037/CV-405 已落（工具描述 + SKILL.md + toolchain.md 三处），本条只补「看得见」。
 - **涉及文件**：`src/storyboard-render.ts`（`userReferenceAssets` / `renderUserReferences` / tab 插入 / STYLE 段 / `options.textFor`）、`src/storyboard-user-text.ts`（新文件，文字读取器）、`src/routes.ts`（+3 行接线）、`tests/storyboard-user-references.test.mjs`（新文件，9 条用例）、`tests/file-size-guard.test.mjs`（routes 棘轮 3654→3657 / registerStudioRoutes 2969→2970 显式登记）。
 - **验证**：typecheck / build / verify:loader 全绿；新测试 9/9；全量 smoke **0 失败**（失败集合 ⊆ 空基线）。**⚑ 待桌面验收**：造一个含 user 附件的项目 → 打开故事板「参考素材」节 → 图片点开大图 / 视频音频可播 / 文字可展开；§07 仍为全量账本且落地门禁行为不变。
+
+#### CV-459 · 用户附件确定性登记 §07（2026-11-10，REQ-037 延伸）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **一句话问题**：附件登记进 §07 这一步押在 agent 身上（CV-405 纪律是「提醒」不是「保证」），真机实证会漏——翻拍本 8 个附件落了卡（@ref 令牌俱在）、§07 却是空的。登记链路里不允许留概率性环节。
+- **方案（用户拍板：落卡同拍由 Host 写，不依赖模型）**：文件落进项目 `assets/` 的同一拍（**开始创作**消费首页暂存 / 用户点「落进画布」，两入口共用 `landLobbyStash` 一条链），客户端把落盘结果（`LandOutcome.refs`：原名 + kind + assetFile）fire-and-forget 上报新路由 `POST /canvas-studio/storyboard/register-user-refs`；Host 侧新文件 `storyboard-user-refs.ts` 逐条校验（kind 白名单 / `isAssetFileName` / 单批 32 条上限）、按 assetFile 幂等去重后追加 `source:"user"` 条目，全部失败路径降级返回**绝不阻断落卡**。合并保护：`mergeStoryboardWrite` 新增 `keepUserAssets` —— `source:"user"` 条目 agent 重传 §07 冲不掉（**显式清空也保留**，CV-309 keepHostRefs 同款口径；参考属于用户，agent 无移除权，移除 UI 后续再做，账实漂移由 CV-408 兜底）。模型退化为可选的「补语义」（neededBy），不再是登记守门人。
+- **涉及文件**：`src/storyboard-user-refs.ts`（新文件：`planUserRefEntries` 纯函数 + `registerUserReferenceAssets`）、`src/contracts/storyboard.ts`（`keepUserAssets` + `keepHostRefs` 接线）、`src/routes.ts`（+29 接线）、`src/client/api.ts`（`registerStoryboardUserRefs` +19）、`src/client/index.ts`（`LandOutcome.refs` 汇集 + `landLobbyStash` 消费 +24）、`tests/storyboard-user-refs.test.mjs`（新文件 7 条）、`tests/file-size-guard.test.mjs`（routes 3657→3686 / api 1346→1365 / index 3019→3043 / registerStudioRoutes 2970→2997 / studioClient 2755→2779 显式登记）。
+- **验证**：typecheck / build / verify:loader 全绿；新测试 7/7 + CV-458 的 9/9；全量 smoke **0 失败**。**⚑ 待桌面验收**：首页「参考内容」放附件 → 点「开始创作」→ 故事板「参考素材」节直接有内容（无需 agent 动作）；agent 整体重写故事板后登记条目仍在。

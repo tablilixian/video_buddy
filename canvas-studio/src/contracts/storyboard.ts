@@ -418,11 +418,48 @@ function keepShotRefImages(incoming: unknown, current: unknown): unknown {
   }
 }
 
-/** 按节分派引用保留（九节里只有 §02 / §04 含 Host 独占的引用字段）。 */
+/** 按节分派引用保留（九节里只有 §02 / §04 / §07 含 Host 独占的引用或登记）。 */
 function keepHostRefs(key: string, incoming: unknown, current: unknown): unknown {
   if (key === '02_visual') return keepLookRef(incoming, current)
   if (key === '04_storyboard') return keepShotRefImages(incoming, current)
+  if (key === '07_assets') return keepUserAssets(incoming, current)
   return incoming
+}
+
+/** §07 用户登记条目的匹配键（name + ref 唯一确定一条；ref 缺失的脏数据不保护）。 */
+function userAssetKey(asset: unknown): string | null {
+  if (!isRecord(asset) || asset.source !== 'user') return null
+  const name = typeof asset.name === 'string' ? asset.name : ''
+  const ref = isRecord(asset.ref) ? asset.ref : undefined
+  const id = typeof ref?.id === 'string' ? ref.id : ''
+  const kind = typeof ref?.kind === 'string' ? ref.kind : ''
+  return name === '' || id === '' || kind === '' ? null : `${name}\u241F${kind}:${id}`
+}
+
+/**
+ * §07 用户参考登记保护（CV-459）：`source:"user"` 的条目（Host 在「开始创作 / 落画布」
+ * 时确定性登记，见 `register-user-refs` 路由；或 agent 按纪律补登的口述参考）**不归
+ * agent 管** —— agent 重传 `assets` 段（节级替换语义）不得把它们冲掉，否则用户参考
+ * 又一次「登记了也会消失」（CV-309 lookRef 同款病灶，登记链路里不允许再留概率性环节）。
+ *
+ * 口径：agent 写的条目里已有同键（name + ref）的 → 不重复补；没提到的 user 条目 →
+ * 追加保留（**含显式清空**：`"[]"` 清不掉 user 条目）。agent 无法移除用户参考 ——
+ * 移除是 Host / 用户的操作（本期未做 UI，账实漂移由 CV-408 失效对账兜底）。
+ * 非条目级影响：agent 自己新增 / 更新的非 user 条目照常按节级替换语义走。
+ */
+function keepUserAssets(incoming: unknown, current: unknown): unknown {
+  if (!Array.isArray(incoming)) return incoming
+  if (!Array.isArray(current)) return incoming
+  const incomingKeys = new Set<string>()
+  for (const asset of incoming) {
+    const key = userAssetKey(asset)
+    if (key !== null) incomingKeys.add(key)
+  }
+  const kept = current.filter((asset) => {
+    const key = userAssetKey(asset)
+    return key !== null && !incomingKeys.has(key)
+  })
+  return kept.length === 0 ? incoming : [...incoming, ...kept]
 }
 
 /**

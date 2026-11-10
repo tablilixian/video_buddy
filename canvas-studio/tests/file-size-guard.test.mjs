@@ -116,9 +116,10 @@ export const FILE_WHITELIST = {
   // 复刻提效批（2026-11-02）：/remotion/commit 透传 spot=1，+3（3637 → 3640）。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds（§07 引用失效对账）+ 接线 +14，
   // 3640 → 3654 显式登记。
-  // REQ-037 延伸（2026-11-10）：「参考素材」派生节接线 —— textFor 选项 + 读取器 import
-  // +3（3654 → 3657 显式登记）；读取器本体在 storyboard-user-text.ts（新文件）。
-  'src/routes.ts': 3657,
+  // REQ-037 延伸（2026-11-10）：CV-458 textFor 接线 +3（3654 → 3657）；CV-459 用户参考
+  // 确定性登记路由（判据在 storyboard-user-refs.ts 新文件，此处只留接线）+29（3657 → 3686）
+  // 显式登记。
+  'src/routes.ts': 3686,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
@@ -138,7 +139,9 @@ export const FILE_WHITELIST = {
   // 自动落卡）+ LOBBY_LAND_STASH_EVENT 消费监听 +25，2983 → 3008 显式登记。
   // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
   // 借鉴翻拍 3v3 一键实验：编排主体已外提到 client/experiment-runner.ts，index.ts 仅留 +9 行依赖接线
-  'src/client/index.ts': 3019,
+  // CV-459（2026-11-10）：落盘成功 → §07 确定性登记（LandOutcome.refs 汇集 + landLobbyStash
+  // 消费接线，fire-and-forget），+24（3019 → 3043）显式登记。
+  'src/client/index.ts': 3043,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
   // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
@@ -190,7 +193,8 @@ export const FILE_WHITELIST = {
   // 订阅与积分（2026-11-02）：三个计费请求封装（快照/checkout/portal）+ 错误信封
   // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
   // 复刻提效批（2026-11-02）：PendingStudioRenderJob.spotFrames + commit spot 参数，+7（1339 → 1346）。
-  'src/client/api.ts': 1346,
+  // CV-459（2026-11-10）：registerStoryboardUserRefs（§07 确定性登记的请求封装），+19（1346 → 1365）。
+  'src/client/api.ts': 1365,
 }
 
 /**
@@ -204,7 +208,7 @@ export const FUNC_WHITELIST = {
   'src/client/styles.ts#STUDIO_STYLES': { lines: 11137, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
-  'src/routes.ts#registerStudioRoutes': { lines: 2970, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；REQ-037 延伸 textFor 接线 +1（2026-11-10）' },
+  'src/routes.ts#registerStudioRoutes': { lines: 2997, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；CV-458 textFor 接线 +1、CV-459 用户参考登记路由 +27（2026-11-10）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
@@ -212,7 +216,7 @@ export const FUNC_WHITELIST = {
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2873, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登；P1-1 里程碑 +4；会话18 错误码接线 +2' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
   // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
-  'src/client/index.ts#studioClient': { lines: 2755, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2；借鉴翻拍 3v3 接线 +8（执行器主体外提到 client/experiment-runner.ts，内联将多 70 余行）' },
+  'src/client/index.ts#studioClient': { lines: 2779, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2；借鉴翻拍 3v3 接线 +8；CV-459 落盘→§07 登记接线 +24（2026-11-10）' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。

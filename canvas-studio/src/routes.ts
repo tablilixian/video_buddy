@@ -341,6 +341,11 @@ const ROUTE_REMOTION_GRAIN = '/canvas-studio/remotion/grain'
 // 以**同源** `@font-face` 注入 —— 跨源会静默 404 → 回退系统字体 → 中文观感事故
 //（devdoc §8.3 第 4 条标红项），勿改成别的域或改走 base64 内联。
 const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
+// 0A · CV-460：随包音效（`assets/sfx/*.wav`）只读路由。合成离线（`scripts/build-sfx.mjs`）、
+// 渲染只读文件 ⇒ 拿到手的字节跨机器一致。**必须**挂在 `remotion/` 下：`/canvas-studio/assets/…`
+// 会被资产路由解析成 projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
+// 与 `src/audio-sfx/index.ts` 的 `SFX_URL_PREFIX` 必须字面一致。
+const ROUTE_REMOTION_SFX = '/canvas-studio/remotion/sfx'
 // REQ-034 · O-05：RenderHost 隐藏渲染窗口的三条路由（页面 / bundle / 自报状态）。
 // 页面与 bundle 由**隐藏窗口自己**加载，不给外部浏览器用 ⇒ 仍然只认 loopback authority。
 const ROUTE_RENDER_HOST = '/canvas-studio/render-host'
@@ -370,6 +375,8 @@ const STYLE_DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'a
 const REMOTION_FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'fonts')
 /** 三期 W2-4：颗粒 tile（`scripts/build-grain-tile.mjs` 产出，确定性噪点、产物入库）。 */
 const REMOTION_GRAIN_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'remotion', 'grain.png')
+/** 0A · CV-460：随包音效目录（`scripts/build-sfx.mjs` 产出，产物入库）。 */
+const REMOTION_SFX_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'sfx')
 
 /** 托管资产的扩展名 → Content-Type（P8.4 起含参考视频；CV-241 起含文本）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -3539,6 +3546,50 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'font not found' })
+      }
+    }}),
+
+    // ── 0A · CV-460：随包音效只读面 ──
+    // 与 fonts 同口径：loopback authority + 单段文件名白名单（`^[a-z0-9-]+\.wav$`
+    // 天然挡掉 `..`、子目录与扩展名伪装）+ join/startsWith 兜底防穿越；静态不可变 ⇒ 强缓存。
+    // 例外是 `manifest.json`：清单要能被校验层与排查读到，但**不给**渲染进程按需拉取所需
+    //（渲染只认 URL），所以单独放行这一个固定名，不做通配。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_REMOTION_SFX, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion sfx only support GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
+      // 与 fonts 同因：decodeURIComponent 对 malformed 编码抛 URIError，必须进 try。
+      let file = ''
+      try {
+        file = decodeURIComponent(requestUrl.pathname.slice(ROUTE_REMOTION_SFX.length)).replace(/^\/+/, '')
+      } catch {
+        sendJson(res, 400, { error: 'malformed sfx path' })
+        return
+      }
+      if (!/^[a-z0-9-]+\.wav$/.test(file) && file !== 'manifest.json') {
+        sendJson(res, 400, { error: 'sfx path must be /<name>.wav' })
+        return
+      }
+      const target = join(REMOTION_SFX_DIR, file)
+      if (!target.startsWith(REMOTION_SFX_DIR + sep)) {
+        sendJson(res, 403, { error: 'forbidden sfx path' })
+        return
+      }
+      try {
+        const data = await readFile(target)
+        res.setHeader('content-type', ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'sfx not found' })
       }
     }}),
 

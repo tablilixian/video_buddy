@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "generatedBy": "build-sfx",
+  "sampleRate": 48000,
+  "normalizePeak": 0.891,
+  "voices": [
+    {
+      "id": "thud",
+      "label": "低频闷响（物体落下/句子落地）",
+      "file": "sfx/thud.wav",
+      "url": "/canvas-studio/remotion/sfx/thud.wav",
+      "bytes": 28844,
+      "frames": 7200,
+      "durationSec": 0.15,
+      "sampleRate": 48000,
+      "peak": 0.891,
+      "recipe": "thud"
+    },
+    {
+      "id": "write",
+      "label": "笔尖摩擦 1.2 秒（长句书写/打字氛围）",
+      "file": "sfx/write.wav",
+      "url": "/canvas-studio/remotion/sfx/write.wav",
+      "bytes": 230444,
+      "frames": 57600,
+      "durationSec": 1.2,
+      "sampleRate": 48000,
+      "peak": 0.891,
+      "recipe": "write"
+    },
+    {
+      "id": "swoosh",
+      "label": "明亮呼啸 0.3 秒（元素飞出/场景切换）",
+      "file": "sfx/swoosh.wav",
+      "url": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "bytes": 57644,
+      "frames": 14400,
+      "durationSec": 0.3,
+      "sampleRate": 48000,
+      "peak": 0.891,
+      "recipe": "swoosh"
+    },
+    {
+      "id": "card",
+      "label": "卡片入场 0.3 秒（三连卡依次弹出）",
+      "file": "sfx/card.wav",
+      "url": "/canvas-studio/remotion/sfx/card.wav",
+      "bytes": 57644,
+      "frames": 14400,
+      "durationSec": 0.3,
+      "sampleRate": 48000,
+      "peak": 0.891,
+      "recipe": "card"
+    },
+    {
+      "id": "swipe",
+      "label": "短促划过 0.25 秒（收尾/翻页）",
+      "file": "sfx/swipe.wav",
+      "url": "/canvas-studio/remotion/sfx/swipe.wav",
+      "bytes": 48044,
+      "frames": 12000,
+      "durationSec": 0.25,
+      "sampleRate": 48000,
+      "peak": 0.891,
+      "recipe": "swipe"
+    }
+  ]
+}

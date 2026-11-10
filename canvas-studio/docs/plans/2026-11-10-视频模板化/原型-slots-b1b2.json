@@ -1,0 +1,67 @@
+{
+  "slots": [
+    {
+      "id": "b1.label",
+      "label": "B1 / 章节标签",
+      "maxChars": 32,
+      "maxLines": 1,
+      "required": true,
+      "format": "text"
+    },
+    {
+      "id": "b1.keyword",
+      "label": "B1 / 关键词",
+      "maxChars": 8,
+      "maxLines": 1,
+      "required": true,
+      "format": "text"
+    },
+    {
+      "id": "b1.explanation",
+      "label": "B1 / 解释",
+      "maxChars": 42,
+      "maxLines": 2,
+      "required": true,
+      "format": "text"
+    },
+    {
+      "id": "b2.label",
+      "label": "B2 / 章节标签",
+      "maxChars": 32,
+      "maxLines": 1,
+      "required": true,
+      "format": "text"
+    },
+    {
+      "id": "b2.heading",
+      "label": "B2 / 标题",
+      "maxChars": 10,
+      "maxLines": 1,
+      "required": true,
+      "format": "text"
+    },
+    {
+      "id": "b2.points",
+      "label": "B2 / 要点",
+      "kind": "list",
+      "maxCharsPerLine": 18,
+      "maxLines": 2,
+      "minCount": 1,
+      "maxCount": 5,
+      "required": true,
+      "format": "text"
+    }
+  ],
+  "content": {
+    "b1.label": "编排复刻实验",
+    "b1.keyword": "从想法开始",
+    "b1.explanation": "把你的想法\n变成清晰的视觉故事",
+    "b2.label": "编排复刻实验",
+    "b2.heading": "三个要点",
+    "b2.points": [
+      "结构先固定下来",
+      "动效跟着节奏走",
+      "一次成片可复用"
+    ]
+  }
+}

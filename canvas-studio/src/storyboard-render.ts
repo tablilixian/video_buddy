@@ -510,41 +510,14 @@ const ASSET_TYPE_LABEL: Readonly<Record<StoryboardAsset['type'], string>> = {
   text: '文字', image: '图片', video: '视频', audio: '音频',
 }
 
-/** 单条参考素材的媒体区：按类型给「打得开」的形态（全部无 JS）。 */
-function referenceMedia(
-  asset: StoryboardAsset,
-  index: number,
-  media: MediaUrl,
-  textFor: ((ref: StoryboardAssetRef) => string | undefined) | undefined,
-): string {
-  const url = media === undefined ? undefined : media(asset.ref)
-  const refLine = `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>`
-  if (asset.type === 'image') {
-    // 大图用纯 CSS `:target` lightbox（无 JS）；URL 解析不到就退回引用行，不留死链。
-    if (url === undefined) return `<div class="refmedia refmedia-empty">${refLine}</div>`
-    const lbId = `ref-lb-${String(index)}`
-    return `<a class="refmedia" href="#${lbId}" title="点击看大图"><img src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" loading="lazy" /></a>`
-  }
-  if (asset.type === 'video' && url !== undefined) {
-    return `<div class="refmedia"><video controls preload="metadata" src="${escapeHtml(url)}"></video></div>`
-  }
-  if (asset.type === 'audio' && url !== undefined) {
-    return `<div class="refmedia"><audio controls preload="metadata" src="${escapeHtml(url)}"></audio></div>`
-  }
-  if (asset.type === 'text') {
-    const content = textFor === undefined ? undefined : textFor(asset.ref)
-    if (content === undefined || content.trim() === '') return `<div class="refmedia refmedia-empty">${refLine}</div>`
-    return `<details class="refbrief"><summary>展开全文</summary><pre>${escapeHtml(content)}</pre></details>`
-  }
-  return `<div class="refmedia refmedia-empty">${refLine}</div>`
-}
-
 /**
  * 渲染「参考素材」派生节（插在 §00 之后）：用户参考在故事板里回看的入口。
  *
- * 覆盖的状态：ready / pending（门禁语义照搬 §07）/ 引用失效（CV-408 对账）/
- * waived（节尾一行说明）/ 空态（引导去对话里上传）。文字条目由 `textFor`
- * 内联全文；媒体 URL 由 `mediaUrl` 解析，解析不到一律降级为引用行不抛错。
+ * 版式（2026-11-10 真机反馈定稿）：**图片走多列网格**（一行放多个），**视频 /
+ * 音频 / 文字走全宽行**——播放器塞进窄缩略格里控件小到不可用。覆盖的状态：
+ * ready / pending（门禁语义照搬 §07）/ 引用失效（CV-408 对账）/ waived（节尾
+ * 一行说明）/ 空态（引导去对话里上传）。文字条目由 `textFor` 内联全文；媒体
+ * URL 由 `mediaUrl` 解析，解析不到一律降级为引用行不抛错。
  */
 function renderUserReferences(
   sections: StoryboardSections,
@@ -562,30 +535,58 @@ function renderUserReferences(
     return emptySection('还没有用户上传的参考素材。在对话里上传参考图 / 视频 / 音频 / 文字，agent 会以 source:"user" 登记进 §07，自动出现在这里。') + waivedNote
   }
   const lightboxes: string[] = []
-  const cards = assets.map((asset, index) => {
-    // CV-408 同款对账：账面（§07）还在、实物（画布节点）没了就地标红。
-    const stale = asset.ref.kind === 'canvasNode' && canvasNodeIds !== undefined && !canvasNodeIds.has(asset.ref.id)
-    const statusPill = asset.status === 'ready'
-      ? '<span class="pill ok">已就绪</span>'
-      : '<span class="pill todo">待上传</span>'
-    const stalePill = stale ? ' <span class="pill stale">引用失效：画布节点已删除</span>' : ''
-    const neededBy = asset.neededBy.length === 0
-      ? '全片通用'
-      : `用于 ${escapeHtml(asset.neededBy.join(' · '))}`
-    const mediaHtml = referenceMedia(asset, index, media, textFor)
-    if (asset.type === 'image' && media !== undefined && media(asset.ref) !== undefined) {
-      lightboxes.push(`<div class="lb" id="ref-lb-${String(index)}"><figure><img src="${escapeHtml(media(asset.ref) ?? '')}" alt="${escapeHtml(asset.name)}" /></figure><a class="lb-close" href="#ref">✕ 关闭</a></div>`)
-    }
-    return `<div class="refcard${asset.type === 'video' || asset.type === 'audio' || asset.type === 'text' ? ' wide' : ''}">
-      ${mediaHtml}
-      <div class="refmeta">
+  const staleOf = (asset: StoryboardAsset): string =>
+    asset.ref.kind === 'canvasNode' && canvasNodeIds !== undefined && !canvasNodeIds.has(asset.ref.id)
+      ? ' <span class="pill stale">引用失效：画布节点已删除</span>'
+      : ''
+  const statusPillOf = (asset: StoryboardAsset): string =>
+    asset.status === 'ready' ? '<span class="pill ok">已就绪</span>' : '<span class="pill todo">待上传</span>'
+  const needOf = (asset: StoryboardAsset): string =>
+    asset.neededBy.length === 0 ? '全片通用' : `用于 ${escapeHtml(asset.neededBy.join(' · '))}`
+  const metaOf = (asset: StoryboardAsset): string => `<div class="refmeta">
         <div class="refname">${marked(ctx, `07 素材.${asset.name}`, escapeHtml(asset.name))}</div>
-        <div class="reftags"><span class="pill">${escapeHtml(ASSET_TYPE_LABEL[asset.type])}</span><span class="pill">用户上传</span>${statusPill}${stalePill}</div>
-        <div class="refneed">${neededBy}</div>
-      </div>
-    </div>`
+        <div class="reftags"><span class="pill">${escapeHtml(ASSET_TYPE_LABEL[asset.type])}</span><span class="pill">用户上传</span>${statusPillOf(asset)}${staleOf(asset)}</div>
+        <div class="refneed">${needOf(asset)}</div>
+      </div>`
+  // 图片：16:9 缩略位 + :target 大图（一行多个）。
+  const imageCards = assets.map((asset, index) => {
+    if (asset.type !== 'image') return ''
+    const url = media === undefined ? undefined : media(asset.ref)
+    const mediaHtml = url === undefined
+      ? `<div class="refmedia refmedia-empty"><span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span></div>`
+      : `<a class="refmedia" href="#ref-lb-${String(index)}" title="点击看大图"><img src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" loading="lazy" /></a>`
+    if (url !== undefined) {
+      lightboxes.push(`<div class="lb" id="ref-lb-${String(index)}"><figure><img src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" /></figure><a class="lb-close" href="#ref">✕ 关闭</a></div>`)
+    }
+    return `<div class="refcard">${mediaHtml}${metaOf(asset)}</div>`
   }).join('')
-  return `<div class="refgrid">${cards}</div>${lightboxes.join('')}${waivedNote}`
+  // 视频 / 音频 / 文字：全宽行，播放器横向给足。
+  const stackCards = assets.map((asset) => {
+    if (asset.type === 'image') return ''
+    if (asset.type === 'video') {
+      const url = media === undefined ? undefined : media(asset.ref)
+      const mediaHtml = url === undefined
+        ? `<div class="refmedia refmedia-empty"><span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span></div>`
+        : `<div class="refmedia"><video controls preload="metadata" src="${escapeHtml(url)}"></video></div>`
+      return `<div class="refcard">${mediaHtml}${metaOf(asset)}</div>`
+    }
+    if (asset.type === 'audio') {
+      const url = media === undefined ? undefined : media(asset.ref)
+      const mediaHtml = url === undefined
+        ? `<div class="refmedia refmedia-empty"><span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span></div>`
+        : `<div class="refmedia refmedia-audio"><audio controls preload="metadata" src="${escapeHtml(url)}"></audio></div>`
+      return `<div class="refcard">${metaOf(asset)}${mediaHtml}</div>`
+    }
+    // text：内联全文（textFor 读不到 → 降级引用行）。
+    const content = textFor === undefined ? undefined : textFor(asset.ref)
+    const bodyHtml = content === undefined || content.trim() === ''
+      ? `<div class="refmedia refmedia-empty"><span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span></div>`
+      : `<details class="refbrief"><summary>展开全文</summary><pre>${escapeHtml(content)}</pre></details>`
+    return `<div class="refcard">${metaOf(asset)}${bodyHtml}</div>`
+  }).join('')
+  const grid = imageCards === '' ? '' : `<div class="refgrid">${imageCards}</div>`
+  const stack = stackCards === '' ? '' : `<div class="refstack">${stackCards}</div>`
+  return `${grid}${stack}${lightboxes.join('')}${waivedNote}`
 }
 
 // ────────────────────────────── 文档骨架 ──────────────────────────────
@@ -887,23 +888,22 @@ section.sheet + section.sheet{border-top:1px solid var(--sep);padding-top:26px}
   details.about{display:none}
   details.prompt[open] summary,details.prompt summary{color:#666}
 }
-/* ── 参考素材派生节（REQ-037 延伸）：卡片网格 + 无 JS lightbox ── */
+/* ── 参考素材派生节（REQ-037 延伸）：图片网格 + 全宽媒体行 + 无 JS lightbox ── */
 .tab-user{font-size:10px;color:var(--green);border:1px solid rgba(143,191,127,.4);border-radius:999px;padding:0 5px;margin-left:6px;vertical-align:1px}
-.refgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+/* 图片走多列网格（一行放得下就放多个）；视频 / 音频 / 文字走全宽行 —— 播放器
+   必须给足宽度，塞进窄缩略格里控件小到不可用（2026-11-10 真机反馈）。 */
+.refgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.refstack{display:flex;flex-direction:column;gap:12px;margin-top:12px}
 .refcard{background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden;display:flex;flex-direction:column}
-.refcard.wide{grid-column:1/-1;flex-direction:row;align-items:stretch}
-.refcard.wide .refmedia{width:200px;flex:0 0 auto;border-bottom:none;border-right:1px solid var(--line)}
-.refcard.wide .refbrief{flex:1;margin:10px 12px}
-.refmedia{display:block;position:relative;aspect-ratio:16/9;background:var(--card2);border-bottom:1px solid var(--line);min-height:64px}
-.refcard.wide .refmedia{aspect-ratio:auto}
+.refmedia{display:block;background:var(--card2);border-bottom:1px solid var(--line);min-height:64px}
+a.refmedia{aspect-ratio:16/9;cursor:zoom-in}
 a.refmedia:hover{border-color:var(--amber-line)}
 .refmedia img{width:100%;height:100%;object-fit:cover;display:block}
-.refmedia video,.refmedia audio{display:block;width:100%;height:auto}
-.refmedia video{max-height:220px;background:#000}
-.refcard.wide .refmedia{display:flex;flex-direction:column;justify-content:center;padding:10px 12px}
-.refmedia audio{height:36px}
+.refmedia video{display:block;width:100%;max-height:340px;background:#000}
+.refmedia audio{display:block;width:100%;height:36px}
+.refmedia-audio{border-bottom:none;border-top:1px solid var(--line);padding:8px 12px 10px}
 .refmedia-empty{display:flex;align-items:center;justify-content:center;padding:8px 10px;overflow-wrap:anywhere;text-align:center}
-.refmeta{padding:11px 13px;display:flex;flex-direction:column;gap:6px;flex:1}
+.refmeta{padding:11px 13px;display:flex;flex-direction:column;gap:6px}
 .refname{font-weight:700;font-size:13.5px;overflow-wrap:anywhere}
 .reftags{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .refneed{color:var(--tx3);font-size:11.5px}
@@ -921,7 +921,6 @@ background:rgba(15,14,12,.9);padding:32px;margin:0}
 .lb-close{position:fixed;top:18px;right:26px;color:var(--tx2);font-size:13px;background:var(--card);
 border:1px solid var(--line2);border-radius:999px;padding:5px 14px;text-decoration:none}
 .lb-close:hover{color:var(--tx)}
-@media (max-width:680px){.refcard.wide{flex-direction:column}.refcard.wide .refmedia{width:100%;border-right:none;border-bottom:1px solid var(--line)}}
 `
 
 /**

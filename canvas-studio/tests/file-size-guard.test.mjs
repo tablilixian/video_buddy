@@ -140,8 +140,8 @@ export const FILE_WHITELIST = {
   // CV-435（2026-11-04）：读图能力恢复的客户端侧措辞接线 +2，3008 → 3010 补登。
   // 借鉴翻拍 3v3 一键实验：编排主体已外提到 client/experiment-runner.ts，index.ts 仅留 +9 行依赖接线
   // CV-459（2026-11-10）：落盘成功 → §07 确定性登记（LandOutcome.refs 汇集 + landLobbyStash
-  // 消费接线，fire-and-forget），+24（3019 → 3043）显式登记。
-  'src/client/index.ts': 3043,
+  // 消费接线 + 登记成功 bump 覆盖层刷新信号，fire-and-forget），+30（3019 → 3051）显式登记。
+  'src/client/index.ts': 3051,
   'src/client/canvas/NodeInputCard.tsx': 2087,
   // chart 轨（2026-10-31，能力基准 #04 收口）：ChartTrack 接口 + 类型集/字段白名单 +
   // 校验分支 ≈ +74 净行。1928 → 2002 显式登记。
@@ -216,7 +216,7 @@ export const FUNC_WHITELIST = {
   'src/client/StudioFrame.tsx#StudioFrame': { lines: 2873, note: '阶段 3 两步走（先展示外提再抽 hooks）；含 S3 混音接线 7 行、订阅积分 54 行、REQ-037 26 行、CV-444 +23 补登；P1-1 里程碑 +4；会话18 错误码接线 +2' },
   // REQ-037（2026-11-03）：divertAttachments 暂存改写 + 落卡事件监听 +26（2719 → 2745）。
   // CV-435（2026-11-04）：读图能力恢复客户端侧 +2（2745 → 2747）补登。
-  'src/client/index.ts#studioClient': { lines: 2779, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2；借鉴翻拍 3v3 接线 +8；CV-459 落盘→§07 登记接线 +24（2026-11-10）' },
+  'src/client/index.ts#studioClient': { lines: 2787, note: '阶段 3 同层两半；REQ-037 附件暂存改写 +26；CV-435 +2；借鉴翻拍 3v3 接线 +8；CV-459 落盘→§07 登记接线 +32（2026-11-10，含登记成功 bump 覆盖层刷新）' },
   // CV-394：+image_matting（func +47：2436 → 2483）显式登记。
   // 复刻提效批（2026-11-02）：spotFrames 参数 + spot 载荷 + alpha 标记接线（func +29：2483 → 2512）。
   // B3 拆解回核（2026-11-02）：+verify_teardown（func +84：2512 → 2596）。

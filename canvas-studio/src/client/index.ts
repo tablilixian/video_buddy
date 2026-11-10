@@ -703,9 +703,17 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     // 登记不再依赖 agent 记得写（CV-458 解决「看得见」，这里解决「一定在」）。失败只留
     // 日志：画布节点与待落画布条语义不变，agent 登记纪律（CV-405）仍是兜底。
     if (outcome.refs.length > 0) {
-      void registerStoryboardUserRefs(projectId, outcome.refs, signal).catch((cause: unknown) => {
-        ctx.logger.warn(`canvas-studio: register user refs failed (canvas landing unaffected): ${cause instanceof Error ? cause.message : String(cause)}`)
-      })
+      void registerStoryboardUserRefs(projectId, outcome.refs, signal)
+        .then((registered) => {
+          // 登记成功必须 bump 覆盖层刷新信号：覆盖层是渲染快照，不会自己重载 ——
+          // 首页附件在故事板打开**之后**才登记完成（上传要几秒），不 bump 用户看到
+          // 的就是永远空着的「参考素材」节（2026-11-10 真机实证，storyboard.json 里
+          // 条目已在、画面没有）。
+          if (registered.registered > 0) bumpStoryboardRev(projectId)
+        })
+        .catch((cause: unknown) => {
+          ctx.logger.warn(`canvas-studio: register user refs failed (canvas landing unaffected): ${cause instanceof Error ? cause.message : String(cause)}`)
+        })
     }
     const done = pairs.filter((_, index) => outcome.landed[index] === true).map((pair) => pair.item)
     const kept = pairs.filter((_, index) => outcome.landed[index] !== true).map((pair) => pair.item)

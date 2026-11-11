@@ -33,7 +33,18 @@ import ts from 'typescript'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = join(here, '..')
-const SOURCE = join(workspaceRoot, 'src', 'remotion', 'manifest.ts')
+/**
+ * 字段表要扫的源文件（**顺序即文档顺序**）。
+ *
+ * 2026-11-11 起 `Transform` / `VisualState` 外提到 `manifest-transform.ts` —— `manifest.ts`
+ * 在 file-size-guard 的行数棘轮上（只准减不准增），加真 3D 四个字段会破线。所以这里不能
+ * 只扫一个文件：漏扫的后果是真 3D 字段在字段表里**整段消失**，而字段表正是模型
+ * 「不去读源码」的唯一依据（这份文档存在的全部理由，见文件头注）。
+ */
+const SOURCES = [
+  join(workspaceRoot, 'src', 'remotion', 'manifest.ts'),
+  join(workspaceRoot, 'src', 'remotion', 'manifest-transform.ts'),
+]
 /** 生成物路径（skill 引用目录）。 */
 export const OUTPUT = join(workspaceRoot, 'skills', 'code-driven-explainer', 'references', 'manifest-fields.generated.md')
 
@@ -66,8 +77,8 @@ function renderMember(member, source) {
   return `- \`${name}\`${optional}: ${type}${doc === '' ? '' : ` — ${doc}`}`
 }
 
-/** 生成整份文档。 */
-export function renderManifestFields(sourcePath = SOURCE) {
+/** 扫一个源文件，产出它的全部字段小节（interface / 字符串字面量 union / type literal）。 */
+function sectionsOfOneFile(sourcePath) {
   const text = readFileSync(sourcePath, 'utf8')
   const source = ts.createSourceFile(sourcePath, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS)
   const sections = []
@@ -100,10 +111,17 @@ export function renderManifestFields(sourcePath = SOURCE) {
       sections.push([`## ${name}`, ...(doc === '' ? [] : [`> ${doc}`]), '', `定义：${typeText(type, source)}`, ''].join('\n'))
     }
   }
+  return sections
+}
+
+/** 生成整份文档。 */
+export function renderManifestFields(sourcePath = SOURCES) {
+  const paths = typeof sourcePath === 'string' ? [sourcePath] : sourcePath
+  const sections = paths.flatMap((path) => sectionsOfOneFile(path))
   const header = [
     '<!-- 机器生成：node scripts/gen-manifest-fields.mjs；请勿手改（改源码后重跑，门禁 tests/manifest-fields-drift.test.mjs 会红） -->',
     '',
-    '# Composition Manifest 字段表（从 src/remotion/manifest.ts 生成）',
+    '# Composition Manifest 字段表（从 manifest.ts / manifest-transform.ts 生成）',
     '',
     '> **这是字段契约的权威清单**：字段名、可选性、枚举取值都以此为准，与源码逐字同步（有门禁守着）。',
     '> 写 manifest 时**不要再去读 `src/remotion/manifest.ts` 确认字段名** —— 那份信息就在下面，读源码是最后一手且很贵。',

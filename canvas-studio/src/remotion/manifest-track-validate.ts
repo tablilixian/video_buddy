@@ -38,16 +38,49 @@ export const ANIMATE_EASINGS = new Set<string>([
   'spring',
 ])
 
-/** 校验一个 `VisualState`（或 `Transform`）的字段取值；`allowOpacity=false` 时禁 `opacity`。 */
-export function validateVisualStateFields(value: unknown, at: string, errors: string[]): void {
+/**
+ * `perspective` 的下限（px）。
+ *
+ * 能力基准 #12 实测出来的硬边界，不是审美值：60px 的小卡放进 `perspective(420px)`
+ * 时，**整块在渲染器里静默消失** —— `getPrecomposeRectFor3DTransform` 算不出预合成矩形，
+ * 该层被 `continue` 跳过，既不报错也不留痕。透视距离必须远大于元素尺寸（≥3–4 倍），
+ * 200 是「最坏情况下也不至于判死」的保守下限。
+ */
+const MIN_PERSPECTIVE = 200
+
+/** 校验一个 `VisualState`（或 `Transform`）的字段取值。 */
+export function validateVisualStateFields(
+  value: unknown,
+  at: string,
+  errors: string[],
+  /**
+   * `transform` = 静态姿势（允许 `perspective`，它是镜头参数而非可插值状态）；
+   * `state` = `from / to / exit.to`（**禁止** `perspective` —— 逐帧变透视会让每帧的
+   * 预合成矩形都不同，既昂贵又没有对应的视觉语义）。
+   */
+  mode: 'transform' | 'state' = 'state',
+): void {
   if (!isRecord(value)) {
     errors.push(`${at} 必须是对象（如 {"x":50,"y":50,"scale":1}）`)
     return
   }
-  for (const key of ['x', 'y', 'rotation'] as const) {
+  for (const key of ['x', 'y', 'rotation', 'rotateX', 'rotateY', 'z'] as const) {
     const raw = value[key]
     if (raw === undefined) continue
     if (typeof raw !== 'number' || !Number.isFinite(raw)) errors.push(`${at}.${key} 必须是有限数`)
+  }
+  if (mode === 'transform') {
+    const perspective = value.perspective
+    if (perspective !== undefined) {
+      if (typeof perspective !== 'number' || !Number.isFinite(perspective) || perspective < MIN_PERSPECTIVE) {
+        errors.push(
+          `${at}.perspective 必须是 >= ${MIN_PERSPECTIVE} 的有限数（px）—— `
+          + '实测透视距离小于元素尺寸数倍时整块会静默消失',
+        )
+      }
+    }
+  } else if (value.perspective !== undefined) {
+    errors.push(`${at} 不支持 perspective（它是静态镜头参数，只能写在 track.transform 上）`)
   }
   const scale = value.scale
   if (scale !== undefined) {

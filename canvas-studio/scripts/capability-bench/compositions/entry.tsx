@@ -34,6 +34,7 @@ import * as cap08 from './08-effects.js'
 import * as cap09 from './09-transition.js'
 import * as cap10 from './10-editing.js'
 import * as cap11 from './11-sprite-rect.js'
+import * as cap12 from './12-css3d.js'
 import * as cap02S from './02S-skia-smoke.js'
 import * as capS1 from './S1-stress.js'
 
@@ -50,6 +51,7 @@ const REGISTRY: Record<string, { Composition: React.FC }> = {
   '09': cap09,
   '10': cap10,
   '11': cap11,
+  '12': cap12,
   S1: capS1,
   '02S': cap02S,
 }

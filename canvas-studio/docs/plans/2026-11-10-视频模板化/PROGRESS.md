@@ -5,7 +5,7 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 12:55 · 阶段：**0A / 0B / 1C / 1 + A 层（A1/A4）+ 真机复盘 #2 的三处收口全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push；A 层与复盘 #2 收口未取号）；剩下的是**模板质量批**（骨架密度 / A5 换色口 / 静态占比告警降级 / 槽位实测容量）与**三层登记**（用户明确划出边界，不在本批做）
+最后更新：2026-11-11 15:40 · 阶段：**0A / 0B / 1C / 1 + A 层（A1/A4）+ 真机复盘 #2 三处收口 + 新模板批第 1 步（真 3D）全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push；A 层 / 复盘 #2 收口 / 3D 第一批均未取号）；剩下的是**新模板批第 2–4 步**（`cardWall` 构件 → 24s 骨架 → 真机样片）、**模板质量批**（骨架密度 / A5 换色口 / 静态占比告警降级 / 槽位实测容量）与**三层登记**（用户明确划出边界，不在本批做）
 
 ---
 
@@ -308,3 +308,38 @@
 - 验证：两个 tsc 零错误；`yarn build` + `verify:loader` 绿；全量 `test:smoke` **3222/3222**（基线外新增 0）。
 - skill 文档：`canvas-studio-creation/references/toolchain.md` §7 补「抽帧/静帧回执已直接给磁盘路径，不要 `ls`/`find`」。
 - **留给模板批（工具侧已到顶，再改就是改模板）**：骨架只有 7 条内容轨（41 条装饰轨里 32 条是 1px 刻度 ⇒ 轨数是假象）；「静态占比偏高」对卡片模板恒真、6 次告警诱导修改；模板无换色口（A5）；槽位合同不写「box 实测可容字数」⇒ 模型读 `TextCard.tsx` / `text-fit-plan.ts` 共 5 次。
+
+## 新模板批 · 第 1 步（2026-11-11）：真 3D 能力（CSS 3D，第一批）
+
+> 用户在 385712 复刻需求里问「chrome 支持 threejs 吧」⇒ 路线选择，不是能力有无。
+> three.js 早在 2026-10-29 的 #01 就出过片（926/926 帧 md5 全等、14ms/帧），
+> 不选它是因为**可写性**（manifest DSL 里塞场景图 = 让模型手写 3D 代码）。
+> 决策全文见 `决策日志.md` D-38。
+
+**先跑探针再写码**：新增能力基准 #12（`scripts/capability-bench/compositions/12-css3d.tsx`），
+八格同帧对照，`--repeat=2` 全绿（autoScore 5/5、逐帧 md5 全等）。结论：
+
+| 格 | 写法 | 结果 |
+|---|---|---|
+| A | `transform: perspective(1200px) rotateY()`（元素自带） | ✅ 真梯形透视 |
+| B | 父层 `style={{perspective:1200}}` + 子层 `rotateY` | ❌ 纯水平压扁 |
+| C | B + `preserve-3d` | ❌ 仍然压扁 |
+| D | `matrix3d()` 直给 | ✅ 真梯形透视 |
+| E | `perspective(1200px) rotateX(28deg)` | ✅ 上下边收窄 |
+| F | `backface-visibility: hidden` + `rotateY(150deg)` | ✅ 背面剔除 |
+| G | 40 层 3D | ✅ 都出画；**77ms/帧** |
+| H | 3D + `filter: blur(2px)` | ✅ 共存 |
+
+**四条硬边界**（都进了契约注释与校验）：① 父层 CSS `perspective` 属性会被渲染器整个丢掉 ⇒ 透视必须写进元素自己的串；② 透视距离过小（60px 元素配 420px）整块**静默消失** ⇒ 校验下限 200px；③ 任何非 2D 矩阵都进 WebGL 预合成，贵 3–5 倍 ⇒ 不声明 3D 时串必须逐字节不变；④ `perspective` 不许进 `from/to`。
+
+| # | 改动 | 落点 | 守卫 |
+|---|---|---|---|
+| 1 | `Transform` 增 `rotateX/rotateY/z/perspective`，`VisualState` 增前三 | `manifest-transform.ts`（**新文件**，从 `manifest.ts` 外提 —— 行数棘轮 2452→2410） | `tests/remotion-3d-transform.test.mjs` 15 条 |
+| 2 | 串形拼接（`is3d` 唯一开关） | `animated-style.ts` 的 `resolveAnimatedStyle` —— **5 个组件一行没改** | 同上：缺省串逐字节等于 CV-334 冻结值 |
+| 3 | 契约校验（范围 / 位置） | `manifest-track-validate.ts`：`MIN_PERSPECTIVE = 200`、`mode='transform'\|'state'` | 同上：<200 报错、`from.perspective` 报错 |
+| 4 | 字段表多源扫描 | `gen-manifest-fields.mjs`：`SOURCES` 数组 + `sectionsOfOneFile()` | `manifest-fields-drift` 4 条 |
+
+- **反向变异**：`is3d` 改成 `true` ⇒ 精确红 3 条（正是三条「缺省不变」守卫），其余 12 条不动；还原后 15/15。
+- 验证：两个 tsc 零错误；`yarn build` + `verify:loader` 绿；全量 `test:smoke` **0 失败**（基线外新增 0）。
+- 顺带纠正错归因：`timing.ts` 原写「web-renderer 不读 `perspective()`」并据此降级 `flipX` —— 已被 #12 推翻，注释改成「成本选择而非能力缺失」。
+- **未做**：`cardWall` 构件（第 2 步）、24s 骨架（第 3 步）、相机动画（用户拍板本期静态）。

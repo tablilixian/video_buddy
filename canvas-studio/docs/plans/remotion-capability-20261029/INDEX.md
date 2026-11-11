@@ -2,7 +2,7 @@
 
 > 产物在 repo 外（mp4 不进 git）。本文件由 `scripts/capability-bench/run.mjs` 生成，
 > 数据源是旁边的 `INDEX.json`（按 id 合并，单条复跑不会冲掉其它条目）。
-> 生成时间：2026-11-01T11:57:47.907Z
+> 生成时间：2026-11-11T06:58:24.874Z
 
 | # | 能力项 | 状态 | autoScore | 成片 | 产物目录 |
 |---|---|---|---|---|---|
@@ -18,3 +18,4 @@
 | 09 | 转场（8 种现有 + clock-poly 修正 + 3 种近似） | done | 5/5 | cap09.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/09-transition` |
 | 10 | 剪辑：跳剪 / 变速 / 独立音轨 | done | 5/5 | cap10.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/10-editing` |
 | 11 | sourceRect 精灵图子区域裁切（CV-392） | done | 5/5 | cap11.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/11-sprite-rect` |
+| 12 | CSS 3D 八种写法（透视是否真出画） | done | 5/5 | cap12.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/12-css3d` |

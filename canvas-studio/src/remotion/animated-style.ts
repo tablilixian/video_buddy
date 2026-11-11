@@ -18,6 +18,15 @@
  * 于是**缺省参数下整串是恒等的**，与 CV-334 之前的渲染结果逐像素一致。
  */
 import type { BaseTrack, TrackBlend } from './manifest.js'
+
+/**
+ * 未声明 `transform.perspective` 时的缺省透视距离（px）。
+ *
+ * 1200 的来历：能力基准 #12 里 300×180 的卡片配 1200 已是「明显透视但不夸张」，
+ * 与参考片（385712）的观感接近；而 420 那档实测会让整块**静默消失**。
+ * 它同时是 `validateVisualStateFields` 下限（200）的 6 倍，留足了小元素余地。
+ */
+const DEFAULT_PERSPECTIVE = 1200
 import {
   DEFAULT_FADE_FRAMES,
   animateStateAt,
@@ -40,13 +49,24 @@ export interface AnimatedStyle {
   scale: number
   /** 最终旋转角度（度，缺省 0）。 */
   rotation: number
+  /** 绕水平轴俯仰（度，缺省 0）。非 0 ⇒ 整条变换串进入真 3D。 */
+  rotateX: number
+  /** 绕垂直轴偏转（度，缺省 0）。非 0 ⇒ 整条变换串进入真 3D。 */
+  rotateY: number
+  /** 沿视线平移（px，缺省 0）。非 0 ⇒ 整条变换串进入真 3D。 */
+  z: number
   /**
    * 铺满层（`AbsoluteFill`）上的整层变换串：
    * `translate((x-50)%, (y-50)%) scale(s) rotate(rdeg)`。
    * 缺省参数下为 `translate(0%, 0%) scale(1) rotate(0deg)`（恒等）。
+   *
+   * **只有 `rotateX` / `rotateY` / `z` 任一非 0 时**才会变成
+   * `perspective(Ppx) [translateZ(zpx) ]translate(…) scale(…) rotate(…) rotateX(…) rotateY(…)`。
+   * 这条「不声明 3D ⇒ 串逐字节不变」是硬约束：非 2D 矩阵会让渲染器把整棵子树
+   * 拽进 WebGL 预合成，白白贵 3–5 倍（#12 实测 14ms/帧 → 77ms/帧）。
    */
   layerTransform: string
-  /** 不含位移的变换串 `scale(s) rotate(rdeg)`（`shape` 这类自定位元素用）。 */
+  /** 不含位移的变换串（`shape` 这类自定位元素用）；3D 部分的拼法与 `layerTransform` 一致。 */
   shapeTransform: string
   /** 本轨是否**显式声明过**位置（`shape` 据此决定是否覆盖 `box` 的落点）。 */
   positionDeclared: boolean
@@ -122,6 +142,16 @@ export function resolveAnimatedStyle(
   const y = exitState?.y ?? (orbitPoint !== null ? orbitPoint.y : (state.y ?? 50))
   const scale = Math.max(0.0001, (exitState?.scale ?? state.scale ?? 1) * (options.extraScale ?? 1))
   const rotation = exitState?.rotation ?? state.rotation ?? 0
+  const rotateX = exitState?.rotateX ?? state.rotateX ?? 0
+  const rotateY = exitState?.rotateY ?? state.rotateY ?? 0
+  const z = exitState?.z ?? state.z ?? 0
+  // 真 3D 的唯一开关：三个 3D 维度**都没声明**时，下面两个串必须与 CV-334 逐字节相同。
+  const is3d = rotateX !== 0 || rotateY !== 0 || z !== 0
+  const perspective = track.transform?.perspective ?? DEFAULT_PERSPECTIVE
+  const depth = is3d ? `perspective(${perspective}px) ${z !== 0 ? `translateZ(${z}px) ` : ''}` : ''
+  const tilt = is3d
+    ? `${rotateX !== 0 ? ` rotateX(${rotateX}deg)` : ''}${rotateY !== 0 ? ` rotateY(${rotateY}deg)` : ''}`
+    : ''
   const opacity = clampUnit(fade * (exitState?.opacity ?? state.opacity ?? 1))
   const declared = track.animate !== undefined || track.transform !== undefined || track.orbit !== undefined
   // 逐轴声明判定（orbit 视为双轴都声明；exit 与 transform/animate 按字段在不在算）。
@@ -133,8 +163,11 @@ export function resolveAnimatedStyle(
     y,
     scale,
     rotation,
-    layerTransform: `translate(${x - 50}%, ${y - 50}%) scale(${scale}) rotate(${rotation}deg)`,
-    shapeTransform: `scale(${scale}) rotate(${rotation}deg)`,
+    rotateX,
+    rotateY,
+    z,
+    layerTransform: `${depth}translate(${x - 50}%, ${y - 50}%) scale(${scale}) rotate(${rotation}deg)${tilt}`,
+    shapeTransform: `${depth}scale(${scale}) rotate(${rotation}deg)${tilt}`,
     // orbit 时位置同样"已声明"：否则 `Shape.tsx` 仍用 `box` 落点，orbit 白算（这条曾在计划里被点名）。
     positionDeclared: xDeclared || yDeclared,
     xDeclared,

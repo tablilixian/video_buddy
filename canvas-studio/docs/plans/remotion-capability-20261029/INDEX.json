@@ -94,5 +94,13 @@
     "autoScore": 5,
     "outFile": "cap11.mp4",
     "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/11-sprite-rect"
+  },
+  {
+    "id": "12",
+    "title": "CSS 3D 八种写法（透视是否真出画）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap12.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/12-css3d"
   }
 ]

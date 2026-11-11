@@ -317,41 +317,8 @@ export interface ManifestBox {
   h: number
 }
 
-/**
- * 静态变换（百分比坐标系，相对画布）。
- *
- * 帧级插值由 `timing.ts` 的纯函数 `animateStateAt` 负责 —— 本文件零 Remotion 依赖，
- * Host 侧要能算、`node --test` 要能覆盖。（CV-334 之前此处注释写着"组件用
- * `interpolate` 对其做帧级动画"，而 `interpolate` 在全仓只出现于那行注释、从未
- * 被 import —— 注释承诺的能力从没兑现过。这次兑现了，但实现落在纯函数层。）
- */
-export interface Transform {
-  /** 水平中心位置（0–100，默认 50 居中）。 */
-  x?: number
-  /** 垂直中心位置（0–100，默认 50 居中）。 */
-  y?: number
-  /** 缩放倍数，默认 1（必须 > 0）。 */
-  scale?: number
-  /** 旋转角度（度），默认 0。 */
-  rotation?: number
-}
-
-/**
- * 帧级视觉状态（CV-334）：`Transform` 的超集，多一个 `opacity`。
- * 全部可选 —— 缺省表示"该维度不变"（取值回落到 `transform` / 组件缺省）。
- */
-export interface VisualState {
-  /** 水平中心位置（0–100）。 */
-  x?: number
-  /** 垂直中心位置（0–100）。 */
-  y?: number
-  /** 缩放倍数（> 0）。 */
-  scale?: number
-  /** 旋转角度（度）。 */
-  rotation?: number
-  /** 不透明度（0–1）；与轨道淡入淡出**相乘**（不是覆盖）。 */
-  opacity?: number
-}
+import type { Transform, VisualState } from './manifest-transform.js'
+export type { Transform, VisualState } from './manifest-transform.js'
 
 /**
  * 缓动白名单（CV-334；三期 W2-1 扩档）。
@@ -1019,8 +986,8 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor', 'audioFrames']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
 }
-const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
-const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
+const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'perspective'])
+const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'opacity'])
 // REQ-036 C4（CV-400）：相对锚定 —— animate / draw / colorShift 的 startFrame 可改用
 // anchor（锚 caption 轨句/词窗口），二者互斥（校验在 collectAnchorIssues，单一实现）。
 const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing', 'spring', 'anchor'])
@@ -1584,7 +1551,7 @@ export function validateManifest(input: unknown): ManifestValidation {
     }
 
     // CV-334：三处新增字段（5 种轨通用）—— 校验放在类型分支之前，避免各分支各写一遍。
-    if (track.transform !== undefined) validateVisualStateFields(track.transform, `${at}.transform`, errors)
+    if (track.transform !== undefined) validateVisualStateFields(track.transform, `${at}.transform`, errors, 'transform')
     validateAnimateList(track.animate, at, errors)
     validateAnimateWindows(track, at, duration, errors, warnings)
     const fadeFrames = track.fadeFrames

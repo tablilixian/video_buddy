@@ -308,8 +308,12 @@ export interface TrackTransitionOverride {
    *  parseMaskImage 不读 radial/conic（能力基准 #09 T07 实测：conic 被整字段无视），
    *  其它 mask 一律别往这放。 */
   maskImage: string
-  /** `flipX` 的水平压扁（1 = 不压）。web-renderer 4.0.535 不读 `perspective()`，
-   *  rotateY 会退化成"压扁穿越黑帧"（能力基准 #09 T09 实测）⇒ 有意降级为 2D 压扁翻面。 */
+  /** `flipX` 的水平压扁（1 = 不压）。**有意**用 2D 压扁做翻面，不是「渲染器不支持 3D」——
+   *  #12（2026-11-11）已证 `transform: perspective(1200px) rotateY()` 能真出透视。
+   *  旧注释把 #09 T09 的观感归因成「perspective 不被读」，实际成因是**父层 CSS `perspective`
+   *  属性被渲染器整个丢掉**（`TransformStyle` 只 pick transform/rotate/scale/transformOrigin；
+   *  A/D 两格真梯形、B/C 两格纯压扁，见 `manifest-transform.ts` 的 perspective 注释）。
+   *  转场仍走 2D 压扁：翻面不需要透视，逐帧 3D 预合成纯属浪费（#12：14→77ms/帧）。 */
   scaleXPercent: number
   /** `zoomBlur` / `linearBlur` / `crossWarp` 的运动模糊（空串 = 无）。多窗口叠加时
    *  **后写覆盖**（与 clipPath / maskImage 同口径）—— blur 没有乘性合成，别在同帧叠两个
@@ -363,8 +367,10 @@ function clockFanPolygon(startDeg: number, endDeg: number): string {
  * - `clock`（A4）：clip-path polygon 扇形从 12 点方向扫描（原 conic-gradient mask 在
  *   web-renderer 被整字段无视 ⇒ 整层突现），`to` 逐步揭开、`from` 逐步遮住；
  * - `flipX`（A4）：2D 压扁翻面（`to` scaleX 0→1、`from` 1→0）。原实现是 rotateY+perspective，
- *   但 web-renderer 不读 perspective() ⇒ rotateY 退化成压扁穿越黑帧（能力基准 #09 T09 实测），
- *   改为有意的压扁 swap：压到 0 的瞬间换面，无重影、无需压 opacity。
+ *   当时的归因是「web-renderer 不读 perspective()」（能力基准 #09 T09）；**该归因已被 #12 推翻**
+ *   （2026-11-11：元素自带 `perspective(1200px)` 真出梯形透视，父层 `perspective` 属性才被丢）。
+ *   仍保留 2D 压扁，但这是**成本选择而非能力缺失**：压到 0 的瞬间换面，无重影、无需压 opacity，
+ *   且不必让整段转场走 3D 预合成。
  * - `zoomBlur` / `linearBlur` / `crossWarp`（能力基准 #09 收口，2026-10-31）：无 WebGL
  *   近似转场，全部 transform + `filter: blur` 白名单内（#09 T10–T12 像素实证）。
  *   参数取基准实测值（blur 24/20/16px 上限）；`filter` 多窗口后写覆盖。
@@ -579,8 +585,16 @@ export const EASINGS: Readonly<Record<AnimateEasing, EasingFunction>> = {
 /** 缺省缓动：`easeInOut` —— 入场 / 强调动画开箱即有平滑观感；`linear` 需显式写。 */
 export const DEFAULT_ANIMATE_EASING: AnimateEasing = 'easeInOut'
 
-/** `VisualState` 的五个维度（唯一枚举源；`interpolateState` 按它遍历）。 */
-const VISUAL_DIMENSIONS = ['x', 'y', 'scale', 'rotation', 'opacity'] as const
+/**
+ * `VisualState` 的八个维度（唯一枚举源；`interpolateState` 按它遍历）。
+ *
+ * 前五个是 2D（CV-334 起），后三个是**真 3D**（#12 能力基准验证）：
+ * `rotateX` / `rotateY` 是绕轴角度，`z` 是沿视线的像素平移。
+ * 三者任一非 0 ⇒ `animated-style.ts` 会往 transform 串里塞 `perspective()`
+ * 并触发渲染器的 WebGL 预合成路径 —— 所以「不声明就不进 3D」这条边界必须靠
+ * 这里的枚举守住：多列一个维度，缺省串就会变。
+ */
+const VISUAL_DIMENSIONS = ['x', 'y', 'scale', 'rotation', 'opacity', 'rotateX', 'rotateY', 'z'] as const
 
 /** 维度的"中性值"：某个维度只有单边声明、且无 `transform` 基线时的另一端点。 */
 const NEUTRAL_DIMENSION: Readonly<Record<(typeof VISUAL_DIMENSIONS)[number], number>> = {
@@ -589,6 +603,9 @@ const NEUTRAL_DIMENSION: Readonly<Record<(typeof VISUAL_DIMENSIONS)[number], num
   scale: 1,
   rotation: 0,
   opacity: 1,
+  rotateX: 0,
+  rotateY: 0,
+  z: 0,
 }
 
 /** `0–1` clamp（非有限输入按 0 处理，避免 NaN 渗进样式串变成 `translate(NaN%)`）。 */

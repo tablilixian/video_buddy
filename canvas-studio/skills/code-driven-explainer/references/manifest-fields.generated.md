@@ -1,6 +1,6 @@
 <!-- 机器生成：node scripts/gen-manifest-fields.mjs；请勿手改（改源码后重跑，门禁 tests/manifest-fields-drift.test.mjs 会红） -->
 
-# Composition Manifest 字段表（从 src/remotion/manifest.ts 生成）
+# Composition Manifest 字段表（从 manifest.ts / manifest-transform.ts 生成）
 
 > **这是字段契约的权威清单**：字段名、可选性、枚举取值都以此为准，与源码逐字同步（有门禁守着）。
 > 写 manifest 时**不要再去读 `src/remotion/manifest.ts` 确认字段名** —— 那份信息就在下面，读源码是最后一手且很贵。
@@ -102,23 +102,6 @@
 - `y`: number — 区域中心的垂直位置（0–100 画布百分比）。
 - `w`: number — 区域宽度（0–100 画布百分比）。
 - `h`: number — 区域高度（0–100 画布百分比）。
-
-## Transform
-> 静态变换（百分比坐标系，相对画布）。
-
-- `x`?: number — 水平中心位置（0–100，默认 50 居中）。
-- `y`?: number — 垂直中心位置（0–100，默认 50 居中）。
-- `scale`?: number — 缩放倍数，默认 1（必须 > 0）。
-- `rotation`?: number — 旋转角度（度），默认 0。
-
-## VisualState
-> 帧级视觉状态（CV-334）：`Transform` 的超集，多一个 `opacity`。
-
-- `x`?: number — 水平中心位置（0–100）。
-- `y`?: number — 垂直中心位置（0–100）。
-- `scale`?: number — 缩放倍数（> 0）。
-- `rotation`?: number — 旋转角度（度）。
-- `opacity`?: number — 不透明度（0–1）；与轨道淡入淡出**相乘**（不是覆盖）。
 
 ## AnimateEasing
 > 缓动白名单（CV-334；三期 W2-1 扩档）。
@@ -379,3 +362,27 @@
 
 - `mutedVideoTracks`: number — 声明了 `muted: true` 的 video 轨数。
 - `audibleSources`: number — 成片可能出声的源数量；`0` ⇒ 成片必然无声（平台保证）。
+
+## Transform
+> 静态变换（百分比坐标系，相对画布）。
+
+- `x`?: number — 水平中心位置（0–100，默认 50 居中）。
+- `y`?: number — 垂直中心位置（0–100，默认 50 居中）。
+- `scale`?: number — 缩放倍数，默认 1（必须 > 0）。
+- `rotation`?: number — 旋转角度（度），默认 0。
+- `rotateX`?: number — 绕水平轴俯仰（度），正数 = 上沿向后倒。默认 0。
+- `rotateY`?: number — 绕垂直轴偏转（度），负值 = 右侧靠近观察者。默认 0。真 3D，同上。
+- `z`?: number — 沿视线方向平移（px，正 = 靠近观察者）。默认 0。真 3D，同上。
+- `perspective`?: number — 透视距离（px），默认 1200。**只有 `rotateX` / `rotateY` / `z` 至少一个非 0 时才生效**
+
+## VisualState
+> 帧级视觉状态（CV-334）：`Transform` 的超集，多一个 `opacity`。
+
+- `x`?: number — 水平中心位置（0–100）。
+- `y`?: number — 垂直中心位置（0–100）。
+- `scale`?: number — 缩放倍数（> 0）。
+- `rotation`?: number — 旋转角度（度）。
+- `rotateX`?: number — 绕水平轴俯仰（度）；可插值。
+- `rotateY`?: number — 绕垂直轴偏转（度）；可插值。
+- `z`?: number — 沿视线方向平移（px）；可插值。
+- `opacity`?: number — 不透明度（0–1）；与轨道淡入淡出**相乘**（不是覆盖）。

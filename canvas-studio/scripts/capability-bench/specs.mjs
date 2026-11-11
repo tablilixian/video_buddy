@@ -176,6 +176,19 @@ export const SPECS = [
     assets: [],
     expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: false, minMotion: true },
   },
+  {
+    id: '12',
+    axis: 'css3d',
+    title: 'CSS 3D 八种写法（透视是否真出画）',
+    reference: 'REQ-034 后续 · 24s 模板 3D 能力前置探针',
+    status: 'done',
+    durationInFrames: 240,
+    stills: [30, 90, 150, 210],
+    deps: '零依赖；对照 A 元素自带 perspective() / B 父层 perspective 属性 / C +preserve-3d / D matrix3d / E rotateX / F backface / G 40 层性能 / H 3D+blur',
+    design: '4×2 八格同帧对照：卡片内嵌 3 竖 3 横网格 + 左右不等宽竖条，真透视（近大远小）与正交压扁（纯变窄）一眼可辨；角度随帧轻微摆动（H2 需要运动）。',
+    assets: [],
+    expect: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: false, minMotion: true },
+  },
 ]
 
 export function getSpec(id) {

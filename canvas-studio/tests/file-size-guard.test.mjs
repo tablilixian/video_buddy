@@ -108,7 +108,11 @@ export const FILE_WHITELIST = {
   // 工具组注册 + K-9 generatedBy，5016 → 5075 显式登记。消化路径同前：随「工具壳拆分」批把
   // scaffold 段外提到 host-tools-remotion.ts（模板的判据与编排已在 template-scaffold.ts /
   // remotion/template-*.ts 新文件里，这里只是壳）。
-  'src/host-tools.ts': 5075,
+  // A1/A4（2026-11-11）：scaffold_manifest 的 bgmUrl 参数与描述（模板配乐位回传）+ render_composition
+  // 回执接自检行（判据行本身在 render-report-text.ts，此处只有 2 行接线）+ 抽帧文案改口径（净 0），
+  // 5075 → 5093 显式登记。消化路径不变：随「工具壳拆分」批把 scaffold 段外提到
+  // host-tools-remotion.ts，render 回执段外提到 host-tools-render.ts。
+  'src/host-tools.ts': 5093,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
@@ -247,7 +251,7 @@ export const FUNC_WHITELIST = {
   // 硬拒接线）与 attach_canvas_asset 的 spread 接线，+4（2917 → 2921）。
   // 消化路径：判据本身全在 canvas-asset-attach.ts（本函数只留一行调用）。upload_image 若
   // 按 download_video 同款整体外置（它已无生成逻辑，只剩上传 + 回写 + 外链补节点），可回收本行数。
-  'src/host-tools.ts#createStudioTools': { lines: 2977, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977' },
+  'src/host-tools.ts#createStudioTools': { lines: 2988, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977；A1/A4 bgmUrl 参数 + 自检行/抽帧文案接线 +11 → 2988' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

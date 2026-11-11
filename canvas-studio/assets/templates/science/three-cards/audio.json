@@ -1,38 +1,47 @@
-[
-  {
-    "src": "/canvas-studio/remotion/sfx/thud.wav",
-    "anchor": {
-      "trackId": "card1",
-      "at": "start"
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "card1",
+        "at": "start"
+      },
+      "gain": 0.5,
+      "type": "thud"
     },
-    "gain": 0.5,
-    "type": "thud"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/thud.wav",
-    "anchor": {
-      "trackId": "card2",
-      "at": "start"
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "card2",
+        "at": "start"
+      },
+      "gain": 0.5,
+      "type": "thud"
     },
-    "gain": 0.5,
-    "type": "thud"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/thud.wav",
-    "anchor": {
-      "trackId": "card3",
-      "at": "start"
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "card3",
+        "at": "start"
+      },
+      "gain": 0.5,
+      "type": "thud"
     },
-    "gain": 0.5,
-    "type": "thud"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
-    "anchor": {
-      "trackId": "ending",
-      "at": "start"
-    },
-    "gain": 0.4,
-    "type": "swoosh"
+    {
+      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "anchor": {
+        "trackId": "ending",
+        "at": "start"
+      },
+      "gain": 0.4,
+      "type": "swoosh"
+    }
+  ],
+  "bgm": {
+    "prompt": "Calm ambient electronic science underscore, 80 BPM, warm analog pads, gentle marimba arpeggio, subtle low pulse, no big drop, documentary tone, instrumental, no vocals",
+    "volume": 0.28,
+    "fadeInSeconds": 0.5,
+    "fadeOutSeconds": 1.5,
+    "durationSeconds": 18
   }
-]
+}

@@ -9,7 +9,7 @@
  *   manifest.template.json  # 真实可渲骨架，文本位是 {{slotId}}
  *   slots.json              # 参数合同（对 LLM 的唯一接口）
  *   furniture.json          # 可选：装饰构件声明（1C 的 FurnitureSpec[]）
- *   audio.json              # 可选：音效事件表（0A 的 ManifestSfx[]）
+ *   audio.json              # 可选：音频声明 —— { sfx: ManifestSfx[], bgm: {...} }
  *   frames/                 # 参考帧基线（真机渲染后生成，可空）
  *   README.md               # 给模板作者
  * ```
@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url'
 import type { FurnitureSpec } from './furniture.js'
 import { MANIFEST_CONTRACT_VERSION, type ManifestSfx } from './manifest.js'
 import type { SlotContract } from './slot-contract.js'
-import type { TemplateBundle, TemplateMeta } from './template-compile.js'
+import type { TemplateAudio, TemplateBgm, TemplateBundle, TemplateMeta } from './template-compile.js'
 
 /**
  * 模板根目录。模块编译到 `lib/remotion/` ⇒ 上两级 = 包根 ⇒ `assets/templates`。
@@ -184,7 +184,44 @@ export function findTemplateDir(id: string, opts?: { root?: string }): string | 
 }
 
 /**
- * 载入一份完整模板（骨架 + 槽位 + 构件 + 音效）。缺可选文件按「没有」处理。
+ * `audio.json` → `TemplateAudio`。**两种形状都认**：
+ *
+ * - 裸数组（1 / CV-463 的写法，只有音效表）⇒ `{ sfx: [...] }` —— 老模板不用改文件；
+ * - 对象 `{ sfx?, bgm? }`（A1 起）⇒ 逐字段收，字段类型不对就当没有。
+ *
+ * 为什么不在这里抛错：音频是**可选增强**，一个 `bgm.prompt` 写错不该让整份模板不可用
+ * （骨架和槽位都是好的）。真正影响出片的坏形状会在 `validateManifest` 那里红。
+ */
+function readAudio(file: string): TemplateAudio | undefined {
+  if (!exists(file)) return undefined
+  const raw = readJson(file) as unknown
+  if (Array.isArray(raw)) return raw.length === 0 ? undefined : { sfx: raw as ManifestSfx[] }
+  if (raw === null || typeof raw !== 'object') return undefined
+  const r = raw as { sfx?: unknown; bgm?: unknown }
+  const audio: TemplateAudio = {}
+  if (Array.isArray(r.sfx) && r.sfx.length > 0) audio.sfx = r.sfx as ManifestSfx[]
+  if (r.bgm !== null && typeof r.bgm === 'object') {
+    const b = r.bgm as Record<string, unknown>
+    if (typeof b.prompt === 'string' && b.prompt.trim() !== '') {
+      const bgm: TemplateBgm = { prompt: b.prompt }
+      const num = (key: string): number | undefined =>
+        typeof b[key] === 'number' && Number.isFinite(b[key] as number) ? b[key] as number : undefined
+      const volume = num('volume')
+      const fadeInSeconds = num('fadeInSeconds')
+      const fadeOutSeconds = num('fadeOutSeconds')
+      const durationSeconds = num('durationSeconds')
+      if (volume !== undefined) bgm.volume = volume
+      if (fadeInSeconds !== undefined) bgm.fadeInSeconds = fadeInSeconds
+      if (fadeOutSeconds !== undefined) bgm.fadeOutSeconds = fadeOutSeconds
+      if (durationSeconds !== undefined) bgm.durationSeconds = durationSeconds
+      audio.bgm = bgm
+    }
+  }
+  return Object.keys(audio).length === 0 ? undefined : audio
+}
+
+/**
+ * 载入一份完整模板（骨架 + 槽位 + 构件 + 音效/配乐）。缺可选文件按「没有」处理。
  *
  * @throws 骨架缺失 / JSON 坏 —— 这是真错误（模板不可用），必须让调用方看到原因。
  */
@@ -204,7 +241,7 @@ export function loadTemplateBundle(id: string, opts?: { root?: string }): { bund
   }
   const skeleton = readJson(skeletonFile)
   const furniture = exists(join(dir, 'furniture.json')) ? (readJson(join(dir, 'furniture.json')) as FurnitureSpec[]) : undefined
-  const audio = exists(join(dir, 'audio.json')) ? (readJson(join(dir, 'audio.json')) as ManifestSfx[]) : undefined
+  const audio = readAudio(join(dir, 'audio.json'))
   return {
     dir,
     bundle: {

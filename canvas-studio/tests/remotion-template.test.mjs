@@ -113,8 +113,8 @@ test('1 ★编译：真实模板全部能编译，产物轨道数 = 骨架 + 构
     assert.equal(out.ok, true, `${id} 编译失败：${out.errors.join('；')}`)
     assert.equal(out.manifest.tracks.length, bundle.skeleton.tracks.length + out.stats.furnitureTracks)
     assert.ok(out.stats.furnitureTracks > 0, `${id} 的装饰构件没展开`)
-    assert.equal(out.stats.sfxCount, bundle.audio.length)
-    assert.equal(out.manifest.audio.sfx.length, bundle.audio.length)
+    assert.equal(out.stats.sfxCount, bundle.audio.sfx.length)
+    assert.equal(out.manifest.audio.sfx.length, bundle.audio.sfx.length)
     assert.deepEqual(validateManifest(out.manifest).errors, [])
     assert.deepEqual(out.warnings, [], `${id} 产物不该有体检告警：${out.warnings.join('；')}`)
   }
@@ -310,4 +310,88 @@ test('1 ★注册表：坏模板点名（缺 meta.json / id 与目录不一致�
 
 test('1 ★注册表：未知模板 id ⇒ 报错并列出可用模板（不返回空对象）', () => {
   assert.throws(() => loadTemplateBundle('nope/nothing'), (error) => /可用/.test(error.message) && /science\/three-cards/.test(error.message))
+})
+
+// ── ⑤ 配乐位（A1）──────────────────────────────────────────────────────
+//
+// 口径：模板**不自带音频文件**（D-35：一首 20s 免版税曲子 3–5MB + 授权审计），
+// 只声明「要什么样的曲子」；实际音频由模型现场生成后经 `bgmUrl` 编进产物。
+// 三条必须成立：① 不给 URL 时产物**不能**撒谎说「有配乐」；② 给了 URL 时模板建议的
+// 音量/淡入淡出一次落地；③ 换曲子不动结构（BGM 是内容，不是布局）。
+
+const BGM_URL = '/canvas-studio/remotion/sfx/card.wav'
+
+test('A1 ★配乐位：三个真实模板都声明了可执行的配乐位（提示 / 音量 / 时长与整片一致）', () => {
+  for (const id of REAL_TEMPLATES) {
+    const { bundle } = loadTemplateBundle(id)
+    const bgm = bundle.audio?.bgm
+    assert.ok(bgm !== undefined, `${id} 没声明配乐位`)
+    assert.ok(bgm.prompt.trim().length > 20, `${id} 的配乐提示太短（模型无从生成）：${bgm.prompt}`)
+    assert.ok(bgm.volume === undefined || (bgm.volume > 0 && bgm.volume <= 1), `${id} 的 volume 越界：${bgm.volume}`)
+    assert.equal(bgm.durationSeconds, Math.round(bundle.meta.durationInFrames / bundle.meta.fps), `${id} 的时长与整片不一致`)
+  }
+})
+
+test('A1 ★配乐位：不给 bgmUrl ⇒ 产物无 BGM，且回传可执行的配乐请求（不静默丢）', () => {
+  const { bundle } = loadTemplateBundle('science/three-cards')
+  const out = compileTemplate(bundle, exampleValues(bundle))
+  assert.equal(out.ok, true, out.errors.join('；'))
+  assert.equal(out.stats.bgmApplied, false)
+  assert.equal(out.manifest.audio.bgmUrl, undefined)
+  assert.equal(out.manifest.audio.mix, undefined, '没接 BGM 时不该留孤立 mix（读起来像配乐丢了）')
+  assert.equal(out.manifest.audio.fadeInSeconds, undefined, '淡入只在真接了 BGM 时才写')
+  assert.ok(out.bgmRequest !== undefined, '模板有配乐位就必须回传请求，否则模型不知道要补')
+  assert.equal(out.bgmRequest.prompt, bundle.audio.bgm.prompt)
+})
+
+test('A1 ★配乐位：给了 bgmUrl ⇒ 地址 + 模板建议的音量/淡入淡出一次落地，产物仍过校验', () => {
+  const { bundle } = loadTemplateBundle('science/three-cards')
+  const out = compileTemplate(bundle, exampleValues(bundle), { bgmUrl: BGM_URL })
+  assert.equal(out.ok, true, out.errors.join('；'))
+  assert.equal(out.stats.bgmApplied, true)
+  assert.equal(out.bgmRequest, undefined, '接上了就没有下一步要交代')
+  assert.equal(out.manifest.audio.bgmUrl, BGM_URL)
+  assert.equal(out.manifest.audio.mix.bgmVolume, bundle.audio.bgm.volume)
+  assert.equal(out.manifest.audio.fadeInSeconds, bundle.audio.bgm.fadeInSeconds)
+  assert.equal(out.manifest.audio.fadeOutSeconds, bundle.audio.bgm.fadeOutSeconds)
+  assert.deepEqual(validateManifest(out.manifest).errors, [])
+})
+
+test('A1 ★配乐位：换 BGM 不动结构（轨道段逐字节相同），同输入仍逐字节确定', () => {
+  const { bundle } = loadTemplateBundle('science/three-cards')
+  const values = exampleValues(bundle)
+  const a = compileTemplate(bundle, values, { bgmUrl: BGM_URL }).manifest
+  const b = compileTemplate(bundle, values, { bgmUrl: BGM_URL }).manifest
+  assert.equal(JSON.stringify(a), JSON.stringify(b), '同输入两次编译必须逐字节相同（BGM 也不能引入时间成分）')
+  const other = compileTemplate(bundle, values, { bgmUrl: '/canvas-studio/remotion/sfx/thud.wav' }).manifest
+  assert.equal(JSON.stringify(a.tracks), JSON.stringify(other.tracks), '换曲子只该动 audio，不该动轨道')
+  assert.notEqual(JSON.stringify(a.audio), JSON.stringify(other.audio))
+})
+
+test('A1 ★编译：bgm 缺 prompt ⇒ 点名 warning 且不产请求（模板缺陷不能静默）', () => {
+  const { bundle } = loadTemplateBundle('science/three-cards')
+  const broken = { ...bundle, audio: { sfx: [], bgm: { volume: 0.3 } } }
+  const out = compileTemplate(broken, exampleValues(bundle))
+  assert.equal(out.bgmRequest, undefined)
+  assert.ok(out.warnings.some((line) => line.includes('prompt')), `warnings 必须点名缺 prompt：${out.warnings.join('；')}`)
+})
+
+test('A1 ★注册表：audio.json 的旧裸数组写法照样认（1/CV-463 的老模板不用改文件）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cs-tpl-audio-'))
+  try {
+    const dir = join(root, 'demo', 'mini')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({
+      id: 'demo/mini', name: '小模板', family: 'demo', version: '1', contractVersion: '1',
+      summary: '', suitableFor: [], notSuitableFor: [], durationInFrames: 30, fps: 30, aspect: '16:9',
+    }), 'utf8')
+    writeFileSync(join(dir, 'slots.json'), '{"slots":[]}', 'utf8')
+    writeFileSync(join(dir, 'manifest.template.json'), JSON.stringify({ id: 'x', meta: { durationInFrames: 30, fps: 30 }, tracks: [] }), 'utf8')
+    writeFileSync(join(dir, 'audio.json'), JSON.stringify([{ src: BGM_URL, startSec: 1 }]), 'utf8')
+    const { bundle } = loadTemplateBundle('demo/mini', { root })
+    assert.equal(bundle.audio.sfx.length, 1, '裸数组必须归一成 { sfx }')
+    assert.equal(bundle.audio.bgm, undefined)
+  } finally {
+    try { rmSync(root, { recursive: true, force: true }) } catch { /* 沙箱可能拦删除 */ }
+  }
 })

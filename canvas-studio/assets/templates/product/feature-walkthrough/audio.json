@@ -1,38 +1,47 @@
-[
-  {
-    "src": "/canvas-studio/remotion/sfx/card.wav",
-    "anchor": {
-      "trackId": "feature1",
-      "at": "start"
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "anchor": {
+        "trackId": "feature1",
+        "at": "start"
+      },
+      "gain": 0.45,
+      "type": "card"
     },
-    "gain": 0.45,
-    "type": "card"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/card.wav",
-    "anchor": {
-      "trackId": "feature2",
-      "at": "start"
+    {
+      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "anchor": {
+        "trackId": "feature2",
+        "at": "start"
+      },
+      "gain": 0.45,
+      "type": "card"
     },
-    "gain": 0.45,
-    "type": "card"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/card.wav",
-    "anchor": {
-      "trackId": "feature3",
-      "at": "start"
+    {
+      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "anchor": {
+        "trackId": "feature3",
+        "at": "start"
+      },
+      "gain": 0.45,
+      "type": "card"
     },
-    "gain": 0.45,
-    "type": "card"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
-    "anchor": {
-      "trackId": "cta",
-      "at": "start"
-    },
-    "gain": 0.4,
-    "type": "swoosh"
+    {
+      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "anchor": {
+        "trackId": "cta",
+        "at": "start"
+      },
+      "gain": 0.4,
+      "type": "swoosh"
+    }
+  ],
+  "bgm": {
+    "prompt": "Clean minimal tech product-demo bed, 110 BPM, crisp muted plucks, light four-on-the-floor, airy synth pads, confident but never aggressive, instrumental, no vocals",
+    "volume": 0.3,
+    "fadeInSeconds": 0.5,
+    "fadeOutSeconds": 1.5,
+    "durationSeconds": 24
   }
-]
+}

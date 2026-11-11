@@ -107,7 +107,7 @@ import { lintMotion } from './remotion/motion-lint.js'
 import { lintReceiptLines, writeLintReport } from './lint-report.js'
 // RP-16 撞行数棘轮（5,022 > 登记 5,008）：报告形状 + 一行文本外提，与 render-budget /
 // render-diagnostics 同款拆法。不改白名单登记数，只把成块代码搬走。
-import { formatRenderReport, type ComposeRenderReport } from './render-report-text.js'
+import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
 import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
@@ -727,6 +727,8 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     }
     for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
     if (v.report !== undefined) {
+      const verdict = formatRenderVerdict(v.report)
+      if (verdict !== '') lines.push(verdict)
       lines.push(formatRenderReport(v.report))
       lines.push(...lintReceiptLines(v.report.lint ?? [], v.report.lintPath))
     }
@@ -754,6 +756,10 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const lines = [`${base}（纳入 ${v.clipCount} 段${skipped}${audio}）`]
   // CV-138 / CV-141：降级与「成片无声」这类事实不能被吞掉——模型看不见就等于用户不知道。
   for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
+  // A4（2026-11-11）：自检行必须排在抽帧之前 —— 它决定「要看几张图」，排在后面等于
+  // 判据晚到一步（真机会话实测：8 次 read_image 全发生在读完报告之前）。
+  const verdict = v.report === undefined ? '' : formatRenderVerdict(v.report)
+  if (verdict !== '') lines.push(verdict)
   // REQ-034 O-01：抽帧与报告必须进可见文本。schema 里早就有这两个字段，但文本渲染一直漏写
   // ⇒ 8 张抽帧已经落盘，模型却不知道，自己 ls 资产目录、翻 /tmp、再用 ffmpeg 重抽一遍。
   // `compose_video` 没这两个字段，自动跳过。
@@ -765,7 +771,8 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const frames = v.frames ?? []
   if (frames.length > 0) {
     const listed = [...frames].sort((a, b) => a.frame - b.frame)
-    lines.push(`抽帧 ${listed.length} 张（**先逐张 read_image 看图**，对照判据逐条核对后再向用户汇报；未做要明说"未做画面自检"）：`)
+    lines.push(`抽帧 ${listed.length} 张（按上面的自检行决定看几张：全绿就看第 1 张确认构图，有红项按红项改 —— `
+      + '**不要为了「看得仔细」逐张翻图**，判据比肉眼可靠且便宜；一张都没看要明说"未做画面自检"）：')
     for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
   }
   if (v.report !== undefined) {
@@ -4453,6 +4460,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '**起点 A（推荐）：传 `templateId` + `slots`** —— 用 `list_templates` 挑一个模板，只填内容、不动结构；'
         + '槽位超字数/行数/条目数会在**编译前**被拦下并给出「改到多少字」的建议（不会出片后才发现字被裁）。'
         + '`templateId` 与 `recipe` / `title` 互斥；加 `dryRun: true` 只看槽位合同（= describe_template，不编译不落盘）。'
+        + '**模板带配乐位时**（`dryRun` 会列出来）：先生成一条 ≥ 模板时长的纯器乐，再把产物 URL 传给 `bgmUrl` 重编 —— '
+        + '音量/淡入淡出按模板建议值自动写入 `audio`，**不要手改 manifest 的 audio 段**（那是改错 JSON 的第一高发地）。'
         + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
         + '时机字段提示（REQ-036 C4）：animate / draw / colorShift 的 `startFrame` 可改用 `anchor`（锚 caption 轨的句/词窗口），'
         + '批量换文案时时机自动跟对不漂移 —— 字段语义见 manifest-contract.md §anchor；与 startFrame 互斥，同时写会被校验拒收。'
@@ -4476,7 +4485,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         },
         dryRun: {
           type: 'boolean' as const,
-          description: '可选（配合 templateId）：true = 只看模板说明书（槽位合同 / 构件 / 音效 / 用法），不编译、不落盘、不渲染',
+          description: '可选（配合 templateId）：true = 只看模板说明书（槽位合同 / 构件 / 音效 / 配乐位 / 用法），不编译、不落盘、不渲染',
+        },
+        bgmUrl: {
+          type: 'string' as const,
+          description: '可选（配合 templateId）：**已生成的配乐地址**。模板声明了配乐位时一次编进产物'
+            + '（音量 / 淡入淡出按模板建议值），省掉「渲完发现没声音再手改 JSON」。先按 `dryRun` 给的提示生成一条'
+            + '≥ 模板时长的纯器乐，再把它的产物 URL 传这里重编（slots 原样重发即可）',
         },
         // P1-3（2026-11-05）：生成即落盘。真机事故里 205 步全在绕 build/manifest.json 这一个文件。
         writeTo: {
@@ -4511,6 +4526,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const a = args as {
           title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown
           recipe?: unknown; writeTo?: unknown; templateId?: unknown; slots?: unknown; dryRun?: unknown
+          bgmUrl?: unknown
         }
         const writeToRaw = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
         const templateId = typeof a.templateId === 'string' ? a.templateId.trim() : ''
@@ -4539,6 +4555,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             slots,
             ...(writeToRaw === '' ? {} : { writeTo: writeToRaw }),
             ...(dryRun ? { dryRun: true } : {}),
+            // A1：配乐位 —— 模板声明的音量/淡入淡出在编译期写入，模型不用碰 manifest.audio。
+            ...(typeof a.bgmUrl === 'string' && a.bgmUrl.trim() !== '' ? { bgmUrl: a.bgmUrl.trim() } : {}),
             ...(projectDir === undefined ? {} : { projectDir }),
           })
         }

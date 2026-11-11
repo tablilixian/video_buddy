@@ -162,3 +162,55 @@ test('1 ★scaffold 默认路径（自由编排）也带 generatedBy（否则每
   assert.equal(manifest.meta.generatedBy, 'manifest-builder', 'K-9 修复点')
   assert.equal(validateManifest(manifest).warnings.some((line) => line.includes('generatedBy')), false)
 })
+
+// ── A1：配乐位（模板声明 → 模型生成 → bgmUrl 回传重编）─────────────────
+//
+// 真机会话的痛点：模型想出带 BGM 的片子，只能 `node -e` 手改 manifest 的 audio 段
+// （4 次），因为它既不知道模板有配乐位，也不知道生成后怎么编进去。这三条守的就是
+// 「宿主有没有把这条路铺到工具层」——文案里缺任何一环，模型就会退回手改 JSON。
+
+test('A1 ★dryRun 列出配乐位（提示 / 时长 / 建议音量），否则模型不知道要生成 BGM', async () => {
+  const out = await tool('scaffold_manifest').execute({ templateId: 'science/three-cards', dryRun: true }, exec)
+  const text = out.text ?? ''
+  assert.ok(text.includes('配乐位'), `dryRun 必须列配乐位：\n${text.slice(0, 400)}`)
+  assert.match(text, /未内置音频/u, '要说清音频不是模板自带的')
+  assert.match(text, /约 18s/u, '要给生成目标时长')
+  assert.match(text, /建议音量/u)
+})
+
+test('A1 ★不给 bgmUrl ⇒ 回执给「生成 → 回传 → 出片」三条可执行指令', async () => {
+  const out = await tool('scaffold_manifest').execute({
+    templateId: 'science/three-cards',
+    slots: exampleSlots('science/three-cards'),
+  }, exec)
+  const text = out.text ?? ''
+  assert.match(text, /本次产物没有 BGM/u)
+  assert.match(text, /纯器乐/u, '要指明生成纯器乐而不是歌曲')
+  assert.match(text, /bgmUrl/u, '必须给回传参数名')
+  assert.match(text, /render_composition/u, '最后一环要接上出片')
+  assert.match(text, /未配乐/u, '不配乐也可以，但要显式告知用户')
+})
+
+test('A1 ★给 bgmUrl ⇒ 一次编进产物（bgmUrl + 模板建议音量），回执不再催补', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-tpl-bgm-'))
+  try {
+    const registry = { list: async () => [{ id: 'p1', dir }], projectDir: () => dir }
+    const ctx = { agent: { session: { header: { cwd: dir } } } }
+    const { bundle } = loadTemplateBundle('report/data-summary')
+    const out = await tool('scaffold_manifest', registry).execute({
+      templateId: 'report/data-summary',
+      slots: exampleSlots('report/data-summary'),
+      bgmUrl: '/canvas-studio/remotion/sfx/card.wav',
+      writeTo: 'build/manifest.json',
+    }, ctx)
+    const text = out.text ?? ''
+    const manifest = JSON.parse(readFileSync(join(dir, 'build', 'manifest.json'), 'utf8'))
+    assert.equal(manifest.audio.bgmUrl, '/canvas-studio/remotion/sfx/card.wav')
+    assert.equal(manifest.audio.mix.bgmVolume, bundle.audio.bgm.volume, '模板建议音量要落地')
+    assert.match(text, /BGM 已接入/u)
+    assert.ok(!text.includes('本次产物没有 BGM'), '接上了就不该再催补')
+    assert.deepEqual(validateManifest(manifest).errors, [])
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* 沙箱可能拦删除 */ }
+  }
+})

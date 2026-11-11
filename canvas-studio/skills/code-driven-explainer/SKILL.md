@@ -75,7 +75,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 ## 组装要点（细则已下沉分册）
 
 - **工具地图**：每个工具干什么、参数与返回见 `../canvas-studio-creation/references/toolchain.md`——别靠工具名猜用途。
-- **整片模板（先查，默认路径）**：`list_templates` 五判据（容量 / 素材 / 时长 / 条目数 / 信息充足度）筛出的候选**恰好 1 个才自主选**；`scaffold_manifest({ templateId, slots })` 的 `title` / `durationSeconds` 由模板固定（传了就拒收）；`dryRun: true` 回完整槽位合同 → `references/template-usage.md`。
+- **整片模板（先查，默认路径）**：`list_templates` 五判据（容量 / 素材 / 时长 / 条目数 / 信息充足度）筛出的候选**恰好 1 个才自主选**；`scaffold_manifest({ templateId, slots })` 的 `title` / `durationSeconds` 由模板固定（传了就拒收）；`dryRun: true` 回完整槽位合同。模板带**配乐位**时（`dryRun` 会列提示词与时长）先生成一条 ≥ 模板时长的纯器乐，再 `scaffold_manifest({ …, bgmUrl })` 重编 —— 音量/淡出自动写入，**不要手改 manifest 的 audio 段** → `references/template-usage.md`。
 - **素材轨时长硬口径**：video 轨 `durationInFrames` 必须来自 `list_shots` 真值，禁止目测或估算 → `references/source-duration.md`。
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
@@ -115,7 +115,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **不要翻历史会话 / 旧项目考古**：要"以前怎么做的"就问用户，或只看本项目 `build/` 与资产目录；`cat projects.json`、遍历 `~/.videobuddy/sessions/` 属于**无效考古**（实测烧几分钟推理且带入无关先验）。
 - **风险提示不是错误**：全片无 video 轨时宿主会回一条「图文卡片型」提示（静态占比 / 运动密度 / 镜头数命中），**这条路线是合法的**，不要为此改成逐镜生成视频。
 - **草稿先行**：定稿落地 → **立即渲完整草稿落画布**给用户 → 按反馈迭代；自验只验**机器判据**（出画/重叠/数据保真/响度实测），审美归用户 → `references/verification.md`。
-- **画面类判据必须看图本身**：`spotFrames` 出帧后逐张 `read_image(file_path=…)` 看成片像素；`inspect_image` 的 grid/bbox 只用于**定位疑点与精确数值**，`image2vl` 文字转述不可当事实，**禁止拿 manifest 字段自证画面效果** → `references/verification.md`。
+- **先读回执的自检行，再决定看几张图**：`render_composition` 回执的 `自检：…` 已把机器能判的项结论化（文字溢出 / 出声源 / 响度 / 规格）。**全绿 ⇒ 只看第 1 张确认构图，不要逐张翻图**（翻图不产生新判据，只烧上下文）；有 ❌ 项就按点名改后重渲；只有 `⚪ 未实测` 时才必须 `read_image` 逐张看。`spotFrames` 的画面判据仍要看图本身；`inspect_image` 的 grid/bbox 只用于**定位疑点与精确数值**，`image2vl` 文字转述不可当事实，**禁止拿 manifest 字段自证画面效果** → `references/verification.md`。
 - **预算前置**：references **按需取用**，bash 大输出落文件只回摘要；旁白先按 **4–5 字/秒** 卡预算，超了先改稿再合成。
 - **有下一步就别停轮**：一段渲成功后直接推进下一段 / 下一节，不要停下来等用户点头。只有「审美取向、总时长、素材取舍」这类**只有用户能回答**的事才值得停；其余一律自己决定并在汇报里说明。
 - **内容慢 vs 环境坏，先看工单再看内容**：返回文本里有一行 `工单：<执行者> · <认领状态> · <首帧> · 进度 · 用时`。

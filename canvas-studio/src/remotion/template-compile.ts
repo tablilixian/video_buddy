@@ -65,6 +65,38 @@ export interface TemplateMeta {
   usage?: string
 }
 
+/**
+ * 模板的**配乐位**（`audio.json` 的 `bgm` 字段）。
+ *
+ * 为什么模板**不自带**音频文件：一首 20s 的免版税曲子 3–5MB，随包发既让插件体积失控，
+ * 也把授权审计拉进发布流程（`决策日志` D-35）。模板只声明「要什么样的曲子」，实际
+ * 音频由模型现场生成（一次调用，30–60s），生成后经 `scaffold_manifest({ bgmUrl })`
+ * 编进产物 —— 编译器仍然不读盘、不联网、不取当前时间。
+ */
+export interface TemplateBgm {
+  /** 生成提示（喂给音乐生成工具；英文更稳：调性 / BPM / 乐器 / 情绪）。 */
+  prompt: string
+  /** 建议音量 0–1（写进 `audio.mix.bgmVolume`，与 `BGM_MIX_VOLUME` 同口径）。 */
+  volume?: number
+  /** 淡入（秒）。 */
+  fadeInSeconds?: number
+  /** 淡出（秒）。 */
+  fadeOutSeconds?: number
+  /** 期望时长（秒）；缺省 = 模板整片时长。短于成片会有静音尾巴。 */
+  durationSeconds?: number
+}
+
+/**
+ * `audio.json` 归一后的形状：音效事件表 + 可选的配乐位。
+ *
+ * 兼容 1（CV-463）的**裸数组**写法（那版只有音效表）：注册表读到数组就包成
+ * `{ sfx }`，老模板不用改文件。
+ */
+export interface TemplateAudio {
+  sfx?: ManifestSfx[]
+  bgm?: TemplateBgm
+}
+
 /** 一份模板的完整内容（宿主读盘后的形状）。 */
 export interface TemplateBundle {
   meta: TemplateMeta
@@ -73,8 +105,8 @@ export interface TemplateBundle {
   slots: SlotContract[]
   /** 装饰构件声明（编译期展开成普通 shape 轨）。 */
   furniture?: FurnitureSpec[]
-  /** 音效事件表（锚定到骨架轨 id，编译期注入 `audio.sfx[]`）。 */
-  audio?: ManifestSfx[]
+  /** 音效事件表 + 配乐位（音效锚定到骨架轨 id，编译期注入 `audio.sfx[]`）。 */
+  audio?: TemplateAudio
 }
 
 export interface CompileStats {
@@ -82,6 +114,19 @@ export interface CompileStats {
   /** 其中由构件展开出来的轨数（诊断「装饰层有没有生效」）。 */
   furnitureTracks: number
   sfxCount: number
+  /** 本次产物是否真的接上了 BGM（模板有声部、且调用方给了 `bgmUrl`）。 */
+  bgmApplied: boolean
+}
+
+/** 编译入口的可选参数。 */
+export interface CompileOptions {
+  /**
+   * 已生成的配乐地址（模型先调音乐生成，再把产物 URL 传进来）。
+   *
+   * 为什么不在编译期自己生成：编译是**纯函数**（同 bundle + 同 values ⇒ 逐字节相同），
+   * 一旦允许它联网取音频，确定性、可重放、单测三件事同时失效。
+   */
+  bgmUrl?: string
 }
 
 export interface CompileOutput {
@@ -94,6 +139,13 @@ export interface CompileOutput {
   /** `validateManifest` 的告警（模板作者该看的，不影响出片）。 */
   warnings: string[]
   stats: CompileStats
+  /**
+   * 模板声明了配乐位、本次却**没给 `bgmUrl`** ⇒ 原样回传这段声明。
+   *
+   * 调用方（`template-scaffold`）据此给模型一条可执行的下一步（「先生成 ~Ns 的曲子，
+   * 再把 URL 传回来重编」）。编译本身不报错：无 BGM 是**合法的片子**，只是不完整。
+   */
+  bgmRequest?: TemplateBgm
 }
 
 /** 契约版本不符时的报错文案（防「模板要求的能力没有，却渲出来了」的假成功）。 */
@@ -204,6 +256,7 @@ function contextOf(meta: Record<string, unknown>, totalFrames: number): Furnitur
 export function compileTemplate(
   bundle: TemplateBundle,
   values: Record<string, unknown>,
+  opts?: CompileOptions,
 ): CompileOutput {
   const { meta, slots } = bundle
   if (meta.contractVersion !== MANIFEST_CONTRACT_VERSION) {
@@ -221,7 +274,7 @@ export function compileTemplate(
       issues,
       errors: slotErrors.map((issue) => issue.message),
       warnings: [],
-      stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0 },
+      stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0, bgmApplied: false },
     }
   }
 
@@ -235,7 +288,7 @@ export function compileTemplate(
       issues,
       errors: structural.map((issue) => issue.message),
       warnings: [],
-      stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0 },
+      stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0, bgmApplied: false },
     }
   }
 
@@ -266,14 +319,32 @@ export function compileTemplate(
         issues,
         errors: [`构件展开失败：${error instanceof Error ? error.message : String(error)}`],
         warnings: [],
-        stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0 },
+        stats: { trackCount: 0, furnitureTracks: 0, sfxCount: 0, bgmApplied: false },
       }
     }
   }
   tracks.push(...furnitureTracks)
 
-  // ⑤ 音效事件表注入（锚定到骨架轨，不写绝对帧 —— 组合时不会错位）
-  const sfx = bundle.audio ?? []
+  // ⑤ 音频：音效事件表注入（锚定到骨架轨，不写绝对帧 —— 组合时不会错位）+ 配乐位接入
+  //
+  // 配乐的三个来源（优先级从高到低）：调用方给的 `bgmUrl` > 骨架自带的 `audio.bgmUrl`
+  // （模板若想内置曲子就走这条）> 没有。模板声明的 `bgm` 只提供**参数**（音量/淡入淡出），
+  // 它自己不产生音频文件（D-35）。
+  const audioDecl = bundle.audio
+  const sfx = audioDecl?.sfx ?? []
+  const declaredBgm = audioDecl?.bgm
+  const bgmUrl = opts?.bgmUrl?.trim() ?? ''
+  const bgmWarnings: string[] = []
+  // 模板声明了配乐位却没写提示词 ⇒ 这条声明不可执行（模型无从生成），当没有处理并点名。
+  // `typeof` 守卫不是多余：`TemplateBundle` 是公开 API（测试与脚本会手搭），外部 JSON 不能信。
+  const usableBgm = declaredBgm !== undefined
+    && typeof declaredBgm.prompt === 'string'
+    && declaredBgm.prompt.trim() !== ''
+    ? declaredBgm
+    : undefined
+  if (declaredBgm !== undefined && usableBgm === undefined) {
+    bgmWarnings.push(`模板 ${meta.id} 的 audio.bgm 缺 prompt（生成提示），配乐位已忽略 —— 模板作者需补一句可执行的曲子描述`)
+  }
   const manifest: Record<string, unknown> = {
     ...filled,
     id: `comp-tpl-${fnv1a(stableStringify({ template: meta.id, values: resolved }))}`,
@@ -288,31 +359,43 @@ export function compileTemplate(
     },
     tracks,
   }
+  const audio = { ...((manifest.audio ?? {}) as ManifestAudio) }
   if (sfx.length > 0) {
-    const audio = (manifest.audio ?? {}) as ManifestAudio
     const existing = Array.isArray(audio.sfx) ? audio.sfx : []
-    manifest.audio = { ...audio, sfx: [...existing, ...sfx] }
+    audio.sfx = [...existing, ...sfx]
   }
+  if (bgmUrl !== '') {
+    audio.bgmUrl = bgmUrl
+    // 模板声明的是**建议值**：音量与淡入淡出只在接了 BGM 时才有意义，所以放在这里写，
+    // 不放 ①② （否则没有 BGM 的产物会带一堆孤立的 mix 字段，读起来像「配乐丢了」）。
+    if (usableBgm?.volume !== undefined) audio.mix = { ...(audio.mix ?? {}), bgmVolume: usableBgm.volume }
+    if (usableBgm?.fadeInSeconds !== undefined) audio.fadeInSeconds = usableBgm.fadeInSeconds
+    if (usableBgm?.fadeOutSeconds !== undefined) audio.fadeOutSeconds = usableBgm.fadeOutSeconds
+  }
+  if (Object.keys(audio).length > 0) manifest.audio = audio
+  const bgmApplied = typeof audio.bgmUrl === 'string' && audio.bgmUrl !== ''
 
   // ⑥ 出厂自检：产物必须过校验（编译器对下游的承诺）
   const verdict = validateManifest(manifest as unknown as CompositionManifest)
+  const warnings = [...bgmWarnings, ...verdict.warnings]
+  const stats: CompileStats = {
+    trackCount: tracks.length,
+    furnitureTracks: furnitureTracks.length,
+    sfxCount: sfx.length,
+    bgmApplied,
+  }
   if (!verdict.ok) {
-    return {
-      ok: false,
-      manifest: null,
-      issues,
-      errors: verdict.errors,
-      warnings: verdict.warnings,
-      stats: { trackCount: tracks.length, furnitureTracks: furnitureTracks.length, sfxCount: sfx.length },
-    }
+    return { ok: false, manifest: null, issues, errors: verdict.errors, warnings, stats }
   }
   return {
     ok: true,
     manifest: manifest as unknown as CompositionManifest,
     issues,
     errors: [],
-    warnings: verdict.warnings,
-    stats: { trackCount: tracks.length, furnitureTracks: furnitureTracks.length, sfxCount: sfx.length },
+    warnings,
+    stats,
+    // 只在「声明了、但没接上」时回传：接上了就没有下一步要交代。
+    ...(usableBgm !== undefined && !bgmApplied ? { bgmRequest: usableBgm } : {}),
   }
 }
 

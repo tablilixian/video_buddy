@@ -658,6 +658,16 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
   上限 64 条）。**不要自己用 ffmpeg 拼一条长音轨** —— 终端用户跑不了 ffmpeg，这条路对用户是断的。
   `voiceOverUrl` 与 `voiceOver` 二选一：单句用前者，多句用后者（同时写会拒收）。
 
+**模板通道的配乐位（A1）**：`scaffold_manifest({ templateId, dryRun: true })` 会列出模板声明的配乐位
+（生成提示 / 目标时长 / 建议音量）。模板**不自带音频文件**（授权与体积），要 BGM 就得自己生成一条：
+
+1. 用音乐生成工具生成一条 ≥ 目标时长的**纯器乐**（提示词直接用模板给的那句）；
+2. 把产物 URL 传给 `scaffold_manifest({ templateId, slots, bgmUrl })` **重编**（slots 原样重发，覆盖同一个文件）——
+   音量与淡入淡出按模板建议值自动写入。
+
+**不要手改 `build/manifest.json` 的 `audio` 段**：那是改错 JSON 的第一高发地，且模板建议值会丢。
+不配乐也是合法成片，但回复里必须说明「本条未配乐」。
+
 ### 音效事件 `audio.sfx[]`（0A · CV-460）
 
 一次给全片的**点状音效**（卡片弹出、翻页、落字），与 `voiceOver` / `bgmUrl` 并行，渲染时混进同一条音轨。

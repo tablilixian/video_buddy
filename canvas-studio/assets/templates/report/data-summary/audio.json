@@ -1,20 +1,29 @@
-[
-  {
-    "src": "/canvas-studio/remotion/sfx/thud.wav",
-    "anchor": {
-      "trackId": "kpi",
-      "at": "start"
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "kpi",
+        "at": "start"
+      },
+      "gain": 0.45,
+      "type": "thud"
     },
-    "gain": 0.45,
-    "type": "thud"
-  },
-  {
-    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
-    "anchor": {
-      "trackId": "conclusion",
-      "at": "start"
-    },
-    "gain": 0.35,
-    "type": "swoosh"
+    {
+      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "anchor": {
+        "trackId": "conclusion",
+        "at": "start"
+      },
+      "gain": 0.35,
+      "type": "swoosh"
+    }
+  ],
+  "bgm": {
+    "prompt": "Corporate data-summary underscore, 96 BPM, soft piano ostinato, warm string pad, light shaker, neutral and clear, instrumental, no vocals",
+    "volume": 0.26,
+    "fadeInSeconds": 0.5,
+    "fadeOutSeconds": 1.5,
+    "durationSeconds": 20
   }
-]
+}

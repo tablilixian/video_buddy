@@ -9,6 +9,8 @@
 list_templates（挑模板）
       ↓
 scaffold_manifest({ templateId, slots, writeTo: "build/manifest.json" })
+      ↓            ← 回执里的「配乐位」：模板只声明要什么曲子，不自带音频
+（要 BGM 时）生成一条 ≥ 模板时长的纯器乐 → scaffold_manifest({ …, bgmUrl }) 重编（覆盖同一文件）
       ↓
 render_composition({ manifestPath })        ← 唯一出片口
 ```
@@ -16,7 +18,9 @@ render_composition({ manifestPath })        ← 唯一出片口
 **没有** `render_composition({ templateId })` —— 模板产出的 manifest 是**普通文件**，
 你可以继续加轨、改配色、换文案。模板是起点，不是终点。
 
-工具预算：**≤3 次**（`list_templates` → `scaffold_manifest` → `render_composition`）。
+工具预算：**≤3 次**（不含配乐）；模板带配乐位时 **+2 次**（生成 + 重编）。
+这 +2 次比「渲完发现没声音 → `node -e` 手改 JSON」便宜，也不会丢掉模板建议的音量与淡出。
+不配乐也能出片，但回复里必须说明「本条未配乐」。
 需要看槽位全文时把第 2 步换成 `dryRun: true`（仍是 3 次）。
 
 ## 1. 什么时候该用模板

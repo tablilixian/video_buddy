@@ -23,7 +23,7 @@ import { throwError } from './error-system.js'
 import { loadTemplateBundle } from './remotion/template-registry.js'
 import type { SlotContract } from './remotion/slot-contract.js'
 import { charCount } from './remotion/slot-contract.js'
-import { compileTemplate, type TemplateBundle, type TemplateMeta } from './remotion/template-compile.js'
+import { compileTemplate, type TemplateBgm, type TemplateBundle, type TemplateMeta } from './remotion/template-compile.js'
 
 const MANIFEST_PREVIEW_LINES = 40
 
@@ -37,6 +37,11 @@ export interface TemplateScaffoldInput {
   dryRun?: boolean
   /** `writeTo` 时必填：项目根目录（`registry.projectDir(projectId)`）。 */
   projectDir?: string
+  /**
+   * A1：已生成的配乐地址。模板声明了 `audio.bgm` 时，把它传回来即可一次编进产物
+   * （音量 / 淡入淡出按模板建议值写），不必再手改 manifest 的 `audio` 段。
+   */
+  bgmUrl?: string
 }
 
 /** 槽位一行（dryRun 与错误文案共用同一份格式）。 */
@@ -55,6 +60,13 @@ function slotLine(slot: SlotContract): string {
 /** 干跑（这就是 `describe_template`）：完整槽位合同 + 构件 + 音效 + 用法。 */
 function describe(bundle: TemplateBundle, values: Record<string, unknown>): string {
   const { meta, slots } = bundle
+  const bgm = bundle.audio?.bgm
+  const bgmLine = bgm === undefined
+    ? undefined
+    : `配乐位：**未内置音频**（现场生成）—— 提示「${bgm.prompt}」`
+      + `　约 ${String(bgm.durationSeconds ?? Math.round(meta.durationInFrames / meta.fps))}s`
+      + `${bgm.volume === undefined ? '' : `　建议音量 ${bgm.volume.toFixed(2)}`}`
+      + `${bgm.fadeOutSeconds === undefined ? '' : `　淡出 ${bgm.fadeOutSeconds}s`}`
   const lines = [
     `**${meta.name}**（\`${meta.id}\`）· v${meta.version} · 契约 v${meta.contractVersion}`,
     meta.summary,
@@ -64,7 +76,8 @@ function describe(bundle: TemplateBundle, values: Record<string, unknown>): stri
     `卡片位：${meta.itemCapacity === undefined ? '（未声明）' : `${String(meta.itemCapacity)} 条要点`}`
       + `　素材需求：${(meta.requiredAssets ?? []).length === 0 ? '无' : (meta.requiredAssets ?? []).join(' / ')}`,
     `装饰构件：${(meta.furniture ?? []).length === 0 ? '无' : (meta.furniture ?? []).join(' + ')}`
-      + `${(bundle.audio ?? []).length === 0 ? '' : `　音效事件：${String((bundle.audio ?? []).length)} 个`}`,
+      + `${(bundle.audio?.sfx ?? []).length === 0 ? '' : `　音效事件：${String((bundle.audio?.sfx ?? []).length)} 个`}`,
+    ...(bgmLine === undefined ? [] : [bgmLine]),
     '',
     `**槽位合同**（${String(slots.filter((slot) => slot.required === true).length)} 个必填 / 共 ${String(slots.length)} 个）：`,
     ...slots.map(slotLine),
@@ -81,6 +94,32 @@ function describe(bundle: TemplateBundle, values: Record<string, unknown>): stri
       }).join('　')}`,
   ]
   return lines.join('\n')
+}
+
+/**
+ * 配乐位未接时的下一步（A1）。
+ *
+ * 为什么必须由宿主写这段：真机会话里模型想出带 BGM 的片子，只能自己 `node -e` 手改
+ * manifest 的 `audio` 段（4 次），因为它不知道「模板有配乐位」也不知道「生成后怎么编进去」。
+ * 这段把「生成 → 回传 → 出片」写成三条可执行指令，省掉摸索。
+ */
+function bgmHint(bundle: TemplateBundle, request: TemplateBgm, input: TemplateScaffoldInput): string[] {
+  const seconds = request.durationSeconds ?? Math.round(bundle.meta.durationInFrames / bundle.meta.fps)
+  const params = [
+    request.volume === undefined ? '' : `音量 ${request.volume.toFixed(2)}`,
+    request.fadeOutSeconds === undefined ? '' : `淡出 ${String(request.fadeOutSeconds)}s`,
+  ].filter((part) => part !== '').join(' / ')
+  return [
+    `🎵 **这个模板带配乐位，本次产物没有 BGM** —— 提示「${request.prompt}」，约 ${seconds}s`
+      + `${params === '' ? '' : `（建议 ${params}）`}。`,
+    '补齐只要两步（比「出片后才发现没音乐」便宜得多）：',
+    `① 生成一条 ≥${String(seconds)}s 的**纯器乐**（音乐生成工具，提示词直接用上面那句）；`,
+    '② 把产物 URL 传回来重编 —— 同一批 slots 原样重发，覆盖同一个文件：',
+    `   \`scaffold_manifest({ templateId: ${JSON.stringify(bundle.meta.id)}, slots: {…同前…}, `
+      + `bgmUrl: "<上一步的产物 URL>", writeTo: ${JSON.stringify(input.writeTo ?? 'build/manifest.json')} })\``,
+    '再 `render_composition({ manifestPath })` 出片。音量与淡出按模板建议值自动写入，不用手改 JSON。',
+    '**也可以不配乐直接出片**（无 BGM 是合法成片），但要在回复里明说「本条未配乐」。',
+  ]
 }
 
 /**
@@ -106,9 +145,10 @@ export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: stri
 
   if (input.dryRun === true) return { text: describe(bundle, input.slots) }
 
+  const bgmUrl = input.bgmUrl?.trim() ?? ''
   let compiled
   try {
-    compiled = compileTemplate(bundle, input.slots)
+    compiled = compileTemplate(bundle, input.slots, bgmUrl === '' ? undefined : { bgmUrl })
   } catch (error) {
     throwError('CS-USER-ERR', {
       message: error instanceof Error ? error.message : String(error),
@@ -129,13 +169,22 @@ export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: stri
   const manifest = compiled.manifest
   const json = JSON.stringify(manifest, null, 2)
   const warnings = compiled.issues.filter((issue) => issue.severity === 'warning').map((issue) => issue.message)
+  // A1：音频这次是什么状态必须写进统计行 —— 「渲完发现没声音」比「没配乐」贵得多。
+  const bgmStat = compiled.stats.bgmApplied
+    ? ' · BGM 已接入'
+    : bundle.audio?.bgm === undefined ? '' : ' · 无 BGM（模板有配乐位）'
   const stat = `轨 ${String(compiled.stats.trackCount)} 条（其中装饰构件 ${String(compiled.stats.furnitureTracks)} 条）`
-    + ` · 音效 ${String(compiled.stats.sfxCount)} 个`
+    + ` · 音效 ${String(compiled.stats.sfxCount)} 个${bgmStat}`
     + ` · ${String(manifest.meta.durationInFrames)} 帧（${(manifest.meta.durationInFrames / manifest.meta.fps).toFixed(1)}s）`
   const notes = [
     ...warnings.map((line) => `⚠️ ${line}`),
     ...compiled.warnings.map((line) => `⚠️ ${line}`),
+    // 给了 bgmUrl 但模板没声明配乐位：接入合法，但音量走缺省 —— 说清楚免得压不住人声。
+    ...(bgmUrl !== '' && bundle.audio?.bgm === undefined
+      ? ['ℹ️ 模板未声明配乐位，BGM 已按原音量接入（要压低请显式写 `audio.mix.bgmVolume`）。']
+      : []),
   ]
+  const bgm = compiled.bgmRequest === undefined ? [] : bgmHint(bundle, compiled.bgmRequest, input)
 
   if (input.writeTo !== undefined && input.writeTo.trim() !== '') {
     if (input.projectDir === undefined) {
@@ -155,6 +204,7 @@ export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: stri
         written.preview,
         '```',
         ...notes,
+        ...(bgm.length === 0 ? [] : ['', ...bgm]),
         `下一步：\`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片 —— 不要再读源码、不要先美化。`,
         '要微调就直接改这个小文件（文案 / 配色 / 加轨都行），模板只是起点不是终点。',
       ].join('\n'),
@@ -168,6 +218,7 @@ export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: stri
       json,
       '```',
       ...notes,
+      ...(bgm.length === 0 ? [] : ['', ...bgm]),
       '提示：下次传 `writeTo: "build/manifest.json"` 可直接落盘（省掉回显 + 抄写，而抄写正是括号错与截断的主要来源），',
       '然后用 `render_composition({ manifestPath })` 出片。',
     ].join('\n'),

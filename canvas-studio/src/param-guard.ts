@@ -122,6 +122,9 @@ const HANDLE_PARAMS: readonly string[] = [
   // 模型会写 `science/basic` / `template1` 这类想当然的串（实测最常写的是「听起来
   // 应该存在」的体裁名）。由 loadTemplateBundle 找不到时列出可用 id，文案可执行。
   'templateId',
+  // A1（2026-11-11）：模板配乐位 —— 合法值只能来自音乐生成工具的产物 URL，与
+  // imageUrl / videoUrl 同属「素材地址」（模型会写 `bgm.mp3` / `待生成` 这类占位）。
+  'bgmUrl',
 ]
 
 /**

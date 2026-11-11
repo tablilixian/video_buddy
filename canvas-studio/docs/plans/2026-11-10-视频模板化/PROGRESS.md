@@ -5,7 +5,7 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 10:20 · 阶段：**0A / 0B / 1C / 1 全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push）；剩下的是**三层登记**（用户明确划出边界，不在本批做）
+最后更新：2026-11-11 11:50 · 阶段：**0A / 0B / 1C / 1 + A 层（A1 配乐位 / A4 判据式回执）全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push；A 层未取号）；剩下的是**三层登记**（用户明确划出边界，不在本批做）
 
 ---
 
@@ -14,6 +14,8 @@
 **代码侧已收尾。** 四项全部落地、每项都有单测 + 反向变异 + 真机探针（1 的探针：`scripts/probe/template-e2e.probe.mjs`，6 条断言全绿）。
 
 唯一未做的事是**入库三层登记**（STATUS §4.1 / `cv-details.md` / `changelog.md`）—— 用户本轮明确把它划到验收通过之后，别提前登记。
+
+**A 层已落地**（2026-11-11，详见下方「A 层」节）：A1 = 模板配乐位（`bgmUrl` 回传重编，音频模型现场生成）；A4 = 渲染回执的 `自检：` 判据行（全绿就别逐张翻图）。A2（放开分镜表门禁）被用户否决 → D-36，**不要**再试。
 
 后续若要继续，按 `执行总表.md` 的下一阶段取：段组合（G2）/ 模板自带图（2 期）/ 模板库扩容。开工前必读：本文件 §0 + §3 末尾「我在哪一步」、`决策日志.md` D-12 ~ D-30、`无人值守推进协议.md` §1（验证梯度）+ §11（收尾动作）。
 
@@ -211,6 +213,25 @@
 **反向变异（两条，都精确变红后再还原）**：删 `family: meta.family` ⇒ 红 1 条（22/23）；从 `KNOWN_META_KEYS` 移除 `'family'` ⇒ 红 2 条（21/23）。还原后 23/23。
 
 **验证**：两个 tsc 零错误 · `yarn build` + `verify:loader` 绿 · 定向 7 文件 70/70 · 全量 smoke 首轮 3196/3198（两条横切门禁：`manifest.ts` 行数棘轮 2437→2443、组件契约速查陈旧）→ 补登 + 重生成后 **3198/3198 全绿**。
+
+---
+
+## A 层（2026-11-11，用户拍板后）：A1 配乐位 + A4 判据式渲染回执
+
+> 来源：真机会话复盘（`session.v4.jsonl`：39 次工具调用 / 916 秒 / **4 次渲染** / **8 次 `read_image`** / 4 次 `node -e` 手改 JSON）。A2（放开分镜表门禁）**用户否决**，「不要破」→ D-36。
+
+| # | 做了什么 | 落点 | 守卫 |
+|---|---|---|---|
+| A1 | `TemplateBundle.audio` = `{ sfx?, bgm? }`（裸数组仍认）；模板声明配乐位（提示 / 时长 / 音量 / 淡入淡出），**不自带音频**；`compileTemplate(bundle, values, { bgmUrl })` 一次写入 `audio.bgmUrl + mix.bgmVolume + fade*`；`scaffold_manifest` 新增 `bgmUrl`，未接时回执给「生成 → 回传 → 重编」三条可执行指令 | `remotion/template-compile.ts` / `template-registry.ts` / `template-scaffold.ts` / `host-tools.ts` / `param-guard.ts` / 3 个 `assets/templates/*/audio.json` | `remotion-template.test.mjs` 6 条 + `template-tools.test.mjs` 3 条 |
+| A4 | 渲染回执新增 `自检：` 判据行（规格 / 文字溢出 / 出声源 / 响度），全绿**明确写「不要逐张 read_image」**；`ComposeRenderReport` 收 `textFit`；抽帧提示改成「按自检行决定看几张」 | `render-report-text.ts`（`formatRenderVerdict`）+ `host-tools.ts` 两处接线 | `tests/render-verdict.test.mjs` 7 条 |
+
+**A4 的判据档位（写死在实现里）**：✅ 只给机器真测过的项；❌ 只有「文字溢出」一条（唯一必须返工的）；⚪ 是诚实出口（未实测 / 无声 / 响度越界），**不许**冒充 ✅ 也**不许**升级成 ❌；一条 ✅ 都没有时整行不输出（不产假结论）。
+
+**skill 层同步**：`SKILL.md` 的「画面类判据必须看图本身」改为「先读自检行再决定看几张图」（全绿只看 1 张）；模板段加配乐位口径；`template-usage.md` 链路图加「生成 → 重编」两步并写明工具预算 +2；`manifest-contract.md` 加模板配乐位小节；`toolchain.md` 的 `scaffold_manifest` 行补 `bgmUrl`。入口体积 16116 → **16684B**（闸 20KB）。
+
+**反向变异（两条，精确变红后还原）**：`solid === 0` → `checks.length === 0` ⇒ A4 红 1 条（7 条中第 7 条）；`bgmRequest` 去掉 `!bgmApplied` ⇒ A1 红 1 条（29 条中第 26 条）。
+
+**验证**：两个 tsc 零错误 · `yarn build` + `verify:loader` 绿 · 定向 97 + 14 条全绿 · 全量 smoke **3214/3214**（零基线外新增）。`host-tools.ts` 行数棘轮 5075 → **5093**、函数棘轮 2977 → **2988**（显式登记，消化路径见 `file-size-guard.test.mjs` 注释）。
 
 ---
 

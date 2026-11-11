@@ -658,6 +658,42 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
   上限 64 条）。**不要自己用 ffmpeg 拼一条长音轨** —— 终端用户跑不了 ffmpeg，这条路对用户是断的。
   `voiceOverUrl` 与 `voiceOver` 二选一：单句用前者，多句用后者（同时写会拒收）。
 
+### 音效事件 `audio.sfx[]`（0A · CV-460）
+
+一次给全片的**点状音效**（卡片弹出、翻页、落字），与 `voiceOver` / `bgmUrl` 并行，渲染时混进同一条音轨。
+
+```jsonc
+"audio": {
+  "bgmUrl": "…",
+  "sfx": [
+    // ① 跟随轨道（首选）：轨起点响
+    { "src": "/canvas-studio/remotion/sfx/card.wav", "anchor": { "trackId": "card1", "at": "start" }, "gain": 0.5, "type": "card" },
+    // ② 跟随轨道终点 + 偏移（负 = 提前）
+    { "src": "/canvas-studio/remotion/sfx/thud.wav", "anchor": { "trackId": "hook", "at": "end", "offsetSec": -0.1 }, "gain": 0.6, "type": "thud" },
+    // ③ 绝对帧（GT 复刻验收用它，绕开秒→帧舍入）
+    { "src": "/canvas-studio/remotion/sfx/swoosh.wav", "startFrame": 150, "gain": 0.4, "type": "swoosh" }
+  ]
+}
+```
+
+- **三定位必须恰好给一个**：`anchor` / `startFrame` / `startSec`（两个或零个都拒收）。
+- `anchor.trackId` 必须是 `tracks[]` 里**真实存在**的 id（否则 error）；`at` 二选一 `start` / `end`，`offsetSec` 可负。
+- `gain` 0–2（缺省 1，1 = 原音量）；`type` 是给人看和给体检用的**标签**，不影响混音。
+- `fadeInSec` 可用；`fadeOutSec` **只在显式给了 `durationInFrames` 时生效**（渲染器不知道素材真实时长）。
+- `pan` 仅对**本仓合成库**产出的素材生效；指向外部素材会被忽略并发 warning。
+- 上限 **64 条**，超了整份拒收。
+- **可用素材只有下面 5 个**（`assets/sfx/`，仓内合成、有路由）：**不要**引 `assets/audio/sfx/` 那 12 个 mp3（**没有路由服务**，引用即「缺素材」硬失败）。
+
+| URL（`src`） | 时长 | 什么时候响 |
+|---|---|---|
+| `/canvas-studio/remotion/sfx/thud.wav` | 0.15s | 句子落地 / 元素砸下 |
+| `/canvas-studio/remotion/sfx/card.wav` | 0.30s | 卡片依次弹出 |
+| `/canvas-studio/remotion/sfx/swoosh.wav` | 0.30s | 元素飞出 / 场景切换 |
+| `/canvas-studio/remotion/sfx/swipe.wav` | 0.25s | 收尾 / 翻页 |
+| `/canvas-studio/remotion/sfx/write.wav` | 1.20s | 长句书写氛围（跨多帧，**别叠用**） |
+
+> 唯一清单元数据（峰值 / 字节 / recipe）：`assets/sfx/manifest.json`。混音总量别再叠加 —— 5 条以上 `gain` 合计建议 ≤ 2，否则旁白会被压。
+
 ### 编排体检回执（lint）
 
 `validateManifest` 会在返回值的 `warnings` 里带上 `[编排体检 ML-xx] …` 条目，`render_composition`

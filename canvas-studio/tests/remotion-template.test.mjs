@@ -168,11 +168,18 @@ test('1 ★编译：不同 slots 编译两次 ⇒ 除文本外结构逐字节相
   )
 })
 
-test('1 ★编译：meta 补 templateId / generatedBy，且时长 = 最大结束帧（K-6）', () => {
+test('1 ★编译：meta 补 templateId / generatedBy / family，且时长 = 最大结束帧（K-6）', () => {
   const { bundle } = loadTemplateBundle('science/three-cards')
   const out = compileTemplate(bundle, exampleValues(bundle))
   assert.equal(out.manifest.meta.templateId, 'science/three-cards')
   assert.equal(out.manifest.meta.generatedBy, 'manifest-builder', '编译器就是 builder（K-9：不写就会被当成手写）')
+  // P-7：family 落地产物（G2 段组合唯一「同族可拼」判据）。缺了这条，将来只能靠 templateId 前缀猜。
+  assert.equal(out.manifest.meta.family, 'science', 'meta.family 必须随产物落地')
+  // ⚠️ 光有值不够：`family` 若不进 KNOWN_META_KEYS 会被 warnUnknownKeys 报「未知键」，
+  // 而编译器的出厂自检只拦 error 不拦 warning ⇒ 上面那条 assert 照样绿。
+  // 所以这里必须钉「产物零告警」，否则「字段生效」是假象。
+  const verdict = validateManifest(out.manifest)
+  assert.deepEqual(verdict.warnings, [], `产物不该有告警，实际 ${JSON.stringify(verdict.warnings)}`)
   const maxEnd = Math.max(...out.manifest.tracks.map((track) => track.startFrame + track.durationInFrames))
   assert.equal(out.manifest.meta.durationInFrames, maxEnd)
 })

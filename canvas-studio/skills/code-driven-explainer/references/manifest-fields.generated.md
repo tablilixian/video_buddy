@@ -27,6 +27,7 @@
 - `quality`?: RenderQuality — 三期 W5-3：渲染质量档（也可由工具参数覆盖）。缺省 `standard`。
 - `generatedBy`?: string
 - `templateId`?: string — 1（CV-463）：产出这份 manifest 的模板 id（`family/id`）。手写 / 自由编排没有这一项。
+- `family`?: string — 1（CV-463，P-7）：模板家族（`science` / `product` / `report`）。**G2 段组合的判据** ——
 - `lint`?: 'off' — 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。
 
 ## RenderQuality

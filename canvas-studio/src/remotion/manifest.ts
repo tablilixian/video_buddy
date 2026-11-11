@@ -94,6 +94,12 @@ export interface ManifestMeta {
   generatedBy?: string // 批 2-1.2：builder 产物标记；缺失 ⇒ render 侧观察期 warning（P-06 观测口）
   /** 1（CV-463）：产出这份 manifest 的模板 id（`family/id`）。手写 / 自由编排没有这一项。 */
   templateId?: string
+  /**
+   * 1（CV-463，P-7）：模板家族（`science` / `product` / `report`）。**G2 段组合的判据** ——
+   * 拼段的前提是「同族」（版式、字体尺度、构件风格一致）。手写 / 自由编排没有这一项。
+   * 可选字段，不影响 `MANIFEST_CONTRACT_VERSION`（旧 manifest 缺它照样合法）。
+   */
+  family?: string
   /** 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。 */
   lint?: 'off'
 }
@@ -983,7 +989,7 @@ function isFinitePositive(value: unknown): value is number {
 
 /** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
 const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
-const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy', 'templateId'])
+const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy', 'templateId', 'family'])
 /** P-02 漂移检查数据面（见 KNOWN_TRACK_KEYS 注释）。 */
 export const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',

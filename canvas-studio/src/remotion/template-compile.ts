@@ -283,6 +283,8 @@ export function compileTemplate(
       // 编译器就是 builder：产物带标记，render 侧不再发「手写 manifest」的假告警（K-9）。
       generatedBy: 'manifest-builder',
       templateId: meta.id,
+      // P-7：家族必须随产物落地 —— G2 段组合的唯一「同族可拼」判据（本期不实现 G2，只留数据）。
+      family: meta.family,
     },
     tracks,
   }

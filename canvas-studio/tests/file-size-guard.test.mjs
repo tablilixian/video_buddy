@@ -174,7 +174,8 @@ export const FILE_WHITELIST = {
   // CV-461（2026-11-11，0B 文本溢出上报）：textCard 分支接容量静态合同 + finiteBox（判据主体在新文件 text-fit-plan.ts，+28），2398 → 2426 显式登记。
   // CV-463（2026-11-11，模板库）：MANIFEST_CONTRACT_VERSION 常量（K-10 单一事实源）+ meta.templateId
   // 字段与已知键登记，2426 → 2437 显式登记。
-  'src/remotion/manifest.ts': 2437,
+  // CV-463 补登（同日，P-7）：meta.family 可选字段 + KNOWN_META_KEYS 加 'family'（+6，2437 → 2443）。
+  'src/remotion/manifest.ts': 2443,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

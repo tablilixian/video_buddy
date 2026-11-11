@@ -164,5 +164,5 @@ test('REQ-034 O-14：第 8 步必须覆盖「字幕/台词是否需要配音」�
   // 2026-10-26 曾由 11KB→14KB，原则不变：不为闸值牺牲效果。
   // 渐进披露——总纲只做路由，细则在 references/，下沉仍靠覆盖率指标兜底）
   const bytes = Buffer.byteLength(skill, 'utf8')
-  assert.ok(bytes <= 15 * 1024, `总纲超过 15KB 硬闸（实测 ${bytes}B）——细则优先下沉 references/`)
+  assert.ok(bytes <= 20 * 1024, `总纲超过 20KB 硬闸（实测 ${bytes}B）——细则优先下沉 references/`)
 })

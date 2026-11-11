@@ -197,26 +197,33 @@ animate，否则会被动效体检查判「动画拖沓」。
 > `path-growth` / `outro-fade`）：完整可渲样本在 `scripts/render-forensics/cards.mjs`。
 > 改这些卡前先跑 `node scripts/render-forensics/run.mjs --only=Q12` 确认没渲崩。
 
-## SFX 建议索引（CV-371）
+## SFX 建议索引（CV-371 建表 · **0A/CV-460 起已可写进 manifest**）
 
-`assets/audio/sfx/` 现有 12 个可溯源音效（Mixkit 免署名可商用，授权与 SHA-256 见
-`assets/audio/sfx/ATTRIBUTION.md`）。**这只是排轨时的建议标注，渲染链完全忽略** ——
-混音/音频构成属后续产品线，manifest 里**不要**写任何 sfx 字段（白名单校验会拒收）。
+> **旧禁令已作废**：CV-371 当时写的是「manifest 里不要写任何 sfx 字段」—— 那是 0A 之前的状态。
+> 现在 `audio.sfx[]` 是**一等契约**，`assets/sfx/` 的 5 个仓内 wav 有路由服务
+> （`/canvas-studio/remotion/sfx/<name>.wav`）。写法 / 三定位 / 上限见
+> `manifest-contract.md` 的「音效事件 `audio.sfx[]`」一节。
 
-| 卡 | 建议 SFX | 钉点 |
-|---|---|---|
-| F1 长卷急刹 | `sweep-fast-small` | 刹停那帧 |
-| F2 数据飞线 | `sweep-scifi-fast` | 弧线开始生长 |
-| F3 扫描标注 | `glitch-electric-small` | 括号合围完成 |
-| F4 马克笔下划线 | `camera-shutter-hard` | 线描完落定 |
-| F5 首词组装 | `impact-zoom-quick` | 大字砸落帧 |
-| F6 词槽轮换 | `camera-autofocus` | 每次换词 |
-| F7 高光扫过 | `shimmer-sparkle-sweep` | 光带起扫 |
-| F8 UI 蒸发收尾 | `transition-snap` | 定版词进场 |
-| F9 里程碑时间轴 | `click-camera` | 每个节点亮起 |
-| F10 进度环揭晓 | `bass-hit-short` | 数字跳出 |
-| A3 落版 / 段首重音 | `impact-deep-whoosh` | 段首首帧 |
-| 任意转场 | `whoosh-fast` | 转场起点 |
+**别用** `assets/audio/sfx/` 那 12 个 mp3（Mixkit 素材，**没有路由服务** ⇒ 引用即「缺素材」硬失败）。
+下表已全部映射到实际可用的 5 个 wav：
+
+| 卡 | 用哪个 wav | 钉点（`anchor.at`） | `gain` 起点 |
+|---|---|---|---|
+| F1 长卷急刹 | `thud` | `end`（刹停那帧） | 0.6 |
+| F2 数据飞线 | `swoosh` | `start`（弧线开始生长） | 0.4 |
+| F3 扫描标注 | `swipe` | `end`（括号合围完成） | 0.4 |
+| F4 马克笔下划线 | `write` | `start`（线描完落定；1.2s 长，别叠用） | 0.25 |
+| F5 首词组装 | `thud` | `start`（大字砸落帧） | 0.7 |
+| F6 词槽轮换 | `card` | `start`（每次换词，**别每帧都挂**） | 0.3 |
+| F7 高光扫过 | `swoosh` | `start`（光带起扫） | 0.35 |
+| F8 UI 蒸发收尾 | `swipe` | `end`（定版词进场） | 0.4 |
+| F9 里程碑时间轴 | `card` | 每个节点轨的 `start` | 0.3 |
+| F10 进度环揭晓 | `thud` | `end`（数字跳出） | 0.6 |
+| A3 落版 / 段首重音 | `thud` | `start`（段首首帧） | 0.5 |
+| 任意转场 | `swoosh` | `start`（转场起点） | 0.3 |
+
+**三条纪律**：① 一条轨最多挂一个音效（同一帧两个 `thud` 会糊）；② 全片 `gain` 合计 ≤ 2；
+③ 卡片连排（三连卡）**只挂第一张**，否则像机关枪。
 
 ---
 

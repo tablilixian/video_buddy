@@ -42,3 +42,6 @@ e2e/
 # 音频取证样本与探针报告（脚本可随时重造；audio-baseline-20261028.md S0）
 canvas-studio/tests/fixtures/audio/
 canvas-studio/build/
+
+# UI 复刻线的成片拆解素材（关键帧截图 + 切片 + 配音；~3.1MB，本地取证用，非产品产物）
+docs/ui-replica-assets/

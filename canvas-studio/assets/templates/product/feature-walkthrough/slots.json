@@ -1,0 +1,121 @@
+{
+  "slots": [
+    {
+      "id": "product",
+      "label": "产品名",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "maxCharsPerLine": 14,
+      "semantic": "产品/功能的名字，品牌写法照原样（中英文都行；英文字母按 1 字计，13 个字符以内）",
+      "styleRole": "eyebrow",
+      "example": "Canvas Studio",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "headline",
+      "label": "一句话定位",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "maxCharsPerLine": 16,
+      "semantic": "「给谁解决什么问题」的一句话，不要形容词堆砌",
+      "styleRole": "title",
+      "example": "让想法直接变成成片",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f1",
+      "label": "特性 1",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第一个特性的短名（名词或动宾），≤8 字",
+      "styleRole": "cardTitle",
+      "example": "一句话出片",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f1Body",
+      "label": "特性 1 说明",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话说清它带来什么结果（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "说清要什么，剩下的交给它",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f2",
+      "label": "特性 2",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第二个特性的短名",
+      "styleRole": "cardTitle",
+      "example": "模板复用",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f2Body",
+      "label": "特性 2 说明",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话说清它的价值（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "同一套风格，换内容不再重做",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f3",
+      "label": "特性 3",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第三个特性的短名",
+      "styleRole": "cardTitle",
+      "example": "随时改稿",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "f3Body",
+      "label": "特性 3 说明",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话说清它的价值（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "改一句话就重渲，不用从头再来",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "cta",
+      "label": "落版号召",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "maxCharsPerLine": 12,
+      "semantic": "最后一句行动号召（下载/试用/预约都能用），≤12 字",
+      "styleRole": "title",
+      "example": "现在就试一版",
+      "onOverflow": "reject"
+    }
+  ]
+}

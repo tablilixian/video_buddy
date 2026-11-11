@@ -1,0 +1,11 @@
+[
+  {
+    "id": "cornerBrackets",
+    "params": {
+      "inset": 2.2,
+      "arm": 1.4,
+      "thickness": 0.09,
+      "color": "#4f6076"
+    }
+  }
+]

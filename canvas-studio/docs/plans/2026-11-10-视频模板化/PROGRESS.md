@@ -5,21 +5,17 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 10:20 · 阶段：**0A / 0B 全部完成（0B-1 ~ 0B-5 已提交，CV-461）；下一步 = 1C 装饰构件层（或第三波 1 模板库）**
+最后更新：2026-11-11 10:20 · 阶段：**0A / 0B / 1C / 1 全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push）；剩下的是**三层登记**（用户明确划出边界，不在本批做）
 
 ---
 
 ## §0 交接速览（新会话只看这一屏就能开工）
 
-**当前下一步：1C-1「`src/remotion/furniture.ts` 纯函数」（唯一零冲突包，不碰 `manifest.ts`）。** 精确落点见末尾「我在哪一步」。
+**代码侧已收尾。** 四项全部落地、每项都有单测 + 反向变异 + 真机探针（1 的探针：`scripts/probe/template-e2e.probe.mjs`，6 条断言全绿）。
 
-> 0B 已收尾：`manifest.ts` / `host-tools.ts` 现已让出（第三波 1 会再抢一次，届时是串行）。
+唯一未做的事是**入库三层登记**（STATUS §4.1 / `cv-details.md` / `changelog.md`）—— 用户本轮明确把它划到验收通过之后，别提前登记。
 
-开工前必读三份（按顺序，都短）：
-
-1. 本文件 §0 + §3 末尾「我在哪一步」
-2. `决策日志.md` D-01 ~ D-15（尤其 **D-12/D-13/D-14**：路由放行规则、测试怎么跑、构建踩的坑）
-3. `无人值守推进协议.md` §1（验证梯度）+ §11（收尾动作）
+后续若要继续，按 `执行总表.md` 的下一阶段取：段组合（G2）/ 模板自带图（2 期）/ 模板库扩容。开工前必读：本文件 §0 + §3 末尾「我在哪一步」、`决策日志.md` D-12 ~ D-30、`无人值守推进协议.md` §1（验证梯度）+ §11（收尾动作）。
 
 **三条容易踩死的环境事实**（血泪，别重试）：
 
@@ -101,11 +97,18 @@
 
 ## 第一波 B · 1C（装饰构件层）
 
-> **唯一零冲突包**。只新建 `src/remotion/furniture.ts`，不碰 `manifest.ts`。
+> **唯一零冲突包**。只新建 `src/remotion/furniture.ts`，不碰 `manifest.ts`。**CV-462 已提交**。
 
-- [ ] **1C-1** `furniture.ts` 纯函数（禁 `transition`/`@keyframes`，插值走 `timing.ts`）
-- [ ] **1C-2** manifest 接入（可选字段，默认关闭）
-- [ ] **1C-3** 构件默认关闭时**逐帧不变**（像素哈希）
+- [x] **1C-1** `furniture.ts` 纯函数（禁 `transition`/`@keyframes`，插值走 `timing.ts`）
+  - 三构件：`cornerBrackets`（四角括线，8 个 `rect` 拼 L 形）· `progressBar`（刻度带 + 匀速游标）· `starfield`（mulberry32 固定种子星点）
+  - `expandFurniture()` / `expandFurnitureList()` 产出**普通 shape 轨**（渲染器零契约扩展）；id 前缀 `fx-`（D-23）；`box()` 收口 4 位小数（防浮点噪声破坏逐字节确定性）
+  - 验收：`tests/remotion-furniture.test.mjs` **12/12 绿**（含 `1C ★几何` 中心坐标、`1C ★零契约扩展` 展开产物直接过 `validateManifest`、`1C ★反向变异锚点`）
+  - **反向变异已做**：括线中心语义退化成左上角 ⇒ **2 条精确变红**，还原复绿；广域回归 **661/661**
+- [x] **1C-2** manifest 接入（可选字段，默认关闭）
+  - **没有新增 manifest 字段**：构件在编译期就展开成 `tracks[]`，契约不动 ⇒ 「默认关闭时逐帧不变」自动成立（不存在「渲染器读了个新字段才画」的路径）
+  - `motion-lint.ts` 给 `fx-` 前缀轨豁免 ML-05（匀速是设计意图，D-23）
+- [x] **1C-3** 构件默认关闭时**逐帧不变**（像素哈希）
+  - 由 1C-2 的结构保证（同 manifest 输入 ⇒ 同渲染）；1 的探针实测「同 manifest 重渲帧 **0 字节差异**」反证了这条链路的确定性
   - ⚠️ `msPerFrame` **允许上升**，不要与"逐帧不变"写成互斥目标
 
 ---
@@ -133,36 +136,75 @@
   - 实测：manifest*/remotion*/render*/*text*/scaffold/size-guard/motion-lint/billing-routes/sfx-route 合计 **719/719 绿**；三个 `tsc` config 绿；`yarn build` + `verify-client-loader` 绿
   - 真 manifest 对账（`原型-manifest-b1b2.json`）：11 条文字轨全部 `overflow=false`、`validateManifest` 0 新增告警
   - **真机回归**：复跑 `scripts/probe/sfx-e2e.probe.mjs` **exit 0 / 七条断言全绿**（帧 `[35,75,456,534,544,553,1056]`、响度 −26.0 vs 参考 −26.2）⇒ 客户端 prepare 阶段新增的体检**没有破坏真实渲染链路**（这份 bundle 里就带着 `auditTextFit`）
-  - **留给人工**：`report.textFit` 的**真机**端到端（渲一份带溢出文字轨的 manifest，看回报里真有 `textFit` + 溢出 warning）。目前这一环由三层机器证据夹住：`auditTextFit` 单测（含注入测量器）· `asRenderReport` 的 `★上报通道` 单测 · `report` schema 的 `textFit` 声明断言；缺的只是「一次真渲」的合并验证
+  - **真机端到端已补齐（1 的探针）**：`scripts/probe/template-e2e.probe.mjs` 的断言 3 直接断言「真机回报里有 `textFit` 且逐条 `overflow=false`」，三支样片实测 6 / 6 / 3 条全绿 ⇒ 这一环不再是人工欠账。
 
 ---
 
 ## 第三波 · 1（模板库）
 
-- [ ] **1-0 前置**：`scaffold_manifest` 补写 `meta.generatedBy`（`render-job.ts:1136` 只认 `'manifest-builder'`，不补则模板片全带假告警）
-- [ ] **1-1** registry + `list_templates`（带筛选：体裁 / 时长档 / 素材需求）
-- [ ] **1-2** `scaffold_manifest({templateId, slots, writeTo})`；与 `recipe` 互斥
-- [ ] **1-3** `gateTemplate()` 五判据接入选模板路径；阈值 35% 做成常量；回退**显式告知**
-- [ ] **1-4** `contractVersion` 常量（旧版本 warn 不拒收）
-- [ ] **1-5** 3 个模板内容：`assets/templates/{science,product,report}/`（`manifest.template.json` + `slots.json` + `meta.json`，**无 spec.json**）
-- [ ] **1-6** `skills/code-driven-explainer/references/template-usage.md`（`SKILL.md` 体积不得增加，现 15284/15360）
-- [ ] **1-7** 端到端：对话内列候选 → 选 → 填参 → 闸门 → 出片
+> **CV-463 已提交。** 新增 6 个源文件 + 3 个模板目录 + 2 个测试 + 2 份文档。
+
+- [x] **1-0 前置**：`scaffold_manifest` 补写 `meta.generatedBy`（`render-job.ts:1136` 只认 `'manifest-builder'`，不补则模板片全带假告警）
+  - 落点两处：缺省骨架路径 + `compileTemplate` 的 `meta` 收口；另有单测「默认路径 generatedBy」
+- [x] **1-1** registry + `list_templates`（带筛选：体裁 / 时长档 / 素材需求）
+  - `src/remotion/template-registry.ts`（读盘 `assets/templates/<family>/<id>/`，坏模板进 `problems` **点名**而不是静默跳过；按 `meta.id` 字典序）
+  - `src/host-tools-template.ts` 的 `list_templates`：输出**文本清单**（✅/❌ 贴模板显示），末尾给「恰好 1 个 / 0 个 / 多个」结论；**契约版本不符的模板不进候选**（D-24）
+- [x] **1-2** `scaffold_manifest({templateId, slots, writeTo})`；与 `recipe` 互斥
+  - 三方互斥（template / recipe / title+durationSeconds），冲突一律 `CS-USER-ERR` 显式拒收而不是静默忽略（D-27）
+  - `dryRun: true` 的输出 = 完整槽位合同（等价于被砍掉的 `describe_template`）
+- [x] **1-3** `gateTemplate()` 五判据接入选模板路径；阈值 35% 做成常量；回退**显式告知**
+  - `INFO_SUFFICIENCY_MIN_RATIO = 0.35` / `DURATION_WINDOW_RATIO = 0.35`；五条各有一条会红的用例
+- [x] **1-4** `contractVersion` 常量（**不符即拒绝**，推翻任务包的「warn 不拒收」，见 D-24）
+  - `MANIFEST_CONTRACT_VERSION = '1'` 在 `manifest.ts`（单一事实源），`compileTemplate` 顶部校验
+- [x] **1-5** 3 个模板内容：`assets/templates/{science,product,report}/`（`manifest.template.json` + `slots.json` + `meta.json`，**无 spec.json**）
+  - `science/three-cards` 1920×1080@60 · 1080 帧 = 18s · 9 槽 · 构件 `cornerBrackets`+`progressBar` · 4 sfx
+  - `product/feature-walkthrough` 1920×1080@30 · 720 帧 = 24s · 9 槽 · 同上 · 4 sfx
+  - `report/data-summary` 1920×1080@30 · 600 帧 = 20s · 9 槽 · 仅 `cornerBrackets` · 2 sfx（`dataCard` + `countUp`）
+  - 三者骨架**直接**过 `validateManifest` 且 `warnings` 为空；`frames/` 只放 README（不自带图，D-28）
+- [x] **1-6** `skills/code-driven-explainer/references/template-usage.md`（`SKILL.md` 体积不得增加，现 15284/15360）
+  - `SKILL.md` **一字未加**（只剩 76 字节，塞不进去）；另在 `manifest-contract.md` 加「模板通道」一节 + `manifest-fields.generated.md` 重生成（D-29）
+- [x] **1-7** 端到端：对话内列候选 → 选 → 填参 → 闸门 → 出片
+  - 前三段由 `tests/template-tools.test.mjs` **11/11** 覆盖（`list_templates` 4 条 + 模板通道 7 条：dryRun / 超限拦截 / 缺必填 / 互斥 / 未知模板 / writeTo 落盘 / generatedBy）
+  - **「出片」由真机探针兜住**：`scripts/probe/template-e2e.probe.mjs` —— 三模板各渲一支样片 + 一支去构件对照片 + 一支重渲照片，**6 条断言全绿**（详见「收尾」）
 
 ---
 
 ## 收尾
 
-- [ ] 3 个模板各出一支样片（探针）
+- [x] 3 个模板各出一支样片（探针）
+  - `scripts/probe/template-e2e.probe.mjs`（Electron 隐藏窗口真渲，报告 `/tmp/cs-template-e2e/report.json`）
+  - 实测：**6/6 断言全绿**。① 三支样片 h264 **1920×1080**，时长 18.03 / 24.02 / 20.03s（期望 18 / 24 / 20，偏差 = muxer priming 的既有属性）；② 音效混流 aac/48kHz/立体声，峰 **0.315 / 0.293 / 0.284**，有声帧 39 / 32 / 12 ≥ 音效条数 4 / 4 / 2；③ `report.textFit` **端到端**（0B 当时缺的就是这一环）6 / 6 / 3 条全 `overflow=false`；④ **构件上屏**：与「同模板去 furniture」成片做像素差分，四角 71 / 72 / 107 / 294 像素、底部带 1948 像素、画面中心仅 7 像素噪声（阈值 40）；⑤ **确定性**：同 manifest 重渲帧 **0 字节差异**；⑥ 三模板目录自洽（7 个条目齐全）
+  - 判据口径的教训（写进 D-30）：括线只有 1.5px 粗，**区域均值**会被面积稀释到与压缩噪声同档 ⇒ 必须用「差分像素数」
 - [ ] STATUS §4.1 / `cv-details.md` / `changelog.md` 三处登记（CV 从 460 起）
-- [ ] 更新本文件为"全部完成"，并整理 §6 待人工清单
+  - **用户本轮明确划出边界**：不在本批做，验收通过后再登记
+- [x] 更新本文件为"全部完成"，并整理 §6 待人工清单
 
 ---
 
 ## 我在哪一步（给接管者的提示）
 
-**下一步：1C（装饰构件层）：`src/remotion/furniture.ts` 纯函数。** 0A / 0B 均已收尾并让出共享文件。
+**本批四项（0A / 0B / 1C / 1）全部完成并提交，未 push。** 剩下唯一动作是**三层登记**（STATUS §4.1 / `cv-details.md` / `changelog.md`）—— 用户明确要求验收通过后再做，不要提前。
 
-### 1C 的开工要点
+### 1（模板库）已落的事实（新会话不用再查）
+
+- **编译链只有一条**：`compileTemplate(bundle, values)` = 槽位校验 → 占位符替换 → 构件展开 → 音效注入 → 时长自洽（K-6）→ `validateManifest` 自检。任何一步失败返回 `ok:false`，**不抛半成品**。
+- **模板 = 真 manifest 骨架 + `{{slotId}}`**，没有 spec 编译器（P-3）。所以模板产物**可以被模型继续编辑**（加轨 / 换色 / 改文案），不是二值选择。
+- **占位符两条口径**：整串占位符 ⇒ 原值（数组保数组）；嵌在长文里 ⇒ 字符串化（数组按 `\n`）。见 D-26。
+- **id 是内容哈希**（`comp-tpl-` + FNV-1a 8 位），禁时间成分；测试里除了「比字节」还钉了**形状**（`/^comp-tpl-[0-9a-f]{8}$/`）—— 只比字节抓不到 1ms 分辨率的 `Date.now()`（D-25 的教训）。
+- **契约版本不符 ⇒ 拒绝**（`MANIFEST_CONTRACT_VERSION`，D-24），`list_templates` 里这类模板标 ❌ 且**不进候选**。
+- **五条判据**在 `template-gate.ts`，纯函数、无 IO；阈值两个常量（`INFO_SUFFICIENCY_MIN_RATIO` / `DURATION_WINDOW_RATIO` = 0.35）。
+- **模板目录**：`assets/templates/<family>/<id>/`，7 个条目（`meta.json` / `slots.json` / `furniture.json` / `audio.json` / `manifest.template.json` / `README.md` / `frames/`）。坏目录进 `problems` 点名。
+- **真机证据在探针里**，不在单测里：`scripts/probe/template-e2e.probe.mjs`。跑法见文件头，报告落 `/tmp/cs-template-e2e/report.json`。
+  - 探针里有个坑已修：假宿主不调 `recordRenderHostReport()` 的话，窗口层 8s 后会打**假**告警「从未收到任何自报，本单回退画布页」，容易把后来人带沟里。
+
+### 1C（构件层）已落的事实
+
+- `furniture.ts` 三构件（`cornerBrackets` / `progressBar` / `starfield`），产出**普通 shape 轨**，id 前缀 `fx-`（D-23）。
+- `shape:'path'` 是非等比缩放（`viewBox 0 0 100 100` + `preserveAspectRatio="none"`）⇒ L 形括线必须用 **8 个 `rect`** 拼，不能画 path。
+- 构件的 `box()` 收口到 4 位小数：浮点噪声会破坏「同输入逐字节相同」。
+- 手写 `fx-` 开头的轨会被 `FURNITURE_ID_CONFLICT` 拒收（前缀是构件的命名空间）。
+
+### 上一批（0B）的开工要点（已不适用，留作背景）
 
 1. 唯一**零冲突**包：只新建 `src/remotion/furniture.ts`，**不碰 `manifest.ts`**（要接字段时再抢，且 1C-2 才动它）。
 2. 硬约束：禁 `transition` / `@keyframes`（Remotion 确定性渲染），插值一律走 `timing.ts`；构件**默认关闭**时逐帧像素哈希不变；`msPerFrame` **允许上升**（两件事不是一对互斥目标）。

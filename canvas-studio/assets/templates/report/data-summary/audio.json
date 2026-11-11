@@ -1,0 +1,20 @@
+[
+  {
+    "src": "/canvas-studio/remotion/sfx/thud.wav",
+    "anchor": {
+      "trackId": "kpi",
+      "at": "start"
+    },
+    "gain": 0.45,
+    "type": "thud"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+    "anchor": {
+      "trackId": "conclusion",
+      "at": "start"
+    },
+    "gain": 0.35,
+    "type": "swoosh"
+  }
+]

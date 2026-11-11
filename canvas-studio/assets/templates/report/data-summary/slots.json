@@ -1,0 +1,121 @@
+{
+  "slots": [
+    {
+      "id": "title",
+      "label": "标题",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "maxCharsPerLine": 14,
+      "semantic": "这一页在说什么（周期 + 主题），如「11 月经营小结」",
+      "styleRole": "title",
+      "example": "11 月经营小结",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "kpiHeadline",
+      "label": "指标区小标题",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "maxCharsPerLine": 14,
+      "semantic": "三个指标共同回答的问题，如「三个关键数」",
+      "styleRole": "cardTitle",
+      "example": "三个关键数",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "k1",
+      "label": "指标 1 标签",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第一个指标的名字（≤8 字）",
+      "styleRole": "kpiLabel",
+      "example": "月活用户",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "v1",
+      "label": "指标 1 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "maxCharsPerLine": 6,
+      "semantic": "纯数字 + 单位/百分号（会做数位滚动），如 128万 / 16% / 3.2",
+      "styleRole": "kpiValue",
+      "example": "128万",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "k2",
+      "label": "指标 2 标签",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第二个指标的名字（≤8 字）",
+      "styleRole": "kpiLabel",
+      "example": "复购率",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "v2",
+      "label": "指标 2 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "maxCharsPerLine": 6,
+      "semantic": "纯数字 + 单位/百分号",
+      "styleRole": "kpiValue",
+      "example": "42%",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "k3",
+      "label": "指标 3 标签",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第三个指标的名字（≤8 字）",
+      "styleRole": "kpiLabel",
+      "example": "人均时长",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "v3",
+      "label": "指标 3 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "maxCharsPerLine": 6,
+      "semantic": "纯数字 + 单位/百分号",
+      "styleRole": "kpiValue",
+      "example": "23分",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "conclusion",
+      "label": "结论一句话",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "从三个数里读出的结论（不是复述数字，要判断），≤20 字",
+      "styleRole": "body",
+      "example": "增长来自复购，不是拉新",
+      "onOverflow": "reject"
+    }
+  ]
+}

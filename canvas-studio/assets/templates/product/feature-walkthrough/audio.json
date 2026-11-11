@@ -1,0 +1,38 @@
+[
+  {
+    "src": "/canvas-studio/remotion/sfx/card.wav",
+    "anchor": {
+      "trackId": "feature1",
+      "at": "start"
+    },
+    "gain": 0.45,
+    "type": "card"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/card.wav",
+    "anchor": {
+      "trackId": "feature2",
+      "at": "start"
+    },
+    "gain": 0.45,
+    "type": "card"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/card.wav",
+    "anchor": {
+      "trackId": "feature3",
+      "at": "start"
+    },
+    "gain": 0.45,
+    "type": "card"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+    "anchor": {
+      "trackId": "cta",
+      "at": "start"
+    },
+    "gain": 0.4,
+    "type": "swoosh"
+  }
+]

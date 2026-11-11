@@ -217,6 +217,14 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   const segments: AbsoluteSegment[] = []
   tracks.forEach((track, index) => { segments.push(...collectSegments(track, index)) })
 
+  // 1C/1（CV-462/463）：**装饰构件的匀速是设计意图，不是机械感**。
+  // 构件展开出的进度条游标表达的就是「时间」—— 给它换缓动等于让游标位置与时间轴不符；
+  // 括线 / 刻度 / 星点则是静止的整轨。这些轨的 id 由 `expandFurniture` 生成（统一 `fx-` 前缀），
+  // 靠前缀识别而不是新增 `meta` 字段：构件在编译期展开后已经只是普通轨道，渲染器与体检
+  // 都不该知道「它是构件」（那会把机制塞进热路径）。
+  const FURNITURE_TRACK_PREFIX = 'fx-'
+  const isFurnitureTrack = (trackId: string): boolean => trackId.startsWith(FURNITURE_TRACK_PREFIX)
+
   // REQ-035 F-09：**往复呼吸不是拖沓**。
   // 一条轨的动画首尾状态相同（from ≈ to）说明它是"来回呼吸/循环脉动"，长时长恰恰是
   // 设计意图；ML-04 原判据只看"时长长且位移小"，会把它判成"动画拖沓"，诱导 agent
@@ -279,7 +287,7 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
       segment.from.scale !== undefined || segment.from.rotation !== undefined ||
       segment.to.x !== undefined || segment.to.y !== undefined ||
       segment.to.scale !== undefined || segment.to.rotation !== undefined
-    if (moving && segment.easing === 'linear') {
+    if (moving && segment.easing === 'linear' && !isFurnitureTrack(segment.trackId)) {
       push({
         code: 'ML-05',
         at: segment.trackId,

@@ -1,0 +1,164 @@
+{
+  "id": "tpl-science-three-cards",
+  "meta": {
+    "title": "{{title}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationInFrames": 1080,
+    "backgroundColor": "#070d18",
+    "look": {
+      "vignette": 0.3,
+      "grain": 0.05
+    }
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "gradient",
+      "color": "#0c1b2e",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 1080,
+      "fadeFrames": 0
+    },
+    {
+      "id": "hook",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{title}}",
+      "box": {
+        "x": 50,
+        "y": 40,
+        "w": 78,
+        "h": 20
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 8,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 12
+      },
+      "anim": "maskReveal"
+    },
+    {
+      "id": "hook-lead",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{lead}}",
+      "box": {
+        "x": 50,
+        "y": 60,
+        "w": 70,
+        "h": 10
+      },
+      "startFrame": 30,
+      "durationInFrames": 120,
+      "fadeFrames": 8,
+      "anim": "fadeUp"
+    },
+    {
+      "id": "card1",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{card1}}",
+        "{{card1Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 48,
+        "w": 56,
+        "h": 18
+      },
+      "accentColor": "#f2a33c",
+      "startFrame": 150,
+      "durationInFrames": 280,
+      "fadeFrames": 6,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      },
+      "anim": "wordStagger"
+    },
+    {
+      "id": "card2",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{card2}}",
+        "{{card2Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 48,
+        "w": 56,
+        "h": 18
+      },
+      "accentColor": "#f2a33c",
+      "startFrame": 430,
+      "durationInFrames": 280,
+      "fadeFrames": 6,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      },
+      "anim": "wordStagger"
+    },
+    {
+      "id": "card3",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{card3}}",
+        "{{card3Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 48,
+        "w": 56,
+        "h": 18
+      },
+      "accentColor": "#f2a33c",
+      "startFrame": 710,
+      "durationInFrames": 280,
+      "fadeFrames": 6,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      },
+      "anim": "wordStagger"
+    },
+    {
+      "id": "ending",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{takeaway}}",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 74,
+        "h": 22
+      },
+      "startFrame": 990,
+      "durationInFrames": 90,
+      "fadeFrames": 10,
+      "anim": "fadeUp"
+    }
+  ]
+}

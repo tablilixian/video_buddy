@@ -49,8 +49,11 @@ const SKILLS_DIR = join(ROOT, 'skills')
  *  2026-11-03 skill 覆盖审计（plans/skill-覆盖审计与修复清单-20261103.md CV-401）：补
  *  host-tools-audio.ts —— analyze_beats/snap_cuts_to_beats 经 defineAudioTools 工厂展开注册
  *  （host-tools.ts:3030 只剩展开调用），名字只在该文件源文本出现；漏列时门禁表 41 vs 真实 43，
- *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'host-tools-canvas-asset.ts', 'skills/placeholder-tools.ts']
+ *  且 skill 正文一旦正确引用这两件工具会被误判幽灵。
+ *  2026-11-11 模板库（CV-463）：补 host-tools-template.ts —— `list_templates` 经
+ *  defineTemplateTools 工厂展开注册，名字只在该文件源文本出现；漏列会把新写的
+ *  template-usage.md（正确引用 list_templates）误判成幽灵引用。 */
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-template.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'host-tools-canvas-asset.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {

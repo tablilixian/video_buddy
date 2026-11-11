@@ -1,0 +1,38 @@
+[
+  {
+    "src": "/canvas-studio/remotion/sfx/thud.wav",
+    "anchor": {
+      "trackId": "card1",
+      "at": "start"
+    },
+    "gain": 0.5,
+    "type": "thud"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/thud.wav",
+    "anchor": {
+      "trackId": "card2",
+      "at": "start"
+    },
+    "gain": 0.5,
+    "type": "thud"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/thud.wav",
+    "anchor": {
+      "trackId": "card3",
+      "at": "start"
+    },
+    "gain": 0.5,
+    "type": "thud"
+  },
+  {
+    "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+    "anchor": {
+      "trackId": "ending",
+      "at": "start"
+    },
+    "gain": 0.4,
+    "type": "swoosh"
+  }
+]

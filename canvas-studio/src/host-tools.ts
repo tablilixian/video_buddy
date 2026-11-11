@@ -34,6 +34,9 @@ import { segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
 import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
+// 1（CV-463）· 模板库：`list_templates` 工具组 + 模板通道编排（判据全在 remotion/template-*.ts 纯函数里）
+import { defineTemplateTools } from './host-tools-template.js'
+import { scaffoldFromTemplate } from './template-scaffold.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
@@ -4447,6 +4450,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '存在的理由：手写 manifest 最容易死在「时长自洽」这一类 —— `meta.durationInFrames` 必须**等于**全部轨道最大结束帧，'
         + '`exit.durationInFrames` 不能超过所在轨道时长。这里一次算对，且返回前已跑过 `validateManifest`（不会给出非法 JSON）。'
         + '用法：传 `title` + `durationSeconds`（可选 `fps` / `aspect`）→ 拿到 JSON → 替换文案、往 `tracks` 里追加轨道。'
+        + '**起点 A（推荐）：传 `templateId` + `slots`** —— 用 `list_templates` 挑一个模板，只填内容、不动结构；'
+        + '槽位超字数/行数/条目数会在**编译前**被拦下并给出「改到多少字」的建议（不会出片后才发现字被裁）。'
+        + '`templateId` 与 `recipe` / `title` 互斥；加 `dryRun: true` 只看槽位合同（= describe_template，不编译不落盘）。'
         + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
         + '时机字段提示（REQ-036 C4）：animate / draw / colorShift 的 `startFrame` 可改用 `anchor`（锚 caption 轨的句/词窗口），'
         + '批量换文案时时机自动跟对不漂移 —— 字段语义见 manifest-contract.md §anchor；与 startFrame 互斥，同时写会被校验拒收。'
@@ -4455,8 +4461,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '落了盘就用 `render_composition({ manifestPath })` 出片，别再内联整份。'
         + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
-        title: { type: 'string' as const, required: true, description: '片名（写进 meta.title 与片头卡文案）' },
-        durationSeconds: { type: 'number' as const, required: true, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧' },
+        title: { type: 'string' as const, description: '片名（写进 meta.title 与片头卡文案）。**传 templateId 时可省**（模板自带文案骨架）' },
+        durationSeconds: { type: 'number' as const, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧。**传 templateId 时可省**（模板是整片，时长已固化）' },
+        templateId: {
+          type: 'string' as const,
+          description: '可选：**模板 id**（`list_templates` 返回的 `family/id`）。给了它就走模板通道：只填 `slots`、不动结构；'
+            + '与 `recipe` / `title` / `durationSeconds` 互斥（模板是整片，时长与结构都由模板定）',
+        },
+        slots: {
+          type: 'object' as const,
+          additionalProperties: true,
+          description: '模板通道必填：槽位填参 `{ slotId: 值 }`。每个槽的字数/行数上限由模板的 slots.json 声明，'
+            + '超限会被编译期拒收并告诉你「改到多少字」。不传 `dryRun` 时会走完整编译 + 校验',
+        },
+        dryRun: {
+          type: 'boolean' as const,
+          description: '可选（配合 templateId）：true = 只看模板说明书（槽位合同 / 构件 / 音效 / 用法），不编译、不落盘、不渲染',
+        },
         // P1-3（2026-11-05）：生成即落盘。真机事故里 205 步全在绕 build/manifest.json 这一个文件。
         writeTo: {
           type: 'string' as const,
@@ -4487,7 +4508,40 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         render: renderTextResult,
       },
       async execute(args, exec) {
-        const a = args as { title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown; recipe?: unknown; writeTo?: unknown }
+        const a = args as {
+          title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown
+          recipe?: unknown; writeTo?: unknown; templateId?: unknown; slots?: unknown; dryRun?: unknown
+        }
+        const writeToRaw = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
+        const templateId = typeof a.templateId === 'string' ? a.templateId.trim() : ''
+        // 1（CV-463）· 起点 A：模板通道。与 recipe / title 三方互斥（模板是整片：结构、时长、文案位都由模板定）。
+        if (templateId !== '') {
+          if (a.recipe !== undefined) {
+            throwError('CS-USER-ERR', {
+              message: 'templateId 与 recipe 互斥 —— 模板本身就是结构起点，两个都给等于两个结构来源。只能选一种。',
+            })
+          }
+          if (a.title !== undefined || a.durationSeconds !== undefined) {
+            throwError('CS-USER-ERR', {
+              message: 'templateId 与 title / durationSeconds 互斥 —— 模板是整片，时长与片名由模板定；'
+                + '要改文案请用 slots（`dryRun: true` 可看完整槽位合同）。',
+            })
+          }
+          const slots = a.slots !== null && typeof a.slots === 'object' && !Array.isArray(a.slots)
+            ? a.slots as Record<string, unknown>
+            : {}
+          const dryRun = a.dryRun === true
+          const projectDir = dryRun || writeToRaw === ''
+            ? undefined
+            : registry.projectDir(await resolveProjectId(registry, exec.agent?.session.header.cwd))
+          return scaffoldFromTemplate({
+            templateId,
+            slots,
+            ...(writeToRaw === '' ? {} : { writeTo: writeToRaw }),
+            ...(dryRun ? { dryRun: true } : {}),
+            ...(projectDir === undefined ? {} : { projectDir }),
+          })
+        }
         const title = typeof a.title === 'string' ? a.title.trim() : ''
         if (title.length === 0) throwError('CS-USER-ERR', { message: 'title 不能为空' })
         const seconds = typeof a.durationSeconds === 'number' && Number.isFinite(a.durationSeconds) ? a.durationSeconds : 0
@@ -4530,6 +4584,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             fps,
             durationInFrames: total,
             backgroundColor: theme.backgroundColor,
+            // K-9（CV-463）：本工具就是 builder —— 不写这个标记，`render-job.ts` 会对**每份**
+            // scaffold 产物发「缺 generatedBy，疑似手写绕过校验」的假告警（模板片全带假告警）。
+            generatedBy: 'manifest-builder' as const,
           },
           tracks: plan === undefined ? [
             {
@@ -4581,7 +4638,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             recipe.note,
           ]),
         ]
-        const writeTo = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
+        const writeTo = writeToRaw
         if (writeTo !== '') {
           // P1-3：生成即落盘。校验/包含判定全在 writeManifestFile 里（拒收零副作用）。
           const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -4619,6 +4676,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
       },
     }),
+    // 1（CV-463）：模板库清单（只读；模板是随包资产，不依赖项目注册表）。
+    ...defineTemplateTools(),
     // 2026-11-02：素材加工与便签类工具外置到 host-tools-artifact.ts（行数 / 函数跨度双棘轮）。
     ...defineArtifactTools({ registry, resolveProjectId }),
     // 4.2（2026-11-04）：数据导入组外置到 host-tools-data.ts（纯文本解析，零后端槽位）。

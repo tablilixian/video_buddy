@@ -1,0 +1,27 @@
+{
+  "id": "product/feature-walkthrough",
+  "name": "产品 · 特性走查",
+  "family": "product",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "产品名 + 一句话定位开场，三条特性逐条入场，落版一句行动号召；带四角括线与底部进度条",
+  "suitableFor": [
+    "产品发布",
+    "功能卖点",
+    "SaaS 介绍"
+  ],
+  "notSuitableFor": [
+    "需要实拍产品图的演示",
+    "数据密度高的汇报"
+  ],
+  "durationInFrames": 720,
+  "fps": 30,
+  "aspect": "16:9",
+  "itemCapacity": 3,
+  "requiredAssets": [],
+  "furniture": [
+    "cornerBrackets",
+    "progressBar"
+  ],
+  "usage": "只填 slots，不要改结构。产品名 ≤10 字、定位 ≤16 字；三条特性各一个 ≤8 字的名词 + ≤20 字的一句说明；落版 ≤12 字。特性条数固定 3 条。"
+}

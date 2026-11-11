@@ -51,6 +51,15 @@ import { validateReveal } from './reveal.js'
 import { lintZOrder } from './manifest-lint.js'
 import { textCardCapacityWarnings, type TextFitVariant } from './text-fit-plan.js'
 
+/**
+ * 1（CV-463）· **渲染器契约版本**（K-10：单一事实源）。
+ *
+ * 模板 `meta.json` 里的 `contractVersion` 必须等于它，否则**拒绝编译**（不是 warning）：
+ * 静默降级会产出「模板以为有这个能力、渲染器没有」的假成功，比报错难查一个量级。
+ * 只在**破坏性**变更时递增（加可选字段不算）。
+ */
+export const MANIFEST_CONTRACT_VERSION = '1'
+
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
   /** 唯一 id（用 `newAssetId()` 生成，便于血缘与重试）。 */
@@ -83,6 +92,8 @@ export interface ManifestMeta {
   /** 三期 W5-3：渲染质量档（也可由工具参数覆盖）。缺省 `standard`。 */
   quality?: RenderQuality
   generatedBy?: string // 批 2-1.2：builder 产物标记；缺失 ⇒ render 侧观察期 warning（P-06 观测口）
+  /** 1（CV-463）：产出这份 manifest 的模板 id（`family/id`）。手写 / 自由编排没有这一项。 */
+  templateId?: string
   /** 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。 */
   lint?: 'off'
 }
@@ -972,7 +983,7 @@ function isFinitePositive(value: unknown): value is number {
 
 /** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
 const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
-const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy'])
+const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy', 'templateId'])
 /** P-02 漂移检查数据面（见 KNOWN_TRACK_KEYS 注释）。 */
 export const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',

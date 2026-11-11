@@ -1,0 +1,165 @@
+{
+  "id": "tpl-product-feature-walkthrough",
+  "meta": {
+    "title": "{{headline}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 720,
+    "backgroundColor": "#060a12",
+    "look": {
+      "contrast": 1.04,
+      "vignette": 0.26,
+      "grain": 0.04
+    }
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "gradient",
+      "color": "#0a1524",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 720,
+      "fadeFrames": 0
+    },
+    {
+      "id": "brand",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{product}}",
+      "box": {
+        "x": 50,
+        "y": 11,
+        "w": 50,
+        "h": 7
+      },
+      "anim": "fadeUp",
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 6
+    },
+    {
+      "id": "headline",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{headline}}",
+      "box": {
+        "x": 50,
+        "y": 25,
+        "w": 80,
+        "h": 18
+      },
+      "anim": "maskReveal",
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 8,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      }
+    },
+    {
+      "id": "feature1",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{f1}}",
+        "{{f1Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 47,
+        "w": 58,
+        "h": 15
+      },
+      "accentColor": "#3fa9f5",
+      "anim": "wordStagger",
+      "startFrame": 120,
+      "durationInFrames": 180,
+      "fadeFrames": 5,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 8
+      }
+    },
+    {
+      "id": "feature2",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{f2}}",
+        "{{f2Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 47,
+        "w": 58,
+        "h": 15
+      },
+      "accentColor": "#3fa9f5",
+      "anim": "wordStagger",
+      "startFrame": 300,
+      "durationInFrames": 180,
+      "fadeFrames": 5,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 8
+      }
+    },
+    {
+      "id": "feature3",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{f3}}",
+        "{{f3Body}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 47,
+        "w": 58,
+        "h": 15
+      },
+      "accentColor": "#3fa9f5",
+      "anim": "wordStagger",
+      "startFrame": 480,
+      "durationInFrames": 180,
+      "fadeFrames": 5,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 8
+      }
+    },
+    {
+      "id": "cta",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{cta}}",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 70,
+        "h": 20
+      },
+      "anim": "fadeUp",
+      "startFrame": 660,
+      "durationInFrames": 60,
+      "fadeFrames": 8
+    }
+  ]
+}

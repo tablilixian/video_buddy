@@ -25,6 +25,34 @@
 
 **字段写了会怎样，看 [`animation-and-assets.md`](./animation-and-assets.md)**：逐字动画的帧语义（`wordDelayFrames` 缺省值、整卡 vs 逐行）、图片 `fit` 三档与 kenburns 的推幅、素材核对何时硬失败、形状几何的顶点与拉伸规则——这些都是**读源码才拿得到**的事实，不要靠字段名推测，也不要为了确认它去读组件源码。
 
+## 模板通道（1 · CV-463）：**先看有没有模板，再考虑从零写**
+
+模板 = 已经验过效果的整片（版式 + 时序 + 槽位合同 + 音效 + 装饰构件）。用模板时你**不写 manifest**，
+只填内容：
+
+```
+list_templates({ requirements: { contentChars, itemCount, assetCount, durationSeconds } })
+   → scaffold_manifest({ templateId, slots: {…}, writeTo: "build/manifest.json" })
+   → render_composition({ manifestPath })
+```
+
+**没有** `render_composition({ templateId })` 这条通道：模板产物就是一份普通 manifest 文件，
+可以继续加轨 / 改配色 / 换文案。用法与纪律见 [`template-usage.md`](./template-usage.md)。
+
+模板产物的两个 meta 标记（都是可选字段，手写 manifest 不需要）：
+
+| 字段 | 谁写 | 含义 |
+|---|---|---|
+| `meta.generatedBy` | `scaffold_manifest` / 模板编译器 | `'manifest-builder'` = 由 builder 产出。缺失 ⇒ `render_composition` 发「疑似手写绕过校验」的告警（模板片必须带） |
+| `meta.templateId` | 模板编译器 | 产出它的模板 id（`family/id`），用于回溯「这条片是哪个模板 + 哪些槽位值」 |
+
+`MANIFEST_CONTRACT_VERSION`（`src/remotion/manifest.ts`）是**契约版本的单一事实源**：模板的
+`meta.json` 里 `contractVersion` 与它不符 ⇒ 编译期**拒绝**（不是 warning —— 静默降级会产出
+「模板以为有、渲染器没有」的假成功）。
+
+装饰构件（四角括线 / 进度条 / 星点）在**编译期**展开成普通 `shape` 轨（id 统一 `fx-` 前缀），
+渲染器不认识构件；手写等价物见 [`motion-patterns.md`](./motion-patterns.md) §5。
+
 ## 顶层结构
 
 ```jsonc

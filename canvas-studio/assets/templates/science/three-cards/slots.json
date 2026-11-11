@@ -1,0 +1,121 @@
+{
+  "slots": [
+    {
+      "id": "title",
+      "label": "主标题",
+      "type": "string",
+      "required": true,
+      "maxChars": 10,
+      "maxLines": 1,
+      "maxCharsPerLine": 10,
+      "semantic": "四到十个汉字，直接给出结论或悬念，不要写「关于……的科普」",
+      "styleRole": "title",
+      "example": "四季从哪来",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "lead",
+      "label": "开场结论",
+      "type": "string",
+      "required": true,
+      "maxChars": 24,
+      "maxLines": 1,
+      "maxCharsPerLine": 24,
+      "semantic": "一句话把结论说完（观众看完这一句就该知道答案）；可用逗号，不要换行",
+      "styleRole": "body",
+      "example": "不是离太阳远近，而是地轴斜了 23.4°",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card1",
+      "label": "要点 1 关键词",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第一个要点的短词（名词或动宾短语），不超过八字",
+      "styleRole": "cardTitle",
+      "example": "地轴倾斜",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card1Body",
+      "label": "要点 1 解释",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话解释第一个要点（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "自转轴与公转面成 23.4 度角",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card2",
+      "label": "要点 2 关键词",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第二个要点的短词",
+      "styleRole": "cardTitle",
+      "example": "直射点移动",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card2Body",
+      "label": "要点 2 解释",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话解释第二个要点（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "一年里在南北回归线之间往返",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card3",
+      "label": "要点 3 关键词",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "第三个要点的短词",
+      "styleRole": "cardTitle",
+      "example": "昼长变化",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "card3Body",
+      "label": "要点 3 解释",
+      "type": "string",
+      "required": true,
+      "maxChars": 20,
+      "maxLines": 1,
+      "maxCharsPerLine": 20,
+      "semantic": "一句话解释第三个要点（≤20 字，单行）",
+      "styleRole": "cardBody",
+      "example": "夏天太阳待得更久，于是更热",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "takeaway",
+      "label": "落版一句话",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "maxCharsPerLine": 16,
+      "semantic": "收尾的一句（可以是复述结论、也可以是一个反问），≤16 字",
+      "styleRole": "title",
+      "example": "热不热，看角度不看距离",
+      "onOverflow": "reject"
+    }
+  ]
+}

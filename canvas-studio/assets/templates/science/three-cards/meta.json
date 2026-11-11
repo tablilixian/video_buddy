@@ -1,0 +1,27 @@
+{
+  "id": "science/three-cards",
+  "name": "科普 · 要点三卡",
+  "family": "science",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "一句结论开场 + 三张要点卡 + 一句话落版；带四角括线与底部进度条，适合知识科普与口播包装",
+  "suitableFor": [
+    "知识科普",
+    "概念解释",
+    "口播包装"
+  ],
+  "notSuitableFor": [
+    "数据密集",
+    "需要配图的产品演示"
+  ],
+  "durationInFrames": 1080,
+  "fps": 60,
+  "aspect": "16:9",
+  "itemCapacity": 3,
+  "requiredAssets": [],
+  "furniture": [
+    "cornerBrackets",
+    "progressBar"
+  ],
+  "usage": "只填 slots，不要改结构。主标题 ≤10 字（一行读完），结论 ≤24 字；三张卡各一个 ≤8 字的关键词 + ≤20 字的一句解释。卡片数固定 3 条 —— 有 4 条要点请合并到 3 条，或改用自由编排。"
+}

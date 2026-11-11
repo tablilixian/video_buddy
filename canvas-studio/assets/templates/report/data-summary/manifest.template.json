@@ -1,0 +1,110 @@
+{
+  "id": "tpl-report-data-summary",
+  "meta": {
+    "title": "{{title}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 600,
+    "backgroundColor": "#080b10",
+    "look": {
+      "vignette": 0.22,
+      "grain": 0.03
+    }
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "gradient",
+      "color": "#0d131c",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 600,
+      "fadeFrames": 0
+    },
+    {
+      "id": "title",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{title}}",
+      "box": {
+        "x": 50,
+        "y": 17,
+        "w": 76,
+        "h": 14
+      },
+      "anim": "maskReveal",
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 8,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      }
+    },
+    {
+      "id": "kpi",
+      "type": "textCard",
+      "variant": "dataCard",
+      "text": "{{kpiHeadline}}",
+      "data": [
+        {
+          "k": "{{k1}}",
+          "v": "{{v1}}"
+        },
+        {
+          "k": "{{k2}}",
+          "v": "{{v2}}"
+        },
+        {
+          "k": "{{k3}}",
+          "v": "{{v3}}"
+        }
+      ],
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 64,
+        "h": 30
+      },
+      "accentColor": "#f2a33c",
+      "countUp": true,
+      "dataSource": "inline",
+      "startFrame": 150,
+      "durationInFrames": 300,
+      "fadeFrames": 6,
+      "exit": {
+        "to": {
+          "opacity": 0
+        },
+        "durationInFrames": 10
+      }
+    },
+    {
+      "id": "conclusion",
+      "type": "textCard",
+      "variant": "bullets",
+      "text": [
+        "{{conclusion}}"
+      ],
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 60,
+        "h": 14
+      },
+      "anim": "fadeUp",
+      "startFrame": 450,
+      "durationInFrames": 150,
+      "fadeFrames": 6
+    }
+  ]
+}

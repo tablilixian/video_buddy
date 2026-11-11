@@ -1,0 +1,26 @@
+{
+  "id": "report/data-summary",
+  "name": "汇报 · 数据小结",
+  "family": "report",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "标题 + 三个关键指标（数位滚动）+ 一句结论；带四角括线，适合周报、复盘与经营汇报",
+  "suitableFor": [
+    "周报月报",
+    "项目复盘",
+    "经营数据汇报"
+  ],
+  "notSuitableFor": [
+    "需要图表趋势",
+    "纯口播科普"
+  ],
+  "durationInFrames": 600,
+  "fps": 30,
+  "aspect": "16:9",
+  "itemCapacity": 3,
+  "requiredAssets": [],
+  "furniture": [
+    "cornerBrackets"
+  ],
+  "usage": "只填 slots，不要改结构。标题 ≤14 字；三个指标各「≤8 字标签 + ≤6 字数值」（数值写成 16% / 3.2 亿 / 128 这种能被数位滚动的形态）；结论 ≤20 字。指标固定 3 个。"
+}

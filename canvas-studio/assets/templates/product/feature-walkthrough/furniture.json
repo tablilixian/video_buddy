@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cornerBrackets",
+    "params": {
+      "inset": 2.4,
+      "arm": 1.0,
+      "thickness": 0.07,
+      "color": "#5b6b86"
+    }
+  },
+  {
+    "id": "progressBar",
+    "params": {
+      "bottomInset": 3.0,
+      "left": 6.0,
+      "right": 94.0,
+      "ticks": 32,
+      "tickWidth": 0.18,
+      "tickHeight": 0.9,
+      "tickColor": "#22303f",
+      "cursorWidth": 0.6,
+      "cursorHeight": 1.5,
+      "cursorColor": "#3fa9f5"
+    }
+  }
+]

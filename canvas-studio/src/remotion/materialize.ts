@@ -24,6 +24,7 @@
 
 import { basename, resolve, sep } from 'node:path'
 import { ASSET_URL_PREFIX, type CompositionManifest } from './manifest.js'
+import { mapTracksDeep } from './group-children.js'
 
 /** 物化结论。 */
 export interface MaterializeResult {
@@ -86,7 +87,9 @@ export function materializeManifestSources(
     return ref
   }
 
-  const tracks = manifest.tracks.map((track) => {
+  // S1-B：容器子轨与顶层轨同权 —— 漏了它，group 里的素材没被物化，asset-check 的
+  // fail-closed 会把整条渲染拒掉（「非同源资产 URL，未经物化」）。
+  const tracks = mapTracksDeep(manifest.tracks, (track) => {
     if (track.type !== 'video' && track.type !== 'image') return track
     const url = toUrl(track.src, `tracks[${track.id}].src`)
     return url === track.src ? track : { ...track, src: url }

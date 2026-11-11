@@ -115,7 +115,9 @@ export const FILE_WHITELIST = {
   // P1-6（2026-11-11 真机复盘）：抽帧回执改给磁盘路径 —— `sampleDiskPath` 辅助（14 行）+
   // payload 逐帧算 path（+7）+ frames schema 声明 path（+4），5093 → 5125 显式登记。
   // 消化路径同上：这两段（回执文案 + payload 组装）都是 render 段，外提时一并搬走。
-  'src/host-tools.ts': 5125,
+  // S1-B（2026-11-11，≥95% 对齐）：alpha 回写改走 mapTracksDeep（容器子轨 image 标记）
+  // +2 净行，5125 → 5127 显式登记。
+  'src/host-tools.ts': 5127,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
@@ -136,7 +138,10 @@ export const FILE_WHITELIST = {
   // CV-460（2026-11-11）补登：0A-6 sfx 只读路由（ROUTE_REMOTION_SFX + REMOTION_SFX_DIR +
   // 分发接线，3686 → 3737）——上一批（398d9a792b）漏登，本次跑闸暴露后补。
   // CV-461（2026-11-11，0B 文本溢出上报）：asRenderReport 收口 textFit 数组（清洗在 sanitizeTextFitEntries；+7），3737 → 3744 显式登记。
-  'src/routes.ts': 3744,
+  // ≥95% 对齐 S2（2026-11-11）：模板占位资产只读路由（ROUTE_REMOTION_TEMPLATES +
+  // REMOTION_TEMPLATE_DIR + .svg 内容类型 + 4 段路径校验 handler，+59），3744 → 3803 显式登记。
+  // 消化路径：路由注册大函数按域拆分时随静态资产段外提。
+  'src/routes.ts': 3805,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
@@ -182,7 +187,13 @@ export const FILE_WHITELIST = {
   // CV-463（2026-11-11，模板库）：MANIFEST_CONTRACT_VERSION 常量（K-10 单一事实源）+ meta.templateId
   // 字段与已知键登记，2426 → 2437 显式登记。
   // CV-463 补登（同日，P-7）：meta.family 可选字段 + KNOWN_META_KEYS 加 'family'（+6，2437 → 2443）。
-  'src/remotion/manifest.ts': 2443,
+  // S1-B（2026-11-11，≥95% 对齐四小件）：GroupTrack 类型与注释 / dotGrid・timecode・clip 字段与
+  // 校验分支 / MEDIA_CLIPS / KNOWN_TRACK_KEYS 三处扩 / validateGroupContainerTracks 外提件
+  //（validateManifest 函数体因此净减，未破 600 函数闸），2443 → 2570 显式登记。
+  // 消化路径：contract 小件继续按 manifest-track-validate / group-children 外提，不回灌本文件。
+  // S3（2026-11-11）：group 子轨合成校验豁免 manifest 级聚合体检 —— validateManifest
+  // 加可选 opts 参数（groupSubCheck）线程到 lintMotion（+8），2570 → 2578 显式登记。
+  'src/remotion/manifest.ts': 2578,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
@@ -218,7 +229,14 @@ export const FILE_WHITELIST = {
   // CV-460（2026-11-11）：0A-7 sfx 音量包络 `sfxVolumeAt`（+53 净行：SfxVolumeOptions
   // 接口 + 纯函数 + 域头注释），1447 → 1500 显式登记。消化路径：随音频域拆分
   // （audioVolumeAt/sfxVolumeAt 可整体外提到 audio-envelope.ts）一起外提。
-  'src/remotion/timing.ts': 1500,
+  // 真 3D 第一批（`cd4d9e4ab2`，上一批遗留欠账）：flipX 的 2 处注释纠正错归因
+  // 「web-renderer 不读 perspective()」→「成本选择」，+2 净行，1500 → 1502 显式登记。
+  // 本批（cardWall）未动本文件；消化路径同上。
+  // 95% 对齐 S1（2026-11-11）：`fx:'metal'` 的 FxStyle.textBackground 字段 + fxStyles
+  // 折算分支，+10 净行，1502 → 1512 显式登记。消化路径同上（音频域拆分时随 fx 段外提）。
+  // 95% 对齐 S1-B（同日）：reconcileManifestVideoDurations 改走 mapTracksDeep（容器子轨
+  // 时长回核）+2 净行，1512 → 1514 显式登记。
+  'src/remotion/timing.ts': 1514,
   // 订阅与积分（2026-11-02）：三个计费请求封装（快照/checkout/portal）+ 错误信封
   // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
   // 复刻提效批（2026-11-02）：PendingStudioRenderJob.spotFrames + commit spot 参数，+7（1339 → 1346）。
@@ -238,7 +256,7 @@ export const FUNC_WHITELIST = {
   'src/client/styles.ts#STUDIO_STYLES': { lines: 11140, note: '整文件 CSS 模板字面量；CV-444 +15 补登；会话18 终态错误卡 +27；CV-460 0A-3 九值枚举角标 +3 补登（上批漏登）；阶段 6 拆分时本条随之消失' },
   // 订阅与积分（2026-11-02）：billing 前缀三分派 +95（2868 → 2963），随文件棘轮同批登记。
   // REQ-037（2026-11-03）：storyboardCanvasNodeIds + 接线 +2（2967 → 2969）。
-  'src/routes.ts#registerStudioRoutes': { lines: 3041, note: '阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；CV-458 textFor 接线 +1、CV-459 用户参考登记路由 +27（2026-11-10）；CV-460 0A-6 sfx 只读路由 +44 补登（上批漏登，2026-11-11）' },
+  'src/routes.ts#registerStudioRoutes': { lines: 3090, note:'阶段 2 按域拆；CV-382 资产路由流式化 +39（2026-10-29）；订阅积分 +95（2026-11-02）；尾段归一化拆行 +1（2026-11-02）；commit spot 透传 +3（2026-11-02）；REQ-037 +2（2026-11-03）；CV-458 textFor 接线 +1、CV-459 用户参考登记路由 +27（2026-11-10）；CV-460 0A-6 sfx 只读路由 +44 补登（上批漏登，2026-11-11）；S2 模板占位资产路由 +48（2026-11-11）' },
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——阶段 3 拆分时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态/信号/两处入口/全屏页 +54（2764 → 2818）。
   // REQ-037（2026-11-03）：素材托盘重启用 + 待落画布条 +26（2818 → 2844）。
@@ -255,7 +273,7 @@ export const FUNC_WHITELIST = {
   // 硬拒接线）与 attach_canvas_asset 的 spread 接线，+4（2917 → 2921）。
   // 消化路径：判据本身全在 canvas-asset-attach.ts（本函数只留一行调用）。upload_image 若
   // 按 download_video 同款整体外置（它已无生成逻辑，只剩上传 + 回写 + 外链补节点），可回收本行数。
-  'src/host-tools.ts#createStudioTools': { lines: 2997, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977；A1/A4 bgmUrl 参数 + 自检行/抽帧文案接线 +11 → 2988；P1-6 抽帧 path 逐帧计算 +9 → 2997' },
+  'src/host-tools.ts#createStudioTools': { lines: 2998, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977；A1/A4 bgmUrl 参数 + 自检行/抽帧文案接线 +11 → 2988；P1-6 抽帧 path 逐帧计算 +9 → 2997；S1-B mapTracksDeep 换行重排 +1 → 2998' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

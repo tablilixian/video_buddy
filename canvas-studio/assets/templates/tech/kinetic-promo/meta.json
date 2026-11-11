@@ -1,0 +1,33 @@
+{
+  "id": "tech/kinetic-promo",
+  "name": "科技 · 快切发布会",
+  "family": "tech",
+  "version": "1.1.0",
+  "contractVersion": "1",
+  "summary": "L2 结构复刻 24s 宣传片：12 段 / 平均 2s 一切，3D 卡片墙开场 + HUD 时间码 + 数据段 + 电蓝快切 + 四块名牌 + 对比落版",
+  "suitableFor": [
+    "新品发布",
+    "能力宣传",
+    "产品预告"
+  ],
+  "notSuitableFor": [
+    "需要真人出镜或实拍素材",
+    "讲解型长视频",
+    "数据密度高的汇报"
+  ],
+  "durationInFrames": 1440,
+  "fps": 60,
+  "aspect": "16:9",
+  "durationRange": [
+    22,
+    26
+  ],
+  "itemCapacity": 4,
+  "requiredAssets": [],
+  "furniture": [
+    "cardWall",
+    "cornerBrackets",
+    "progressBar"
+  ],
+  "usage": "26 个槽位全部必填、但全部带缺省文案（缺了不拒收，可直接出样片），改哪格就覆盖哪格。段落序列、节拍、HUD 语法固定，不要增删段；文案按 maxChars 填，超了编译前拒收。"
+}

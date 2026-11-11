@@ -2,7 +2,7 @@
 
 > 产物在 repo 外（mp4 不进 git）。本文件由 `scripts/capability-bench/run.mjs` 生成，
 > 数据源是旁边的 `INDEX.json`（按 id 合并，单条复跑不会冲掉其它条目）。
-> 生成时间：2026-11-11T06:58:24.874Z
+> 生成时间：2026-11-11T09:54:02.167Z
 
 | # | 能力项 | 状态 | autoScore | 成片 | 产物目录 |
 |---|---|---|---|---|---|
@@ -19,3 +19,7 @@
 | 10 | 剪辑：跳剪 / 变速 / 独立音轨 | done | 5/5 | cap10.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/10-editing` |
 | 11 | sourceRect 精灵图子区域裁切（CV-392） | done | 5/5 | cap11.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261029/11-sprite-rect` |
 | 12 | CSS 3D 八种写法（透视是否真出画） | done | 5/5 | cap12.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/12-css3d` |
+| 13 | 卡片墙 3D 投影（串顺序 / 对称梯形 / 24–36 层性能） | done | 5/5 | cap13.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/13-cardwall-3d` |
+| 14 | CSS 3D 容器卡片墙（62 张内容卡 / 1 个 3D 层） | done | 5/5 | cap14.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/14-cardwall-group` |
+| 15 | CSS 3D 扁平卡片墙（62 张各自 perspective） | done | 5/5 | cap15.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/15-cardwall-flat` |
+| 16 | 金属字 / 点阵网格 / 圆形裁切的渲染能力 | done | 5/5 | cap16.mp4 | `/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/16-metal-grid-clip` |

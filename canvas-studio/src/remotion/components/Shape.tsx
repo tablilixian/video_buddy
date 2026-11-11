@@ -28,6 +28,15 @@ function containerFx(anim: ReturnType<typeof resolveAnimatedStyle>): React.CSSPr
   }
 }
 
+/**
+ * S1-B：把任意轨 id 折算成安全的 SVG `id` 片段（`<pattern>` 引用必须全局唯一且
+ * 语法安全）。逐字符转义（非法字符 → `_<charCode>`），确定性且零碰撞 ——
+ * **禁**用随机数或索引：同一 manifest 渲两次 id 必须相同。
+ */
+function svgIdSafe(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, (c) => `_${c.charCodeAt(0)}`) || 'dots'
+}
+
 export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { width } = useVideoConfig()
@@ -82,6 +91,38 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
             {...(track.draw !== undefined ? { strokeDasharray: 1, strokeDashoffset: 1 - progress } : {})}
           />
         </svg>
+      </AbsoluteFill>
+    )
+  }
+
+  // ── S1-B：`dotGrid` 轨 —— SVG `<pattern>` 平铺点阵 ──
+  // #16 首轮实证：CSS `radial-gradient` 平铺被 web-renderer 4.0.535 **整个忽略**
+  //（整格只剩一个糊点），SVG `<pattern>` + `<rect fill=url(#…)>` 才真出画（13ms/帧）。
+  // 缺省铺满画布（它是背景底纹，不是小块装饰）；与 shape 老缺省（30×20 小块）不同，
+  // 这是有意为之并在契约里写明。动画走 `shapeTransform` 绕盒中心（与 polygon 族同构）。
+  if (track.shape === 'dotGrid') {
+    const gridBox = track.box ?? { x: 50, y: 50, w: 100, h: 100 }
+    const spacing = track.dotSpacing ?? 24
+    const radius = track.dotRadius ?? 2
+    const patternId = `dots-${svgIdSafe(track.id ?? '')}`
+    return (
+      <AbsoluteFill style={{ opacity: anim.opacity, ...containerFx(anim) }}>
+        <div
+          style={{
+            position: 'absolute',
+            ...boxStyle({ x: left, y: top, w: gridBox.w, h: gridBox.h }, anim.shapeTransform),
+            ...originStyle,
+          }}
+        >
+          <svg width="100%" height="100%" style={{ display: 'block' }}>
+            <defs>
+              <pattern id={patternId} width={spacing} height={spacing} patternUnits="userSpaceOnUse">
+                <circle cx={spacing / 2} cy={spacing / 2} r={radius} fill={color} />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+          </svg>
+        </div>
       </AbsoluteFill>
     )
   }

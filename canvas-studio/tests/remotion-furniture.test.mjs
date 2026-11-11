@@ -181,3 +181,16 @@ test('1C ★反向变异锚点：中心语义不可退化（4 条括线各偏半
   assert.notEqual(tlH.x, inset, '横线中心不能等于 inset')
   assert.ok(Math.abs((tlV.y - tlH.y) - arm / 2) < 1e-9, '横线的中心与竖线的中心必须差半个臂长')
 })
+
+// ── ⑥ cardWall（S3 容器化后只剩契约级断言） ─────────────────────────────────
+//
+// 旧「一卡一 shape 轨 + 逐卡投影」的 6 条用例随容器化整体退役（D-48）：形态 /
+// 3D / 批次节奏 / 确定性 / 参数守卫的权威断言已迁到
+// `tests/remotion-cardwall-container.test.mjs`，这里不再重复，只守「展开产物
+// 能直接过 validateManifest」这条零契约扩展 —— 它跨了 furniture → manifest
+// 两个模块，是接线级的守卫，必须留在本文件。
+
+test('cardWall ★零契约扩展：容器 group 产物直接过 validateManifest', () => {
+  const verdict = validateManifest(withTracks(expandFurniture({ id: 'cardWall' }, CTX)))
+  assert.deepEqual(verdict.errors, [], `构件不许引入契约外字段：${verdict.errors.join('；')}`)
+})

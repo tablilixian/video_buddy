@@ -25,7 +25,7 @@ import { gateTemplate, INFO_SUFFICIENCY_MIN_RATIO } from '../lib/remotion/templa
 import { listTemplateSummaries, loadTemplateBundle } from '../lib/remotion/template-registry.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
 
-const REAL_TEMPLATES = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary']
+const REAL_TEMPLATES = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary', 'tech/kinetic-promo']
 
 /** 用模板自己的 `example` 当填参（最稳的「合法内容」来源：作者亲手写的示例）。 */
 function exampleValues(bundle) {
@@ -205,7 +205,7 @@ test('1 ★编译：契约版本不符 ⇒ 明确抛错（不许静默降级出�
   )
 })
 
-test('1 ★骨架自洽：三份 manifest.template.json 不替换占位符也能过校验（占位符是合法字符串）', () => {
+test('1 ★骨架自洽：四份 manifest.template.json 不替换占位符也能过校验（占位符是合法字符串）', () => {
   for (const id of REAL_TEMPLATES) {
     const { bundle } = loadTemplateBundle(id)
     const verdict = validateManifest(bundle.skeleton)
@@ -279,7 +279,7 @@ test('1 ★判据：三模板里「恰好 1 个通过」可被判出来（自动
 
 // ── ④ 注册表 ────────────────────────────────────────────────────────────
 
-test('1 ★注册表：三个模板都在册、契约版本一致、按 id 排序', () => {
+test('1 ★注册表：四个模板都在册、契约版本一致、按 id 排序', () => {
   const catalog = listTemplateSummaries()
   assert.deepEqual(catalog.items.map((item) => item.meta.id), [...REAL_TEMPLATES].sort())
   assert.deepEqual(catalog.problems, [])

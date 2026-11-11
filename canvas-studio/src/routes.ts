@@ -347,6 +347,10 @@ const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
 // 会被资产路由解析成 projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
 // 与 `src/audio-sfx/index.ts` 的 `SFX_URL_PREFIX` 必须字面一致。
 const ROUTE_REMOTION_SFX = '/canvas-studio/remotion/sfx'
+// ≥95% 对齐 S2：模板自带静态占位资产（剪影 SVG 等）的随包只读路由。
+// 与 sfx 同因挂在 `remotion/` 下：`/canvas-studio/assets/…` 会被资产路由解析成
+// projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
+const ROUTE_REMOTION_TEMPLATES = '/canvas-studio/remotion/templates'
 // REQ-034 · O-05：RenderHost 隐藏渲染窗口的三条路由（页面 / bundle / 自报状态）。
 // 页面与 bundle 由**隐藏窗口自己**加载，不给外部浏览器用 ⇒ 仍然只认 loopback authority。
 const ROUTE_RENDER_HOST = '/canvas-studio/render-host'
@@ -378,6 +382,11 @@ const REMOTION_FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..',
 const REMOTION_GRAIN_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'remotion', 'grain.png')
 /** 0A · CV-460：随包音效目录（`scripts/build-sfx.mjs` 产出，产物入库）。 */
 const REMOTION_SFX_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'sfx')
+/** ≥95% 对齐 S2：模板自带静态占位资产（`assets/templates/<family>/<id>/frames/*`，产物入库）。
+ * 模板 manifest 的 `src` 引用形如 `/canvas-studio/remotion/templates/tech/kinetic-promo/frames/x.svg`
+ * —— 人像端口与圆形 PIP 的**程序生成占位**（剪影 SVG，非真人肖像）；有路由才能在
+ * 渲染进程同源 fetch（`/canvas-studio/assets/…` 是项目资产路由，按 projectId 解析，不适用）。 */
+const REMOTION_TEMPLATE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'templates')
 
 /** 托管资产的扩展名 → Content-Type（P8.4 起含参考视频；CV-241 起含文本）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -387,6 +396,9 @@ const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.webp': 'image/webp',
   '.gif': 'image/gif',
   '.bmp': 'image/bmp',
+  // ≥95% 对齐 S2：模板占位资产（剪影 SVG）的托管类型 —— 缺了会被 octet-stream 兜底，
+  // 浏览器 `<img>` 拒渲染 → 占位黑块。
+  '.svg': 'image/svg+xml',
   '.mp4': 'video/mp4',
   '.m4v': 'video/mp4',
   '.mov': 'video/quicktime',
@@ -3597,6 +3609,55 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'sfx not found' })
+      }
+    }}),
+
+    // ── ≥95% 对齐 S2：模板自带静态占位资产（`assets/templates/<family>/<id>/frames/*`）──
+    // 与 sfx 同口径：loopback authority + GET-only + 逐段文件名白名单
+    //（`^[a-z0-9-]+$` 天然挡 `..` 与扩展名伪装）+ join/startsWith 兜底防穿越 + 强缓存。
+    // 子目录固定两段（family/id）+ `frames` 目录 + 单段文件名，超出即 400。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_REMOTION_TEMPLATES, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion templates only support GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
+      let rel = ''
+      try {
+        rel = decodeURIComponent(requestUrl.pathname.slice(ROUTE_REMOTION_TEMPLATES.length)).replace(/^\/+/, '')
+      } catch {
+        sendJson(res, 400, { error: 'malformed template asset path' })
+        return
+      }
+      const segments = rel.split('/')
+      const fileName = segments[3] ?? ''
+      // 文件名段含扩展名的点，不进 `[a-z0-9-]` 白名单 —— 单独校验。
+      const okShape = segments.length === 4
+        && segments.slice(0, 3).every((segment) => /^[a-z0-9-]+$/.test(segment))
+        && segments[2] === 'frames'
+        && /^[a-z0-9-]+\.(svg|png)$/.test(fileName)
+      if (!okShape) {
+        sendJson(res, 400, { error: 'template asset path must be /<family>/<id>/frames/<name>.svg|png' })
+        return
+      }
+      const target = join(REMOTION_TEMPLATE_DIR, ...segments)
+      if (!target.startsWith(REMOTION_TEMPLATE_DIR + sep)) {
+        sendJson(res, 403, { error: 'forbidden template asset path' })
+        return
+      }
+      try {
+        const data = await readFile(target)
+        res.setHeader('content-type', ASSET_CONTENT_TYPES[extname(fileName).toLowerCase()] ?? 'application/octet-stream')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'template asset not found' })
       }
     }}),
 

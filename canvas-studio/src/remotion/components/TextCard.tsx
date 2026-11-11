@@ -8,7 +8,8 @@ import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from '../subtitle-fit.js'
 import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
 import { colorShiftAt, splitTextUnits, textUnitProgress } from '../timing.js'
-import { planTextFit, type TextFitPlan } from '../text-fit-plan.js'
+import { timecodeStringAt } from '../timecode.js'
+import { planTextFit, textFitSizingText, type TextFitPlan } from '../text-fit-plan.js'
 import { createCanvasMeasurer } from '../text-measure.js'
 import { useFontFamilyStack } from './font-context.js'
 
@@ -66,7 +67,7 @@ const AnimatedText: React.FC<{
 
 export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
-  const { width: canvasWidth, height: canvasHeight } = useVideoConfig()
+  const { width: canvasWidth, height: canvasHeight, fps } = useVideoConfig()
   // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
   const fontFamily = useFontFamilyStack()
   // 三期 W4-1：真实测量器（浏览器里才建；建不出来就回落估算）。
@@ -89,6 +90,13 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     ...(anim.fx.textStroke !== undefined ? { WebkitTextStroke: anim.fx.textStroke } : {}),
     // CV-393：`outline` 镂空字 —— 填充覆写为透明，只剩描边（必须在 color 解析之后展开）。
     ...(anim.fx.textFill !== undefined ? { color: anim.fx.textFill } : {}),
+    // `fx:'metal'`：渐变铺在文字上（#16 探针实证 background-clip:text 可行）。
+    ...(anim.fx.textBackground !== undefined ? ({
+      background: anim.fx.textBackground,
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    } as React.CSSProperties) : {}),
   }
   // CV-334：整卡的位置 / 缩放 / 旋转走 `layerTransform`（铺满层上的位移＝把内容移出画布中心）。
   // 缺省参数下它是恒等串 ⇒ 老写法渲染结果不变。
@@ -119,7 +127,9 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   // 依赖项都是整片恒定的量（manifest 轨 / 画布 / 字体 / 测量器），逐帧重算纯属浪费。
   const plan: TextFitPlan = useMemo(() => planTextFit({
     variant: track.variant,
-    text: track.text,
+    // S3：timecode 的排版口径 = 标签 + 时间码样串（组件与体检共用 textFitSizingText，
+    // 只按标签算字号会把帧级时间码裁到只剩一两位 —— 真机实测 "REC 0"）。
+    text: textFitSizingText(track.variant, track.text),
     ...(box === undefined ? {} : { box }),
     canvasWidth,
     canvasHeight,
@@ -133,6 +143,35 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const animated = (value: string): React.ReactNode => {
     if (track.anim === undefined) return value
     return <AnimatedText text={value} preset={track.anim} options={track.animOptions} />
+  }
+
+  // S1-B：`timecode` 变体 —— HUD 帧级时间码 `HH:MM:SS:FF`。
+  // 取值是**纯帧函数**（timecode.ts，禁真实时钟 ⇒ 同一 manifest 渲两次逐字节相同）；
+  // `text` 是可选的静态标签（原片 HUD 的 `REC` / 相机名），`accentColor` 染标签。
+  // `fontVariantNumeric: tabular-nums` 让数字逐帧等宽 —— 没它，时间码每秒抖一次宽度。
+  if (track.variant === 'timecode') {
+    const label = Array.isArray(track.text) ? track.text.join(' ') : track.text
+    return (
+      <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>
+        <div
+          style={{
+            fontFamily,
+            fontVariantNumeric: 'tabular-nums',
+            fontSize: plan.fontPx,
+            fontWeight: 700,
+            color: '#e6edf3',
+            letterSpacing: 2,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 12,
+            ...textFx,
+          }}
+        >
+          {label.length > 0 ? <span style={{ color: accent, fontSize: Math.max(10, Math.round(plan.fontPx * 0.62)) }}>{animated(label)}</span> : null}
+          <span>{timecodeStringAt(frame, fps)}</span>
+        </div>
+      </AbsoluteFill>
+    )
   }
 
   if (track.variant === 'subtitle') {

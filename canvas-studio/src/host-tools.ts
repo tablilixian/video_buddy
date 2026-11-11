@@ -101,6 +101,7 @@ import { isAssetFileName } from './asset-path.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
 import { ASSET_URL_PREFIX, collectAnimationWindows, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
+import { mapTracksDeep } from './remotion/group-children.js'
 import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage, samplePixels } from './inspect-image.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
@@ -3850,7 +3851,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 透明素材标记：宿主探到 alpha 通道的 image 轨写 `hasAlpha: true`，渲染组件
         // 据此跳过媒体层垫底色（甜品复刻复盘：硬编码 `#05080f` 是「透明图带深底」根因）。
         // 只在有 alpha 时改写 —— 无 alpha 的轨保持原样，老 manifest 逐帧不变。
-        const alphaMarkedTracks = source.tracks.map((track) => {
+        // S1-B：容器子轨的 image 同样要标记（mapTracksDeep 深映射，无子轨变化返回原对象）。
+        const alphaMarkedTracks = mapTracksDeep(source.tracks, (track) => {
           if (track.type !== 'image' || pre.alphaSources[track.src] !== true) return track
           if (track.hasAlpha === true) return track
           return { ...track, hasAlpha: true }

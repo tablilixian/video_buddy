@@ -31,9 +31,10 @@
  * 一条竖线和一条横线的像素长度没法取同一个值。8 个 rect 更笨但更准，且**零契约扩展**。
  */
 import type { Animate } from './manifest.js'
+import type { Transform } from './manifest-transform.js'
 
-/** 构件 id。1C-min 落地三个（其余是 Phase 2 的契约扩展，见任务包 1C §2）。 */
-export type FurnitureId = 'cornerBrackets' | 'progressBar' | 'starfield'
+/** 构件 id。1C-min 落地三个；新模板批第 2 步加 `cardWall`（见 D-39 / D-40）。 */
+export type FurnitureId = 'cornerBrackets' | 'progressBar' | 'starfield' | 'cardWall'
 
 /** 构件声明（模板 `furniture.json` 的一项）。 */
 export interface FurnitureSpec {
@@ -60,10 +61,14 @@ export interface FurnitureContext {
 /**
  * 展开产物：**manifest 轨道的字段形状**（不新建类型体系 —— 展开完直接塞进 `tracks`）。
  *
- * 只声明构件实际会写的字段（`box` 中心语义 / `animate` 帧级动画），避免与
- * `ShapeTrack` 的全量字段混淆。
+ * S3（2026-11-11）起是**双形态联合**：
+ * - `FurnitureShapeDraft`：普通 `shape` 轨（括线 / 进度条 / 星点 / 卡墙的子卡）；
+ * - `FurnitureGroupDraft`：`group` 容器轨（S1-B 契约）—— 卡墙容器化后整面墙是
+ *   **1 个** WebGL 预合成层（#14 实测 62 卡 82ms/帧），子卡是平面网格、统一吃容器
+ *   的 3D 投影（统一灭点）。旧的「每卡自带透视」公式保留在 `card-wall-geometry.ts`
+ *   （#13 探针专用），产品路径不再用。
  */
-export interface FurnitureTrackDraft {
+export interface FurnitureShapeDraft {
   id: string
   type: 'shape'
   shape: 'rect' | 'circle'
@@ -72,14 +77,36 @@ export interface FurnitureTrackDraft {
   box: { x: number; y: number; w: number; h: number }
   startFrame: number
   durationInFrames: number
-  /** 构件默认**硬切**（`0`）：装饰层不该在片头整体淡入，那是内容层的节奏。 */
-  fadeFrames: 0
-  animate?: Animate
+  /** 缺省 `0` = 硬切（装饰层不该在片头整体淡入）；`cardWall` 的错峰入场会写正数。 */
+  fadeFrames: number
+  animate?: Animate | Animate[]
+  /** 颜色过渡（S4：卡墙辉光脉冲子轨用 —— 亮起后缓暗到 `to` 色）。 */
+  colorShift?: { from: string; to: string; startFrame?: number; durationInFrames?: number; easing?: string }
+  /** 静态 3D 姿势（旧每卡透视模式遗留；容器模式下子卡一律平面、不写）。 */
+  transform?: Transform
+  /** 退场（ML-02：`fadeFrames:0` 且在片尾前结束的轨必须有 exit）。 */
+  exit?: { to: Record<string, number>; durationInFrames: number; easing?: string }
 }
+
+/** `group` 容器轨展开产物（目前只有 `cardWall` 会产出）。 */
+export interface FurnitureGroupDraft {
+  id: string
+  type: 'group'
+  /** 子轨时间**相对组起点**、坐标是画布绝对百分比（S1-B 契约，校验层会复核）。 */
+  children: FurnitureShapeDraft[]
+  startFrame: number
+  durationInFrames: number
+  fadeFrames: number
+  animate?: Animate | Animate[]
+  transform?: Transform
+  exit?: { to: Record<string, number>; durationInFrames: number; easing?: string }
+}
+
+export type FurnitureTrackDraft = FurnitureShapeDraft | FurnitureGroupDraft
 
 /** 构件参数错误 / 上下文错误（都是**调用方**的错，不是渲染问题）。 */
 export class FurnitureError extends Error {
-  readonly code: 'FURNITURE_UNKNOWN_ID' | 'FURNITURE_BAD_CONTEXT' | 'FURNITURE_BAD_RANGE' | 'FURNITURE_ID_CONFLICT'
+  readonly code: 'FURNITURE_UNKNOWN_ID' | 'FURNITURE_BAD_CONTEXT' | 'FURNITURE_BAD_RANGE' | 'FURNITURE_ID_CONFLICT' | 'FURNITURE_BAD_PARAMS'
 
   constructor(code: FurnitureError['code'], message: string) {
     super(message)
@@ -125,10 +152,69 @@ export const FURNITURE_DEFAULTS = {
     /** 星点亮度只能靠 color 本身（`shape` 轨没有 opacity 字段）。 */
     color: '#7d93b8',
   },
+  /**
+   * 3D 卡片墙（S3 容器化版）：**1 个 `group` 容器 + 平面网格子卡**。
+   *
+   * 旧版「每卡自带透视、一卡一 WebGL 层」的成本账（D-40：12 张 58ms/帧、36 张 243ms/帧）
+   * 被容器化推翻 —— #14 实证容器包 62 张平面子卡 = 1 个 WebGL 层、82ms/帧、整面统一
+   * 灭点（与原片卡墙同构）。旧投影公式保留在 `card-wall-geometry.ts`（#13 探针专用）。
+   *
+   * 入场节奏 = **批次制**（不是逐卡 stagger）：参考片卡墙是「一批一批亮起来」，
+   * 批次帧距对齐参考片的运动峰值间隔（0.6s ≈ 36–39 帧）。
+   */
+  cardWall: {
+    /** 主卡色（S4：参考片墙面以暗卡为主 —— 稳态亮度对齐原片 0.15–0.16）。 */
+    color: '#e9edf3',
+    /** 亮卡色（约 2/9 的卡；S4 起与主色对调语义：accent 是墙上少数亮卡）。 */
+    accentColor: '#16233a',
+    /** 少量浅蓝卡（参考片的电蓝点缀）。 */
+    lightColor: '#9fc2e8',
+    /** 每卡淡入帧数（3 帧 ≈ 快闪，既进得来又留帧差尖峰）。 */
+    fadeFrames: 3,
+    /** 网格：列 / 行 / 卡宽高 / 间隙（画布百分比，网格可越出画布）。 */
+    cols: 9,
+    rows: 7,
+    cardW: 10.5,
+    cardH: 12.5,
+    gapX: 2.5,
+    gapY: 2.5,
+    /** 墙中心（画布百分比）。 */
+    originX: 50,
+    originY: 50,
+    /** 实际卡数（≤ cols×rows；缺省全网格，多出的格位跳过）。 */
+    count: 62,
+    /** 容器 3D 姿势（角度受 S1-B 硬闸 ≤30° 约束，校验层复核）。 */
+    rotateX: 14,
+    rotateY: -8,
+    perspective: 1100,
+    /** 推近：容器 animate scale 从 pushFrom 到 pushTo（linear 全程）。0=0 关闭。 */
+    pushFrom: 0.9,
+    pushTo: 1.25,
+    /** 批次入场：首帧（组内相对）、批间隔、首批张数、常规批张数（批帧差 ≈ 张数×单卡屏幕占比）。 */
+    batchStart: 30,
+    batchFrames: 39,
+    firstBatch: 16,
+    /** 常规批张数（首批之后每批几张；S3 调参：批差要落在参考片 0.09–0.12 帧差带内）。 */
+    perBatch: 8,
+    /** 特征卡条纹：每隔 stripeEvery 张卡带 3 条卡内条纹（数据卡观感），0 = 不画。 */
+    stripeEvery: 8,
+    /** 墙退场帧数（1 = 硬切；0 = 不写 exit，需调用方自查 ML-02）。 */
+    exitFrames: 1,
+    /** 特征卡条纹色（S4：主卡色改暗后，条纹要能在暗卡上读出来）。 */
+    stripeColor: '#2c4a78',
+    /** 批次辉光脉冲：每个批次时刻亮起一块蓝色辉光再缓暗（S4 —— 参考片的运动
+     *  尖峰来自墙面的辉光节奏，不是卡片本身；卡片 settle 成暗色后，5fps 采样
+     *  下的帧差尖峰全靠它）。0 = 关闭。 */
+    glowFrames: 37,
+    glowColor: '#6fa8e8',
+    glowDim: '#1a2942',
+    glowW: 48,
+    glowH: 40,
+  },
 } as const
 
 /** 未知 id 的报错文案（列出全部可选值 —— 让调用方一次改对）。 */
-const FURNITURE_IDS: readonly FurnitureId[] = ['cornerBrackets', 'progressBar', 'starfield']
+const FURNITURE_IDS: readonly FurnitureId[] = ['cornerBrackets', 'progressBar', 'starfield', 'cardWall']
 
 function num(params: Record<string, unknown>, key: string, fallback: number): number {
   const value = params[key]
@@ -138,6 +224,11 @@ function num(params: Record<string, unknown>, key: string, fallback: number): nu
 function str(params: Record<string, unknown>, key: string, fallback: string): string {
   const value = params[key]
   return typeof value === 'string' && value.trim() !== '' ? value : fallback
+}
+
+/** 4 位小数收口（与 `card-wall-geometry.ts` / 探针同一口径）。 */
+function round4(value: number): number {
+  return Math.round(value * 10000) / 10000
 }
 
 /** 上下文校验：任何一个字段不合法 ⇒ 抛错（绝不静默按 0 处理）。 */
@@ -323,6 +414,157 @@ function starfield(spec: FurnitureSpec, ctx: FurnitureContext, range: { startFra
 }
 
 /**
+ * **3D 卡片墙（S3 容器化）**：1 个 `group` 容器 + 平面网格子卡。
+ *
+ * 为什么不再用 `projectCardWall()` 逐卡投影：容器化的整面墙共享一次 3D 投影
+ * （统一灭点、1 个 WebGL 预合成层），子卡平面矩形即可 —— 角度/推近都写在容器上，
+ * 校验层（S1-B 硬闸 ≤30°）在 `validateManifest` 里复核。确定性：网格位置是纯
+ * 算术、配色与批次按下标取模，同参数逐字节同结果。
+ */
+function cardWall(spec: FurnitureSpec, _ctx: FurnitureContext, range: { startFrame: number; durationInFrames: number }): FurnitureTrackDraft[] {
+  const p = (spec.params ?? {}) as Record<string, unknown>
+  const d = FURNITURE_DEFAULTS.cardWall
+  const cols = Math.max(1, Math.round(num(p, 'cols', d.cols)))
+  const rows = Math.max(1, Math.round(num(p, 'rows', d.rows)))
+  const cardW = num(p, 'cardW', d.cardW)
+  const cardH = num(p, 'cardH', d.cardH)
+  const gapX = num(p, 'gapX', d.gapX)
+  const gapY = num(p, 'gapY', d.gapY)
+  const originX = num(p, 'originX', d.originX)
+  const originY = num(p, 'originY', d.originY)
+  if (cardW <= 0 || cardH <= 0 || gapX < 0 || gapY < 0) {
+    throw new FurnitureError('FURNITURE_BAD_PARAMS', `cardWall 的 cardW/cardH 必须 > 0、gap ≥ 0：${String(cardW)}/${String(cardH)}/${String(gapX)}/${String(gapY)}`)
+  }
+  const count = Math.max(1, Math.round(num(p, 'count', d.count)))
+  if (count > cols * rows) {
+    throw new FurnitureError('FURNITURE_BAD_PARAMS', `cardWall count ${String(count)} 超过网格容量 ${String(cols)}×${String(rows)}`)
+  }
+  const rotateX = num(p, 'rotateX', d.rotateX)
+  const rotateY = num(p, 'rotateY', d.rotateY)
+  const perspective = num(p, 'perspective', d.perspective)
+  if (!(Number.isFinite(perspective) && perspective >= 200)) {
+    throw new FurnitureError('FURNITURE_BAD_PARAMS', `cardWall perspective 必须 ≥ 200px：${String(perspective)}`)
+  }
+  const color = str(p, 'color', d.color)
+  const accentColor = str(p, 'accentColor', d.accentColor)
+  const lightColor = str(p, 'lightColor', d.lightColor)
+  const fade = Math.max(0, Math.round(num(p, 'fadeFrames', d.fadeFrames)))
+  const pushFrom = num(p, 'pushFrom', d.pushFrom)
+  const pushTo = num(p, 'pushTo', d.pushTo)
+  const batchStart = Math.max(0, Math.round(num(p, 'batchStart', d.batchStart)))
+  const batchFrames = Math.max(1, Math.round(num(p, 'batchFrames', d.batchFrames)))
+  const firstBatch = Math.max(1, Math.round(num(p, 'firstBatch', d.firstBatch)))
+  const perBatch = Math.max(1, Math.round(num(p, 'perBatch', d.perBatch)))
+  const stripeEvery = Math.max(0, Math.round(num(p, 'stripeEvery', d.stripeEvery)))
+  const stripeColor = str(p, 'stripeColor', d.stripeColor)
+  const glowFrames = Math.max(0, Math.round(num(p, 'glowFrames', d.glowFrames)))
+  const glowColor = str(p, 'glowColor', d.glowColor)
+  const glowDim = str(p, 'glowDim', d.glowDim)
+  const glowW = num(p, 'glowW', d.glowW)
+  const glowH = num(p, 'glowH', d.glowH)
+  const exitFrames = Math.max(0, Math.round(num(p, 'exitFrames', d.exitFrames)))
+
+  // 网格（画布百分比、可越出画布）：先中心对齐铺开，再按格位放卡。
+  const pitchX = cardW + gapX
+  const pitchY = cardH + gapY
+  const x0 = originX - ((cols - 1) * pitchX) / 2
+  const y0 = originY - ((rows - 1) * pitchY) / 2
+
+  const children: FurnitureShapeDraft[] = []
+  for (let index = 0; index < count; index += 1) {
+    const col = index % cols
+    const row = Math.floor(index / cols)
+    // 条纹特征卡（数据卡观感）：强制主卡色 —— 条纹颜色按主卡色对比设计。
+    // 取模落在第 4 张（0 起 3）—— stripeEvery ≤ 3 时恒不命中 = 关闭条纹。
+    const isStripeCard = stripeEvery > 3 && index % stripeEvery === 3
+    const isDark = !isStripeCard && (index % 9 === 2 || index % 9 === 6)
+    const isLight = !isStripeCard && !isDark && index % 17 === 5
+    const cardColor = isStripeCard ? color : isDark ? accentColor : isLight ? lightColor : color
+    // 批次入场（组内相对帧）：首批 firstBatch 张，之后每批 perBatch 张（末批可能不满）。
+    const batchIndex = index < firstBatch ? 0 : 1 + Math.floor((index - firstBatch) / perBatch)
+    const start = Math.min(batchStart + batchIndex * batchFrames, Math.max(0, range.durationInFrames - 1))
+    const cardX = x0 + col * pitchX
+    const cardY = y0 + row * pitchY
+    children.push({
+      id: `fx-card-${String(index).padStart(3, '0')}`,
+      type: 'shape',
+      shape: 'rect',
+      color: cardColor,
+      box: { x: round4(cardX), y: round4(cardY), w: cardW, h: cardH },
+      startFrame: start,
+      durationInFrames: Math.max(1, range.durationInFrames - start),
+      fadeFrames: fade,
+    })
+    // 卡内条纹：特征卡带 3 条横向条纹（画在卡盒内，颜色与主卡色对比）。
+    if (isStripeCard) {
+      for (let k = -1; k <= 1; k += 1) {
+        children.push({
+          id: `fx-stripe-${String(index).padStart(3, '0')}-${String(k + 1)}`,
+          type: 'shape',
+          shape: 'rect',
+          color: stripeColor,
+          box: { x: round4(cardX), y: round4(cardY + k * 3.2), w: round4(cardW * 0.62), h: 1.1 },
+          startFrame: start,
+          durationInFrames: Math.max(1, range.durationInFrames - start),
+          fadeFrames: fade,
+        })
+      }
+    }
+  }
+
+  // 批次辉光脉冲（S4）：每个批次时刻，墙面亮起一块蓝色辉光再缓暗（easeIn =
+  // 先hold住亮、后段快速衰减）。参考片的运动尖峰来自这个节奏 —— 卡片 settle 成
+  // 暗色后，5fps 采样下的帧差尖峰全靠辉光；亮起/衰减本身也是段内微动（U10）。
+  // 位置按批次序号在一组固定偏移里循环取值（确定性，禁 Math.random）。
+  if (glowFrames > 0) {
+    const glowOffsets: ReadonlyArray<readonly [number, number]> = [
+      [-7, -3], [5, 2], [-3, 5], [7, -2], [0, -5], [-5, 3], [3, -4], [-2, 4], [4, 3],
+    ]
+    const batchCount = 1 + Math.ceil(Math.max(0, count - firstBatch) / perBatch)
+    for (let b = 0; b < batchCount; b += 1) {
+      const start = Math.min(batchStart + b * batchFrames, Math.max(0, range.durationInFrames - 1))
+      const off: readonly [number, number] = glowOffsets[b % glowOffsets.length] ?? [-7, -3]
+      const dx = off[0]
+      const dy = off[1]
+      children.push({
+        id: `fx-glow-${String(b).padStart(2, '0')}`,
+        type: 'shape',
+        shape: 'rect',
+        color: glowDim,
+        colorShift: { from: glowColor, to: glowDim, durationInFrames: glowFrames, easing: 'easeIn' },
+        box: { x: round4(originX + dx), y: round4(originY + dy), w: glowW, h: glowH },
+        startFrame: start,
+        durationInFrames: Math.max(1, range.durationInFrames - start),
+        fadeFrames: 0,
+        exit: { to: { opacity: 0 }, durationInFrames: 2 },
+      })
+    }
+  }
+
+  // 容器：静态 3D 姿势 + 推近（scale 动画与静态 rotate 合并语义见 animateStateAt）。
+  const group: FurnitureGroupDraft = {
+    id: 'fx-card-wall',
+    type: 'group',
+    children,
+    startFrame: range.startFrame,
+    durationInFrames: range.durationInFrames,
+    fadeFrames: 0,
+    transform: { perspective, ...(rotateX !== 0 ? { rotateX } : {}), ...(rotateY !== 0 ? { rotateY } : {}) },
+    // 推近：0→0 关闭；easing linear = 匀速推（参考片的连续帧差来源）。
+    ...(pushFrom > 0 && pushTo > 0
+      ? {
+          animate: [
+            { from: { scale: pushFrom }, to: { scale: pushTo }, durationInFrames: range.durationInFrames, easing: 'linear' },
+          ],
+        }
+      : {}),
+    // ML-02：墙在段边界硬退（1 帧渐隐 ≈ 硬切，段边界本来就是切点）。
+    ...(exitFrames > 0 ? { exit: { to: { opacity: 0 }, durationInFrames: exitFrames } } : {}),
+  }
+  return [group]
+}
+
+/**
  * 把一个构件声明展开成普通 manifest 轨道（纯函数、零 IO、确定性）。
  *
  * @throws {FurnitureError} 未知 id / ctx 不合法 / 帧区间非法 —— **抛错不静默**：
@@ -345,6 +587,8 @@ export function expandFurniture(spec: FurnitureSpec, ctx: FurnitureContext): Fur
       return progressBar(spec, range)
     case 'starfield':
       return starfield(spec, ctx, range)
+    case 'cardWall':
+      return cardWall(spec, ctx, range)
     default:
       // 类型收口：新增 id 忘了接分支会在这里编译期红（default 分支只为穷尽性可读）。
       throw new FurnitureError('FURNITURE_UNKNOWN_ID', `构件 ${String(id)} 没有实现`)

@@ -20,6 +20,7 @@
  */
 import type { AudioTimeline, AudioSegment } from './audio-timeline.js'
 import { resolveAudioTimeline, describeTimeline, AUDIO_DELIVERY_SAMPLE_RATE, AUDIO_DELIVERY_CHANNELS, resolveSfxStartFrame } from './audio-timeline.js'
+import { flattenTracksDeep } from './remotion/group-children.js'
 
 /**
  * CV-141：单镜「环境声 + BGM」叠混时的 BGM 音量。
@@ -367,7 +368,9 @@ export function timelineFromManifestAudio(manifest: {
   meta?: { fps?: number }
 }): AudioTimeline {
   const segments: AudioSegment[] = []
-  if (manifest.tracks.some((track) => track.type === 'video')) {
+  // S1-B：容器子轨里的 video 同样带原生音轨 —— 漏了它，混音图少一条 native 段，
+  // 容器视频的原声整段丢失（构成派生必须与真实渲染的出声源一致）。
+  if (flattenTracksDeep(manifest.tracks).some((track) => track.type === 'video')) {
     segments.push({ url: '', startSec: 0, role: 'native' })
   }
   // CV-450（P0-A）：caption 轨**自播旁白**（`Caption.tsx` 里 `<Audio src={track.src} />`），

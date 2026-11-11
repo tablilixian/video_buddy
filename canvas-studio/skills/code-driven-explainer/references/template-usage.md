@@ -83,6 +83,15 @@ render_composition({ manifestPath })        ← 唯一出片口
 - **想加一条自己的轨**：直接往 `tracks` 里追加（`id` 唯一、`startFrame` + `durationInFrames` 自洽）；
 - **想换配色**：改 `tracks[].color` / `accentColor` / `meta.backgroundColor`；
 - **想改时长**：改末尾轨并把 `meta.durationInFrames` 同步成最大结束帧（否则被尾部完整性校验拒收）；
-- **想加装饰**：参照 `motion-patterns.md §5`（四角括线 / 进度条 / 星点的等效写法）。
+- **想加装饰**：参照 `motion-patterns.md §5`（四角括线 / 进度条 / 星点的等效写法）；
+- **想加 3D 卡片墙**：在模板的 `furniture.json` 里声明
+  `{ "id": "cardWall", "params": { "cols": 4, "rows": 3, "angleY": -24 } }`，编译期会展开成
+  普通 `shape` 轨，不用手写几十条。可用构件共 4 个：
+  `cornerBrackets` / `progressBar` / `starfield` / `cardWall`。
+  `cardWall` 常用参数：`cols/rows`（默认 4×3=12，硬上限 36）、`angleY`（默认 −24；设 `0` 即
+  退化为零成本 2D 网格）、`curve`（弧面墙）、`perspective`（默认 1200，不得 <200）、
+  `cardW/cardH/gapX/gapY`、`staggerFrames/fadeFrames`、`color/accentColor`。
+  ⚠️ 每张卡都各自进一次 WebGL 预合成（能力基准 #13 实测 60 层 = 243ms/帧），
+  **别把 `cols×rows` 堆大**；要更密的墙用 `angleY: 0`。
 
 **唯一不要做的**：删模板的卡片（轨道数变了，版面就不再是验过的那个效果）。

@@ -55,6 +55,10 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
         ...(backingColor !== undefined ? { backgroundColor: backingColor } : {}),
         ...boxStyle({ x: box.x, y: box.y, w: box.w, h: box.h }, anim.shapeTransform),
       }
+  // S1-B（≥95% 对齐）：`clip:'circle'` —— 圆形 PIP。#16 C 格实证 `clip-path: circle()`
+  // 真出画；挂**媒体层**（而不是外层容器）⇒ caption 渐变不受裁切。缺省不写 ⇒ 无此样式，
+  // 老 manifest 逐帧不变。
+  if (track.clip === 'circle') layerStyle.clipPath = 'circle(50% at 50% 50%)'
   return (
     <AbsoluteFill
       style={{

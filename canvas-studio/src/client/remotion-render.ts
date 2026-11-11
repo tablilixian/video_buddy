@@ -36,6 +36,7 @@ import { StudioComposition } from '../remotion/components/Root.js'
 import { RENDER_QUALITY_SCALE, validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
+import { flattenTracksDeep } from '../remotion/group-children.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
 import { auditTextFit, textFitWarnings, type TextFitReportEntry } from '../remotion/text-fit-audit.js'
 
@@ -588,7 +589,8 @@ export async function probeManifestDurations(
 ): Promise<ManifestDurationProbe> {
   const realDurations: Record<string, number> = {}
   const warnings: string[] = []
-  for (const track of manifest.tracks) {
+  // S1-B：容器子轨的 video 同样要探真值时长（回核链按 src 对账，漏子轨 = 校正盲区）。
+  for (const track of flattenTracksDeep(manifest.tracks)) {
     if (track.type !== 'video') continue
     if (realDurations[track.src] !== undefined) continue
     const seconds = await probeVideoDuration(track.src, signal)

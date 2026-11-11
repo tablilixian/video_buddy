@@ -57,7 +57,7 @@ function resolveFfmpeg() {
 // ── 1. 编译：三个模板 + 一支去构件的对照 ──
 const catalog = listTemplateSummaries()
 if (catalog.problems.length > 0) throw new Error(`模板目录有问题：${JSON.stringify(catalog.problems)}`)
-const TEMPLATE_IDS = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary']
+const TEMPLATE_IDS = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary', 'tech/kinetic-promo']
 const missing = TEMPLATE_IDS.filter((id) => !catalog.items.some((item) => item.meta.id === id))
 if (missing.length > 0) throw new Error(`模板缺失：${missing.join(', ')}（现有 ${catalog.items.map((i) => i.meta.id).join(', ')}）`)
 
@@ -164,6 +164,29 @@ const server = createServer((req, res) => {
         res.end(readFileSync(join(packageRoot, 'assets', 'sfx', file)))
       } catch {
         json(404, { error: `probe: sfx not found: ${file}` })
+      }
+      return
+    }
+    // S2：模板自带静态占位资产（剪影 SVG）—— 与真实宿主 routes.ts 的
+    // ROUTE_REMOTION_TEMPLATES 同口径（4 段路径 + 逐段白名单），探针 server 也要
+    // serve 它，渲染进程才能同源 fetch 到占位图。
+    if (req.method === 'GET' && url.pathname.startsWith('/canvas-studio/remotion/templates/')) {
+      const rel = url.pathname.slice('/canvas-studio/remotion/templates/'.length).replace(/^\/+/, '')
+      const segments = rel.split('/')
+      const okShape = segments.length === 4
+        && segments.slice(0, 3).every((segment) => /^[a-z0-9-]+$/.test(segment))
+        && segments[2] === 'frames'
+        && /^[a-z0-9-]+\.(svg|png)$/.test(segments[3] ?? '')
+      const types = { '.svg': 'image/svg+xml', '.png': 'image/png' }
+      try {
+        if (!okShape) throw new Error('bad name')
+        res.writeHead(200, {
+          'content-type': types[extname(segments[3])] ?? 'application/octet-stream',
+          'cache-control': 'public, max-age=31536000, immutable',
+        })
+        res.end(readFileSync(join(packageRoot, 'assets', 'templates', ...segments)))
+      } catch {
+        json(404, { error: `probe: template asset not found: ${rel}` })
       }
       return
     }
@@ -372,7 +395,7 @@ async function main() {
   }
 
   // 断言 1：三支样片都能渲出来，且分辨率/流型正确
-  await assertStep(1, '三模板成片可解析（h264 / 1080p / 帧数与模板一致）', async () => {
+  await assertStep(1, '四模板成片可解析（h264 / 1080p / 帧数与模板一致）', async () => {
     const rows = []
     for (const kase of cases) {
       const info = await probeStreams(ffmpeg, kase.out.mp4)
@@ -385,7 +408,7 @@ async function main() {
     return rows
   })
 
-  // 断言 2：音效真的混进成片（三支样片都有非静音 aac 音轨）
+  // 断言 2：音效真的混进成片（四支样片都有非静音 aac 音轨）
   await assertStep(2, '音效混流（aac / 48kHz / 立体声 / 非静音）', async () => {
     const rows = []
     for (const kase of cases) {

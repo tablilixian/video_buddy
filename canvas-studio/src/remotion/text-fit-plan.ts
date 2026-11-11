@@ -62,6 +62,9 @@ export const DATA_CARD_TITLE_FONT_PX = 40
 /** `dataCard` 标题行高（设计 px，与 `DATA_CARD_TITLE_LINE_HEIGHT` 同值）。 */
 export const DATA_CARD_TITLE_LINE_HEIGHT = 50
 
+/** `timecode`（≥95% 对齐 S1-B）基准字号（px）—— HUD 时间码一行，不缩号。 */
+export const TIMECODE_BASE_FONT_PX = 36
+
 /** `caption` 软行数上限：超过不裁字，但会顶到画面下沿（只提示，不做硬判）。 */
 export const CAPTION_SOFT_MAX_LINES = 3
 /** `caption` 字号占画布高的比例（缺省，与 `Caption.tsx` 一致）。 */
@@ -126,6 +129,23 @@ interface FitBudget {
   containerWidthPx: number
   /** 是否允许自动缩字号。`dataCard` / `caption` 有显式字号，不缩。 */
   autoShrink: boolean
+}
+
+/**
+ * S3（2026-11-11）：`timecode` 变体的**排版口径文本**。
+ *
+ * 组件渲染的是「标签 + 帧级时间码（恒 11 字符 `HH:MM:SS:FF`）」整行，若排版只按
+ * `text`（标签，常 3 字符）算字号，时间码必然被层的 `overflow:hidden` 裁掉
+ * （真机实测只剩 "REC 0"）。组件与体检**必须**共用本 helper —— 排版决策只有一份
+ * （0B 不变量），两处各写一份必然漂移。
+ */
+export function textFitSizingText(
+  variant: TextFitVariant,
+  text: string | string[],
+): string | string[] {
+  if (variant !== 'timecode') return text
+  const label = Array.isArray(text) ? text.join(' ') : text
+  return `${label} 00:00:00:00`
 }
 
 /** `text` → 原文串（数组按 variant 的拼接口径拼接）。 */
@@ -194,6 +214,20 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       lineHeight: 1.35,
       containerWidthPx,
       autoShrink: true,
+    }
+  }
+
+  if (variant === 'timecode') {
+    // S1-B：HUD 时间码 = 标签 + 固定 11 字符的 `HH:MM:SS:FF`，**不缩号**（缩出来的
+    // 时间码没有 HUD 感）；宽度给足（折行上限 = 标签行数），溢出在 1080p 下不现实。
+    const maxWidthPx = Math.max(240, canvasW * 0.5)
+    return {
+      maxWidthPx,
+      baseFontPx: TIMECODE_BASE_FONT_PX,
+      maxLines: declaredLineCount(input.text),
+      lineHeight: 1.2,
+      containerWidthPx: maxWidthPx,
+      autoShrink: false,
     }
   }
 

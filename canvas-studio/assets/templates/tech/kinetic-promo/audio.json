@@ -1,0 +1,101 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "anchor": {
+        "trackId": "s1-brand",
+        "at": "start"
+      },
+      "gain": 1.05,
+      "type": "swoosh"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "s2-number",
+        "at": "start"
+      },
+      "gain": 1.28,
+      "type": "thud"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "anchor": {
+        "trackId": "s3-title",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "card"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/write.wav",
+      "anchor": {
+        "trackId": "s4-data",
+        "at": "start"
+      },
+      "gain": 1.05,
+      "type": "write"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/swipe.wav",
+      "anchor": {
+        "trackId": "s7-k1",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "swipe"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "s11-name-0",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "thud"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "s11-name-1",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "thud"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "s11-name-2",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "thud"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "anchor": {
+        "trackId": "s11-name-3",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "thud"
+    },
+    {
+      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "anchor": {
+        "trackId": "s12-cta",
+        "at": "start"
+      },
+      "gain": 1.17,
+      "type": "swoosh"
+    }
+  ],
+  "bgm": {
+    "prompt": "Driving tech promo underscore, 124 BPM, tight electronic pulse, bright analog arps, muted sub bass, clean risers on each cut, instrumental, no vocals",
+    "volume": 0.8,
+    "fadeInSeconds": 0.4,
+    "fadeOutSeconds": 1.2,
+    "durationSeconds": 24
+  }
+}

@@ -40,6 +40,8 @@ export const VideoClip: React.FC<{ track: VideoClipTrack }> = ({ track }) => {
         backgroundColor: '#000',
         ...boxStyle({ x: box.x, y: box.y, w: box.w, h: box.h }, anim.shapeTransform),
       }
+  // S1-B（≥95% 对齐）：`clip:'circle'` 圆形裁切（与 ImageClip 同口径，#16 C 格实证）。
+  if (track.clip === 'circle') layerStyle.clipPath = 'circle(50% at 50% 50%)'
   return (
     <AbsoluteFill
       style={{

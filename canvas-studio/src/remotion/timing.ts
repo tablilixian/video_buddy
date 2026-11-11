@@ -19,6 +19,7 @@ import type {
   TrackFx,
   VisualState,
 } from './manifest.js'
+import { mapTracksDeep } from './group-children.js'
 
 /** 轨道在给定绝对帧下的局部帧（`frame - startFrame`，可为负 / 超界）。 */
 export function trackLocalFrame(track: Pick<BaseTrack, 'startFrame'>, frame: number): number {
@@ -254,7 +255,8 @@ export function reconcileManifestVideoDurations(
   fps: number,
 ): { tracks: CompositionManifest['tracks']; warnings: string[] } {
   const warnings: string[] = []
-  const tracks = manifest.tracks.map((track) => {
+  // S1-B：容器子轨的 video 同样按真值回核（漏子轨 = 组内素材时长声明错的盲区）。
+  const tracks = mapTracksDeep(manifest.tracks, (track) => {
     if (track.type !== 'video') return track
     const check = reconcileVideoDuration(
       track.durationInFrames, realDurations[track.src], fps, track.trimBeforeFrames ?? 0,
@@ -1010,6 +1012,8 @@ export interface FxStyle {
   textStroke?: string
   /** 文字填充色覆写（`outline` 镂空字 ⇒ transparent，消费方只在 TextCard 展开）。 */
   textFill?: string
+  /** `metal` 银色金属渐变：配 background-clip:text 使用（#16 探针实证可行）。 */
+  textBackground?: string
   boxShadow?: string
   maskImage?: string
 }
@@ -1052,6 +1056,14 @@ export function fxStyles(fx: TrackFx | undefined): FxStyle {
       return { filter: 'blur(3px)' }
     case 'maskFade':
       return { maskImage: 'linear-gradient(180deg, #000 0%, #000 62%, transparent 100%)' }
+    case 'metal':
+      // #16 首轮实证：`background-clip:text` 真出银色渐变（web-renderer 4.0.535 放行）；
+      // 同一探针里 CSS radial-gradient 平铺被忽略 ⇒ dotGrid 必须另走 SVG pattern。
+      return {
+        textBackground: 'linear-gradient(180deg, #ffffff 0%, #e8eefc 20%, #8fa1bf 46%, #f7faff 52%, #aebbd4 74%, #ffffff 100%)',
+        textFill: 'transparent',
+        textShadow: '0 4px 18px rgba(180,205,255,0.35)',
+      }
     default:
       return {}
   }

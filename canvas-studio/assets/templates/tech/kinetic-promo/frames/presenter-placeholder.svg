@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 840" preserveAspectRatio="xMidYMid slice">
+  <!--
+    程序生成的人像端口占位（≥95% 对齐 S2）。非真人肖像：头肩剪影 + 竖幅构图。
+    语义：模板的 `presenterPortrait`（竖幅人像）与 `roundPip`（圆形 PIP）两条
+    image 轨的缺省 src —— 使用者上传真实人像素材后覆盖轨的 src 即可。
+    配色与 tech/kinetic-promo 的深蓝底 + 电蓝描边同族，琥珀条呼应主色。
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34383e"/>
+      <stop offset="1" stop-color="#3e4249"/>
+    </linearGradient>
+    <linearGradient id="figure" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5d6066"/>
+      <stop offset="1" stop-color="#484b52"/>
+    </linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="13" cy="13" r="1.6" fill="#45484e"/>
+    </pattern>
+  </defs>
+  <rect width="360" height="840" fill="url(#bg)"/>
+  <rect width="360" height="840" fill="url(#dots)"/>
+  <!-- 头肩剪影 -->
+  <g fill="url(#figure)">
+    <circle cx="180" cy="330" r="104"/>
+    <path d="M 180 448 C 96 448 40 512 40 604 L 40 840 L 320 840 L 320 604 C 320 512 264 448 180 448 Z"/>
+  </g>
+  <!-- 顶部 / 底部电蓝描边（呼应 HUD 括线语言） -->
+  <rect x="18" y="18" width="80" height="5" fill="#3fa9f5"/>
+  <rect x="262" y="18" width="80" height="5" fill="#3fa9f5"/>
+  <rect x="18" y="817" width="80" height="5" fill="#3fa9f5"/>
+  <rect x="262" y="817" width="80" height="5" fill="#3fa9f5"/>
+  <!-- 琥珀口播条 + PRESENTER 标签 -->
+  <rect x="150" y="700" width="60" height="7" rx="3.5" fill="#f0a43a"/>
+  <text x="180" y="760" text-anchor="middle" fill="#8f9297"
+        font-family="monospace" font-size="26" letter-spacing="6">PRESENTER</text>
+</svg>

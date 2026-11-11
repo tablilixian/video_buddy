@@ -13,8 +13,9 @@
  */
 import type { CaptionTrack, CompositionManifest, TextCardTrack } from './manifest.js'
 import { fontFamilyStack, resolveFonts } from './fonts.js'
+import { flattenTracksDeep } from './group-children.js'
 import { createCanvasMeasurer } from './text-measure.js'
-import { planTextFit, textFitOverflowWarning, type TextFitVariant } from './text-fit-plan.js'
+import { planTextFit, textFitOverflowWarning, textFitSizingText, type TextFitVariant } from './text-fit-plan.js'
 
 /** 一条文字轨的体检结论（**进 `report.textFit`**，字段名与 `TextFitPlan` 同名同义）。 */
 export interface TextFitReportEntry {
@@ -41,7 +42,7 @@ export const MAX_TEXT_FIT_LINE_CHARS = 240
 /** warnings 里最多逐条列几条（其余折成计数）。 */
 export const MAX_TEXT_FIT_WARNINGS = 5
 
-/** 文字轨判定：`textCard`（四个 variant）+ `caption`（词级字幕）。其余类型一律不进。 */
+/** 文字轨判定：`textCard`（五个 variant）+ `caption`（词级字幕）。其余类型一律不进。 */
 function isTextTrack(track: CompositionManifest['tracks'][number]): track is TextCardTrack | CaptionTrack {
   return track.type === 'textCard' || track.type === 'caption'
 }
@@ -73,13 +74,15 @@ export function auditTextFit(
     family = undefined
   }
   const entries: TextFitReportEntry[] = []
-  for (const track of tracks) {
+  // S1-B：容器子轨的文字卡同样要进体检（漏了它，「体检说没溢出、成片却裁了」在容器里复活）。
+  for (const track of flattenTracksDeep(tracks)) {
     if (!isTextTrack(track) || entries.length >= MAX_TEXT_FIT_ENTRIES) continue
     try {
       const plan = track.type === 'textCard'
         ? planTextFit({
           variant: track.variant,
-          text: track.text,
+          // S3：与 TextCard 共用 timecode 口径（标签 + 时间码样串）—— 口径只有一份。
+          text: textFitSizingText(track.variant, track.text),
           ...(track.box === undefined ? {} : { box: track.box }),
           canvasWidth: width,
           canvasHeight: height,
@@ -184,7 +187,7 @@ export function sanitizeTextFitEntries(raw: unknown): TextFitReportEntry[] | und
   return out
 }
 
-const TEXT_FIT_VARIANTS = new Set<TextFitVariant>(['subtitle', 'dataCard', 'title', 'bullets', 'caption'])
+const TEXT_FIT_VARIANTS = new Set<TextFitVariant>(['subtitle', 'dataCard', 'title', 'bullets', 'timecode', 'caption'])
 
 function asVariant(value: unknown): TextFitVariant | undefined {
   return typeof value === 'string' && TEXT_FIT_VARIANTS.has(value as TextFitVariant)

@@ -508,3 +508,149 @@ function exitCanRescueOpacity(track: Record<string, unknown>): boolean {
   const opacity = to.opacity
   return typeof opacity === 'number' && Number.isFinite(opacity) && opacity > 0
 }
+
+// ─────────────── ≥95% 对齐 S1-B（2026-11-11）· `group` 3D 容器 ───────────────
+
+/** 子轨类型白名单（transition / caption / audioViz / 嵌套 group 不收 —— 理由见 GroupTrack 注释）。 */
+export const GROUP_CHILD_TYPES = new Set<string>(['video', 'image', 'textCard', 'shape', 'chart', 'callout'])
+/** 子轨条数上限（62 卡墙 + 余量；防一份 manifest 塞几百条把容器渲染压垮）。 */
+export const GROUP_MAX_CHILDREN = 96
+/**
+ * 容器 3D 角度上限（度）。**#14 D 格实测硬边界**：rotateY≈−38° 配 perspective(1200px)
+ * 时整块**静默消失**（预合成矩形算不出，不报错、不留痕）⇒ 30° 是「最坏情况也不至于
+ * 判死」的保守值，与 `MIN_PERSPECTIVE` 同一出处（能力基准，不是审美值）。
+ */
+export const GROUP_MAX_ANGLE_DEG = 30
+
+/** 从 transform 与 animate 各段（from/to）里收集容器声明的 3D 角度（rotateX/rotateY）。 */
+function collect3dAngles(record: Record<string, unknown>): number[] {
+  const angles: number[] = []
+  const read = (state: unknown): void => {
+    if (!isRecord(state)) return
+    for (const key of ['rotateX', 'rotateY'] as const) {
+      const value = state[key]
+      if (typeof value === 'number' && Number.isFinite(value)) angles.push(Math.abs(value))
+    }
+  }
+  if (isRecord(record.transform)) read(record.transform)
+  const raw = record.animate
+  for (const seg of Array.isArray(raw) ? raw : [raw]) {
+    if (!isRecord(seg)) continue
+    read(seg.from)
+    read(seg.to)
+  }
+  return angles
+}
+
+/** 子轨是否声明了任何 3D 维度（transform 或 animate 段）。 */
+function childDeclares3d(record: Record<string, unknown>): boolean {
+  const has = (state: unknown): boolean =>
+    isRecord(state) && ['rotateX', 'rotateY', 'z', 'perspective'].some((key) => state[key] !== undefined)
+  if (has(record.transform)) return true
+  const raw = record.animate
+  return (Array.isArray(raw) ? raw : [raw]).some(
+    (seg) => isRecord(seg) && (has(seg.from) || has(seg.to)),
+  )
+}
+
+/** 子轨是否声明了 anchor（锚定在 animate 段 / draw / colorShift **内部**，不在轨顶层）。 */
+function childDeclaresAnchor(record: Record<string, unknown>): boolean {
+  const has = (state: unknown): boolean => isRecord(state) && state.anchor !== undefined
+  const raw = record.animate
+  if ((Array.isArray(raw) ? raw : [raw]).some((seg) => isRecord(seg) && has(seg))) return true
+  return has(record.draw) || has(record.colorShift)
+}
+
+/**
+ * `group` 容器预检（manifest.ts 主循环**之后**的第二趟扫调用）：
+ * children 形状 / 子轨准入（类型白名单、禁 anchor、禁 startAfter、禁嵌套）/ 子轨 id
+ * 全 manifest 唯一（与顶层 kindById 互查）/ 容器角度 ≤30° / 子轨越组窗口告警。
+ *
+ * 逐条子轨的**完整**校验（src 同源 / variant / chart / callout / 契约外字段）由
+ * manifest.ts 把 children 合成一份临时 manifest 复用 `validateManifest` 完成 ——
+ * 不在这里复写一遍（两份口径必然漂移）。
+ *
+ * @param kindById 顶层轨 id → type（主循环收齐后传入；子轨 id 不进它 ⇒ transition
+ *   引用子轨 id 自然报「不存在」，不用特判）
+ * @param childIds 跨 group 累计的子轨 id 集合（调用方持有，多条 group 互查）
+ */
+export function validateGroupPrecheck(
+  track: Record<string, unknown>,
+  at: string,
+  kindById: ReadonlyMap<string, string>,
+  childIds: Set<string>,
+  errors: string[],
+  warnings: string[],
+): void {
+  // 容器角度：#14 D 格「静默消失」必须在契约层拦住（error，不是 warning —— 消失无痕）。
+  for (const angle of collect3dAngles(track)) {
+    if (angle > GROUP_MAX_ANGLE_DEG) {
+      errors.push(
+        `${at} 容器 3D 角度 |${angle}°| 超过上限 ${GROUP_MAX_ANGLE_DEG}° —— `
+        + '实测 ≈−38° 配 perspective(1200px) 时整块会在渲染器里静默消失（不报错不留痕）；'
+        + '需要更陡的墙面请缩角度或加 perspective（≥200px）',
+      )
+    }
+  }
+  if (track.box !== undefined) {
+    warnings.push(`${at} 的 box 不生效（group 只做容器 3D 变换；子轨坐标就是画布绝对百分比，不需要容器区域）`)
+  }
+
+  const children = track.children
+  if (!Array.isArray(children) || children.length === 0) {
+    errors.push(`${at}.children 必须是非空数组（容器里至少一条子轨，否则这条轨渲染出来是空的）`)
+    return
+  }
+  if (children.length > GROUP_MAX_CHILDREN) {
+    errors.push(`${at}.children 最多 ${GROUP_MAX_CHILDREN} 条（当前 ${children.length} 条）`)
+  }
+  const groupDuration = typeof track.durationInFrames === 'number' && Number.isFinite(track.durationInFrames)
+    ? track.durationInFrames
+    : undefined
+
+  children.forEach((child, index) => {
+    const childAt = `${at}.children[${index}]`
+    if (!isRecord(child)) {
+      errors.push(`${childAt} 必须是对象`)
+      return
+    }
+    const id = child.id
+    if (!isNonEmptyString(id)) {
+      errors.push(`${childAt}.id 必须是非空字符串`)
+    } else if (childIds.has(id) || kindById.has(id)) {
+      errors.push(`${childAt}.id 重复（${id}）：子轨 id 与顶层轨 / 其它 group 子轨共用一套命名空间，必须全 manifest 唯一`)
+    } else {
+      childIds.add(id)
+    }
+    const type = child.type
+    if (!isNonEmptyString(type) || !GROUP_CHILD_TYPES.has(type)) {
+      errors.push(
+        `${childAt}.type 非法（${String(type)}）—— 子轨白名单：${[...GROUP_CHILD_TYPES].join(' / ')}`
+        + `（transition / caption / audioViz / group 不收：容器内转场窗口无法对齐、词级字幕与闪避是全片语义）`,
+      )
+    }
+    if (childDeclaresAnchor(child)) {
+      errors.push(`${childAt} 不支持 anchor（锚定是全片语义；子轨时间相对组起点，锚不到顶层 caption）`)
+    }
+    if (child.startAfter !== undefined) {
+      errors.push(`${childAt} 不支持 startAfter（子轨时间相对组起点，请写数字 startFrame）`)
+    }
+    // 子轨 3D：preserve-3d 不被 web-renderer 支持（#12 B/C 实证），容器内再转是未知像素行为。
+    if (childDeclares3d(child)) {
+      warnings.push(`${childAt} 声明了 3D 维度 —— 容器内子轨的 3D 不生效（transform-style: preserve-3d 不被渲染器支持）；3D 只声明在 group 容器上`)
+    }
+    // 子轨越组窗口：被容器自然裁掉（warning —— 「卡片比墙晚出现」可能是刻意设计）。
+    const start = child.startFrame
+    const duration = child.durationInFrames
+    if (
+      groupDuration !== undefined &&
+      typeof start === 'number' && Number.isFinite(start) &&
+      typeof duration === 'number' && Number.isFinite(duration)
+    ) {
+      const end = start + duration
+      if (end > groupDuration) {
+        warnings.push(`${childAt} 结束帧 ${end} 超出所属 group 窗口 ${groupDuration} 帧，超出部分被容器裁掉`)
+      }
+    }
+  })
+}

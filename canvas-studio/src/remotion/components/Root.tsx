@@ -15,7 +15,6 @@ import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { AbsoluteFill, Composition, Sequence, continueRender, delayRender, useCurrentFrame } from 'remotion'
 import { fontFamilyStack, resolveFonts } from '../fonts.js'
-import { chartDataFromTimeline } from '../chart-data.js'
 import {
   anchorRefsOf,
   applyAnchorResolution,
@@ -30,17 +29,10 @@ import { throwError } from '../../error-system.js'
 import '../../errors/catalog.js'
 import { useEnvelope } from './audio-envelope.js'
 import { AudioTrack } from './AudioTrack.js'
-import { AudioViz } from './AudioViz.js'
-import { Caption } from './Caption.js'
-import { Chart } from './Chart.js'
 import { FontFamilyContext } from './font-context.js'
-import { ImageClip } from './ImageClip.js'
-import { Shape } from './Shape.js'
-import { TextCard } from './TextCard.js'
-import { TransitionShell } from './Transition.js'
-import { VideoClip } from './VideoClip.js'
-import { Callout } from './Callout.js'
 import { RevealShell } from './RevealShell.js'
+import { TransitionShell } from './Transition.js'
+import { TrackBody } from './track-body.js'
 
 /** `<Composition>` 的缺省 props（会被 `calculateMetadata` 覆盖，但仍必须给，§7.3）。 */
 export const EMPTY_MANIFEST: CompositionManifest = {
@@ -68,13 +60,22 @@ function isContentTrack(track: CompositionTrack): boolean {
 function collectPrefetchUrls(manifest: CompositionManifest): string[] {
   const seen = new Set<string>()
   const urls: string[] = []
-  for (const track of manifest.tracks) {
-    if (track.type !== 'video' && track.type !== 'image' && track.type !== 'audioViz') continue
-    const src = (track as { src?: unknown }).src
-    if (typeof src !== 'string' || src.length === 0 || seen.has(src)) continue
-    seen.add(src)
-    urls.push(src)
+  const visit = (tracks: CompositionManifest['tracks']): void => {
+    for (const track of tracks) {
+      // S1-B：group 容器的子轨与顶层轨同权 —— 漏了它，容器里的视频/图片首帧会空白
+      //（预取是确定性闸门，子轨素材必须同样在首帧前就绪）。
+      if (track.type === 'group') {
+        visit(track.children)
+        continue
+      }
+      if (track.type !== 'video' && track.type !== 'image' && track.type !== 'audioViz') continue
+      const src = (track as { src?: unknown }).src
+      if (typeof src !== 'string' || src.length === 0 || seen.has(src)) continue
+      seen.add(src)
+      urls.push(src)
+    }
   }
+  visit(manifest.tracks)
   return urls
 }
 
@@ -156,30 +157,6 @@ function usePrefetchMedia(manifest: CompositionManifest): void {
     // 依赖素材集合（key）；manifest 其余字段变化不影响预取。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, handle])
-}
-
-const TrackBody: React.FC<{ track: CompositionTrack; manifest: CompositionManifest }> = ({ track, manifest }) => {  switch (track.type) {
-    case 'video':
-      return <VideoClip track={track} />
-    case 'image':
-      return <ImageClip track={track} />
-    case 'textCard':
-      return <TextCard track={track} />
-    case 'shape':
-      return <Shape track={track} />
-    case 'audioViz':
-      return <AudioViz track={track} />
-    case 'chart':
-      // A2：source:'timeline' 时由 manifest 真值推导数据（组件本身不接触 manifest）
-      return <Chart track={track} timelineData={track.source === 'timeline' ? chartDataFromTimeline(manifest, track) : undefined} />
-    case 'caption':
-      return <Caption track={track} />
-    case 'callout':
-      // P3（2026-11-03）：引线标注 —— 锚点 + 引线 + 标签一条轨。
-      return <Callout track={track} />
-    case 'transition':
-      return null
-  }
 }
 
 /**

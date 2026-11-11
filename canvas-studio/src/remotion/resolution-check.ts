@@ -19,6 +19,7 @@
  * 且生成图原生分辨率通常远高于成片。
  */
 import { RENDER_QUALITY_SCALE, type CompositionManifest, type RenderQuality } from './manifest.js'
+import { flattenTracksDeep } from './group-children.js'
 
 /** 判定为上采样的倍数阈值（> 该值才报）。 */
 export const UPSAMPLE_TOLERANCE = 1.05
@@ -103,7 +104,8 @@ export function checkManifestResolution(
   }
   const warnings: string[] = []
   const reported = new Set<string>()
-  for (const track of manifest.tracks) {
+  // S1-B：容器子轨的 video 同样进上采样对账。
+  for (const track of flattenTracksDeep(manifest.tracks)) {
     if (track.type !== 'video') continue
     const size = realSizes[track.src]
     if (size === undefined) continue

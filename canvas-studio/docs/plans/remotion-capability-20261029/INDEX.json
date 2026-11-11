@@ -102,5 +102,37 @@
     "autoScore": 5,
     "outFile": "cap12.mp4",
     "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/12-css3d"
+  },
+  {
+    "id": "13",
+    "title": "卡片墙 3D 投影（串顺序 / 对称梯形 / 24–36 层性能）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap13.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/13-cardwall-3d"
+  },
+  {
+    "id": "14",
+    "title": "CSS 3D 容器卡片墙（62 张内容卡 / 1 个 3D 层）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap14.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/14-cardwall-group"
+  },
+  {
+    "id": "15",
+    "title": "CSS 3D 扁平卡片墙（62 张各自 perspective）",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap15.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/15-cardwall-flat"
+  },
+  {
+    "id": "16",
+    "title": "金属字 / 点阵网格 / 圆形裁切的渲染能力",
+    "status": "done",
+    "autoScore": 5,
+    "outFile": "cap16.mp4",
+    "dir": "/Users/wl/Desktop/job/VideoOut/remotion-capability-20261111/16-metal-grid-clip"
   }
 ]

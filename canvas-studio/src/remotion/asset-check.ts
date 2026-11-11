@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import { urlToAssetPath } from '../compose.js'
 import { probeMediaInfo } from '../ffmpeg-run.js'
 import { ASSET_URL_PREFIX, type CompositionManifest } from './manifest.js'
+import { flattenTracksDeep } from './group-children.js'
 
 /**
  * 素材核对结论。
@@ -178,7 +179,8 @@ export async function checkManifestAssets(
   const alphaSources: Record<string, boolean> = {}
   // 三期 W5-4：先按 `src` 去重 —— 同一段素材被两条轨引用时，原来会 ffprobe 两次。
   const videoSources = new Map<string, string>()
-  for (const track of manifest.tracks) {
+  // S1-B：容器子轨与顶层轨同权（漏子轨 = 容器里的素材缺盘没人拦，渲染期才炸）。
+  for (const track of flattenTracksDeep(manifest.tracks)) {
     if (track.type !== 'video' && track.type !== 'image') continue
     const src = track.src
     // 物化层（`materializeManifestSources`）已把**本项目资产目录内**的本地绝对路径转成同源

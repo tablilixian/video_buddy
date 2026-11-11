@@ -46,9 +46,9 @@
 - `grain`?: number
 
 ## CompositionTrack
-> 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕。
+> 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕 / 3D 容器。
 
-定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack | CalloutTrack
+定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack | CalloutTrack | GroupTrack
 
 ## BaseTrack
 
@@ -145,13 +145,19 @@
 ## TrackFx
 > 二期 A2：**视觉效果**（单值枚举，不做组合数组 —— 组合会让模型乱搭）。
 
-取值：'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline'
+取值：'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline' | 'metal'
+
+## TrackClip
+> ≥95% 对齐 S1-B：**媒体轨裁切形态**（`video` / `image` 轨的 `clip` 字段）。
+
+定义：'circle'
 
 ## VideoClipTrack (extends BaseTrack)
 
 - `type`: 'video'
 - `src`: string — 同源资产 URL（`/canvas-studio/assets/...`）或本地绝对路径。
 - `kenBurns`?: boolean — 是否启用 Ken-Burns 缓慢推拉（默认 false）。
+- `clip`?: TrackClip — ≥95% 对齐 S1-B：裁切形态（缺省不写 = 不裁，老 manifest 逐帧不变）。
 - `trimBeforeFrames`?: number — 三期 W3-1：从源素材第几帧开始用（**输出合成帧**口径；源 fps 不同由宿主换算）。
 - `playbackRate`?: number — 三期 W3-1：播放速率（0.1–4；0.5 = 慢动作，2 = 快放）。缺省 1。
 - `muted`?: boolean — 三期 W3-1：静音（关掉片段原声）。缺省 false。
@@ -163,6 +169,7 @@
 - `type`: 'image'
 - `src`: string
 - `fit`?: 'cover' | 'contain' | 'kenburns' — 图片展示形态：`cover`（默认，填满）/ `contain`（留边）/ `kenburns`。
+- `clip`?: TrackClip — ≥95% 对齐 S1-B：裁切形态（缺省不写 = 不裁，老 manifest 逐帧不变）。
 - `sourceRect`?: SpriteRect — CV-392（REQ-036 R-2）：精灵图子区域裁切 —— 百分比 `{x,y,w,h}`（0–100，与 box
 - `hasAlpha`?: boolean — 素材含 alpha 通道（宿主在渲染前探测 PNG colorType 4/6 / WebP alpha 位后写入，
 - `caption`?: string
@@ -182,7 +189,7 @@
 ## TextCardTrack (extends BaseTrack)
 
 - `type`: 'textCard'
-- `variant`: 'subtitle' | 'dataCard' | 'title' | 'bullets' — 卡片样式：字幕条 / 数据卡 / 标题卡 / 要点列表。
+- `variant`: 'subtitle' | 'dataCard' | 'title' | 'bullets' | 'timecode' — 卡片样式：字幕条 / 数据卡 / 标题卡 / 要点列表 / 帧级时间码（≥95% 对齐 S1-B）。
 - `text`: string | string[] — 主文本（`subtitle` / `title` / `bullets` 每行一条）。
 - `data`?: { k: string; v: string }[] — `dataCard` 专用：键值对（如 `[{k:'全球老龄化',v:'16%'}]`）。
 - `accentColor`?: string
@@ -194,11 +201,13 @@
 ## ShapeTrack (extends BaseTrack)
 
 - `type`: 'shape'
-- `shape`: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon' — 形状种类：
+- `shape`: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'dotGrid' — 形状种类：
 - `color`: string
 - `d`?: string — `shape:'path'` 必填：SVG path 的 `d`。
 - `strokeWidth`?: number — `shape:'path'` 的描边宽度（百分比单位，缺省 0.5；相对 100 单位盒）。
 - `draw`?: DrawMotion — `shape:'path'` 的生长控制；缺省 = 全画出。
+- `dotSpacing`?: number — `shape:'dotGrid'`：相邻点位的**中心距**（px，pattern 单元边长；缺省 24）。
+- `dotRadius`?: number — `shape:'dotGrid'`：点半径（px，缺省 2）。颜色取本轨 `color`。
 - `pivot`?: { x?: number; y?: number } — 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
 
 ## TransitionTrack (extends BaseTrack)
@@ -289,6 +298,12 @@
 - `line`?: 'elbow' | 'straight' — 引线形态：`elbow` 肘线（先直后折，缺省）/ `straight` 直线。
 - `color`?: string — 线与标签文字颜色（缺省琥珀 #ffb454，与 chart 折线同族）。
 - `labelBackground`?: string — 标签底色（缺省 rgba(10,16,28,0.78) 深色玻璃）。
+
+## GroupTrack (extends BaseTrack)
+> ≥95% 对齐 S1-B（2026-11-11）：`group` 轨 —— **3D 容器**（`type:'group'`）。
+
+- `type`: 'group'
+- `children`: CompositionTrack[] — 容器内的子轨（≥1 条；id 全 manifest 唯一，含与顶层轨互查）。
 
 ## ManifestVoiceOver
 > O-10：**单条旁白**（多句旁白各占一段时间轴）。

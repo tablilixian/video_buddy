@@ -38,6 +38,7 @@ import {
   validateCalloutTrack,
   validateChartTrack,
   validateDataCardProvenance,
+  validateGroupPrecheck,
   validateVoiceGain,
   validateCaptionAudioFrames,
   validateColorShift,
@@ -49,6 +50,7 @@ import {
 } from './manifest-track-validate.js'
 import { validateReveal } from './reveal.js'
 import { lintZOrder } from './manifest-lint.js'
+import { flattenTracksDeep } from './group-children.js'
 import { textCardCapacityWarnings, type TextFitVariant } from './text-fit-plan.js'
 
 /**
@@ -141,7 +143,7 @@ export interface ManifestLook {
   grain?: number
 }
 
-/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕。 */
+/** 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕 / 3D 容器。 */
 export type CompositionTrack =
   | VideoClipTrack
   | ImageClipTrack
@@ -152,6 +154,7 @@ export type CompositionTrack =
   | ChartTrack
   | CaptionTrack
   | CalloutTrack
+  | GroupTrack
 
 export interface BaseTrack {
   /**
@@ -411,7 +414,16 @@ export interface DrawMotion {
  * （值域 `fade|slide|zoom|dissolve`），同名同层会同时污染类型、`KNOWN_TRACK_KEYS`
  * 与工具描述。折算在 `resolveAnimatedStyle`（唯一接线点），组件只负责贴样式。
  */
-export type TrackFx = 'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline'
+export type TrackFx = 'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline' | 'metal'
+
+/**
+ * ≥95% 对齐 S1-B：**媒体轨裁切形态**（`video` / `image` 轨的 `clip` 字段）。
+ * `circle` = 圆形裁切（圆形 PIP / 头像端口；#16 C 格实证 `clip-path: circle()` 真出画）。
+ */
+export type TrackClip = 'circle'
+
+/** 媒体裁切白名单（校验层用）。 */
+export const MEDIA_CLIPS = new Set<string>(['circle'])
 
 export interface VideoClipTrack extends BaseTrack {
   type: 'video'
@@ -419,6 +431,11 @@ export interface VideoClipTrack extends BaseTrack {
   src: string
   /** 是否启用 Ken-Burns 缓慢推拉（默认 false）。 */
   kenBurns?: boolean
+  /**
+   * ≥95% 对齐 S1-B：裁切形态（缺省不写 = 不裁，老 manifest 逐帧不变）。
+   * `circle` = 圆形（圆形 PIP / 头像端口）；配合 `box` 圈出的区域裁成圆。
+   */
+  clip?: TrackClip
   /**
    * 三期 W3-1：从源素材第几帧开始用（**输出合成帧**口径；源 fps 不同由宿主换算）。
    * 缺省 0 = 从头。
@@ -439,6 +456,11 @@ export interface ImageClipTrack extends BaseTrack {
   src: string
   /** 图片展示形态：`cover`（默认，填满）/ `contain`（留边）/ `kenburns`。 */
   fit?: 'cover' | 'contain' | 'kenburns'
+  /**
+   * ≥95% 对齐 S1-B：裁切形态（缺省不写 = 不裁，老 manifest 逐帧不变）。
+   * `circle` = 圆形 PIP（竖幅人像端口之外的第二种版式）。
+   */
+  clip?: TrackClip
   /**
    * CV-392（REQ-036 R-2）：精灵图子区域裁切 —— 百分比 `{x,y,w,h}`（0–100，与 box
    * 同口径），圈出的**子区域**按 `fit` 语义铺进轨道层（「把圈出的区域当作这张图」；
@@ -470,8 +492,12 @@ export interface TextAnimOptions {
 
 export interface TextCardTrack extends BaseTrack {
   type: 'textCard'
-  /** 卡片样式：字幕条 / 数据卡 / 标题卡 / 要点列表。 */
-  variant: 'subtitle' | 'dataCard' | 'title' | 'bullets'
+  /**
+   * 卡片样式：字幕条 / 数据卡 / 标题卡 / 要点列表 / 帧级时间码（≥95% 对齐 S1-B）。
+   * `timecode` 渲染 `HH:MM:SS:FF`（纯帧函数 `timecode.ts`，按本画布 fps 取帧号）；
+   * `text` 作为可选静态标签（如 `REC`），`accentColor` 染标签。
+   */
+  variant: 'subtitle' | 'dataCard' | 'title' | 'bullets' | 'timecode'
   /** 主文本（`subtitle` / `title` / `bullets` 每行一条）。 */
   text: string | string[]
   /** `dataCard` 专用：键值对（如 `[{k:'全球老龄化',v:'16%'}]`）。 */
@@ -506,9 +532,14 @@ export interface ShapeTrack extends BaseTrack {
    *   （换实现 = div→svg，老 manifest 像素会变，违反「旧 manifest 逐帧不变」铁律）；
    * - `path`（二期 A1）：SVG 路径，配 `d` / `strokeWidth` / `draw`；
    * - `arrow` / `triangle` / `star` / `polygon`（二期 A3）：几何由
-   *   `shape-geometry.ts` 纯函数算出顶点，再以 `<polygon>` 渲染。
+   *   `shape-geometry.ts` 纯函数算出顶点，再以 `<polygon>` 渲染；
+   * - `dotGrid`（≥95% 对齐 S1-B）：SVG `<pattern>` 平铺点阵（配 `dotRadius` /
+   *   `dotSpacing`；**必须走 SVG pattern** —— CSS `radial-gradient` 平铺被
+   *   web-renderer 4.0.535 整个忽略，#16 首轮实证）。缺省铺满画布（背景底纹定位），
+   *   与老形状缺省的 30×20 小块不同，契约里写明。
    */
   shape: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon'
+    | 'dotGrid'
   color: string
   // `box` 已上提到 `BaseTrack`（会话效率优化 2026-10-26）——语义不变（0–100、x/y 中心），
   // shape 轨经继承继续持有；`path` 轨铺满画布、`box` 不生效（校验层 warning）。
@@ -523,6 +554,13 @@ export interface ShapeTrack extends BaseTrack {
   strokeWidth?: number
   /** `shape:'path'` 的生长控制；缺省 = 全画出。 */
   draw?: DrawMotion
+  /**
+   * `shape:'dotGrid'`：相邻点位的**中心距**（px，pattern 单元边长；缺省 24）。
+   * 数值越小点越密 —— 原片背景是细密点阵，常用 16–32。
+   */
+  dotSpacing?: number
+  /** `shape:'dotGrid'`：点半径（px，缺省 2）。颜色取本轨 `color`。 */
+  dotRadius?: number
   /**
    * 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
    * `transform-origin` 同口径；缺省 50/50 = 盒中心 ⇒ 老 manifest 逐像素不变。
@@ -766,6 +804,29 @@ export interface CalloutTrack extends BaseTrack {
 }
 
 /**
+ * ≥95% 对齐 S1-B（2026-11-11）：`group` 轨 —— **3D 容器**（`type:'group'`）。
+ *
+ * 与编译期 `groups.ts` 的「组内坐标糖」（顶层 `groups` + 轨上的 `group: id` 字段，
+ * 宿主展开 box）**不是一回事**：本类型是运行时渲染的轨道 —— 子轨包进同一个 div，
+ * 容器统一做 `perspective() rotateY()`，62 张卡只占 **1 个** WebGL 预合成层
+ * （#14 实测 82ms/帧；扁平 62 层是 146ms/帧且没有统一灭点）。
+ *
+ * v1 边界（校验都在 `manifest-track-validate.ts` 的 `validateGroupTrack`）：
+ * - 子轨时间**相对组起点**（child.startFrame: 0 = 与组同时出现）；
+ * - 子轨坐标是**画布绝对百分比**（与顶层轨同口径，不引入第二套坐标系）；
+ * - 容器 `rotateX` / `rotateY` **|角度| ≤ 30°**（#14 D 格：≈−38° 配 perspective(1200px)
+ *   整块静默消失 —— 不报错不留痕，必须在契约层拦住）；
+ * - 子轨禁止声明 3D 维度（preserve-3d 不被 web-renderer 支持，#12 B/C 实证）；
+ * - 子轨类型白名单：video / image / textCard / shape / chart / callout（transition /
+ *   caption / audioViz / 嵌套 group 不收）。
+ */
+export interface GroupTrack extends BaseTrack {
+  type: 'group'
+  /** 容器内的子轨（≥1 条；id 全 manifest 唯一，含与顶层轨互查）。 */
+  children: CompositionTrack[]
+}
+
+/**
  * O-10：**单条旁白**（多句旁白各占一段时间轴）。
  *
  * 真机症状：三句旁白要落在 2.60 / 7.07 / 11.90 秒，而 `voiceOverUrl` 只收一个文件 ——
@@ -886,12 +947,14 @@ export interface ManifestValidation {
   warnings: string[]
 }
 
-const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout'])
-const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets'])
+const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout', 'group'])
+const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets', 'timecode'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
   // 二期 A1 / A3
   'path', 'arrow', 'triangle', 'star', 'polygon',
+  // ≥95% 对齐 S1-B：SVG pattern 点阵（CSS radial-gradient 平铺被 web-renderer 忽略）
+  'dotGrid',
 ])
 const EFFECTS = new Set([
   'fade', 'slide', 'zoom', 'dissolve',
@@ -902,7 +965,7 @@ const EFFECTS = new Set([
 ])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
 /** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。 */
-const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline'])
+const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline', 'metal'])
 /** 二期 A1：公转方向白名单。 */
 const ORBIT_DIRECTIONS = new Set(['cw', 'ccw'])
 /** 二期 B1：音频可视化形态白名单。 */
@@ -973,18 +1036,20 @@ export const KNOWN_BASE_TRACK_KEYS = new Set([
  * `tests/manifest-fields-drift.test.mjs` 红（「加字段漏登记」从机制上不可能再悄悄发生）。
  */
 export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
-  video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop']),
+  video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop', 'clip']),
   // P-02：sourceRect（CV-392 精灵图子区域裁切）/ hasAlpha（复刻批）实现真实读取
   // （sprite.ts / ImageClip.tsx），此前漏登记 ⇒ 每次使用都被告警「不会生效」。
-  image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha']),
+  image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip']),
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp', 'dataSource']),
-  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot']),
+  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot', 'dotRadius', 'dotSpacing']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
   chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'title', 'labelEvery', 'maxLabels', 'gaugeMax', 'palette']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor', 'audioFrames']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
+  // ≥95% 对齐 S1-B：group 3D 容器（children 白名单 / 角度 / id 唯一性校验在 validateGroupTrack）。
+  group: new Set(['children']),
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'perspective'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'opacity'])
@@ -1466,7 +1531,80 @@ function finiteBox(value: unknown): { x: number; y: number; w: number; h: number
   return { x: x as number, y: y as number, w: w as number, h: h as number }
 }
 
-export function validateManifest(input: unknown): ManifestValidation {
+/**
+ * ≥95% 对齐 S1-B：group 容器子轨校验（主循环**之后**的第二趟扫，由 validateManifest 调用）。
+ *
+ * 为什么放在主循环外：子轨 id 与顶层 id 全量互查需要 kindById 先收齐 —— 「子轨在前、
+ * 顶层轨在后」的单趟序会漏判重名；transition 指向子轨的判定同理（组可能排在 transition
+ * 之后）。整段外提的另一个原因是 validateManifest 的函数跨度闸（600 行）。
+ *
+ * 子轨逐条走**完整**校验器：合成一份只含子轨的 manifest 复用 validateManifest 全部规则
+ * （src 同源 / variant / chart / callout / 契约外字段告警……），不复制第二份口径。
+ * meta 沿用父 manifest 的画布与 fps；durationInFrames 用组时长 ⇒ 子轨越组窗口会自然
+ * 产出「按 meta 裁切」警告（与预检的越窗告警同义，两条都留着 —— 预检那条文案带组语义）。
+ */
+function validateGroupContainerTracks(
+  input: Record<string, unknown>,
+  kindById: ReadonlyMap<string, string>,
+  meta: Record<string, unknown>,
+  errors: string[],
+  warnings: string[],
+): void {
+  const tracks = Array.isArray(input.tracks) ? input.tracks : []
+  const childIds = new Set<string>()
+  for (let i = 0; i < tracks.length; i += 1) {
+    const track = tracks[i]
+    if (!isRecord(track) || track.type !== 'group') continue
+    const at = `tracks[${i}]`
+    validateGroupPrecheck(track, at, kindById, childIds, errors, warnings)
+    const metaBasicsOk = isFinitePositive(meta.width) && isFinitePositive(meta.height) &&
+      isFinitePositive(meta.fps) && isFinitePositive(meta.durationInFrames)
+    if (metaBasicsOk && Array.isArray(track.children) && track.children.length > 0 && track.children.length <= 96) {
+      const groupDuration = typeof track.durationInFrames === 'number' && Number.isFinite(track.durationInFrames)
+        ? Math.max(1, Math.floor(track.durationInFrames))
+        : meta.durationInFrames
+      // 子轨逐条走**完整**校验器：合成一份只含子轨的 manifest 复用 validateManifest 全部
+      // 规则（src 同源 / variant / chart / callout / 契约外字段告警……），不复制第二份口径。
+      // meta 沿用父 manifest 的画布与 fps；durationInFrames 用组时长 ⇒ 子轨越组窗口会自然
+      // 产出「按 meta 裁切」警告（与预检的越窗告警同义，两条都留着 —— 预检那条文案带组语义）。
+      // groupSubCheck：豁免 manifest 级聚合体检（ML-08/ML-10，语义见 lintMotion 头注）。
+      const sub = validateManifest({
+        id: `group-children-check-${String(i)}`,
+        meta: {
+          title: 'group children check',
+          width: meta.width,
+          height: meta.height,
+          fps: meta.fps,
+          durationInFrames: groupDuration,
+          // 编排体检（ML-*）只对整片语义生效；子轨是容器内局部编排，父 manifest 关了
+          // 体检就一起关（否则「卡片静止在墙上」这种设计意图会被子轨体检误报 ML-10）。
+          ...(meta.lint === 'off' ? { lint: 'off' } : {}),
+        },
+        tracks: track.children,
+      }, { groupSubCheck: true })
+      for (const message of sub.errors) errors.push(`${at} 的子轨：${message}`)
+      for (const message of sub.warnings) warnings.push(`${at} 的子轨：${message}`)
+    }
+  }
+  // transition 指向子轨：子轨 id 不进 kindById ⇒ 存在性校验只查顶层；但「组出现在
+  // transition 之后」的写法在单趟序里无法判，这里用全量 childIds 补一刀（fail-fast）。
+  if (childIds.size > 0) {
+    for (let i = 0; i < tracks.length; i += 1) {
+      const track = tracks[i]
+      if (!isRecord(track) || track.type !== 'transition') continue
+      for (const key of ['fromTrackId', 'toTrackId'] as const) {
+        if (isNonEmptyString(track[key]) && childIds.has(track[key] as string)) {
+          errors.push(`tracks[${i}].${key}（${String(track[key])}）指向 group 子轨 —— 转场只能作用于顶层轨（子轨时间相对组起点，窗口无法对齐）`)
+        }
+      }
+    }
+  }
+}
+
+export function validateManifest(
+  input: unknown,
+  opts?: { groupSubCheck?: boolean },
+): ManifestValidation {
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -1570,7 +1708,7 @@ export function validateManifest(input: unknown): ManifestValidation {
       if (conflict !== null) errors.push(`${at}(${String(id)}) ${conflict}`)
     }
     if (track.fx !== undefined && (typeof track.fx !== 'string' || !TRACK_FX.has(track.fx))) {
-      errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade / outline`)
+      errors.push(`${at}.fx 非法（${String(track.fx)}）—— 白名单：glow / stroke / shadow / blur / maskFade / outline / metal`)
     }
 
     // 会话效率优化 2026-10-26：`box` 区域声明（video/image/textCard/shape 生效）。
@@ -1618,6 +1756,10 @@ export function validateManifest(input: unknown): ManifestValidation {
         }
         if (type === 'image' && track.fit !== undefined && (typeof track.fit !== 'string' || !IMAGE_FITS.has(track.fit))) {
           errors.push(`${at}.fit 非法（${String(track.fit)}）`)
+        }
+        // ≥95% 对齐 S1-B：媒体轨圆形裁切（缺省不写 = 不裁，老 manifest 逐帧不变）。
+        if (track.clip !== undefined && (typeof track.clip !== 'string' || !MEDIA_CLIPS.has(track.clip))) {
+          errors.push(`${at}.clip 非法（${String(track.clip)}）—— 白名单：circle`)
         }
         if (type === 'image' && track.sourceRect !== undefined) {
           validateSpriteRect(track.sourceRect, at, errors)
@@ -1727,6 +1869,19 @@ export function validateManifest(input: unknown): ManifestValidation {
             }
           }
           if (track.draw !== undefined) validateDrawMotion(track.draw, at, duration, errors)
+        } else if (track.shape === 'dotGrid') {
+          // ≥95% 对齐 S1-B：SVG pattern 点阵参数（颜色取 color，无需额外字段）。
+          const dotRadius = track.dotRadius
+          if (dotRadius !== undefined && (typeof dotRadius !== 'number' || !Number.isFinite(dotRadius) || dotRadius <= 0 || dotRadius > 50)) {
+            errors.push(`${at}.dotRadius 必须是 (0, 50] 的数值（px，点半径；缺省 2）`)
+          }
+          const dotSpacing = track.dotSpacing
+          if (dotSpacing !== undefined && (typeof dotSpacing !== 'number' || !Number.isFinite(dotSpacing) || dotSpacing < 4 || dotSpacing > 200)) {
+            errors.push(`${at}.dotSpacing 必须是 [4, 200] 的数值（px，相邻点位中心距；缺省 24）`)
+          }
+          if (track.d !== undefined) {
+            warnings.push(`${at} 是 shape:'dotGrid'，d 只在 shape:'path' 上生效（已忽略）`)
+          }
         } else {
           // 容忍模型冗余：不阻断，但要告诉它"写了也不会生效"（否则成片里没有生长效果却没人说）。
           if (track.d !== undefined) {
@@ -1734,6 +1889,9 @@ export function validateManifest(input: unknown): ManifestValidation {
           }
           if (track.draw !== undefined) {
             warnings.push(`${at} 的 draw 只在 shape:'path' 上生效（已忽略）`)
+          }
+          if (track.dotRadius !== undefined || track.dotSpacing !== undefined) {
+            warnings.push(`${at} 的 dotRadius/dotSpacing 只在 shape:'dotGrid' 上生效（已忽略）`)
           }
         }
         break
@@ -1899,6 +2057,11 @@ export function validateManifest(input: unknown): ManifestValidation {
           errors.push(`${at}.direction 只允许 left / right / up / down`)
         }
         break
+      case 'group':
+        // ≥95% 对齐 S1-B：容器通用字段（transform/animate/fx/…）在类型分支之前已查过；
+        // children 的准入与角度在主循环**之后**的第二趟扫（validateGroupPrecheck +
+        // 合成 manifest 复用本函数全量校验子轨），因为子轨 id 要与顶层 id 全量互查。
+        break
       default:
         break
     }
@@ -1910,6 +2073,10 @@ export function validateManifest(input: unknown): ManifestValidation {
     }
     validateTransitions(input.tracks, errors, warnings)
   }
+
+  // ≥95% 对齐 S1-B：group 容器子轨（主体在下方独立函数 —— validateManifest 的函数跨度
+  // 有 600 行闸，第二趟扫整体外提，语义不变）。
+  validateGroupContainerTracks(input, kindById, meta, errors, warnings)
 
   const audio = input.audio
   if (audio !== undefined) {
@@ -2006,7 +2173,7 @@ export function validateManifest(input: unknown): ManifestValidation {
   // 三期 W1-3：编排体检（只 warning，D-10 选 A）。结构合法之后再跑 —— 结构都错时
   // 再报「6 个元素同帧入场」只会淹没真问题。
   if (errors.length === 0) {
-    warnings.push(...formatMotionLint(lintMotion(input as unknown as CompositionManifest)))
+    warnings.push(...formatMotionLint(lintMotion(input as unknown as CompositionManifest, { groupSubCheck: opts?.groupSubCheck === true })))
     warnings.push(...lintZOrder(input.tracks as unknown[]))
   }
 
@@ -2400,7 +2567,8 @@ export function audioCompositionFrom(input: {
 export function collectManifestSourceIds(manifest: CompositionManifest): string[] {
   const ids: string[] = []
   const seen = new Set<string>()
-  for (const track of manifest.tracks) {
+  // S1-B：容器子轨的素材 id 同样进血缘（子轨素材是真实渲染、真实占坑的）。
+  for (const track of flattenTracksDeep(manifest.tracks)) {
     if (track.type !== 'video' && track.type !== 'image') continue
     if (seen.has(track.id)) continue
     seen.add(track.id)

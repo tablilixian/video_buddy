@@ -150,9 +150,16 @@ function unionLength(
 
 /**
  * 体检整份 manifest（纯函数）。返回空数组 = 没有意见。
+ *
+ * @param opts.groupSubCheck group 子轨合成校验（validateGroupContainerTracks）标记：
+ *   ML-08 / ML-10 是 **manifest 级聚合统计**（全片退场数 / 全片动效占比），对「一段
+ *   容器内的局部编排」没有语义 —— 子卡的动效与退场语境来自容器本身（推近 animate /
+ *   容器 exit），单看子轨必然误报「0% 在动、没有任何 exit」（S3 实测）。其余 ML-*
+ *   都是按轨判的，继续生效。
  */
-export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
+export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck?: boolean }): MotionLintIssue[] {
   if (manifest.meta?.lint === 'off') return []
+  const groupSubCheck = opts?.groupSubCheck === true
   const issues: MotionLintIssue[] = []
   // REQ-035 F-09：同一 (code, at) 只留一条。
   // 原实现按**分段**逐条 push，于是「一条轨上有 3 段长呼吸动画」会产出 3 条一模一样的
@@ -350,9 +357,9 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
     }
   }
 
-  // ML-08：全片没有任何退场。
+  // ML-08：全片没有任何退场（manifest 级聚合 —— group 子轨校验豁免，见 lintMotion 头注）。
   const exitCount = tracks.filter((track) => track.exit !== undefined).length
-  if (exitCount === 0 && tracks.length >= 5) {
+  if (exitCount === 0 && tracks.length >= 5 && !groupSubCheck) {
     push({
       code: 'ML-08',
       at: 'manifest',
@@ -390,7 +397,8 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   }
   const movingFrames = unionLength(motionIntervals, 0, metaDuration)
   const ratio = metaDuration > 0 ? Math.min(1, movingFrames / metaDuration) : 1
-  if (metaDuration > 0 && ratio < 0.3) {
+  // ML-10 同为 manifest 级聚合（全片动效占比）—— group 子轨校验豁免。
+  if (metaDuration > 0 && ratio < 0.3 && !groupSubCheck) {
     push({
       code: 'ML-10',
       at: 'manifest',

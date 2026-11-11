@@ -47,6 +47,7 @@ import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { cancelRenderJob, claimRenderJobFor, commitRenderJob, failRenderHostJobs, listRenderJobViews, recordRenderSample, reportRenderJobProgress, type RenderExecutor, type RenderJobReport } from './remotion/render-job.js'
+import { sanitizeTextFitEntries } from './remotion/text-fit-audit.js'
 // REQ-034 · O-05：RenderHost 隐藏窗口（页面 / 自报状态 / 生命周期）。
 import { renderHostHtml } from './render-host/page.js'
 import { lastRenderHostReport, recordRenderHostReport } from './render-host/status.js'
@@ -665,6 +666,12 @@ function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefine
   }
   if (source.quality === 'draft' || source.quality === 'standard' || source.quality === 'high') {
     report.quality = source.quality
+  }
+  // 0B（CV-461）：文字容量体检是**数组**，上面那圈数值白名单收不到它（漏了就被静默丢掉，
+  // 表现为「客户端算对了、报告里没有」）。清洗规则在 `sanitizeTextFitEntries`（纯函数，可单测）。
+  if (source.textFit !== undefined) {
+    const textFit = sanitizeTextFitEntries(source.textFit)
+    if (textFit !== undefined && textFit.length > 0) report.textFit = textFit
   }
   return report
 }

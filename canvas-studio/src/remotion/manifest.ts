@@ -49,6 +49,7 @@ import {
 } from './manifest-track-validate.js'
 import { validateReveal } from './reveal.js'
 import { lintZOrder } from './manifest-lint.js'
+import { textCardCapacityWarnings, type TextFitVariant } from './text-fit-plan.js'
 
 /** 成片顶层 Manifest（`render_composition` 的唯一入参结构）。 */
 export interface CompositionManifest {
@@ -1472,6 +1473,15 @@ function boxPositionConflict(track: Record<string, unknown>): string | null {
  * 7. 素材引用必须以 `/canvas-studio/assets/` 开头或为本地绝对路径（防外链）。
  * 8. **CV-334**：`transform` / `animate` / `fadeFrames` 取值合法；**契约外字段 → warning**（不阻断）。
  */
+/** 取一个「四项都是有限数」的 box（`textCard` 的容量粗判只认这个形态，残缺 box 跳过不猜）。 */
+function finiteBox(value: unknown): { x: number; y: number; w: number; h: number } | undefined {
+  if (!isRecord(value)) return undefined
+  const { x, y, w, h } = value
+  const nums = [x, y, w, h]
+  if (!nums.every((entry) => typeof entry === 'number' && Number.isFinite(entry))) return undefined
+  return { x: x as number, y: y as number, w: w as number, h: h as number }
+}
+
 export function validateManifest(input: unknown): ManifestValidation {
   const errors: string[] = []
   const warnings: string[] = []
@@ -1682,6 +1692,24 @@ export function validateManifest(input: unknown): ManifestValidation {
         // B-4（CV-440，P-01/P-17）：数值型事实溯源观察期（收窄口径，见本函数文档）。
         if (track.variant === 'dataCard' && track.data !== undefined) {
           validateDataCardProvenance(track, at, warnings)
+        }
+        // 0B（CV-461）：**文字容量静态合同**（Node 侧无 canvas，只能按字符宽估算）。
+        // 级别是 **warning 不 error**：这里的折行是估算，让它有权拒收一份能渲的 manifest 不值
+        // （`render_composition` 以 errors 非空为拒收判据）。真实测量在浏览器 prepare 阶段，
+        // 结论进 `report.textFit`。拍板与理由见 `决策日志.md` D-19。
+        if (textOk && typeof track.variant === 'string' && TEXT_VARIANTS.has(track.variant)) {
+          const box = finiteBox(track.box)
+          for (const note of textCardCapacityWarnings({
+            id: isNonEmptyString(id) ? id : '',
+            variant: track.variant as TextFitVariant,
+            text: text as string | string[],
+            ...(box === undefined ? {} : { box }),
+            canvasWidth: typeof meta.width === 'number' ? meta.width : 1920,
+            canvasHeight: typeof meta.height === 'number' ? meta.height : 1080,
+            dataRows: Array.isArray(track.data) ? track.data.length : 0,
+          })) {
+            warnings.push(`${at} ${note}`)
+          }
         }
         break
       }

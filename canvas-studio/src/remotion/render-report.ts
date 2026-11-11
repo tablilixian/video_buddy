@@ -9,6 +9,7 @@
  * `tests/render-tool-contract.test.mjs`（report schema 子集）双向钉住。
  */
 import type { ManifestAudioSummary, RenderQuality } from './manifest.js'
+import type { TextFitReportEntry } from './text-fit-audit.js'
 import type { TimingCheckSummary } from '../timing-segments.js'
 
 /** 三期 W6-2 / REQ-035 F-04：渲染报告（宿主侧形状，字段与客户端 `RenderMetrics` 一一对齐）。 */
@@ -54,4 +55,13 @@ export interface RenderJobReport {
    * 与拆解段起点的逐边界比对结论（漂移超窗报 warnings，细节看这里逐段校准）。
    */
   timingCheck?: TimingCheckSummary
+  /**
+   * 0B（CV-461）：**文字容量体检** —— 逐条文字轨一条（渲前在浏览器里按真实字形量的）。
+   *
+   * 为什么要有：`validateManifest` 在 Node 里没有 canvas，只能粗判；成片那句「字被
+   * `overflow:hidden` 裁掉、校验却说一切正常」就卡在这个空档里。这里是**实测值**：
+   * `overflow=true` 的条目已在 `warnings` 里有可执行文案（改短到 N 字 / 加大 box）。
+   * 老客户端不上报时缺省（不伪造空数组 —— 空数组等于「查过且没问题」，那是撒谎）。
+   */
+  textFit?: TextFitReportEntry[]
 }

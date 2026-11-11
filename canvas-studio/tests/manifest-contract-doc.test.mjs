@@ -43,11 +43,12 @@ const CLAIMS = [
     hint: '圆点尺寸/边距变了？同步改文档第 4 条（并重算 42px）',
   },
   {
-    // 第 4 条：容器固定 900px
-    doc: '容器固定 **900px** 宽',
+    // 第 4 条：容器宽 min(900, max(300, 画布宽×90%))，文字可用宽再扣 42px 圆点
+    //（0B/CV-461 前是写死 `width: 900`，窄画布溢出、折行又按 900 算漏了圆点）
+    doc: '文字可用宽再扣这 42px',
     file: 'src/remotion/components/TextCard.tsx',
-    pattern: /width: 900/u,
-    hint: 'bullets 容器宽变了？同步改文档第 4 条',
+    pattern: /width: plan\.containerWidthPx/u,
+    hint: 'bullets 容器宽变了？同步改文档第 4 条（并重算 42px）',
   },
   {
     // 第 6 条：title 变体带全屏蒙版

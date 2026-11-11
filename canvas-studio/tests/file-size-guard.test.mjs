@@ -103,7 +103,8 @@ export const FILE_WHITELIST = {
   // 2026-11-06 会话 18（任务 18）：write_storyboard 回执按 `document.landed` 改口径
   // （已落地 / 半落地不再让 agent 要求点「确认落地」），+5（5003 → 5008）显式登记。
   // 消化路径同上：随「工具壳拆分」批外提到 host-tools-workflow.ts。
-  'src/host-tools.ts': 5008,
+  // CV-461（2026-11-11，0B 文本溢出上报）：render_composition 的 report schema 加 textFit（items 九字段，+8 净行），5008 → 5016 显式登记。
+  'src/host-tools.ts': 5016,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
@@ -123,7 +124,8 @@ export const FILE_WHITELIST = {
   // 显式登记。
   // CV-460（2026-11-11）补登：0A-6 sfx 只读路由（ROUTE_REMOTION_SFX + REMOTION_SFX_DIR +
   // 分发接线，3686 → 3737）——上一批（398d9a792b）漏登，本次跑闸暴露后补。
-  'src/routes.ts': 3737,
+  // CV-461（2026-11-11，0B 文本溢出上报）：asRenderReport 收口 textFit 数组（清洗在 sanitizeTextFitEntries；+7），3737 → 3744 显式登记。
+  'src/routes.ts': 3744,
   // S3（2026-10-28）：混音面板接线 handleNodeAudioTimelineUpdate（+7 行，显式登记的增长）——
   // 阶段 3 拆分（两步走：先展示外提再抽 hooks）时随 hooks 外提消化。
   // 订阅与积分（2026-11-02）：billing 状态订阅 + focus 信号 + 两处入口 + 全屏页挂载
@@ -165,7 +167,8 @@ export const FILE_WHITELIST = {
   // CV-460（2026-11-11）补登：0A-1/0A-2 SFX 事件轨契约 + 校验（ManifestSfx/Anchor 接口 +
   // KNOWN_SFX_KEYS + validateSfxList 主体，2196 → 2395）+ 0A-7 fadeOutSec JSDoc 口径（+3），
   // 合计 +202 → 2398 —— 上一批（0abcb297ef）漏登，本次跑闸暴露后补。
-  'src/remotion/manifest.ts': 2398,
+  // CV-461（2026-11-11，0B 文本溢出上报）：textCard 分支接容量静态合同 + finiteBox（判据主体在新文件 text-fit-plan.ts，+28），2398 → 2426 显式登记。
+  'src/remotion/manifest.ts': 2426,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
@@ -176,7 +179,8 @@ export const FILE_WHITELIST = {
   // 追加 +5（1258 → 1263）：`timeoutExtendMinMs` 注入（续期下限 15s，单测不可能真等 15s，
   // 不注入就测不到「到期真的续了期」这条唯一关键的接线行为）。
   // 消化路径：随「渲染工单桥拆分」批外提结算段（commit/cancel/timeout 各自成模块）。
-  'src/remotion/render-job.ts': 1263,
+  // CV-461（2026-11-11，0B 文本溢出上报）：commitRenderJob 透传 textFit（宿主不重算，重算要 canvas；+2），1263 → 1265 显式登记。
+  'src/remotion/render-job.ts': 1265,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
@@ -204,7 +208,8 @@ export const FILE_WHITELIST = {
   // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
   // 复刻提效批（2026-11-02）：PendingStudioRenderJob.spotFrames + commit spot 参数，+7（1339 → 1346）。
   // CV-459（2026-11-10）：registerStoryboardUserRefs（§07 确定性登记的请求封装），+19（1346 → 1365）。
-  'src/client/api.ts': 1365,
+  // CV-461（2026-11-11，0B 文本溢出上报）：StudioRenderReport 放宽到可带 textFit 数组 + 条目接口（+14：类型 + 注释），1365 → 1379 显式登记。
+  'src/client/api.ts': 1379,
 }
 
 /**

@@ -68,6 +68,24 @@ test('结果：report 内部字段与宿主 `RenderJobReport` 对齐（耗时 / 
   assert.ok(!fields.includes('encodeMs'), 'encodeMs 已改名 encodeDoneAtMs（原名会被读成耗时）')
 })
 
+// ── 0B（CV-461）：文字容量体检必须进 report schema ──
+// 缺口实证：`fitTextPolicy` 会返回 overflow、TextCard 也算过，但四个 variant 分支把它丢掉
+// ⇒ 字被 overflow:hidden 裁掉而校验报 ok。修法的一半是「上报」：渲前在浏览器里实测，
+// 结果进 report.textFit。`additionalProperties:false` 下漏声明 = 字段被静默剥掉（CV-146 教训）。
+
+test('0B：report schema 声明 textFit，且条目字段齐全（漏声明＝静默丢失）', () => {
+  const report = renderTool().output?.schema?.properties?.report
+  assert.ok(report, 'report 必须有内联结构')
+  const textFit = report.properties?.textFit
+  assert.ok(textFit, `report 缺 textFit（实际：${Object.keys(report.properties ?? {}).join(', ')}）`)
+  assert.equal(textFit.type, 'array')
+  assert.equal(textFit.items?.additionalProperties, false, '条目也要 closed world')
+  const fields = Object.keys(textFit.items?.properties ?? {})
+  for (const key of ['id', 'variant', 'fontPx', 'baseFontPx', 'maxLines', 'lines', 'overflow', 'atMinFont', 'maxWidthPx']) {
+    assert.ok(fields.includes(key), `textFit 条目缺字段 ${key}（实际：${fields.join(', ')}）`)
+  }
+})
+
 // ── REQ-034 O-01：抽帧与渲染报告必须进**模型可见文本** ──
 // schema 里有 ≠ 模型读得到。真机上 8 张抽帧已落盘、report 已进 payload，返回文本却只有
 // url + 段数 ⇒ agent 自己 ls 资产目录、翻 /tmp、再用 ffmpeg 重抽一遍（白烧 3 次 VL）。

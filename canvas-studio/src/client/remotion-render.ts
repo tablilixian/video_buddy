@@ -37,6 +37,7 @@ import { RENDER_QUALITY_SCALE, validateManifest, type CompositionManifest, type 
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
+import { auditTextFit, textFitWarnings, type TextFitReportEntry } from '../remotion/text-fit-audit.js'
 
 /**
  * 0A-8（CV-460，拍板见 D-18）：**无条件注册 WASM AAC 编码器**。
@@ -151,6 +152,14 @@ export interface RenderMetrics {
   width: number
   height: number
   sampledFrames: number
+  /**
+   * 0B（CV-461）：**文字容量体检**（渲前在浏览器里按真实字形量出来的，逐条文字轨一条）。
+   *
+   * 为什么在渲前算：`renderMediaOnWeb` 跑完就结束，没有回传通道；而 prepare 阶段本来就在
+   * 浏览器里注入字体（`applyManifestFonts`）⇒ 同页同字体同测量器，度量结果与渲染一致。
+   * 溢出项同时进 `warnings`（模型看得见），这里给可统计的逐条明细。
+   */
+  textFit?: TextFitReportEntry[]
 }
 
 export interface RenderManifestOnWebOptions {
@@ -248,6 +257,11 @@ export async function renderManifestOnWeb(
     : await probeManifestDurations(manifest, options.signal)
   const probedManifest = applyProbedDurations(manifest, probed, fontWarnings)
   const prepareProbeMs = Date.now() - probeStartedAt
+  // 0B（CV-461）：文字容量体检 —— 必须在字体就绪之后（否则量到的是回退字体），
+  // 且用**校正后**的 manifest（`probedManifest` 只改 video 时长，与文字无关，但口径要一致）。
+  // 只读、不阻塞：量不出来就不报（`auditTextFit` 从不抛），耗时并入 prepareMs 的胶水段。
+  const textFit = auditTextFit(probedManifest, width, height)
+  const textFitNotes = textFitWarnings(textFit)
   const capabilityStartedAt = Date.now()
   const capability: CanRenderMediaOnWebResult = await canRenderMediaOnWeb({ container: 'mp4', videoCodec: 'h264', width, height })
   const prepareCapabilityMs = Date.now() - capabilityStartedAt
@@ -260,6 +274,7 @@ export async function renderManifestOnWeb(
     ...capability.issues
       .filter((issue: CanRenderIssue) => issue.severity === 'warning')
       .map((issue: CanRenderIssue) => issue.message),
+    ...textFitNotes,
   ]
 
   const { signal } = options
@@ -351,6 +366,7 @@ export async function renderManifestOnWeb(
     width: Math.max(1, Math.round(width * preset.scale)),
     height: Math.max(1, Math.round(height * preset.scale)),
     sampledFrames: samples.length,
+    ...(textFit.length > 0 ? { textFit } : {}),
   }
   return { bytes, warnings, samples, metrics }
 }

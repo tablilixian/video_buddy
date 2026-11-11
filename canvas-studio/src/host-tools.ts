@@ -219,8 +219,29 @@ const resultSchema = {
         },
         lintPath: { type: 'string' as const, description: '编排体检完整清单的落盘路径（项目 build/ 下 markdown，含每条的建议）。落盘失败缺省' },
         loudnessLufs: { type: 'number' as const, description: '成片综合响度（LUFS，BS.1770）。无声片缺省。复刻场景用它和参考片对齐观感（差 3dB 以上听感明显不同）' },
+        // 0B（CV-461）：文字容量体检。`additionalProperties:false` ⇒ 漏声明 = 字段被静默剥掉
+        // （CV-146 教训），所以必须在这里显式登记。
+        textFit: {
+          type: 'array' as const,
+          items: {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string' as const, description: '轨 id' },
+              variant: { type: 'string' as const, description: '排版形态：subtitle / title / bullets / dataCard / caption' },
+              fontPx: { type: 'integer' as const, description: '实际采用的字号（px）' },
+              baseFontPx: { type: 'integer' as const, description: '基准字号（px）：未缩号时的值' },
+              maxLines: { type: 'integer' as const, description: '该轨允许的最大行数' },
+              lines: { type: 'array' as const, items: { type: 'string' as const }, description: '渲前实测的折行结果（诊断：算法认为断在哪）' },
+              overflow: { type: 'boolean' as const, description: '超出行数上限 ⇒ **成片会被 overflow:hidden 裁掉**；true 时 warnings 里必有可执行建议' },
+              atMinFont: { type: 'boolean' as const, description: '已缩到字号下限（base×0.55）仍溢出 ⇒ 最严重档' },
+              maxWidthPx: { type: 'integer' as const, description: '折行可用宽（px）——判断「是不是 box 太窄」看它' },
+            },
+          },
+          description: '文字容量体检（渲前在浏览器里按真实字形实测，逐条文字轨一条）。文字放不下时这里给实测值，warnings 给可执行建议（改短到 N 字 / 加大 box）。**overflow=true 的轨道必须处理或如实告知用户「这段字会被裁」**',
+        },
       },
-      description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数。用于判断「这条片花了多久、质量档是否生效」',
+      description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数 / 文字容量体检。用于判断「这条片花了多久、质量档是否生效、有没有字被裁」',
     },
     // REQ-035 F-01：工单生命周期。`additionalProperties: false` 下漏声明 = 字段被静默丢弃
     // （CV-146 教训），所以必须在这里显式登记。

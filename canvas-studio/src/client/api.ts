@@ -1195,10 +1195,24 @@ export async function fetchStudioRenderJobViews(
  * 三期 W6-2：渲染报告的上行形状。
  *
  * 为什么不是 `Record<string, number | boolean>`：报告里有一项 `quality`（`'draft'|'standard'|'high'`）
- * 是**字符串**。宿主侧的 `asRenderReport` 会逐键白名单收口（不认的键直接丢），
- * 所以这里放开到 `string` 是安全的 —— 上行通道只负责搬运，合法性判定在宿主。
+ * 是**字符串**；0B（CV-461）又加了一项 `textFit`（逐条文字轨的体检明细，是**数组**）。
+ * 宿主侧的 `asRenderReport` 会逐键白名单收口（不认的键直接丢），所以这里放宽是安全的
+ * —— 上行通道只负责搬运，合法性判定在宿主（`sanitizeTextFitEntries`）。
  */
-export type StudioRenderReport = Record<string, number | boolean | string>
+export type StudioRenderReport = Record<string, number | boolean | string | StudioRenderTextFitEntry[]>
+
+/** 0B：上行报告里的文字体检条目（与 `text-fit-audit.ts` 的 `TextFitReportEntry` 同形）。 */
+export interface StudioRenderTextFitEntry {
+  id: string
+  variant: string
+  fontPx: number
+  baseFontPx: number
+  maxLines: number
+  lines: string[]
+  overflow: boolean
+  atMinFont: boolean
+  maxWidthPx: number
+}
 
 /** 回写成片字节（octet-stream）+ 渲染期告警 + 渲染报告；宿主落盘并结算等待中的工具调用。 */
 export async function commitStudioRenderJob(

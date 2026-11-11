@@ -312,6 +312,26 @@
 - `startFrame`?: number — 该句在成片里的起始帧（缺省 0）。
 - `volume`?: number — 单句人声音量（0–2，>1 为增益补偿过轻的 TTS）；缺省走 `mix.voiceVolume`（再缺省 1）。
 
+## ManifestSfxAnchor
+> sfx 的锚定定位：跟随某条轨的起点/终点。模板必用 —— 换例子、卡片位移时音效跟着走。
+
+- `trackId`: string — 被锚定的轨 id。必须在 tracks[] 中存在，否则 error。
+- `at`: 'start' | 'end' — 锚到该轨的起点还是终点（end = startFrame + durationInFrames）。
+- `offsetSec`?: number — 相对锚点的偏移（秒，可负）。缺省 0。
+
+## ManifestSfx
+> `KNOWN_SFX_KEYS` / 校验规则见 `validateSfxList`。
+
+- `src`: string — 音效素材 URL。与 tracks[].src 同一套同源约束（`validateAssetRefField`）。
+- `anchor`?: ManifestSfxAnchor — 三定位之一（三者必须**恰好给一个**）。模板写法：跟随轨道。
+- `startFrame`?: number — 三定位之二：成片绝对帧。GT 复刻验收用它（绕开秒→帧舍入）。
+- `startSec`?: number — 三定位之三：成片绝对秒，渲染时 `Math.round(startSec * fps)`。跨 fps 复用靠它。
+- `gain`?: number — 线性增益 0–2（缺省 1）。1 = 原音量。
+- `pan`?: number — 声明用声像 −1..1（0 = 居中）。**仅在素材由本仓合成库产出时生效**（pan 在合成期
+- `fadeInSec`?: number — 淡入（秒，缺省 0）。
+- `fadeOutSec`?: number — 淡出（秒，缺省 0）。⚠️ 渲染器 MVP 只接**淡入**（`sfxVolumeAt`，startFrame 相对、
+- `type`?: string — 可选溯源元数据：这份素材由哪个合成配方产出（渲染器不解释）。
+
 ## ManifestAudio
 
 - `bgmUrl`?: string — BGM 资产 URL（复用 `compose_video` 的 `bgmNodeId` 语义）。
@@ -321,6 +341,7 @@
 - `fadeInSeconds`?: number — 三期 W3-2：BGM 淡入（秒，缺省 0）。
 - `fadeOutSeconds`?: number — 三期 W3-2：BGM 淡出（秒，缺省 0）。
 - `duck`?: { amount?: number } — 三期 W3-2：BGM 自动闪避（D-09 选 A：以字幕窗口为依据，零音频分析）。
+- `sfx`?: ManifestSfx[] — 音效事件轨。定位三选一（`anchor` / `startFrame` / `startSec`，互斥）。
 
 ## ManifestGlobal
 

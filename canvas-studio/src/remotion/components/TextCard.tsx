@@ -7,13 +7,9 @@ import { DATA_CARD_PADDING_X, dataCardDesignHeight, dataCardMetrics } from '../d
 import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from '../subtitle-fit.js'
 import { countUpTextAt } from '../count-up.js'
 import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
-import {
-  colorShiftAt,
-  fitTextPolicy,
-  splitTextUnits,
-  textUnitProgress,
-  type TextMeasurer,
-} from '../timing.js'
+import { colorShiftAt, splitTextUnits, textUnitProgress } from '../timing.js'
+import { planTextFit, type TextFitPlan } from '../text-fit-plan.js'
+import { createCanvasMeasurer } from '../text-measure.js'
 import { useFontFamilyStack } from './font-context.js'
 
 /** `text` 归一化为行数组（subtitle / title / bullets 都按行渲染）。 */
@@ -22,74 +18,10 @@ function linesOf(text: string | string[]): string[] {
 }
 
 /**
- * 三期 W4-1：**真实字形测量**的缓存（模块级）。
- *
- * key = `family|weight|px|text`：字号在 `fitTextPolicy` 的迭代里会变，必须进 key；
- * 文本重复度高（字幕/要点），缓存命中率很高。上限 4096 条 —— 超过就整体清空
- * （一次渲染的文本量远小于这个数，简单清空比 LRU 更不容易出错）。
+ * 0B（CV-461）：真实字形测量器已迁到 `text-measure.ts`（渲染前体检要用**同一份**度量，
+ * 各写一份必然漂移）；「按 variant 决定字号 / 行数」已迁到 `text-fit-plan.ts` 的 `planTextFit`
+ * —— 组件只负责把计划贴到样式上，不再自己算预算。
  */
-const MEASURE_CACHE = new Map<string, number>()
-const MEASURE_CACHE_LIMIT = 4096
-
-/**
- * 三期 W4-1：建一个 `canvas.measureText` 测量器；环境不支持时返回 `undefined`
- *（调用方回落字符宽度估算 ⇒ Host / node / 老浏览器行为不变）。
- */
-function createCanvasMeasurer(): TextMeasurer | undefined {
-  if (typeof document === 'undefined') return undefined
-  let context: CanvasRenderingContext2D | null = null
-  try {
-    const canvas = document.createElement('canvas')
-    context = canvas.getContext('2d')
-  } catch {
-    return undefined
-  }
-  if (context === null) return undefined
-  const ctx = context
-  return (text, fontPx, family, weight) => {
-    const key = `${family}|${weight}|${fontPx}|${text}`
-    const cached = MEASURE_CACHE.get(key)
-    if (cached !== undefined) return cached
-    // `ctx.font` 的语法与 CSS `font` 简写一致；family 是已组好的栈（含逗号/引号）。
-    ctx.font = `${weight} ${fontPx}px ${family}`
-    let width = 0
-    try {
-      width = ctx.measureText(text).width
-    } catch {
-      width = 0
-    }
-    if (!Number.isFinite(width) || width < 0) width = 0
-    if (MEASURE_CACHE.size >= MEASURE_CACHE_LIMIT) MEASURE_CACHE.clear()
-    MEASURE_CACHE.set(key, width)
-    return width
-  }
-}
-
-/**
- * 二期 A5：**只在需要缩字号/重排时才改变文本形态**。
- *
- * 兼容性铁律：老 manifest 的文字排版必须逐像素不变 ⇒ 策略算完若「字号未降、未溢出」，
- * 原样返回作者写的文本（不让策略的贪心换行覆盖浏览器自己的换行）。只有长到装不下时才
- * 换成策略算出的行 —— 那时原文本来就会溢出画布，不存在"更好看的旧结果"可以保留。
- */
-function fitOrKeep(
-  lines: string[],
-  options: {
-    maxWidthPx: number
-    baseFontPx: number
-    maxLines: number
-    measure?: TextMeasurer | undefined
-    family?: string | undefined
-    weight?: number | undefined
-  },
-): { text: string; fontSize: number; overflow: boolean } {
-  const raw = lines.join('\n')
-  const fit = fitTextPolicy(raw, options)
-  if (fit.fontPx >= options.baseFontPx && !fit.overflow) {
-    return { text: raw, fontSize: options.baseFontPx, overflow: false }
-  }
-  return { text: fit.lines.join('\n'), fontSize: fit.fontPx, overflow: fit.overflow }
-}
 
 /**
  * 三期 W4-2：逐词/逐字渲染（`anim` 缺省时**不走这里** —— 老 manifest 的 DOM 与像素不变）。
@@ -182,14 +114,23 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
     ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
   }
-  const measureOptions = {
-    ...(measurer !== undefined ? { measure: measurer } : {}),
+  // 0B（CV-461）：**唯一一份**排版决策（字号 / 行数 / 要渲染的文本）。渲染期不再自己算预算，
+  // 渲染前体检（`text-fit-audit.ts`）调的是同一个函数 ⇒ 「体检说没溢出、成片却裁了」不可能发生。
+  // 依赖项都是整片恒定的量（manifest 轨 / 画布 / 字体 / 测量器），逐帧重算纯属浪费。
+  const plan: TextFitPlan = useMemo(() => planTextFit({
+    variant: track.variant,
+    text: track.text,
+    ...(box === undefined ? {} : { box }),
+    canvasWidth,
+    canvasHeight,
+    dataRows: (track.data ?? []).length,
+    ...(measurer === undefined ? {} : { measure: measurer }),
     family: fontFamily,
     weight: 700,
-  }
+  }), [track, box, canvasWidth, canvasHeight, fontFamily, measurer])
 
   /** 三期 W4-2：有 `anim` 时逐词渲染，否则原样返回纯文本（老路径）。 */
-  const renderText = (value: string): React.ReactNode => {
+  const animated = (value: string): React.ReactNode => {
     if (track.anim === undefined) return value
     return <AnimatedText text={value} preset={track.anim} options={track.animOptions} />
   }
@@ -207,16 +148,12 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     // 排不下就**缩字号**（`fitTextPolicy` 的老规矩：不静默截断，截断要看得见）。
     // 不带 box 的铺满卡走老参数 ⇒ 老 manifest 逐像素不变。
     // 预算口径在 `subtitle-fit.ts`（纯函数，可单测）。
+    // 内距 / 外层留白仍由 `subtitleFitBudget` 给（与 plan 的预算同一个函数的同一份输入，
+    // 不存在两套口径）；字号与文本换成 plan 的。
     const budget = subtitleFitBudget({
       box: box === undefined ? undefined : { w: box.w, h: box.h },
       canvasWidth,
       canvasHeight,
-    })
-    const fitted = fitOrKeep(lines, {
-      maxWidthPx: budget.maxWidthPx,
-      baseFontPx: budget.baseFontPx,
-      maxLines: budget.maxLines,
-      ...measureOptions,
     })
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'flex-end', alignItems: 'center', padding: budget.layerPad }}>
@@ -228,33 +165,29 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             background: 'rgba(0,0,0,0.62)',
             color: '#f4f7fb',
             fontFamily,
-            fontSize: fitted.fontSize,
+            fontSize: plan.fontPx,
             lineHeight: SUBTITLE_LINE_HEIGHT,
             textAlign: 'center',
             whiteSpace: 'pre-line',
             ...textFx,
           }}
         >
-          {renderText(fitted.text)}
+          {animated(plan.renderText)}
         </div>
       </AbsoluteFill>
     )
   }
 
   if (track.variant === 'title') {
-    // A5：标题可用宽度 = 画布 90%；最多 2 行；字号从 84 起缩。
-    const fitted = fitOrKeep(lines, {
-      maxWidthPx: Math.max(240, canvasWidth * 0.9),
-      baseFontPx: 84,
-      maxLines: 2,
-      ...measureOptions,
-    })
+    // A5：标题最多 2 行、字号从 84 起缩。可用宽由 `planTextFit` 给：
+    // 带 `box` 时按**盒宽**（0B-4 修的既有缺陷 —— 旧实现一律按画布 90%，窄盒里的标题
+    // 字号算得偏大 ⇒ 折行后被盒子的 `overflow:hidden` 两侧裁掉），不带 box 走画布 90%。
     return (
       <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
         <div
           style={{
             fontFamily,
-            fontSize: fitted.fontSize,
+            fontSize: plan.fontPx,
             fontWeight: 700,
             color: '#e6edf3',
             textAlign: 'center',
@@ -263,7 +196,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...textFx,
           }}
         >
-          {renderText(fitted.text)}
+          {animated(plan.renderText)}
         </div>
       </AbsoluteFill>
     )
@@ -298,8 +231,8 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
           }}
         >
-          <div style={{ fontSize: px(40), fontWeight: 700, color: '#e6edf3', ...textFx }}>
-            {renderText(lines.join(' '))}
+          <div style={{ fontSize: plan.fontPx, fontWeight: 700, color: '#e6edf3', ...textFx }}>
+            {animated(plan.renderText)}
           </div>
           <div style={{ height: 2, background: accent, margin: `${px(26)}px 0 ${px(10)}px` }} />
           {(track.data ?? []).map((row) => (
@@ -325,22 +258,18 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     )
   }
 
-  // bullets：每条一行，可用宽度 900px（画布更窄时按 90% 收），最多 6 行，字号从 48 起缩。
-  const fitted = fitOrKeep(lines, {
-    maxWidthPx: Math.min(900, Math.max(300, canvasWidth * 0.9)),
-    baseFontPx: 48,
-    maxLines: 6,
-    ...measureOptions,
-  })
-  const bulletLines = fitted.text.split('\n')
+  // bullets：每条一行，最多 6 行，字号从 48 起缩。容器宽 / 文字可用宽由 plan 给：
+  // 0B-4 修了两处既有缺陷 —— ① 容器宽写死 900（480p 画布 864 时直接溢出画面）；
+  // ② 折行按 900 算却**没扣 42px 圆点**（18px 点 + 24px 右距）⇒ 估算比实际宽 5%。
+  const bulletLines = plan.renderText.split('\n')
   return (
     <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ fontFamily, width: 900 }}>
+      <div style={{ fontFamily, width: plan.containerWidthPx }}>
         {bulletLines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>
             <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, marginRight: 24 }} />
-            <div style={{ fontSize: fitted.fontSize, color: '#e6edf3', ...textFx }}>
-              {renderText(line)}
+            <div style={{ fontSize: plan.fontPx, color: '#e6edf3', ...textFx }}>
+              {animated(line)}
             </div>
           </div>
         ))}

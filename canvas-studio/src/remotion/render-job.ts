@@ -1202,6 +1202,8 @@ export async function commitRenderJob(
     audio: audioSummary,
     ...(loudnessLufs !== undefined ? { loudnessLufs } : {}),
     ...(timingCheck !== undefined ? { timingCheck } : {}),
+    // 0B（CV-461）：文字容量体检明细（客户端渲前实测；宿主只搬运，不重算 —— 重算要 canvas）。
+    ...(input.report?.textFit !== undefined ? { textFit: input.report.textFit } : {}),
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,

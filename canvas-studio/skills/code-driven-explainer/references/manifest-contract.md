@@ -673,7 +673,7 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
 | 1 | `shape:"circle"` 的直径**只由 `box.w` 决定**（实现是 `height:0` + `paddingBottom: w%`，高度按父**宽**解析），**`box.h` 被忽略** | 画圆只给 `w`；想要椭圆用 `shape:"path"` 或 `transform.scale` 拉一个圆 |
 | 2 | `shape:"line"` 的 `box.x` 是**左边缘**，不是中心（它把居中用的 `translateX(-50%)` 换成了 `translateX(0)`） | 要让一条线看起来居中，`x` 按 `50 - w/2` 写 |
 | 3 | `bullets` 的文字色**硬编码** `#e6edf3`；`accentColor` 只改**圆点**颜色 | 表盘/卡片里要多色文字，只能用 `shape` 拼，或换 `subtitle` |
-| 4 | `bullets` 的圆点**常显、无开关**；圆点 18px + 右边距 24px ⇒ 文字左缘固定偏 **42px**；容器固定 **900px** 宽 | 按像素对齐时把这 42px 算进去；窄画布上容器会按 90% 收 |
+| 4 | `bullets` 的圆点**常显、无开关**；圆点 18px + 右边距 24px ⇒ 文字左缘固定偏 **42px**；容器宽 = `min(900, max(300, 画布宽×90%))`，**折行用的文字可用宽再扣这 42px**（0B/CV-461 起；此前是写死 900 且折行也按 900 算） | 按像素对齐时把这 42px 算进去；480p（864 宽）上容器会收到画布内，不再溢出画面 |
 | 5 | `bullets` 的 `anim:"typewriter"` 用**整卡的轨内帧**推进，多行会同时开始打字 | 要"一行打完再打下一行"，必须**拆成多条 textCard 轨**，各自错开 `startFrame` |
 | 6 | `variant:"title"` 带**全屏蒙版** `rgba(0,0,0,0.35)`；`variant:"subtitle"` 固定**底部居中** | 想要"左栏大标题"用 `bullets` + `transform.x`，不要用 title 硬挪 |
 | 7 | 自动排版**只缩不放**：`fitTextPolicy` 从 `baseFontPx` 以 0.94 递减收缩，永不放大 | 想让标题更大，改 `transform.scale`，别指望字号自适应 |
@@ -690,6 +690,28 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
 > 像素定位（素材上的屏幕/主体矩形）：用 `inspect_image` —— 先 `mode:"grid"` 看空间分布，
 > 再用 `bbox-dark` + `region` 拿精确矩形。它给的是**扫描区内的包络**，不是连通域；
 > 深色目标压在深色背景上时会退化成整块区域（覆盖率 >90% 会显式告警），别拿那次结果去定位。
+
+## 文字放不下时会发生什么（0B · CV-461）
+
+三条事实，写文案前先认清：
+
+1. **渲染只缩字号，不截断**：从基准号（`title` 84 / `bullets` 48 / `subtitle` 44 或按盒高算）以
+   0.94 递减，最低到 **0.55×基准**；再放不下就是「溢出」。
+2. **溢出会被那一层的 `overflow:hidden` 静默裁掉** —— 所以 0B 起有两条出口：
+   - **校验期**（`validateManifest`，Node 无 canvas，只能按字符宽估算）：出 **warning**，
+     **不拒收**（估算没资格拦一份能渲的 manifest；也是为了让校验期就能早发现）；
+   - **渲染前**（浏览器里按真实字形实测）：逐条进 `report.textFit`
+     （`overflow` / `atMinFont` / `lines` / `maxWidthPx` / `fontPx`），溢出的同时进 `warnings`，
+     文案里带「压到 N 字以内 / 加大 box」两条出路。
+3. **看到 `overflow: true` 怎么改**（按优先级）：
+   ① 把文案压到建议字数以内（建议值按汉字全角宽反算，中英混排能多装几个）；
+   ② 加宽 / 加高该轨 `box`（`atMinFont: true` = 缩号已经救不回来，必须动文案或盒子）；
+   ③ 换形态：`title` 只有 2 行、`bullets` 6 行、`subtitle` 按盒高 1–3 行、`dataCard` 标题
+      折行数超过设计行数会被盒子上下裁。
+
+> **"校验通过" ≠ "字都在"** —— 0B 之前正是这个空档：`validateManifest` 说 `ok`、`warnings` 空，
+> 成片却把字裁了（`原型-check-fit.mjs` 的最小复现）。现在以 `report.textFit` 为准，
+> `report` 里没有这一项 = 客户端没上报（老版本），不代表没问题。
 
 ## 硬约束（违反即校验失败或不达预期）
 

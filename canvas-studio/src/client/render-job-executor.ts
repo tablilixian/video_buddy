@@ -196,5 +196,7 @@ export function metricsReport(metrics: RenderMetrics): StudioRenderReport {
     width: metrics.width,
     height: metrics.height,
     sampledFrames: metrics.sampledFrames,
+    // 0B（CV-461）：文字容量体检明细 —— 有才搬（老客户端/空 manifest 不带这一项）。
+    ...(metrics.textFit === undefined ? {} : { textFit: metrics.textFit }),
   }
 }

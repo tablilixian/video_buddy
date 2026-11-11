@@ -5,13 +5,15 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 08:40 · 阶段：**0A 全部完成（0A-1 ~ 0A-8，探针七条断言全绿）；下一步 = 0B 文本溢出上报**
+最后更新：2026-11-11 10:20 · 阶段：**0A / 0B 全部完成（0B-1 ~ 0B-5 已提交，CV-461）；下一步 = 1C 装饰构件层（或第三波 1 模板库）**
 
 ---
 
 ## §0 交接速览（新会话只看这一屏就能开工）
 
-**当前下一步：0B-1「`TextFitPlan.renderText`」（第二波，抢 `manifest.ts` + `host-tools.ts`，0A 已收尾让出）。** 精确落点见 §3 末尾「我在哪一步」。
+**当前下一步：1C-1「`src/remotion/furniture.ts` 纯函数」（唯一零冲突包，不碰 `manifest.ts`）。** 精确落点见末尾「我在哪一步」。
+
+> 0B 已收尾：`manifest.ts` / `host-tools.ts` 现已让出（第三波 1 会再抢一次，届时是串行）。
 
 开工前必读三份（按顺序，都短）：
 
@@ -112,11 +114,24 @@
 
 > 抢 `manifest.ts` + `host-tools.ts`，必须等第一波 A 完成。
 
-- [ ] **0B-1** `TextFitPlan` 加 **`renderText`** 字段（未缩号时 = 原文 raw）
-- [ ] **0B-2** `TextCard.tsx` 消费 `plan.renderText`（**不要**渲染 `plan.lines`）
-- [ ] **0B-3** `report.textFit` 进 `report` schema（`additionalProperties:false`，必须显式加）
-- [ ] **0B-4** 顺带修既有缺陷：`title` 的 `maxWidthPx` 不看 `box`；`bullets` 写死 `width:900` 且未扣 42px 圆点
-- [ ] **0B-5** 单测 + 反向变异（`renderText`→`lines.join('\n')` 必须让逐像素断言变红）
+- [x] **0B-1 **`text-fit-plan.ts`**：`TextFitPlan`（**含 `renderText`**）+ `planTextFit` + 五 variant 预算 + `textCardCapacityWarnings`；测量器外提到 `text-measure.ts`
+  - 口径：未缩号（`fontPx >= base && !overflow`）⇒ `renderText` = 原文（数组按 variant 拼接口径：`dataCard` 空格、其余换行）；缩号或溢出才换成策略的行
+  - `dataCard` / `caption` **不缩号**（字号分别是 `dataCardMetrics` 缩放系数与显式 `fontSize` 决定），`minFontPx` 钉在基准号让缩号循环不跑
+  - 验收：`tests/remotion-text-fit.test.mjs` **25/25 绿**（含 3 条 ★等价性 对账：subtitle 有无 box × 4 种盒 / 无 box title / dataCard 与旧 `fitOrKeep` 逐项相同）
+- [x] **0B-2** `TextCard.tsx` 四分支改消费 `plan`（`plan.fontPx` / `plan.renderText`），删掉本地 `fitOrKeep` 与私有 measurer
+  - 用 `useMemo` 缓存（依赖 track/box/画布/字体/measurer）—— 原先逐帧重算，纯浪费
+- [x] **0B-3** 体检接线：`text-fit-audit.ts`（`auditTextFit` / `textFitWarnings` / `sanitizeTextFitEntries`）
+  - 落点 = `client/remotion-render.ts` **prepare 阶段**（字体就绪之后、能力判定之前），溢出项进 `warnings`
+  - 上报链：`RenderMetrics.textFit` → `metricsReport` → `/remotion/commit?metrics` → `asRenderReport`（**数组不在原数值白名单里，必须显式收口**）→ `commitRenderJob` → `RenderJobReport.textFit` → `render_composition` 的 `report` schema（`additionalProperties:false`，显式加 9 字段）
+  - 验收：`report schema 声明 textFit` 用例绿（`tests/render-tool-contract.test.mjs` 23/23）
+- [x] **0B-4** 修既有缺陷：`title` 带 box 时按**盒宽**算可用宽；`bullets` 容器 `min(900, max(300, 90%))` + 折行宽扣 **42px** 圆点
+  - 同步改 `skills/code-driven-explainer/references/manifest-contract.md`（实现细节第 4 条 + 新增「文字放不下时会发生什么」一节）与 `tests/manifest-contract-doc.test.mjs` 的对码断言
+- [x] **0B-5** 单测 + 反向变异 + 棘轮
+  - **反向变异已做**：`shrunk = true`（无条件用策略折行）⇒ 仅「★反向变异锚点」**1 条精确变红**（21/22），还原 → `npx tsc` → `yarn build` 全量重建 → 25/25 复绿
+  - 棘轮补登 5 处：`api.ts` 1365→1379、`host-tools.ts` 5008→5016、`manifest.ts` 2398→2426、`render-job.ts` 1263→1265、`routes.ts` 3737→3744
+  - 顺带：**0A 漏跑 `gen-manifest-fields.mjs`**（sfx 段未进生成文档）本次补生成（+21 行，见 D-22）
+  - 实测：manifest*/remotion*/render*/*text*/scaffold/size-guard/motion-lint 合计 **709/709 绿**；三个 `tsc` config 绿；`yarn build` + `verify-client-loader` 绿
+  - 真 manifest 对账（`原型-manifest-b1b2.json`）：11 条文字轨全部 `overflow=false`、`validateManifest` 0 新增告警
 
 ---
 
@@ -143,13 +158,23 @@
 
 ## 我在哪一步（给接管者的提示）
 
-**下一步：0B（文本溢出上报）。** 0A 已收尾，勘定的事实：
+**下一步：1C（装饰构件层）：`src/remotion/furniture.ts` 纯函数。** 0A / 0B 均已收尾并让出共享文件。
 
-### 0B 的开工要点
+### 1C 的开工要点
 
-1. 0A 已完成并让出共享文件：`manifest.ts` / `host-tools.ts` 现在归 0B（执行总表 §3 矩阵第二波）。
-2. 0B 五步见本文件「第二波 · 0B」清单 + `任务包-0B-文本溢出上报.md`；反向变异锚点 = `renderText`→`lines.join('\n')` 必须让逐像素断言变红。
-3. 探针复用：`scripts/probe/sfx-e2e.probe.mjs` 的骨架（假宿主 + commit 等待 + 断言序列）可抄给 0B 的像素验证；跑法同协议 §2（`env -u ELECTRON_RUN_AS_NODE ELECTRON_DISABLE_SANDBOX=1 ../dsh-plugin-desktop/node_modules/.bin/electron scripts/probe/<名字>.probe.mjs`）。
+1. 唯一**零冲突**包：只新建 `src/remotion/furniture.ts`，**不碰 `manifest.ts`**（要接字段时再抢，且 1C-2 才动它）。
+2. 硬约束：禁 `transition` / `@keyframes`（Remotion 确定性渲染），插值一律走 `timing.ts`；构件**默认关闭**时逐帧像素哈希不变；`msPerFrame` **允许上升**（两件事不是一对互斥目标）。
+3. 任务包：`任务包-1C-装饰构件层.md`；验收闸 `执行总表.md` §5.4。
+
+### 0B 已落的事实（新会话不用再查）
+
+- **唯一排版决策入口 `planTextFit`**（`src/remotion/text-fit-plan.ts`），组件与体检共用。改字号/行数只改这里。
+- **`renderText` 是像素保真的关键**：未缩号时必须 = 原文（浏览器自己折行），**不要**改成 `lines.join('\n')` —— 反向变异实测：那一改只有 1 条用例变红（`★反向变异锚点`），说明守卫有效。
+- 体检落点在 `client/remotion-render.ts` 的 prepare 阶段（字体就绪后），结果进 `metrics.textFit` + `warnings`；宿主侧 `asRenderReport` **只认数值键**，数组必须显式收口（`sanitizeTextFitEntries`）。
+- 量出口径不新增计时字段（`prepareTextFitMs` 故意不做，D-21）。
+- `dataCard` / `caption` **不缩号**：前者字号由 `dataCardMetrics` 的缩放系数定，后者是显式 `fontSize`。体检对它们只做「折行数是否超设计行数」的上报。
+- 校验期静态合同是 **warning 不 error**（D-19），文案带「压到 N 字以内 / 加大 box」。
+- 等价性对账在 `tests/remotion-text-fit.test.mjs` 的三条 ★等价性 用例：subtitle / 无 box title / dataCard 与旧 `fitOrKeep` 逐项相同 —— 这三条是「老 manifest 逐像素不变」的机器证明；`bullets` 与带 box 的 `title` 是 0B-4 有意修的两处（D-20）。
 
 ### 0A 已落的事实（新会话不用再查）
 
@@ -166,3 +191,4 @@
 - `KNOWN_AUDIO_KEYS` 在 `manifest.ts` 974 行附近（现 8 键，含 `sfx`）
 - GT 真值在 `gt/mix-report.json`（7 条），合成原语在 `gt/native_audiolib.py`
 - 0A 六条事件类型 → 五支素材的对应：`thud`→thud.wav / `write`→write.wav / `card`→card.wav / `swipe`→swipe.wav / `swoosh`→swoosh.wav
+- **改过 `manifest.ts` 必须跑 `node scripts/gen-manifest-fields.mjs`**（门禁 `tests/manifest-fields-drift.test.mjs`；0A 就漏了一次，D-22）

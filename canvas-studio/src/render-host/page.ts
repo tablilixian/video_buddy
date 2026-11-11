@@ -91,8 +91,11 @@ export function renderHostHtml(options: RenderHostPageOptions = {}): string {
 <head>
 <meta charset="utf-8">
 <title>Canvas Studio · 渲染窗口</title>
-<!-- 隐藏窗口：不允许被嵌入，也不允许跳走（子资源只走同源）。内联自举脚本按 sha256 白名单放行。 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'sha256-${bootstrapHash}'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self'">
+<!-- 隐藏窗口：不允许被嵌入，也不允许跳走（子资源只走同源）。内联自举脚本按 sha256 白名单放行。
+     worker-src blob: + 'wasm-unsafe-eval'（0A-8 · CV-460）：mediabunny 的 WASM AAC 编码器
+     以 blob: worker 跑（worker-src 回退到 script-src，而 script-src 没有 blob: ⇒ 必须显式给），
+     且 wasm 编译需要 'wasm-unsafe-eval'（D-18：Chromium WebCodecs AAC 忽略码率请求的绕行）。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'sha256-${bootstrapHash}' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self'">
 <style>
   html, body { margin: 0; height: 100%; background: #0b1020; color: #e5e7eb;
     font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }

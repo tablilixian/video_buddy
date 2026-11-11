@@ -31,11 +31,25 @@ import {
   type WebRendererHardwareAcceleration,
   type WebRendererPageResponsiveness,
 } from '@remotion/web-renderer'
+import { registerAacEncoder } from '@mediabunny/aac-encoder'
 import { StudioComposition } from '../remotion/components/Root.js'
 import { RENDER_QUALITY_SCALE, validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
+
+/**
+ * 0A-8（CV-460，拍板见 D-18）：**无条件注册 WASM AAC 编码器**。
+ *
+ * remotion/media 只在 `canEncodeAudio('aac')` 为 false 时才注册 mediabunny 的
+ * WASM AAC（ffmpeg native）回退；而本环境（Electron/Chromium）的 WebCodecs AAC
+ * 声称 supported，**却忽略 bitrate 请求** —— 实测请求 128kbps、产出 ~16kbps，
+ * 整片响度塌 10 LU（sfx-e2e 探针 2026-11-11 实锤，bgm/voiceOver 同样受害）。
+ * 注册是幂等的（包内 `registered` 旗标），且 custom encoder 在编码器候选里**先于**
+ * WebCodecs 被选中 ⇒ 注册后音频一律走忠实执行码率的 ffmpeg native AAC。
+ * 包 `sideEffects: false`，注册函数必须显式调用 —— 这就是本行存在的理由。
+ */
+registerAacEncoder()
 
 /**
  * Free 档许可键（消 library.ts 告警）。

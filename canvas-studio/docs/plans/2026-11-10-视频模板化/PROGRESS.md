@@ -5,13 +5,13 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 07:23 · 阶段：**0A 进行中（0A-1 ~ 0A-7 完成，下一步 0A-8 探针验证）**
+最后更新：2026-11-11 08:40 · 阶段：**0A 全部完成（0A-1 ~ 0A-8，探针七条断言全绿）；下一步 = 0B 文本溢出上报**
 
 ---
 
 ## §0 交接速览（新会话只看这一屏就能开工）
 
-**当前下一步：0A-8「探针验证」。** 精确落点见 §3 末尾「我在哪一步」。
+**当前下一步：0B-1「`TextFitPlan.renderText`」（第二波，抢 `manifest.ts` + `host-tools.ts`，0A 已收尾让出）。** 精确落点见 §3 末尾「我在哪一步」。
 
 开工前必读三份（按顺序，都短）：
 
@@ -90,8 +90,12 @@
   - **棘轮补登 4 处**（`tests/file-size-guard.test.mjs`）：`timing.ts` 1447→1500（本次 +53）；`styles.ts` 11154→11157 与 `#STUDIO_STYLES` 11137→11140（0A-3 漏登）、`manifest.ts` 2196→2398（0A-1/2 漏登）、`routes.ts` 3686→3737 与 `#registerStudioRoutes` 2997→3041（0A-6 漏登）——见 **D-17**
   - 验收：两 `tsc` 绿 · `remotion-sfx` **46/46**（新增 5 条 `sfxVolumeAt` 断言）· 音频相关全量回归 **131/131**（8 个测试文件）· `file-size-guard` **3/3** · `yarn build` + `verify-client-loader` 绿
   - **反向变异已做**：`sfxVolumeAt` fade-in 斜坡改直通 `gain` ⇒ 仅「淡入线性」1 条**精确变红**（45/46）；还原 → `npx tsc` → `yarn build` 全量重建 → 49/49 复绿 ✅
-- [ ] **0A-8 探针验证**：0A 收尾必跑 —— 渲出带音轨 mp4 + 按 `任务包-0A` §5.2.3 七条断言
-  - 卡住按 `无人值守推进协议.md` §3 三级降级
+- [x] **0A-8 探针验证**：`scripts/probe/sfx-e2e.probe.mjs`（新写，照 `render-host-e2e` 骨架）——真实 Electron 隐藏窗口渲 7 条 GT 事件（4 条 `startFrame` + 3 条 `anchor` 卡），出 mp4 后顺序跑 `任务包-0A` §5.2.3 七条断言（期望值全部从 `gt/mix-report.json` + `assets/sfx/manifest.json` 读，不硬编码）
+  - **验收：七条全绿（ok=true，exit 0）**。实测：帧号 `[35,75,456,534,544,553,1056]` 逐条精确相等（anchor 折算与直接声明一致）；三卡集合对齐 `[534,544,553]`；起音差分 Δ∈[1,2]、spread ≤1；窗口峰值 0 ~ −3.8dB；响度成片 −26.0 vs 同机带 gain 参考 −26.2（**差 0.2 LU**）；窗外无额外声音
+  - **断言口径三次修订（全部实证驱动，见 D-18）**：④±1 帧→差分口径（muxer priming 实证）· ⑥GT 闸→相对参考 ±3LU（参考必须带 gain）· ①撤平均码率判据（稀疏内容物理事实）
+  - **重大误判反转（D-18 必读）**：中途出现的「Chromium 忽略码率 / 响度塌 10 LU」是**假象**——根因是自建参考混音漏乘 GT gain；逐事件能量比 CSR/REF = 0.55/0.25/0.30/0.30/0.28 ≈ **精确吻合各事件 gain**，渲染本身无损
+  - 顺带修复/加固（D-18 拍板保留）：`extractWav48` 固定输出路径覆盖 bug（outName 参数化）· `page.ts` CSP 补 `worker-src 'self' blob:` + `'wasm-unsafe-eval'`（blob worker 被 script-src 拦截，实锤）· `remotion-render.ts` 显式注册 WASM AAC 编码器（编码器选择钉到确定性路径）
+  - muxer 既有属性（非本批引入，bgm/voiceOver 同受影响）：不补偿 AAC priming ⇒ 音频恒定后移 ~2.5 帧、音轨比视频长 ~69ms（18.069s vs 18.0s 实锤）
 
 ## 第一波 B · 1C（装饰构件层）
 
@@ -139,22 +143,21 @@
 
 ## 我在哪一步（给接管者的提示）
 
-**下一步：0A-8 探针验证。** 已勘定的事实（直接照做，不用再摸）：
+**下一步：0B（文本溢出上报）。** 0A 已收尾，勘定的事实：
 
-### 0A-8 的精确落点
+### 0B 的开工要点
 
-1. 0A-7 已把渲染链接完：`AudioTrack.tsx` 消费 `audio.sfx[]`（`resolveSfxStartFrame` 唯一入口 + `sfxVolumeAt` 音量包络），`Root.tsx` 已传 `tracks={manifest.tracks}`。**代码侧不需要再动**，除非探针暴露真 bug。
-2. 按协议 §2 与 D-06：把 0A 的验法做成 **`scripts/probe/sfx-e2e.probe.mjs`**（新写，照 `scripts/probe/render-host-e2e.probe.mjs` 的结构）——真实 Electron 隐藏窗口 + 真实 render-host bundle，渲出带音轨 mp4。
-   跑法：`cd canvas-studio && env -u ELECTRON_RUN_AS_NODE ELECTRON_DISABLE_SANDBOX=1 ../dsh-plugin-desktop/node_modules/.bin/electron scripts/probe/sfx-e2e.probe.mjs`。
-3. 出 mp4 后按 **`任务包-0A-SFX事件轨.md` §5.2.3 七条断言** 验（`ffprobe` + `ffmpeg ebur128`），真值表在 `gt/mix-report.json`（7 条事件，帧号 `[35,75,456,534,544,553,1056]`@60fps）。
-4. **绝不 kill Electron 进程**；探针 5 分钟无输出等满 6 分钟再判死（协议 §2/§3）。
-5. 失败降级按协议 §3 三级：环境缺 electron/包 ⇒ 记 §6-ENV-1 跳过继续；渲出 mp4 没音轨/静音 ⇒ **真 bug**，修（最多 3 轮）。
+1. 0A 已完成并让出共享文件：`manifest.ts` / `host-tools.ts` 现在归 0B（执行总表 §3 矩阵第二波）。
+2. 0B 五步见本文件「第二波 · 0B」清单 + `任务包-0B-文本溢出上报.md`；反向变异锚点 = `renderText`→`lines.join('\n')` 必须让逐像素断言变红。
+3. 探针复用：`scripts/probe/sfx-e2e.probe.mjs` 的骨架（假宿主 + commit 等待 + 断言序列）可抄给 0B 的像素验证；跑法同协议 §2（`env -u ELECTRON_RUN_AS_NODE ELECTRON_DISABLE_SANDBOX=1 ../dsh-plugin-desktop/node_modules/.bin/electron scripts/probe/<名字>.probe.mjs`）。
 
-### 0A-7 已落的事实（新会话不用再查）
+### 0A 已落的事实（新会话不用再查）
 
 - `sfxVolumeAt` 在 **`src/remotion/timing.ts`**（`audioVolumeAt` 之后），fade-in 线性、fade-out 需显式 `durationInFrames`（渲染器 MVP 不传）；拍板理由见决策日志 **D-16**。
 - `<Audio>` 在 `<Sequence from={正数}>` 内的 volume 回调拿**相对帧**（0 = 素材起点）—— remotion `useFrameForVolumeProp` 返回 `frame + cumulatedNegativeFrom`，正数 from 时后者恒 0（读 node_modules 实证）。接线处用 `startFrame + f` 换算绝对帧。
 - `tests/remotion-sfx.test.mjs` 末段有 5 条 `sfxVolumeAt` 断言（含反向变异锚点）。
+- 探针七条断言全绿的实测口径与两次反转记录在 **D-18**；报告落 `/tmp/cs-sfx-e2e/report.json`（临时目录，重跑覆盖）。
+- **muxer priming 既有属性**：CSR 渲染的音频恒定后移 ~2.5 帧、音轨比视频长 ~69ms —— 帧级精确对齐的需求（将来模板）要按差分口径验收，别拿绝对帧号较真。
 
 ### 已确认的其它事实
 

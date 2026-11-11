@@ -198,3 +198,44 @@
 
 LLM 在组装 manifest 时若需手写关键帧，按这些函数的公式推算坐标即可（圆周每圈 24 段 ≈ 每段 15°，
 弦高在最大半径上也仅数像素，足够平滑）。
+
+---
+
+## 5. 场景装饰构件（furniture，1C/CV-462）
+
+**问题**：上面所有范式都是「内容层」。真正好看的片子还有一层**场景装饰** —— 四角括线、
+底部进度条、星点背景。这类东西不是动画技巧，是**一帧的设计骨架**，靠每次手写 40+ 条 rect
+不现实。
+
+**形态**：构件是**声明式配方**，在**编译期**展开成普通 `shape` 轨道（渲染器完全不知道构件
+存在）。模板里写在 `furniture.json`：
+
+```jsonc
+[
+  { "id": "cornerBrackets", "params": { "inset": 2.4, "arm": 1.2, "thickness": 0.08, "color": "#5b6b86" } },
+  { "id": "progressBar",    "params": { "ticks": 40, "left": 4.4, "right": 95.6 } }
+]
+```
+
+| 构件 | 展开成 | 轨数 | 说明 |
+|---|---|---|---|
+| `cornerBrackets` | 8 × `shape:'rect'`（每角一竖一横） | 8 | `inset` 2.4% / `arm` 1.2% / `thickness` 0.08% / GT 色 `#5b6b86`（**别用纯白**，会盖过内容） |
+| `progressBar` | N × 刻度 rect + 1 个游标 rect（`animate.x` 走全程） | `ticks+1` | 游标 `animate.easing:'linear'` —— 进度条表达时间，缓动会让位置与时间轴不符 |
+| `starfield` | N × `shape:'circle'` | `count` | 固定种子 PRNG，**同 seed 逐字节同结果**（禁 `Math.random`） |
+
+### 手写等价物（没有模板时照这个写）
+
+```jsonc
+// 左上角竖线（其它 7 条按镜像算）：box 是**中心**语义
+{ "id": "fx-corner-tl-v", "type": "shape", "shape": "rect", "color": "#5b6b86",
+  "box": { "x": 2.4, "y": 3.0, "w": 0.08, "h": 1.2 }, "startFrame": 0, "durationInFrames": 1080, "fadeFrames": 0 }
+```
+
+### 三个坑
+
+1. **`box` 的 `x`/`y` 是中心**，不是左上角 —— 竖线中心 `y = inset + arm/2`，写成 `inset`
+   会让括线整体偏半个臂长（单测的 ★几何 用例就守这条）。
+2. **`shape` 轨豁免 box/animate 的位置互斥**：游标才能「`box` 定 y + `animate.x` 动 x」。
+   `textCard` 不行，别类推。
+3. **别用 `shape:'path'` 画 L 形括线**：`path` 是 0–100 双轴百分比 + `preserveAspectRatio="none"`，
+   16:9 下非等比，竖线与横线的像素长度取不到同一个值。

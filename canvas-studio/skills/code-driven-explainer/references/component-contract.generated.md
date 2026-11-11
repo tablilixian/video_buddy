@@ -60,7 +60,7 @@
 - `TEXT_ANIM_PRESETS`: 'fadeUp' | 'maskReveal' | 'typewriter' | 'wordStagger'
 - `RENDER_QUALITIES`: 'draft' | 'standard' | 'high'
 - `KNOWN_MANIFEST_KEYS`: 'id' | 'meta' | 'tracks' | 'audio' | 'global'
-- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint' | 'generatedBy'
+- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint' | 'generatedBy' | 'templateId'
 - `KNOWN_BASE_TRACK_KEYS`: 'id' | 'type' | 'startFrame' | 'durationInFrames' | 'transform' | 'animate' | 'fadeFrames' | 'box' | 'orbit' | 'fx' | 'exit' | 'startAfter' | 'colorShift' | 'blend' | 'reveal'
 - `KNOWN_TRACK_KEYS.video`: 'src' | 'kenBurns' | 'trimBeforeFrames' | 'playbackRate' | 'muted' | 'volume' | 'loop'
 - `KNOWN_TRACK_KEYS.image`: 'src' | 'fit' | 'caption' | 'sourceRect' | 'hasAlpha'
@@ -86,7 +86,8 @@
 - `KNOWN_REVEAL_KEYS`: 'kind' | 'direction' | 'durationInFrames' | 'startFrame' | 'center' | 'out'
 - `KNOWN_REVEAL_OUT_KEYS`: 'direction' | 'durationInFrames' | 'gapFrames'
 - `KNOWN_PERCENT_POINT_KEYS`: 'x' | 'y'
-- `KNOWN_AUDIO_KEYS`: 'bgmUrl' | 'voiceOverUrl' | 'voiceOver' | 'mix' | 'fadeInSeconds' | 'fadeOutSeconds' | 'duck'
+- `KNOWN_AUDIO_KEYS`: 'bgmUrl' | 'voiceOverUrl' | 'voiceOver' | 'mix' | 'fadeInSeconds' | 'fadeOutSeconds' | 'duck' | 'sfx'
+- `KNOWN_SFX_KEYS`: 'src' | 'anchor' | 'startFrame' | 'startSec' | 'gain' | 'pan' | 'fadeInSec' | 'fadeOutSec' | 'type'
 - `KNOWN_MIX_KEYS`: 'bgmVolume' | 'voiceVolume'
 - `KNOWN_DUCK_KEYS`: 'amount'
 - `KNOWN_GLOBAL_KEYS`: 'fontFamily' | 'fonts' | 'theme' | 'brandColor' | 'logo'
@@ -96,6 +97,7 @@
 
 - `ASSET_URL_PREFIX` = '/canvas-studio/assets/'
 - `MAX_VOICE_OVER_CLIPS` = 64
+- `MAX_SFX_EVENTS` = 64
 - `MAX_UNKNOWN_FIELD_WARNINGS` = 12
 
 ## src/remotion/reveal.ts

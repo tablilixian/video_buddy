@@ -9,6 +9,21 @@
  */
 import type { Mono } from './dsp.js'
 
+/**
+ * 读到的字节不是 WAV。
+ *
+ * 为什么是自定义类而不是裸 `throw new Error`：`tests/error-system-guards.test.mjs`
+ * 禁止 `src/**` 裸抛（裸抛没有错误码／没有可执行文案）。这个模块是纯编解码工具，
+ * 不依赖 error-system（构建脚本 `build-sfx.mjs` 单独用它），所以用自定义类，
+ * 由调用方决定怎么呈现。
+ */
+export class WavFormatError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WavFormatError'
+  }
+}
+
 /** WAV 头固定 44 字节（无附加 chunk）。 */
 export const WAV_HEADER_BYTES = 44
 
@@ -74,7 +89,7 @@ export function readWavHeader(bytes: Uint8Array): WavHeader {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const riff = String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!)
   const wave = String.fromCharCode(bytes[8]!, bytes[9]!, bytes[10]!, bytes[11]!)
-  if (riff !== 'RIFF' || wave !== 'WAVE') throw new Error('不是 WAV 文件（RIFF/WAVE 标记缺失）')
+  if (riff !== 'RIFF' || wave !== 'WAVE') throw new WavFormatError('不是 WAV 文件（RIFF/WAVE 标记缺失）')
   const channels = view.getUint16(22, true)
   const sampleRate = view.getUint32(24, true)
   const bitsPerSample = view.getUint16(34, true)

@@ -158,6 +158,22 @@ export function listTemplateSummaries(opts?: { root?: string }): TemplateCatalog
   return { items, problems }
 }
 
+/**
+ * 模板读取失败（目录缺失 / 骨架缺失 / JSON 坏）。
+ *
+ * 为什么是自定义类而不是 `throw new Error`：`tests/error-system-guards.test.mjs` 禁止
+ * `src/**` 出现裸抛（裸抛没有错误码、没有人话文案，上层只能原样透出）。也不用
+ * `throwError('CS-…')` —— 那会让这个纯读盘模块反向依赖 error-system，而它要能在
+ * 构建脚本 / 测试里单独用。**转换点只有一个**：`template-scaffold.ts` 的 catch
+ * 把它变成 `CS-USER-ERR`（带可执行文案）。
+ */
+export class TemplateRegistryError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TemplateRegistryError'
+  }
+}
+
 /** 按 id 找模板目录（`family/id`）。找不到返回 undefined（调用方给可读的拒收文案）。 */
 export function findTemplateDir(id: string, opts?: { root?: string }): string | undefined {
   const root = opts?.root ?? TEMPLATES_ROOT
@@ -176,7 +192,7 @@ export function loadTemplateBundle(id: string, opts?: { root?: string }): { bund
   const dir = findTemplateDir(id, opts)
   if (dir === undefined) {
     const available = listTemplateSummaries(opts).items.map((item) => item.meta.id)
-    throw new Error(`没有这个模板：${id}。可用：${available.length === 0 ? '（当前模板库为空）' : available.join(' / ')}`)
+    throw new TemplateRegistryError(`没有这个模板：${id}。可用：${available.length === 0 ? '（当前模板库为空）' : available.join(' / ')}`)
   }
   const meta = readJson(join(dir, 'meta.json')) as TemplateMeta
   const rawSlots = readJson(join(dir, 'slots.json')) as { slots?: SlotContract[] }
@@ -184,7 +200,7 @@ export function loadTemplateBundle(id: string, opts?: { root?: string }): { bund
     ? join(dir, 'manifest.template.json')
     : join(dir, 'manifest.json')
   if (!exists(skeletonFile)) {
-    throw new Error(`模板 ${id} 缺 manifest.template.json（骨架）—— 目录：${dir}`)
+    throw new TemplateRegistryError(`模板 ${id} 缺 manifest.template.json（骨架）—— 目录：${dir}`)
   }
   const skeleton = readJson(skeletonFile)
   const furniture = exists(join(dir, 'furniture.json')) ? (readJson(join(dir, 'furniture.json')) as FurnitureSpec[]) : undefined

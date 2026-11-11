@@ -179,6 +179,21 @@
   - **用户本轮明确划出边界**：不在本批做，验收通过后再登记
 - [x] 更新本文件为"全部完成"，并整理 §6 待人工清单
 
+### 全量 smoke 抓到的 6 条新红（已全部修掉）
+
+> 教训：定向单测全绿 ≠ 可以交付。这 6 条全是「新增工具必须登记」的**横切门禁**，只在全量里跑得到。
+
+| 门禁 | 原因 | 修法 |
+|---|---|---|
+| 组件契约速查与源码一致 | `component-contract.generated.md` 已陈旧（**0A 也漏了**：sfx / KNOWN_SFX_KEYS / MAX_SFX_EVENTS 都没进） | `node scripts/gen-component-contract.mjs` 重生成 |
+| 静态守卫：src/ 不再有裸抛 | `template-registry.ts` 2 处 + `audio-sfx/wav.ts` 1 处（**0A 引入**）`throw new Error` | 各加自定义错误类（`TemplateRegistryError` / `WavFormatError`）；转换点仍在 `template-scaffold.ts` 的 catch → `CS-USER-ERR` |
+| 参数分类表 | 6 个新入参未归类 | `templateId` 进 `HANDLE_PARAMS`（合法值只能来自 `list_templates`）；其余 5 个进豁免表并写明理由（容器 / 数值 / 布尔，真风险由 slot-contract 拒收） |
+| REQ-008① 展示表 | `list_templates` 无三档表项 | `tool-presentation.ts` 加 `{ tier:'A', title:'模板清单', icon:'模' }` |
+| AR-06① 工具总数 | 51 → 52 | `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` + 变更注释 |
+| AR-06② 工具名单 | 同上 | 名单加 `list_templates` |
+
+**文档欠账（有意留下）**：`STATUS.md §3.4` 的工具计数仍是 51 —— 属于「三层登记」那一批，随 CV 登记一次改。`docs/README.md` 与 `docs/canvas-studio-tools.md` 已同步为 52（这两处不在禁区）。
+
 ---
 
 ## 我在哪一步（给接管者的提示）

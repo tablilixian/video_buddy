@@ -118,6 +118,10 @@ const HANDLE_PARAMS: readonly string[] = [
   'source',
   // 复刻提效批二：write_note 的锚点节点（便签落在哪个节点右侧，只能填真实节点 id）。
   'anchorNodeId',
+  // 1（CV-463）：模板 id（`family/id`）—— 合法值只能来自 `list_templates` 的输出，
+  // 模型会写 `science/basic` / `template1` 这类想当然的串（实测最常写的是「听起来
+  // 应该存在」的体裁名）。由 loadTemplateBundle 找不到时列出可用 id，文案可执行。
+  'templateId',
 ]
 
 /**
@@ -324,6 +328,17 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   width: '数值（画布像素宽），非法 / 非正数视为「没给」，回落 probeMediaInfo 实测或出厂默认节点尺寸',
   height: '数值（画布像素高），同 width',
   asReference: '布尔开关（是否同时进参考素材池，缺省 false ⇒ 产物节点不进引用链）',
+  // —— 1（CV-463）模板库：list_templates + scaffold_manifest({ templateId, slots }) ——
+  // `templateId` 是**句柄类**（合法值只能来自 list_templates 的输出，模型爱写
+  // `science/basic` 这类想当然的 id）⇒ 已收进 HANDLE_PARAMS，不在这里。
+  // 其余四个都是容器 / 数值 / 布尔，通用尺子（「整篇只是占位词」）对它们无从下手，
+  // 而它们的真风险（字数超限、类型不符、模板不认识这个槽）由 slot-contract 逐条拒收，
+  // 文案比通用占位文案有用得多。
+  slots: '对象容器（slotId → 值），逐值由 slot-contract 的 validateSlotValues 拒收（类型 / 总字数 / 行数 / 单行字数），容器本身无占位形态',
+  dryRun: '布尔开关（只看槽位合同不编译）',
+  family: '过滤词（science / product / report 等体裁名），查不到即返回「没有该体裁」清单，无破坏性',
+  requirements: '对象容器（contentChars / itemCount / assetCount / durationSeconds 四个数值），逐字段由 readRequirement 收口，非法值当没给',
+  minInfoRatio: '数值（信息充足度阈值 0–1），≤0 或非有限值视为「用缺省 0.35」',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

@@ -45,7 +45,8 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // CV-445 S4（2026-11-05，rea-video A6 吸收）：+make_compare（原片｜复刻并排对比片），47 → 48。
 // CV-448（2026-11-06，后端 0.9.0）：+asr2txt（语音识别：文本 + 词级/句段时间戳 + 转写 JSON），49 → 50。
 // 2026-11-10 香水样本 P0-2：+attach_canvas_asset（本地现成产物 → 画布节点，经 canvas.json 唯一写口），50 → 51。
-const EXPECTED_TOOL_COUNT = 51
+// 1（CV-463，视频模板化）：+list_templates（模板清单：体裁 / 需求筛选 + 五判据适配判定），51 → 52。
+const EXPECTED_TOOL_COUNT = 52
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -81,6 +82,8 @@ const EXPECTED_TOOL_NAMES = [
   'list_library_assets',
   'list_references',
   'list_shots',
+  // 1（CV-463）：模板清单（只读，选模板的入口）。
+  'list_templates',
   'look_card',
   'music_generation',
   // REQ-036 C3（2026-11-03）：媒体探针（时长/分辨率/fps/音轨/容器/响度统一入口）。

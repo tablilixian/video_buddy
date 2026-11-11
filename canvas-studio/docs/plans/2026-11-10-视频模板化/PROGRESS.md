@@ -132,6 +132,8 @@
   - 顺带：**0A 漏跑 `gen-manifest-fields.mjs`**（sfx 段未进生成文档）本次补生成（+21 行，见 D-22）
   - 实测：manifest*/remotion*/render*/*text*/scaffold/size-guard/motion-lint/billing-routes/sfx-route 合计 **719/719 绿**；三个 `tsc` config 绿；`yarn build` + `verify-client-loader` 绿
   - 真 manifest 对账（`原型-manifest-b1b2.json`）：11 条文字轨全部 `overflow=false`、`validateManifest` 0 新增告警
+  - **真机回归**：复跑 `scripts/probe/sfx-e2e.probe.mjs` **exit 0 / 七条断言全绿**（帧 `[35,75,456,534,544,553,1056]`、响度 −26.0 vs 参考 −26.2）⇒ 客户端 prepare 阶段新增的体检**没有破坏真实渲染链路**（这份 bundle 里就带着 `auditTextFit`）
+  - **留给人工**：`report.textFit` 的**真机**端到端（渲一份带溢出文字轨的 manifest，看回报里真有 `textFit` + 溢出 warning）。目前这一环由三层机器证据夹住：`auditTextFit` 单测（含注入测量器）· `asRenderReport` 的 `★上报通道` 单测 · `report` schema 的 `textFit` 声明断言；缺的只是「一次真渲」的合并验证
 
 ---
 

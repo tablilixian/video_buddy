@@ -117,20 +117,20 @@
 - [x] **0B-1 **`text-fit-plan.ts`**：`TextFitPlan`（**含 `renderText`**）+ `planTextFit` + 五 variant 预算 + `textCardCapacityWarnings`；测量器外提到 `text-measure.ts`
   - 口径：未缩号（`fontPx >= base && !overflow`）⇒ `renderText` = 原文（数组按 variant 拼接口径：`dataCard` 空格、其余换行）；缩号或溢出才换成策略的行
   - `dataCard` / `caption` **不缩号**（字号分别是 `dataCardMetrics` 缩放系数与显式 `fontSize` 决定），`minFontPx` 钉在基准号让缩号循环不跑
-  - 验收：`tests/remotion-text-fit.test.mjs` **25/25 绿**（含 3 条 ★等价性 对账：subtitle 有无 box × 4 种盒 / 无 box title / dataCard 与旧 `fitOrKeep` 逐项相同）
+  - 验收：`tests/remotion-text-fit.test.mjs` **26/26 绿**（含 3 条 ★等价性 对账：subtitle 有无 box × 4 种盒 / 无 box title / dataCard 与旧 `fitOrKeep` 逐项相同）
 - [x] **0B-2** `TextCard.tsx` 四分支改消费 `plan`（`plan.fontPx` / `plan.renderText`），删掉本地 `fitOrKeep` 与私有 measurer
   - 用 `useMemo` 缓存（依赖 track/box/画布/字体/measurer）—— 原先逐帧重算，纯浪费
 - [x] **0B-3** 体检接线：`text-fit-audit.ts`（`auditTextFit` / `textFitWarnings` / `sanitizeTextFitEntries`）
   - 落点 = `client/remotion-render.ts` **prepare 阶段**（字体就绪之后、能力判定之前），溢出项进 `warnings`
   - 上报链：`RenderMetrics.textFit` → `metricsReport` → `/remotion/commit?metrics` → `asRenderReport`（**数组不在原数值白名单里，必须显式收口**）→ `commitRenderJob` → `RenderJobReport.textFit` → `render_composition` 的 `report` schema（`additionalProperties:false`，显式加 9 字段）
-  - 验收：`report schema 声明 textFit` 用例绿（`tests/render-tool-contract.test.mjs` 23/23）
+  - 验收：`report schema 声明 textFit` 用例绿（`tests/render-tool-contract.test.mjs` 23/23）；`asRenderReport` 导出后由 `★上报通道` 用例直测（数组不再被数值白名单吞掉）
 - [x] **0B-4** 修既有缺陷：`title` 带 box 时按**盒宽**算可用宽；`bullets` 容器 `min(900, max(300, 90%))` + 折行宽扣 **42px** 圆点
   - 同步改 `skills/code-driven-explainer/references/manifest-contract.md`（实现细节第 4 条 + 新增「文字放不下时会发生什么」一节）与 `tests/manifest-contract-doc.test.mjs` 的对码断言
 - [x] **0B-5** 单测 + 反向变异 + 棘轮
-  - **反向变异已做**：`shrunk = true`（无条件用策略折行）⇒ 仅「★反向变异锚点」**1 条精确变红**（21/22），还原 → `npx tsc` → `yarn build` 全量重建 → 25/25 复绿
+  - **反向变异已做**：`shrunk = true`（无条件用策略折行）⇒ 仅「★反向变异锚点」**1 条精确变红**（21/22），还原 → `npx tsc` → `yarn build` 全量重建 → 26/26 复绿
   - 棘轮补登 5 处：`api.ts` 1365→1379、`host-tools.ts` 5008→5016、`manifest.ts` 2398→2426、`render-job.ts` 1263→1265、`routes.ts` 3737→3744
   - 顺带：**0A 漏跑 `gen-manifest-fields.mjs`**（sfx 段未进生成文档）本次补生成（+21 行，见 D-22）
-  - 实测：manifest*/remotion*/render*/*text*/scaffold/size-guard/motion-lint 合计 **709/709 绿**；三个 `tsc` config 绿；`yarn build` + `verify-client-loader` 绿
+  - 实测：manifest*/remotion*/render*/*text*/scaffold/size-guard/motion-lint/billing-routes/sfx-route 合计 **719/719 绿**；三个 `tsc` config 绿；`yarn build` + `verify-client-loader` 绿
   - 真 manifest 对账（`原型-manifest-b1b2.json`）：11 条文字轨全部 `overflow=false`、`validateManifest` 0 新增告警
 
 ---

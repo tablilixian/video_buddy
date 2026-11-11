@@ -645,7 +645,7 @@ function asRenderWarnings(raw: string | null): string[] {
  *
  * 只接受有限数；形状不符返回 `undefined`（报告是观测信息，不因它 400）。
  */
-function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefined {
+export function asRenderReport(raw: string | null): Partial<RenderJobReport> | undefined {
   if (raw === null || raw.length === 0) return undefined
   let parsed: unknown
   try {

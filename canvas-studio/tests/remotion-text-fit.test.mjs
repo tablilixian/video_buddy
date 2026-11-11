@@ -38,6 +38,7 @@ import {
   MAX_TEXT_FIT_WARNINGS,
 } from '../lib/remotion/text-fit-audit.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
+import { asRenderReport } from '../lib/routes.js'
 // 等价性对账用：这两个就是 0B 之前组件里的那一套（旧 `fitOrKeep` 的直接依赖）。
 import { fitTextPolicy } from '../lib/remotion/timing.js'
 import { subtitleFitBudget } from '../lib/remotion/subtitle-fit.js'
@@ -321,6 +322,32 @@ test('0B-3：sanitizeTextFitEntries 洗掉非法条目但保留合法项（不�
   assert.equal(clean[0].id, 'ok')
   assert.equal(sanitizeTextFitEntries('nope'), undefined)
   assert.equal(sanitizeTextFitEntries([{ id: 'x' }]).length, 0)
+})
+
+// ── ④b 上报通道（/remotion/commit 的 metrics 收口）──────────────────────
+
+test('0B-3 ★上报通道：/remotion/commit 的 metrics 收口必须留住 textFit（漏了就是静默丢弃）', () => {
+  // 防的是「代码里写对了、报告里没有」：`asRenderReport` 原本只认数值白名单，
+  // 数组不在里面 —— 不显式收口，体检结果就在这一步蒸发（CV-146 的同类事故）。
+  const metrics = JSON.stringify({
+    frames: 300,
+    renderMs: 1234,
+    quality: 'standard',
+    textFit: [
+      { id: 'title-1', variant: 'title', fontPx: 60, baseFontPx: 84, maxLines: 2, lines: ['一', '二', '三'], overflow: true, atMinFont: false, maxWidthPx: 384 },
+    ],
+  })
+  const report = asRenderReport(metrics)
+  assert.ok(report, '合法 metrics 必须能解析')
+  assert.equal(report.frames, 300)
+  assert.ok(Array.isArray(report.textFit), `textFit 必须被留住，实际 ${JSON.stringify(report.textFit)}`)
+  assert.equal(report.textFit.length, 1)
+  assert.equal(report.textFit[0].overflow, true)
+  // 形状不符 / 非数组 ⇒ 丢掉这一项，报告其余部分照常（观测信息不值得 400）
+  const partial = asRenderReport(JSON.stringify({ frames: 10, textFit: 'nope' }))
+  assert.equal(partial.frames, 10)
+  assert.equal(partial.textFit, undefined)
+  assert.equal(asRenderReport(null), undefined)
 })
 
 // ── ⑤ 静态合同（validateManifest 层，warning 不拒收）──────────────────────

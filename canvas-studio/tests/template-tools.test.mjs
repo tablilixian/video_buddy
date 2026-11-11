@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
 import { loadTemplateBundle } from '../lib/remotion/template-registry.js'
+import { ANIMATE_EASINGS } from '../lib/remotion/manifest-track-validate.js'
 import '../lib/errors/catalog.js'
 
 const exec = {}
@@ -161,6 +162,34 @@ test('1 ★scaffold 默认路径（自由编排）也带 generatedBy（否则每
   const manifest = JSON.parse(match[1])
   assert.equal(manifest.meta.generatedBy, 'manifest-builder', 'K-9 修复点')
   assert.equal(validateManifest(manifest).warnings.some((line) => line.includes('generatedBy')), false)
+})
+
+// ── P2-7（2026-11-11 真机复盘）：手改轨时的硬约束必须就在「改文件」那句旁边 ──
+// 缺口实证：模型为补画面自插 glow 轨，凭直觉写了 `easing:"outCubic"` 与 `from.scale:0`
+// ⇒ 整份 manifest 被拒收（一次点名 12 处），白跑一轮再回来修。白名单本来写在报错里，
+// 但报错发生在**渲染时**，而它是在**编辑时**做错的决定 —— 提示要提前到 scaffold 回执。
+
+test('P2-7 ★writeTo 回执带改轨须知：easing 白名单 + scale>0', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cs-tpl-hint-'))
+  try {
+    const registry = { list: async () => [{ id: 'p1', dir }], projectDir: () => dir }
+    const ctx = { agent: { session: { header: { cwd: dir } } } }
+    const out = await tool('scaffold_manifest', registry).execute({
+      templateId: 'product/feature-walkthrough',
+      slots: exampleSlots('product/feature-walkthrough'),
+      writeTo: 'build/manifest.json',
+    }, ctx)
+    const text = out.text ?? ''
+    assert.match(text, /改轨须知/u, `回执必须提前给改轨约束：\n${text.slice(-600)}`)
+    assert.match(text, /animate\.easing/u)
+    assert.match(text, /scale. 必须 > 0/u, 'scale=0 是这次真机踩的第二个坑')
+    // 白名单从 `ANIMATE_EASINGS` 生成 ⇒ 漏一档就是模型写对了却被拒收
+    for (const easing of ANIMATE_EASINGS) {
+      assert.ok(text.includes(easing), `白名单漏了 ${easing}（会让合法写法被误判）`)
+    }
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* 沙箱可能拦删除 */ }
+  }
 })
 
 // ── A1：配乐位（模板声明 → 模型生成 → bgmUrl 回传重编）─────────────────

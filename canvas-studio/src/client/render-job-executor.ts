@@ -32,8 +32,8 @@ export interface RenderJobTransport {
   reportProgress(jobId: string, progress: number): Promise<void>
   uploadSample(jobId: string, frame: number, bytes: Uint8Array): Promise<string | null>
   commit(jobId: string, bytes: Uint8Array, warnings: readonly string[], report: StudioRenderReport): Promise<void>
-  /** V1：spot-check 结算 —— 无成片字节，只结算已回写的静帧。 */
-  commitSpot(jobId: string, warnings: readonly string[]): Promise<void>
+  /** V1：spot-check 结算 —— 无成片字节，只结算已回写的静帧。A4 起带上报告（含 textFit）。 */
+  commitSpot(jobId: string, warnings: readonly string[], report?: StudioRenderReport): Promise<void>
   cancel(jobId: string, failed: boolean, reason?: string): Promise<void>
 }
 
@@ -41,7 +41,7 @@ export const defaultRenderTransport: RenderJobTransport = {
   reportProgress: (jobId, progress) => reportStudioRenderProgress(jobId, progress),
   uploadSample: (jobId, frame, bytes) => uploadStudioRenderSample(jobId, frame, bytes),
   commit: (jobId, bytes, warnings, report) => commitStudioRenderJob(jobId, bytes, warnings, report),
-  commitSpot: (jobId, warnings) => commitStudioRenderJob(jobId, new Uint8Array(), warnings, undefined, undefined, true),
+  commitSpot: (jobId, warnings, report) => commitStudioRenderJob(jobId, new Uint8Array(), warnings, report, undefined, true),
   cancel: (jobId, failed, reason) => cancelStudioRenderJob(jobId, failed, reason),
 }
 
@@ -125,7 +125,7 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
         if (signal.aborted) return 'aborted'
         await transport.uploadSample(job.jobId, sample.frame, sample.bytes).catch(() => null)
       }
-      await transport.commitSpot(job.jobId, rendered.warnings)
+      await transport.commitSpot(job.jobId, rendered.warnings, metricsReport(rendered.metrics))
       return 'committed'
     } catch (cause) {
       if (signal.aborted) return 'aborted'

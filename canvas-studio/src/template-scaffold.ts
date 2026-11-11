@@ -24,8 +24,21 @@ import { loadTemplateBundle } from './remotion/template-registry.js'
 import type { SlotContract } from './remotion/slot-contract.js'
 import { charCount } from './remotion/slot-contract.js'
 import { compileTemplate, type TemplateBgm, type TemplateBundle, type TemplateMeta } from './remotion/template-compile.js'
+import { ANIMATE_EASINGS } from './remotion/manifest-track-validate.js'
 
 const MANIFEST_PREVIEW_LINES = 40
+
+/**
+ * 「你要手改这份文件」时**必须同时看到**的两条硬约束。
+ *
+ * 真机实证（2026-11-11，产品特性走查）：模型为补画面自己插 glow 轨，凭直觉写了
+ * `easing: "outCubic"` 与 `from.scale: 0` ⇒ 整份 manifest 被拒收（12 处报错），
+ * 白跑一轮再回来修。白名单本来就写在报错里，但**报错发生在渲染时**，而它是在
+ * 编辑时做错的决定。所以提示要出现在「改文件」这一句旁边，不是校验失败之后。
+ * 白名单从 `ANIMATE_EASINGS` 生成 —— 不再手抄第二份（会漂移）。
+ */
+const TRACK_EDIT_HINT = `改轨须知：\`animate.easing\` 只认 ${[...ANIMATE_EASINGS].join(' / ')}；`
+  + '`from`/`to` 的 `scale` 必须 > 0（`0` 会被拒收）；写错整份 manifest 就不合法，重渲前先 `validateManifest` 自查。'
 
 export interface TemplateScaffoldInput {
   templateId: string
@@ -206,7 +219,7 @@ export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: stri
         ...notes,
         ...(bgm.length === 0 ? [] : ['', ...bgm]),
         `下一步：\`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片 —— 不要再读源码、不要先美化。`,
-        '要微调就直接改这个小文件（文案 / 配色 / 加轨都行），模板只是起点不是终点。',
+        `要微调就直接改这个小文件（文案 / 配色 / 加轨都行），模板只是起点不是终点。${TRACK_EDIT_HINT}`,
       ].join('\n'),
     }
   }

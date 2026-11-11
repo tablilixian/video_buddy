@@ -5,7 +5,7 @@
 >
 > 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成且验证过 · `[!]` 卡住（见 `无人值守推进协议.md` §6）
 
-最后更新：2026-11-11 11:50 · 阶段：**0A / 0B / 1C / 1 + A 层（A1 配乐位 / A4 判据式回执）全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push；A 层未取号）；剩下的是**三层登记**（用户明确划出边界，不在本批做）
+最后更新：2026-11-11 12:55 · 阶段：**0A / 0B / 1C / 1 + A 层（A1/A4）+ 真机复盘 #2 的三处收口全部完成**（0A=CV-460、0B=CV-461、1C=CV-462、1=CV-463 已提交未 push；A 层与复盘 #2 收口未取号）；剩下的是**模板质量批**（骨架密度 / A5 换色口 / 静态占比告警降级 / 槽位实测容量）与**三层登记**（用户明确划出边界，不在本批做）
 
 ---
 
@@ -290,3 +290,21 @@
 - GT 真值在 `gt/mix-report.json`（7 条），合成原语在 `gt/native_audiolib.py`
 - 0A 六条事件类型 → 五支素材的对应：`thud`→thud.wav / `write`→write.wav / `card`→card.wav / `swipe`→swipe.wav / `swoosh`→swoosh.wav
 - **改过 `manifest.ts` 必须跑 `node scripts/gen-manifest-fields.mjs`**（门禁 `tests/manifest-fields-drift.test.mjs`；0A 就漏了一次，D-22）
+
+---
+
+## 真机复盘 #2 收口（2026-11-11）：A4 在迭代环里失效 + 两处可归因浪费
+
+> 用户跑同款会话第二遍（`session-2c3e8bf5`，47 调用 / 787.8s / 3 整片）。**工具总耗时只 108s（渲染 78.9s），86% 是 41 个模型步进** ⇒ 压缩杠杆是「减步数」，不是「减渲染」。
+> A1 满分（配乐 0 次手改 JSON）；A4 只在最终档生效 —— 探针通道不报 textFit，3/3 全 ⚪。
+
+| # | 改动 | 落点 | 守卫（含反向变异） |
+|---|---|---|---|
+| P0-2 | spot-check 也做文字容量体检 | `client/remotion-render.ts` 的 `renderSpotFramesOnWeb`（`auditTextFit`，字体已注入 ⇒ 真实字形，零渲染开销）；`commitSpot(jobId, warnings, report)`；`render-job.ts` spot 结算透传 textFit | `tests/remotion-render-job.test.mjs` 2 条（正向带出 / 未上报不造假）；变异「无条件带 textFit」⇒ 第 10 条精确红 |
+| P1-6 | 抽帧回执给**磁盘路径** | `host-tools.ts`：payload 每条帧多 `path`（`urlToAssetPath`，失败缺省）+ `sampleDiskPath` 辅助 + `frames` schema 声明 `path`；回执 `path ?? url` | `tests/render-tool-contract.test.mjs` 4 条（path 优先 / 无 path 退回 url / spot 分支 / schema）；变异「只给 url」⇒ 2 条红 |
+| P2-7 | 改轨须知前置到 scaffold 回执 | `template-scaffold.ts` 的 `TRACK_EDIT_HINT`（easing 13 档由 `ANIMATE_EASINGS` 生成 + `from/to.scale > 0`） | `tests/template-tools.test.mjs` 1 条（含逐档白名单存在性）；变异「去掉须知」⇒ 精确红 |
+
+- 行数棘轮显式登记：`host-tools.ts` 5093 → 5125、`createStudioTools` 2988 → 2997、`render-job.ts` 1265 → 1268。
+- 验证：两个 tsc 零错误；`yarn build` + `verify:loader` 绿；全量 `test:smoke` **3222/3222**（基线外新增 0）。
+- skill 文档：`canvas-studio-creation/references/toolchain.md` §7 补「抽帧/静帧回执已直接给磁盘路径，不要 `ls`/`find`」。
+- **留给模板批（工具侧已到顶，再改就是改模板）**：骨架只有 7 条内容轨（41 条装饰轨里 32 条是 1px 刻度 ⇒ 轨数是假象）；「静态占比偏高」对卡片模板恒真、6 次告警诱导修改；模板无换色口（A5）；槽位合同不写「box 实测可容字数」⇒ 模型读 `TextCard.tsx` / `text-fit-plan.ts` 共 5 次。

@@ -1110,6 +1110,9 @@ export async function commitRenderJob(
       height: job.manifest.meta.height,
       sampledFrames: spotFrames.length,
       audio: summarizeManifestAudio(job.manifest),
+      // A4 补漏（2026-11-11）：spot 现在是**迭代环唯一通道**，它的回执没有 textFit
+      // 就等于「文字会不会被裁」在验证循环里不可判 —— 客户端已体检过，这里原样带出。
+      ...(input.report?.textFit !== undefined ? { textFit: input.report.textFit } : {}),
     }
     job.resolve({
       url: '',

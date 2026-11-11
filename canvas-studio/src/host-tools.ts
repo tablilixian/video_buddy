@@ -32,6 +32,9 @@ import { expandGroups } from './remotion/groups.js'
 import { segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
+// A4/P1-6（2026-11-11 真机复盘）：抽帧 URL → 磁盘绝对路径。回执里只给 `/canvas-studio/assets/…`
+// 时 `read_image` 直接 not found（真机浪费 2 次调用：读图失败 + `find` 找路径）。
+import { urlToAssetPath } from './compose.js'
 import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
 import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 // 1（CV-463）· 模板库：`list_templates` 工具组 + 模板通道编排（判据全在 remotion/template-*.ts 纯函数里）
@@ -160,7 +163,8 @@ const resultSchema = {
         additionalProperties: false,
         properties: {
           frame: { type: 'integer' as const, description: '绝对帧号' },
-          url: { type: 'string' as const, description: '抽帧 PNG 的同源 URL（可直接看图核对排版 / 转场）' },
+          url: { type: 'string' as const, description: '抽帧 JPEG 的同源 URL（画布引用用；读图请用 path）' },
+          path: { type: 'string' as const, description: '同一张图的项目内绝对路径 —— **read_image 直接传它**（URL 不是磁盘路径，会 not found）' },
         },
       },
       description: 'render_composition 专用：渲后抽帧（4 张均匀分布 + 转场中点，上限 8）。**先看这几张图再向用户汇报** —— 字压边、元素出画、转场叠影都只能在这上面看出来',
@@ -363,8 +367,12 @@ interface ComposeToolResult {
   skippedCount: number
   audioComposition: StudioAudioComposition
   warnings?: string[]
-  /** 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。 */
-  frames?: { frame: number; url: string }[]
+  /**
+   * 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。
+   * `path` = 同一张图的项目内绝对路径（A4/P1-6：`read_image` 只认磁盘路径，
+   * 给 URL 会 not found；解析失败时缺省，回执退回用 URL）。
+   */
+  frames?: { frame: number; url: string; path?: string }[]
   /** 三期 W6-2 / REQ-035 F-04：渲染报告（性能与质量可复盘）。形状见 `render-report-text.ts`。 */
   report?: ComposeRenderReport
   /** REQ-035 F-01：工单生命周期（谁认领、有没有出首帧、是否改派过）。 */
@@ -713,6 +721,21 @@ function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasN
   return undefined
 }
 
+/**
+ * 抽帧同源 URL → 项目内绝对路径（`read_image` / `media_probe` 能直接吃的那种）。
+ *
+ * A4/P1-6（2026-11-11 真机复盘）：回执原先只给 `/canvas-studio/assets/<id>/x.jpg`，
+ * 模型当作绝对路径去读 ⇒ `cannot read …: not found`，再 `find` 一次才拿到真路径。
+ * 解析失败一律返回 undefined（回执退回给 URL）——一条辅助信息不能毁掉整条回执。
+ */
+function sampleDiskPath(assetsDir: string, url: string): string | undefined {
+  try {
+    return urlToAssetPath(assetsDir, url)
+  } catch {
+    return undefined
+  }
+}
+
 /** CV-108：成片合成结果——补上「纳入 / 跳过」片段数，让「哪些镜进了成片」可核对。 */
 function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const v0 = value as { spot?: boolean }
@@ -723,7 +746,7 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     const spotFrames = [...(v.frames ?? [])].sort((a, b) => a.frame - b.frame)
     if (spotFrames.length > 0) {
       lines.push(`静帧 ${spotFrames.length} 张（画面类判据请逐张 read_image 看图取证后再汇报；确实没做成要明说"未做画面自检"）：`)
-      for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
+      for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.path ?? sample.url}`)
     }
     for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
     if (v.report !== undefined) {
@@ -773,7 +796,7 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     const listed = [...frames].sort((a, b) => a.frame - b.frame)
     lines.push(`抽帧 ${listed.length} 张（按上面的自检行决定看几张：全绿就看第 1 张确认构图，有红项按红项改 —— `
       + '**不要为了「看得仔细」逐张翻图**，判据比肉眼可靠且便宜；一张都没看要明说"未做画面自检"）：')
-    for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
+    for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.path ?? sample.url}`)
   }
   if (v.report !== undefined) {
     lines.push(formatRenderReport(v.report))
@@ -3991,7 +4014,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(anchor === undefined ? {} : { anchor }),
           ...(effectiveWarnings.length > 0 ? { warnings: effectiveWarnings } : {}),
           ...(job.frames.length > 0
-            ? { frames: job.frames.map((sample) => ({ frame: sample.frame, url: sample.url })) }
+            ? {
+              frames: job.frames.map((sample) => {
+                const diskPath = sampleDiskPath(registry.assetsDir(projectId), sample.url)
+                return {
+                  frame: sample.frame,
+                  url: sample.url,
+                  ...(diskPath === undefined ? {} : { path: diskPath }),
+                }
+              }),
+            }
             : {}),
           // 三期 W1-3 / W6-2：编排体检的可计数回执。文案已由 `validateManifest` 末尾
           // 并入 `warnings`（模型读一处即可）；这里只再取一次编号与定位，让报告可统计。

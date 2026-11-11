@@ -227,3 +227,68 @@ test('一帧都没出 ⇒ 不续期，按原预算准时结算', async () => {
     assert.equal(activeRenderJobCount(), before)
   })
 })
+
+// ── A4 补漏（2026-11-11 真机复盘）：spot 结算必须把 textFit 带出去 ────────────
+// 缺口实证：`auditTextFit` 只挂在整片渲染上，而 spot-check 才是「改一处验一处」
+// 的主通道 ⇒ 3 次探针回执全是「⚪ 文字未实测」，模型只能退回逐张 read_image。
+// 这里锁宿主半的接线：客户端上报的 textFit 必须原样进结算产物（否则前端算了也白算）。
+
+const TEXT_FIT_SAMPLE = [{
+  id: 't-title',
+  variant: 'title',
+  fontPx: 64,
+  baseFontPx: 64,
+  maxLines: 1,
+  lines: ['标题卡'],
+  overflow: false,
+  atMinFont: false,
+  maxWidthPx: 1152,
+}]
+
+test('★spot 结算：客户端上报的 textFit 原样带进 outcome.report', async () => {
+  await withProject(async ({ registry, project }) => {
+    const pending = runRenderJob({
+      projectId: project.id,
+      manifest: minimalManifest(),
+      spotFrames: [30],
+      timeoutMs: 5_000,
+    })
+    const view = pendingRenderJobFor(project.id)
+    assert.notEqual(view, null)
+    assert.deepEqual(view.spotFrames, [30], '建单时 spotFrames 必须原样进单')
+
+    await commitRenderJob(registry, view.jobId, {
+      bytes: new Uint8Array(),
+      warnings: [],
+      report: { quality: 'draft', frames: 1, totalMs: 900, textFit: TEXT_FIT_SAMPLE },
+      spot: true,
+    })
+
+    const outcome = await pending
+    assert.equal(outcome.spot, true)
+    assert.equal(outcome.url, '', 'spot 不该有成片 url')
+    assert.deepEqual(outcome.report.textFit, TEXT_FIT_SAMPLE, 'A4：客户端算出的 textFit 必须原样进报告')
+  })
+})
+
+test('★spot 结算：没上报 textFit 时不造假字段（回执才敢说「未实测」）', async () => {
+  await withProject(async ({ registry, project }) => {
+    const pending = runRenderJob({
+      projectId: project.id,
+      manifest: minimalManifest(),
+      spotFrames: [30],
+      timeoutMs: 5_000,
+    })
+    const view = pendingRenderJobFor(project.id)
+    await commitRenderJob(registry, view.jobId, {
+      bytes: new Uint8Array(),
+      warnings: [],
+      report: { quality: 'draft', frames: 1, totalMs: 900 },
+      spot: true,
+    })
+    const outcome = await pending
+    // 反向变红锚点：把这里的条件反过来（`textFit !== undefined`）就必须红。
+    assert.equal(Object.prototype.hasOwnProperty.call(outcome.report, 'textFit'), false,
+      '没实测就不该出现 textFit —— 造一个空数组等于告诉模型「已体检、全绿」')
+  })
+})

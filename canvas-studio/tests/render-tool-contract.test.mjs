@@ -323,3 +323,62 @@ test('B-3：render_composition 结果 schema 声明 lintPath（漏声明 = addit
   const lintItems = report.properties?.lint?.items?.properties ?? {}
   assert.ok(Object.prototype.hasOwnProperty.call(lintItems, 'message'), 'lint 条目缺 message（前 5 条原文的数据源）')
 })
+
+// ── P1-6（2026-11-11 真机复盘）：抽帧必须给**磁盘路径**，不能只给同源 URL ──
+// 缺口实证：回执给 `/canvas-studio/assets/<id>/x.jpg`，模型当绝对路径去 read_image
+// ⇒ `cannot read …: not found`，再 `find` 一次才拿到真路径（白烧 2 个步进）。
+// 契约：`path` 优先、`url` 兜底；两者都在结构化字段里，回执只摆一个（读图那个）。
+
+test('P1-6：抽帧带 path ⇒ 回执摆磁盘路径（read_image 吃不下 URL）', () => {
+  const frames = [
+    { frame: 0, url: '/canvas-studio/assets/p/a.jpg', path: '/proj/assets/a.jpg' },
+    { frame: 180, url: '/canvas-studio/assets/p/b.jpg', path: '/proj/assets/b.jpg' },
+  ]
+  const text = renderText('render_composition', composeResultValue({ frames }))
+  for (const sample of frames) {
+    assert.ok(text.includes(sample.path), `回执必须含磁盘路径 ${sample.path}，实际：\n${text}`)
+    assert.ok(!text.includes(sample.url), `URL 不该占读图位置（会 not found）：${sample.url}`)
+  }
+})
+
+test('P1-6：没有 path 时退回 url（老结果 / 解析失败不能没图可看）', () => {
+  const frames = [{ frame: 0, url: '/canvas-studio/assets/p/a.jpg' }]
+  const text = renderText('render_composition', composeResultValue({ frames }))
+  assert.ok(text.includes('/canvas-studio/assets/p/a.jpg'), `解析不出路径时要退回 URL：\n${text}`)
+})
+
+test('P1-6：spot 分支同样给磁盘路径（它是迭代环的主通道）', () => {
+  const frames = [{ frame: 200, url: '/canvas-studio/assets/p/s.jpg', path: '/proj/assets/s.jpg' }]
+  const text = renderText('render_composition', composeResultValue({ spot: true, frames }))
+  assert.ok(text.includes('/proj/assets/s.jpg'), `spot 回执也要给路径：\n${text}`)
+  assert.ok(text.includes('第 200 帧'))
+})
+
+test('P1-6：frames 条目 schema 声明 path（closed world 下漏声明＝静默丢掉）', () => {
+  const frames = renderTool().output?.schema?.properties?.frames
+  assert.ok(frames, 'frames 必须有内联结构')
+  const fields = Object.keys(frames.items?.properties ?? {})
+  assert.ok(fields.includes('path'), `frames 条目缺 path（实际：${fields.join(', ')}）`)
+})
+
+// ── A4 补漏：spot 回执必须给结论，不能说「未实测」──────────────��─────────
+// spot 是「改一处验一处」的唯一通道；它报 ⚪ 等于迭代期没有机器判据（真机 3/3 全 ⚪）。
+
+test('A4：spot 回执带 textFit ⇒ 自检行给 ✅，不再说「未实测」', () => {
+  const textFit = [{
+    id: 'feature1',
+    variant: 'bullets',
+    fontPx: 48,
+    baseFontPx: 48,
+    maxLines: 2,
+    lines: ['一键成片', '选好片段，十秒出片'],
+    overflow: false,
+    atMinFont: false,
+    maxWidthPx: 600,
+  }]
+  const frames = [{ frame: 200, url: '/canvas-studio/assets/p/s.jpg', path: '/proj/assets/s.jpg' }]
+  const report = { quality: 'draft', frames: 1, sampledFrames: 1, textFit }
+  const text = renderText('render_composition', composeResultValue({ spot: true, frames, report }))
+  assert.ok(text.includes('✅ 文字 1 段无溢出'), `spot 必须给文字结论：\n${text}`)
+  assert.ok(!text.includes('⚪ 文字未实测'), `已实测就不该说未实测：\n${text}`)
+})

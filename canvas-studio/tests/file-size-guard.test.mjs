@@ -112,7 +112,10 @@ export const FILE_WHITELIST = {
   // 回执接自检行（判据行本身在 render-report-text.ts，此处只有 2 行接线）+ 抽帧文案改口径（净 0），
   // 5075 → 5093 显式登记。消化路径不变：随「工具壳拆分」批把 scaffold 段外提到
   // host-tools-remotion.ts，render 回执段外提到 host-tools-render.ts。
-  'src/host-tools.ts': 5093,
+  // P1-6（2026-11-11 真机复盘）：抽帧回执改给磁盘路径 —— `sampleDiskPath` 辅助（14 行）+
+  // payload 逐帧算 path（+7）+ frames schema 声明 path（+4），5093 → 5125 显式登记。
+  // 消化路径同上：这两段（回执文案 + payload 组装）都是 render 段，外提时一并搬走。
+  'src/host-tools.ts': 5125,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
@@ -191,7 +194,8 @@ export const FILE_WHITELIST = {
   // 不注入就测不到「到期真的续了期」这条唯一关键的接线行为）。
   // 消化路径：随「渲染工单桥拆分」批外提结算段（commit/cancel/timeout 各自成模块）。
   // CV-461（2026-11-11，0B 文本溢出上报）：commitRenderJob 透传 textFit（宿主不重算，重算要 canvas；+2），1263 → 1265 显式登记。
-  'src/remotion/render-job.ts': 1265,
+  // A4 补漏（2026-11-11 真机复盘）：spot 结算也带 textFit（spot 才是迭代环主通道，+3），1265 → 1268。
+  'src/remotion/render-job.ts': 1268,
   // CV-384（2026-10-31）：瓦片内存收口 P0 三件套 +61 净行（手势 rAF 合并器接线 +
   // 拖拽态/裁剪/flush 接线），显式登记；func 棘轮 1295 → 1347 同批登记。消化路径：
   // 手势段随既有「手势/命中/渲染三段」拆分计划外提，此处不新立拆分批。
@@ -251,7 +255,7 @@ export const FUNC_WHITELIST = {
   // 硬拒接线）与 attach_canvas_asset 的 spread 接线，+4（2917 → 2921）。
   // 消化路径：判据本身全在 canvas-asset-attach.ts（本函数只留一行调用）。upload_image 若
   // 按 download_video 同款整体外置（它已无生成逻辑，只剩上传 + 回写 + 外链补节点），可回收本行数。
-  'src/host-tools.ts#createStudioTools': { lines: 2988, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977；A1/A4 bgmUrl 参数 + 自检行/抽帧文案接线 +11 → 2988' },
+  'src/host-tools.ts#createStudioTools': { lines: 2997, note: '阶段 1 目录化（先搬 inspect 打样）；批四 +teardown_store +timingSegments 接线 2596 → 2712；骨架优先出片 19 → 2729；P1-3/P1-4 +42 → 2771；CV-448 +asr2txt +37 → 2912；会话18 回执口径 +5 → 2917；香水样本 upload_image 契约纠偏 + attach 接线 +4 → 2921；CV-463 模板分支 + slots/dryRun 参数与 list_templates 注册 +56 → 2977；A1/A4 bgmUrl 参数 + 自检行/抽帧文案接线 +11 → 2988；P1-6 抽帧 path 逐帧计算 +9 → 2997' },
   'src/client/canvas/NodeInputCard.tsx#NodeInputCard': { lines: 1747, note: 'P1：6 类节点表单挤在一个组件' },
   // CV-384（2026-10-31）：手势 rAF 合并器接线 +52（applyPointerMove 应用体化 + 合并器/拖拽态/flush 接线），
   // 与文件棘轮同批显式登记；消化路径同上（三段拆分时外提）。批 2 手势期 cv-auto 抑制 +21（1368）。

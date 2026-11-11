@@ -402,6 +402,12 @@ export async function renderSpotFramesOnWeb(
   const startedAt = Date.now()
   // 与整片渲染同一顺序：字体面先就绪（否则拍到回退字体的帧），再判能力。
   const fontWarnings = await applyManifestFonts(manifest)
+  // A4 补漏（2026-11-11 真机复盘）：文字容量体检原本只挂在整片渲染上，而 **spot-check
+  // 才是迭代环的主通道**（改一处验一处）。缺了它，探针回执恒为「⚪ 未实测」⇒ A4 的
+  // 自检行在迭代期失效，模型退回逐张 read_image（真机实测 3 次探针 3 次 ⚪、9 张图）。
+  // `auditTextFit` 是纯函数（同一份字形预算，不渲染），与整片渲染是同口径而非第二套判断。
+  const textFit = auditTextFit(manifest, width, height)
+  const textFitNotes = textFitWarnings(textFit)
   const capability: CanRenderMediaOnWebResult = await canRenderMediaOnWeb({ container: 'mp4', videoCodec: 'h264', width, height })
   if (!capability.canRender) {
     const detail = capability.issues.map((issue: CanRenderIssue) => issue.message).join('；')
@@ -412,6 +418,7 @@ export async function renderSpotFramesOnWeb(
     ...capability.issues
       .filter((issue: CanRenderIssue) => issue.severity === 'warning')
       .map((issue: CanRenderIssue) => issue.message),
+    ...textFitNotes,
   ]
   const { signal } = options
   const samples: RenderSample[] = []
@@ -462,6 +469,8 @@ export async function renderSpotFramesOnWeb(
     width: Math.max(1, Math.round(width * preset.scale)),
     height: Math.max(1, Math.round(height * preset.scale)),
     sampledFrames: samples.length,
+    // A4：spot 与整片同口径上报 —— 只渲几张静帧不影响「字放不放得下」的判定。
+    ...(textFit.length > 0 ? { textFit } : {}),
   }
   return { samples, warnings, metrics }
 }

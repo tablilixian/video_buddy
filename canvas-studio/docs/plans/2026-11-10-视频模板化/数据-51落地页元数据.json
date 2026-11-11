@@ -1,0 +1,4073 @@
+{
+  "233154": {
+    "title": {
+      "en": "Kit 1 · Documentary Explainer",
+      "zh": "Kit 1 · 人文纪录片知识短片"
+    },
+    "version": "1.0.0",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 20,
+    "availability": "download-available",
+    "category": {
+      "en": "explainer",
+      "zh": "explainer"
+    },
+    "subtitle": {
+      "en": "Kit 1 · Documentary Explainer",
+      "zh": "Kit 1 · 人文纪录片知识短片"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: html-canvas/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：html-canvas/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "A documentary-style short told through visuals and bilingual captions, without narration. Replace the key words and captions. Landscape 1920×1080 at 30fps; the 20-second example includes generated music and sound effects."
+      ],
+      "zh": [
+        "拖延、选择、成长等话题的人文科普短片",
+        "金句/观点的气氛化呈现",
+        "片头或段落之间的情绪铺垫"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 30 fps. The public demo is 20 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，30 fps；公开样片 20 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/233154",
+      "sizeKB": 262,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@chenyutao0417/kit1-doc-shortfilm"
+  },
+  "632629": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/632629",
+      "sizeKB": 5122,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-isometric"
+  },
+  "762139": {
+    "title": {
+      "en": "Vibrant Poster · Narrated Explainer",
+      "zh": "活力海报 · 口播讲解"
+    },
+    "version": "2.7.18-alpha.5",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 194,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Vibrant Poster · Narrated Explainer",
+      "zh": "活力海报 · 口播讲解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "User narration with bold typographic emphasis",
+        "Explicit media, checklists and illustrative relationships"
+      ],
+      "zh": [
+        "User narration with bold typographic emphasis",
+        "Explicit media, checklists and illustrative relationships"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 194 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Faking real data or creator identities",
+        "Inventing semantic quantities to force a scene"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 194 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/762139",
+      "sizeKB": 800,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/vibrant-poster"
+  },
+  "875206": {
+    "title": {
+      "en": "Hand-Drawn Cartoon Explainer",
+      "zh": "卡通讲解风"
+    },
+    "version": "0.1.1-alpha.1",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 275.266667,
+    "availability": "download-available",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Hand-Drawn Cartoon Explainer",
+      "zh": "卡通讲解风"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: native-python-node/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project."
+      ],
+      "zh": [
+        "声明的运行配置：native-python-node/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: native-python-node/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：native-python-node/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Hand-drawn cartoon explanations, step-by-step demonstrations and native transitions. Beta: adaptation to new scripts is still being improved."
+      ],
+      "zh": [
+        "开场标题与计数",
+        "补充说明",
+        "角色与反馈",
+        "框架与流程",
+        "风格选择",
+        "细节与时间线",
+        "制作模式",
+        "工作区与分类"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps; default demo duration is 275.267 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；默认样片 275.267 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/875206",
+      "sizeKB": 1305,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/cartoon-explainer"
+  },
+  "334005": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/334005",
+      "sizeKB": 3450,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-chalkboard"
+  },
+  "907345": {
+    "title": {
+      "en": "Geometric Collage · Animated Poster",
+      "zh": "几何拼贴 · 动态海报"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 13,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Geometric Collage · Animated Poster",
+      "zh": "几何拼贴 · 动态海报"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work. The declared photo input has 4 items.",
+        "zh": "这次要呈现的照片与作品标题。已声明照片输入为 4 张。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 13 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 13 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/907345",
+      "sizeKB": 3363,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-c-collage"
+  },
+  "287792": {
+    "title": {
+      "en": "Price & Volume · Candlestick and Intraday Charts",
+      "zh": "量价图表：K线突破与分时动画"
+    },
+    "version": "1.0.0",
+    "ratio": "1:1",
+    "width": 1080,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 49.2,
+    "availability": "download-available",
+    "category": {
+      "en": "explainer",
+      "zh": "explainer"
+    },
+    "subtitle": {
+      "en": "Price & Volume · Candlestick and Intraday Charts",
+      "zh": "量价图表：K线突破与分时动画"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Title1: text, up to 12 characters.",
+        "zh": "Title1：文字，不超过 12 个字符。",
+        "required": false
+      },
+      {
+        "en": "Title2: text, up to 12 characters.",
+        "zh": "Title2：文字，不超过 12 个字符。",
+        "required": false
+      },
+      {
+        "en": "Title3: text, up to 12 characters.",
+        "zh": "Title3：文字，不超过 12 个字符。",
+        "required": false
+      },
+      {
+        "en": "Upcolor: text.",
+        "zh": "Upcolor：文字。",
+        "required": false
+      },
+      {
+        "en": "Downcolor: text.",
+        "zh": "Downcolor：文字。",
+        "required": false
+      },
+      {
+        "en": "Accentcolor: text.",
+        "zh": "Accentcolor：文字。",
+        "required": false
+      },
+      {
+        "en": "Backgroundcolor: text.",
+        "zh": "Backgroundcolor：文字。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: html-canvas/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：html-canvas/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "A standalone chart animation component for financial education, with two daily candlestick sequences and one intraday sequence."
+      ],
+      "zh": [
+        "量价关系教学",
+        "图表插入镜头"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1080, 30 fps. The public demo is 49.2 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1080，30 fps；公开样片 49.2 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/287792",
+      "sizeKB": 404,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@oubaba95128/volume-price-kline-charts"
+  },
+  "800829": {
+    "title": {
+      "en": "Double Exposure · Portrait Layers",
+      "zh": "双重曝光 · 人像叠影"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 13,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Double Exposure · Portrait Layers",
+      "zh": "双重曝光 · 人像叠影"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 13 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 13 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/800829",
+      "sizeKB": 2763,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-f-double"
+  },
+  "569615": {
+    "title": {
+      "en": "Dark Dimensional Stage · Multi-screen Story · Portrait",
+      "zh": "深色立体 · 多屏展陈 · 竖屏"
+    },
+    "version": "2.7.18-alpha.10",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 123,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Dark Dimensional Stage · Multi-screen Story · Portrait",
+      "zh": "深色立体 · 多屏展陈 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Choose complete native groups based on actual user content",
+        "Continuous s02→s03 media handoff; or independent review"
+      ],
+      "zh": [
+        "Choose complete native groups based on actual user content",
+        "Continuous s02→s03 media handoff; or independent review"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 123 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing benchmark, income or productivity claims",
+        "Breaking the s02→s03 continuity requirement"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 123 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/569615",
+      "sizeKB": 702,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-03-native-portrait"
+  },
+  "452365": {
+    "title": {
+      "en": "Modular Collage · Creator Tools",
+      "zh": "模块拼贴 · 创作者宣传"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 59.25,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Modular Collage · Creator Tools",
+      "zh": "模块拼贴 · 创作者宣传"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ],
+      "zh": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 59.25 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Changing the scene order or engine; the frozen original source and timeline remain authoritative.",
+        "Automatic replacement of product images/videos or brand paths/marks: no declared media import slot in this candidate. Preserve fixed demonstration visuals only when they are relevant; otherwise this route is not suitable."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 59.25 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/452365",
+      "sizeKB": 3704,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-creator"
+  },
+  "638039": {
+    "title": {
+      "en": "Signal Glitch · Photo Transition",
+      "zh": "信号故障 · 照片转场"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 13,
+    "availability": "demo-only",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Signal Glitch · Photo Transition",
+      "zh": "信号故障 · 照片转场"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work. The declared photo input has 3 items.",
+        "zh": "这次要呈现的照片与作品标题。已声明照片输入为 3 张。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 13 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 13 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/638039",
+      "sizeKB": 9000,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-e-glitch"
+  },
+  "252912": {
+    "title": {
+      "en": "Pixel Platformer · Product Introduction",
+      "zh": "像素闯关 · 产品宣传"
+    },
+    "version": "2.6.6",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 66,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Pixel Platformer · Product Introduction",
+      "zh": "像素闯关 · 产品宣传"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared duration policy follows the current content; the package plan determines final timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时长随本期内容适配，最终节奏由包内制作计划确定。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "Current product images, screenshots or display materials supported by the selected media slots.",
+        "zh": "本期产品图片、截图或展示素材，按所选槽位支持的类型准备。",
+        "required": false
+      },
+      {
+        "en": "The current brand name, logo and applicable feature icons.",
+        "zh": "本期品牌名称、Logo，以及实际需要的功能图标。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Current product introductions, feature explanations and brand stories",
+        "Select complete source scenes for comparison, process, collections, connections or a conclusion"
+      ],
+      "zh": [
+        "Current product introductions, feature explanations and brand stories",
+        "Select complete source scenes for comparison, process, collections, connections or a conclusion"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 66 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Portrait output or live presenter/video footage: this template accepts static images only",
+        "Shortening source actions, automatically matching cuts to voice words, or changing the original pixel style"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 66 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/252912",
+      "sizeKB": 6729,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-pixel"
+  },
+  "394243": {
+    "title": {
+      "en": "Paper Scroll · Brand Story",
+      "zh": "宣纸手卷 · 品牌叙事"
+    },
+    "version": "2.6.6",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 59.25,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Paper Scroll · Brand Story",
+      "zh": "宣纸手卷 · 品牌叙事"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "The current brand name, logo and applicable feature icons.",
+        "zh": "本期品牌名称、Logo，以及实际需要的功能图标。",
+        "required": true
+      },
+      {
+        "en": "Current product screenshots, screen recordings and display materials for the declared media slots.",
+        "zh": "声明素材槽位对应的本期产品截图、录屏与展示内容。",
+        "required": true
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "A complete 59.25-second paper-scroll product or brand narrative driven by current-production copy, brand and image/video inputs."
+      ],
+      "zh": [
+        "A complete 59.25-second paper-scroll product or brand narrative driven by current-production copy, brand and image/video inputs."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 59.25 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Unreviewed portrait conversion, arbitrary scene reordering, or declaring unrelated diagram semantics without adapting and reviewing them."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 59.25 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/394243",
+      "sizeKB": 6367,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-ink"
+  },
+  "700095": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/700095",
+      "sizeKB": 1450,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-swiss"
+  },
+  "894541": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/894541",
+      "sizeKB": 1631,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-metro"
+  },
+  "738182": {
+    "title": {
+      "en": "Tech Console · Narrated Explainer · Portrait",
+      "zh": "科技控制台 · 口播讲解 · 竖屏"
+    },
+    "version": "2.7.18-alpha.8",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 130,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Tech Console · Narrated Explainer · Portrait",
+      "zh": "科技控制台 · 口播讲解 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": false
+      },
+      {
+        "en": "Relevant screen recordings or evidence clips, when selected scenes require them.",
+        "zh": "所选案例或证据镜头需要时，提供对应录屏或视频。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Opinion videos",
+        "Experience sharing",
+        "Responses and commentary",
+        "Tutorial narration with screen recordings",
+        "Portfolio narration with actual work"
+      ],
+      "zh": [
+        "观点口播",
+        "经验分享",
+        "回应与评论",
+        "教程型口播（有录屏）",
+        "作品集口播（有作品素材）"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 130 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Product or brand advertising",
+        "Do not omit presenter media from native groups that require it; presenter-free graphics use this package's declared component workflow.",
+        "Music-only films",
+        "Long-form lecture courses"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 130 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/738182",
+      "sizeKB": 5191,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-04-dark-console-portrait"
+  },
+  "670021": {
+    "title": {
+      "en": "Workflow Demo · Product Tutorial",
+      "zh": "流程演示 · 产品教程"
+    },
+    "version": "2.6.5",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 58.75,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Workflow Demo · Product Tutorial",
+      "zh": "流程演示 · 产品教程"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ],
+      "zh": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 58.75 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Changing the scene order or engine; the frozen original source and timeline remain authoritative.",
+        "Automatic replacement of product images/videos or brand paths/marks: no declared media import slot in this candidate. Preserve fixed demonstration visuals only when they are relevant; otherwise this route is not suitable."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 58.75 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/670021",
+      "sizeKB": 4856,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-user"
+  },
+  "966597": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/966597",
+      "sizeKB": 1624,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/pixel-ocean"
+  },
+  "148294": {
+    "title": {
+      "en": "Character Theater",
+      "zh": "字符剧场"
+    },
+    "version": "0.1.0-alpha8",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 155.983333,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Character Theater",
+      "zh": "字符剧场"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: native-python-node/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project."
+      ],
+      "zh": [
+        "声明的运行配置：native-python-node/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: native-python-node/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：native-python-node/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Text characters, a work gallery and theatrical animation. Beta: adaptation to new scripts is still being improved."
+      ],
+      "zh": [
+        "消息与字形角色",
+        "规则长卷",
+        "授权与自述",
+        "作品流水线与翻阅",
+        "加班与风暴",
+        "作品马赛克",
+        "字形聚合揭幕",
+        "第一人称角色舞台"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps; default demo duration is 155.983 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；默认样片 155.983 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/148294",
+      "sizeKB": 281,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/character-theater"
+  },
+  "304634": {
+    "title": {
+      "en": "Dark Dimensional Stage · Multi-screen Story",
+      "zh": "深色立体 · 多屏展陈"
+    },
+    "version": "2.7.18-alpha.8",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 123,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Dark Dimensional Stage · Multi-screen Story",
+      "zh": "深色立体 · 多屏展陈"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Choose complete native groups based on actual user content",
+        "Continuous s02→s03 media handoff; or independent review"
+      ],
+      "zh": [
+        "Choose complete native groups based on actual user content",
+        "Continuous s02→s03 media handoff; or independent review"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 123 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing benchmark, income or productivity claims",
+        "Breaking the s02→s03 continuity requirement"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 123 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/304634",
+      "sizeKB": 724,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-03-native"
+  },
+  "220052": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/220052",
+      "sizeKB": 5981,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-papercut"
+  },
+  "328828": {
+    "title": {
+      "en": "Brush Repainting · Art Photo",
+      "zh": "笔触重绘 · 艺术照片"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 14,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Brush Repainting · Art Photo",
+      "zh": "笔触重绘 · 艺术照片"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 14 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 14 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/328828",
+      "sizeKB": 5293,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-d-brushwork"
+  },
+  "553346": {
+    "title": {
+      "en": "Tech Console · Narrated Explainer",
+      "zh": "科技控制台 · 口播讲解"
+    },
+    "version": "2.7.20-alpha.8",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 130,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Tech Console · Narrated Explainer",
+      "zh": "科技控制台 · 口播讲解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": false
+      },
+      {
+        "en": "Relevant screen recordings or evidence clips, when selected scenes require them.",
+        "zh": "所选案例或证据镜头需要时，提供对应录屏或视频。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Opinion videos",
+        "Experience sharing",
+        "Responses and commentary",
+        "Tutorial narration with screen recordings",
+        "Portfolio narration with actual work"
+      ],
+      "zh": [
+        "观点口播",
+        "经验分享",
+        "回应与评论",
+        "教程型口播（有录屏）",
+        "作品集口播（有作品素材）"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 130 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Product or brand advertising",
+        "Do not omit presenter media from native groups that require it; presenter-free graphics use this package's declared component workflow.",
+        "Music-only films",
+        "Long-form lecture courses"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 130 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/553346",
+      "sizeKB": 4471,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-04-dark-console"
+  },
+  "483804": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/483804",
+      "sizeKB": 1250,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-byrne"
+  },
+  "276832": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/276832",
+      "sizeKB": 4537,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-lightboard"
+  },
+  "178707": {
+    "title": {
+      "en": "Beyond the Frame",
+      "zh": "突破边界"
+    },
+    "version": "0.1.1-alpha.2",
+    "ratio": "3:4",
+    "width": 1440,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 160.4,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Beyond the Frame",
+      "zh": "突破边界"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: native-python-node/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project."
+      ],
+      "zh": [
+        "声明的运行配置：native-python-node/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: native-python-node/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：native-python-node/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Paper frames, frame-breaking transitions and playful hidden details. Beta: adaptation to new scripts is still being improved."
+      ],
+      "zh": [
+        "开场与展开",
+        "判断与计数",
+        "能力变化与对比",
+        "问题与行动",
+        "窗口压缩与重开",
+        "当下与内容产出",
+        "台阶攀登与破框",
+        "总结与交付卡"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1440 × 1920, 60 fps; default demo duration is 160.4 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1440 × 1920，60 fps；默认样片 160.4 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/178707",
+      "sizeKB": 1535,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/break-boundaries"
+  },
+  "293151": {
+    "title": {
+      "en": "Vivid Characters · Narrative Explainer · Portrait",
+      "zh": "鲜色角色 · 叙事讲解 · 竖屏"
+    },
+    "version": "2.7.18-alpha.9",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 122,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Vivid Characters · Narrative Explainer · Portrait",
+      "zh": "鲜色角色 · 叙事讲解 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "User narration and opinion with same-style basic groups",
+        "Complete six-keyword, two-to-three handoff or three-feedback relationships when actually present"
+      ],
+      "zh": [
+        "User narration and opinion with same-style basic groups",
+        "Complete six-keyword, two-to-three handoff or three-feedback relationships when actually present"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 122 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing roles or quantities to fit a group",
+        "Claiming demonstration versions or counts as real performance data"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 122 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/293151",
+      "sizeKB": 2368,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-05-native-portrait"
+  },
+  "404937": {
+    "title": {
+      "en": "DeepSeek Whale · Particle Reveal",
+      "zh": "DeepSeek 鲸鱼粒子聚合"
+    },
+    "version": "1.1.0",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 8,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "DeepSeek Whale · Particle Reveal",
+      "zh": "DeepSeek 鲸鱼粒子聚合"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Label: text, up to 24 characters.",
+        "zh": "Label：文字，不超过 24 个字符。",
+        "required": true
+      },
+      {
+        "en": "Accent: text.",
+        "zh": "Accent：文字。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: html-canvas/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：html-canvas/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Scattered particles assemble into the DeepSeek whale logo for intros, brand reveals and chapter transitions."
+      ],
+      "zh": [
+        "品牌片头",
+        "产品发布开场",
+        "章节转场"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 30 fps. The public demo is 8 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，30 fps；公开样片 8 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/404937",
+      "sizeKB": 1514,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@thepandaq/deepseek-whale-assemble"
+  },
+  "941301": {
+    "title": {
+      "en": "DeepSeek · Particle Typography",
+      "zh": "DeepSeek 词语粒子"
+    },
+    "version": "1.1.0",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 9,
+    "availability": "demo-only",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "DeepSeek · Particle Typography",
+      "zh": "DeepSeek 词语粒子"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Word1: text, up to 6 characters.",
+        "zh": "Word1：文字，不超过 6 个字符。",
+        "required": true
+      },
+      {
+        "en": "Word2: text, up to 6 characters.",
+        "zh": "Word2：文字，不超过 6 个字符。",
+        "required": true
+      },
+      {
+        "en": "Word3: text, up to 6 characters.",
+        "zh": "Word3：文字，不超过 6 个字符。",
+        "required": true
+      },
+      {
+        "en": "Word4: text, up to 6 characters.",
+        "zh": "Word4：文字，不超过 6 个字符。",
+        "required": true
+      },
+      {
+        "en": "Accent: text.",
+        "zh": "Accent：文字。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: html-canvas/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：html-canvas/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Particles form four keywords in sequence for concept introductions, feature lists and opening slogans."
+      ],
+      "zh": [
+        "关键词介绍",
+        "能力列表",
+        "口号式开场"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 30 fps. The public demo is 9 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，30 fps；公开样片 9 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/941301",
+      "sizeKB": 608,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@thepandaq/deepseek-word-morph"
+  },
+  "538361": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/538361",
+      "sizeKB": 4739,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-timeline"
+  },
+  "213827": {
+    "title": {
+      "en": "Engineering Blueprint · Product Breakdown",
+      "zh": "工程蓝图 · 产品拆解"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 76,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Engineering Blueprint · Product Breakdown",
+      "zh": "工程蓝图 · 产品拆解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ],
+      "zh": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 76 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Changing the scene order or engine; the frozen original source and timeline remain authoritative.",
+        "Automatic replacement of product images/videos or brand paths/marks: no declared media import slot in this candidate. Preserve fixed demonstration visuals only when they are relevant; otherwise this route is not suitable."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 76 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/213827",
+      "sizeKB": 2786,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-blueprint"
+  },
+  "385712": {
+    "title": {
+      "en": "Kinetic Tech",
+      "zh": "酷炫科技风"
+    },
+    "version": "0.2.7-open-beta",
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": null,
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/385712",
+      "sizeKB": 51514,
+      "files": 361,
+      "hasSource": true
+    },
+    "website": "https://motiongit.com/@adunext/385712"
+  },
+  "551805": {
+    "title": {
+      "en": "Mirror Kaleidoscope · Photo Motion",
+      "zh": "镜像万花筒 · 照片变幻"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 13,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Mirror Kaleidoscope · Photo Motion",
+      "zh": "镜像万花筒 · 照片变幻"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work. The declared photo input has 2 items.",
+        "zh": "这次要呈现的照片与作品标题。已声明照片输入为 2 张。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 13 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 13 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/551805",
+      "sizeKB": 7899,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-h-kaleido"
+  },
+  "867595": {
+    "title": {
+      "en": "Light and Dark Cuts · Product Promotion",
+      "zh": "明暗快切 · 产品宣传"
+    },
+    "version": "2.6.6-alpha.1",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 57,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Light and Dark Cuts · Product Promotion",
+      "zh": "明暗快切 · 产品宣传"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared duration policy follows the current content; the package plan determines final timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时长随本期内容适配，最终节奏由包内制作计划确定。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Current product images, screenshots or display materials supported by the selected media slots.",
+        "zh": "本期产品图片、截图或展示素材，按所选槽位支持的类型准备。",
+        "required": false
+      },
+      {
+        "en": "The current brand name, logo and applicable feature icons.",
+        "zh": "本期品牌名称、Logo，以及实际需要的功能图标。",
+        "required": true
+      },
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Digital tools, reusable creative formats, feature explanations",
+        "Keyword, comparison, process, repeated output, network and conclusion scenes"
+      ],
+      "zh": [
+        "Digital tools, reusable creative formats, feature explanations",
+        "Keyword, comparison, process, repeated output, network and conclusion scenes"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 57 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary short or different claim structures without checking the 13-scene arrangement and remaining dynamic wording; reordering or repeating scenes (new velocity-seam pairs are not reviewed).",
+        "Arbitrary short or different claim structures without checking the fixed 13-scene arrangement and remaining dynamic wording.",
+        "Automatic semantic reframing without checking the actual subject, crop and current footage."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 57 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/867595",
+      "sizeKB": 7651,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-velocity"
+  },
+  "509099": {
+    "title": {
+      "en": "Goals & Evidence · 17 Motion Diagram Types",
+      "zh": "目标与证据 · 17类语义动效"
+    },
+    "version": "0.4.0-rc.5",
+    "ratio": "16:9",
+    "width": 1280,
+    "height": 720,
+    "fps": 24,
+    "durationSeconds": 72,
+    "availability": "download-available",
+    "category": {
+      "en": "explainer",
+      "zh": "explainer"
+    },
+    "subtitle": {
+      "en": "Goals & Evidence · 17 Motion Diagram Types",
+      "zh": "目标与证据 · 17类语义动效"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: native-python-node/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：native-python-node/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": false
+      },
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: native-python-node/1. Dependencies: python 3.11+ standard library only, node 22+, playwright existing module, ffmpeg existing executable, ffprobe existing executable. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：native-python-node/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Seventeen types of semantic motion diagrams in warm gray, off-white and green, for explainers, product descriptions, metric comparisons and arguments."
+      ],
+      "zh": [
+        "观点与问题分析",
+        "两项对比",
+        "2至5步流程",
+        "已有产品演示与数据",
+        "2–6节点扩张",
+        "两条路线选择并收拢",
+        "2–5站对象传递",
+        "整字坍塌与图形碎片炸裂"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1280 × 720, 24 fps. The public demo is 72 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1280 × 720，24 fps；公开样片 72 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/509099",
+      "sizeKB": 183,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@frankye1211/product-update-story"
+  },
+  "502944": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/502944",
+      "sizeKB": 6573,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-riso"
+  },
+  "295450": {
+    "title": {
+      "en": "Paper Perspective · Narrated Explainer · Portrait",
+      "zh": "纸面透视 · 口播讲解 · 竖屏"
+    },
+    "version": "2.7.18-alpha.10",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 261,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Paper Perspective · Narrated Explainer · Portrait",
+      "zh": "纸面透视 · 口播讲解 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      },
+      {
+        "en": "Transparent illustrations relevant to the chosen scene, with permission to use them.",
+        "zh": "所选场景需要时，提供相关且有使用权的透明示意插图。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Claims and conditions",
+        "Comparisons and processes",
+        "Evidence and timelines",
+        "Numbers and conclusions"
+      ],
+      "zh": [
+        "关键词、观点与条件的强调",
+        "资料、文件、步骤与因果链",
+        "对比、证据、时间线和迭代说明",
+        "数值示意与结论收束"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 261 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Fabricated content to fill fixed counts",
+        "Symbolic artwork presented as factual evidence",
+        "Unverified lip sync or product claims"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 261 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/295450",
+      "sizeKB": 523,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-02-expanded-portrait"
+  },
+  "128610": {
+    "title": {
+      "en": "Screen Collage · Brand Story",
+      "zh": "多屏拼贴 · 品牌宣传"
+    },
+    "version": "2.6.5-alpha.1",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 57,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Screen Collage · Brand Story",
+      "zh": "多屏拼贴 · 品牌宣传"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared duration policy follows the current content; the package plan determines final timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时长随本期内容适配，最终节奏由包内制作计划确定。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "The current brand name, logo and applicable feature icons.",
+        "zh": "本期品牌名称、Logo，以及实际需要的功能图标。",
+        "required": true
+      },
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "Current product screenshots, screen recordings and display materials for the declared media slots.",
+        "zh": "声明素材槽位对应的本期产品截图、录屏与展示内容。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Landscape product film using current copy, brand artwork, graph labels and supplied image/video carriers. Default 57-second native arrangement; longer copy or narration is arranged from complete native scenes (repeat/reorder at original speed, holds only at reviewed settled points) up to 600 seconds. Scene motion and independent SFX are preserved."
+      ],
+      "zh": [
+        "Landscape product film using current copy, brand artwork, graph labels and supplied image/video carriers. Default 57-second native arrangement; longer copy or narration is arranged from complete native scenes (repeat/reorder at original speed, holds only at reviewed settled points) up to 600 seconds. Scene motion and independent SFX are preserved."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 57 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Stretching, speeding up or partially cutting a native scene, changing the engine or switching to portrait.",
+        "Declaring arbitrary copy length or every product topic suitable without actual layout and semantic review."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 57 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/128610",
+      "sizeKB": 8978,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-main"
+  },
+  "336980": {
+    "title": {
+      "en": "Modern Editorial · Narrated Explainer",
+      "zh": "现代图文 · 口播讲解"
+    },
+    "version": "2.7.18-alpha.14",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 118,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Modern Editorial · Narrated Explainer",
+      "zh": "现代图文 · 口播讲解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Claims, explanation, evidence, process, summary and closing with actual semantic support",
+        "Choose full native groups by content; preserve state continuity"
+      ],
+      "zh": [
+        "有语义依据的主张、拆解、证据、过程、归纳与收尾",
+        "按内容选择原生完整组，保留动作与状态接力"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 118 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing evidence, steps or results",
+        "Forcing arbitrary item counts into a fixed-count group",
+        "Unverified automatic lip sync"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 118 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/336980",
+      "sizeKB": 2549,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-01-integrated"
+  },
+  "743702": {
+    "title": {
+      "en": "Spatial Gallery · Photo Memories",
+      "zh": "空间画廊 · 回忆相册"
+    },
+    "version": "2.6.5-alpha.2",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 14,
+    "availability": "demo-only",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Spatial Gallery · Photo Memories",
+      "zh": "空间画廊 · 回忆相册"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work. At least 12 photos. At most 128 photos.",
+        "zh": "这次要呈现的照片与作品标题。至少 12 张。最多 128 张。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 14 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 14 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/743702",
+      "sizeKB": 6707,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-g-gallery"
+  },
+  "460349": {
+    "title": {
+      "en": "Photo Mosaic · Image Reveal",
+      "zh": "照片马赛克 · 拼图揭幕"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 14,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Photo Mosaic · Image Reveal",
+      "zh": "照片马赛克 · 拼图揭幕"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work.",
+        "zh": "这次要呈现的照片与作品标题。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 14 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 14 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/460349",
+      "sizeKB": 11527,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-b-mosaic"
+  },
+  "866043": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/866043",
+      "sizeKB": 2412,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-mindmap"
+  },
+  "667934": {
+    "title": {
+      "en": "Keynote Stage · Product Demo",
+      "zh": "发布会舞台 · 产品演示"
+    },
+    "version": "2.6.4",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 108,
+    "availability": "download-available",
+    "category": {
+      "en": "product",
+      "zh": "product"
+    },
+    "subtitle": {
+      "en": "Keynote Stage · Product Demo",
+      "zh": "发布会舞台 · 产品演示"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared duration policy follows the current content; the package plan determines final timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时长随本期内容适配，最终节奏由包内制作计划确定。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your topic, script and facts to preserve.",
+        "zh": "本期主题、文稿与需要准确保留的信息。",
+        "required": true
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "Current product images, screenshots or display materials supported by the selected media slots.",
+        "zh": "本期产品图片、截图或展示素材，按所选槽位支持的类型准备。",
+        "required": false
+      },
+      {
+        "en": "Your current video clips for the selected scenes or declared media slots. Follow the template's separate source-audio instructions.",
+        "zh": "本期视频片段，按所选场景或声明素材槽位使用；原声按模板的独立音频说明处理。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ],
+      "zh": [
+        "Fixed landscape animation using the listed public text/display-data/palette slots, current narration and independently supplied licensed music."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 108 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Current native media and complete-scene duration choices are described precisely in CURRENT-MEDIA-CLOCK.md; unrelated engine/layout changes remain unsupported.",
+        "Unlisted whole-brand graphics, new layouts or arbitrary engine/scene logic edits. Native current media uses only the declared windows and complete-scene clock contract."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 108 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/667934",
+      "sizeKB": 5788,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@motiongit/motiongit-promo-keynote"
+  },
+  "721489": {
+    "title": {
+      "en": "Vibrant Poster · Narrated Explainer · Portrait",
+      "zh": "活力海报 · 口播讲解 · 竖屏"
+    },
+    "version": "2.7.18-alpha.7",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 194,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Vibrant Poster · Narrated Explainer · Portrait",
+      "zh": "活力海报 · 口播讲解 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "User narration with bold typographic emphasis",
+        "Explicit media, checklists and illustrative relationships"
+      ],
+      "zh": [
+        "User narration with bold typographic emphasis",
+        "Explicit media, checklists and illustrative relationships"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 194 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Faking real data or creator identities",
+        "Inventing semantic quantities to force a scene"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 194 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/721489",
+      "sizeKB": 730,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/vibrant-poster-portrait"
+  },
+  "381814": {
+    "title": {
+      "en": "Halftone Dots · Portrait Title",
+      "zh": "半调网点 · 人像标题"
+    },
+    "version": "2.6.6",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 13,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "Halftone Dots · Portrait Title",
+      "zh": "半调网点 · 人像标题"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your photos and a title for this work. The declared photo input has 3 items.",
+        "zh": "这次要呈现的照片与作品标题。已声明照片输入为 3 张。",
+        "required": true
+      },
+      {
+        "en": "A licensed music track or your preference for music in this production.",
+        "zh": "本期已授权配乐，或本期是否需要配乐的偏好。",
+        "required": false
+      },
+      {
+        "en": "The current voice recording or your narration preference for this production.",
+        "zh": "本期配音文件，或是否需要配音的安排。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ],
+      "zh": [
+        "Make the user's photos into the existing visual composition; retain every original effect and time cue."
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 13 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Arbitrary portrait output or scene rearrangement without a separately adapted design."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 13 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/381814",
+      "sizeKB": 13728,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@prism-studio/visual-art-a-halftone"
+  },
+  "749051": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/749051",
+      "sizeKB": 2811,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-clay"
+  },
+  "650041": {
+    "title": null,
+    "version": null,
+    "ratio": null,
+    "width": null,
+    "height": null,
+    "fps": null,
+    "durationSeconds": null,
+    "availability": "temporarily-unavailable",
+    "category": null,
+    "subtitle": null,
+    "technical": null,
+    "materials": null,
+    "dependencies": null,
+    "goodFor": null,
+    "boundaries": null,
+    "capabilities": null,
+    "github": {
+      "repo": "https://github.com/motiontemplates/650041",
+      "sizeKB": 3713,
+      "files": 16,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@curious-atlas/knowledge-explainer-sketchnote"
+  },
+  "960723": {
+    "title": {
+      "en": "Vivid Characters · Narrative Explainer",
+      "zh": "鲜色角色 · 叙事讲解"
+    },
+    "version": "2.7.18-alpha.8",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 122,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Vivid Characters · Narrative Explainer",
+      "zh": "鲜色角色 · 叙事讲解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "User narration and opinion with same-style basic groups",
+        "Complete six-keyword, two-to-three handoff or three-feedback relationships when actually present"
+      ],
+      "zh": [
+        "User narration and opinion with same-style basic groups",
+        "Complete six-keyword, two-to-three handoff or three-feedback relationships when actually present"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 122 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing roles or quantities to fit a group",
+        "Claiming demonstration versions or counts as real performance data"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 122 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/960723",
+      "sizeKB": 2232,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-05-native"
+  },
+  "358192": {
+    "title": {
+      "en": "Paper Perspective · Narrated Explainer",
+      "zh": "纸面透视 · 口播讲解"
+    },
+    "version": "2.7.21-alpha.13",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "durationSeconds": 261,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Paper Perspective · Narrated Explainer",
+      "zh": "纸面透视 · 口播讲解"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      },
+      {
+        "en": "Transparent illustrations relevant to the chosen scene, with permission to use them.",
+        "zh": "所选场景需要时，提供相关且有使用权的透明示意插图。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Claims and conditions",
+        "Comparisons and processes",
+        "Evidence and timelines",
+        "Numbers and conclusions"
+      ],
+      "zh": [
+        "关键词、观点与条件的强调",
+        "资料、文件、步骤与因果链",
+        "对比、证据、时间线和迭代说明",
+        "数值示意与结论收束"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 60 fps. The public demo is 261 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Fabricated content to fill fixed counts",
+        "Symbolic artwork presented as factual evidence",
+        "Unverified lip sync or product claims"
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，60 fps；公开样片 261 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/358192",
+      "sizeKB": 6945,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-02-expanded"
+  },
+  "380710": {
+    "title": {
+      "en": "DeepSeek · 3D Particle Morph",
+      "zh": "DeepSeek 粒子形变"
+    },
+    "version": "1.1.0",
+    "ratio": "16:9",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationSeconds": 9,
+    "availability": "download-available",
+    "category": {
+      "en": "art",
+      "zh": "art"
+    },
+    "subtitle": {
+      "en": "DeepSeek · 3D Particle Morph",
+      "zh": "DeepSeek 粒子形变"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: html-canvas/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The declared timeline has a fixed duration; new content fits its existing scene order and timing."
+      ],
+      "zh": [
+        "声明的运行配置：html-canvas/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "已声明时间轴为固定时长，本期内容按现有场景顺序和节奏适配。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Label: text, up to 24 characters.",
+        "zh": "Label：文字，不超过 24 个字符。",
+        "required": true
+      },
+      {
+        "en": "Accent: text.",
+        "zh": "Accent：文字。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "Declared runtime profile: html-canvas/1. Check the downloaded package for exact tools and setup steps.",
+        "zh": "声明的运行配置：html-canvas/1。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "The same particles morph between four 3D shapes for technology-themed transitions, connected concepts and outros."
+      ],
+      "zh": [
+        "科技概念转场",
+        "片尾字幕前氛围",
+        "技术分享开场"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1920 × 1080, 30 fps. The public demo is 9 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes."
+      ],
+      "zh": [
+        "已声明输出为 1920 × 1080，30 fps；公开样片 9 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/380710",
+      "sizeKB": 1020,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@thepandaq/deepseek-form-morph"
+  },
+  "314486": {
+    "title": {
+      "en": "Modern Editorial · Narrated Explainer · Portrait",
+      "zh": "现代图文 · 口播讲解 · 竖屏"
+    },
+    "version": "2.7.18-alpha.10",
+    "ratio": "9:16",
+    "width": 1080,
+    "height": 1920,
+    "fps": 60,
+    "durationSeconds": 118,
+    "availability": "demo-only",
+    "category": {
+      "en": "talk",
+      "zh": "talk"
+    },
+    "subtitle": {
+      "en": "Modern Editorial · Narrated Explainer · Portrait",
+      "zh": "现代图文 · 口播讲解 · 竖屏"
+    },
+    "technical": {
+      "en": [
+        "Declared runtime profile: adu-authored-unit/1.",
+        "Editable inputs are mapped through the template parameter schema and preset to its existing animation project.",
+        "The template uses authored animation units selected for the meaning and quantity of the current content.",
+        "The declared duration policy follows the current voiceover; the package plan determines final timing rather than the demo length."
+      ],
+      "zh": [
+        "声明的运行配置：adu-authored-unit/1。",
+        "通过模板参数和预设，将本期文字、数据或素材映射到已有动画工程。",
+        "模板按本期内容的语义和数量选择已制作的原生动画单元，再按包内规则组合。",
+        "已声明时长随本期配音适配，最终节奏由包内制作计划确定，样片时长不是固定成片时长。"
+      ]
+    },
+    "materials": [
+      {
+        "en": "Your current talking-head video with its original audio for the native presenter workflow.",
+        "zh": "原生口播流程使用的本期人物视频与原声。",
+        "required": false
+      },
+      {
+        "en": "A transcript or SRT matching the current narration/video.",
+        "zh": "与本期口播匹配的文稿或 SRT 字幕。",
+        "required": true
+      },
+      {
+        "en": "The topic, key points and output preferences already available in the conversation.",
+        "zh": "对话中已有的主题、关键要点与输出偏好，由助手整理为方案。",
+        "required": false
+      }
+    ],
+    "dependencies": [
+      {
+        "en": "The package declares a Python and Node.js host. Check its dependency lock for supported versions and any additional rendering tools.",
+        "zh": "模板声明使用 Python 和 Node.js。具体工具与版本以下载包为准。"
+      },
+      {
+        "en": "Use the package dependency lock and setup/check instructions. Check existing tools first, install only missing requirements and verify a preview.",
+        "zh": "按下载包的依赖锁和 setup/check 说明检查已有工具，只补齐缺项，并验证预览。"
+      }
+    ],
+    "goodFor": {
+      "en": [
+        "Claims, explanation, evidence, process, summary and closing with actual semantic support",
+        "Choose full native groups by content; preserve state continuity"
+      ],
+      "zh": [
+        "有语义依据的主张、拆解、证据、过程、归纳与收尾",
+        "按内容选择原生完整组，保留动作与状态接力"
+      ]
+    },
+    "boundaries": {
+      "en": [
+        "The documented output is 1080 × 1920, 60 fps. The public demo is 118 seconds.",
+        "Use the actual package parameter bounds; extra materials do not automatically create extra scenes.",
+        "Inventing evidence, steps or results",
+        "Forcing arbitrary item counts into a fixed-count group",
+        "Unverified automatic lip sync"
+      ],
+      "zh": [
+        "已声明输出为 1080 × 1920，60 fps；公开样片 118 秒。",
+        "按实际包的参数边界制作；增加素材不会自动增加场景。"
+      ]
+    },
+    "capabilities": [
+      {
+        "en": "Optional services require a live catalog, template slot and account check before they can be confirmed.",
+        "zh": "配套服务需核对官网实时能力、模板槽位和账号权限后才能确认。",
+        "status": "check-live"
+      }
+    ],
+    "github": {
+      "repo": "https://github.com/motiontemplates/314486",
+      "sizeKB": 2108,
+      "files": 18,
+      "hasSource": false
+    },
+    "website": "https://motiongit.com/@adunext/template-01-integrated-portrait"
+  }
+}

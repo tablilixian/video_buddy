@@ -121,6 +121,7 @@ canvas-studio/docs/plans/2026-11-10-视频模板化/
 ├── 任务包-1C-装饰构件层.md
 ├── 任务包-1-模板库机制.md
 ├── 配套-motiongit解剖与19项能力矩阵.md   ← 外部解剖 + 能力矩阵 + 实测推翻的五个判断
+├── 配套-网站目录整理-100模板与51落地页.md ← ★ 网站全量盘点（哪些在 GitHub 开源）
 ├── 原型-manifest-b1b2.json          ← 可直接渲染的 B1+B2 manifest（20 轨，0 error 0 warning）
 ├── 原型-manifest-spec-b1b2.json     ← spec 层形态（含 limits 容量合同样例）
 ├── 原型-manifest-b1b2-测试夹具.json   ← 18 轨夹具（槽位合同套件用）
@@ -132,6 +133,9 @@ canvas-studio/docs/plans/2026-11-10-视频模板化/
 ├── 原型-spec-limits-validate.mjs    ← 容量合同校验器原型（spec 层 limits）
 ├── 原型-run-cases.mjs               ← 合成套件（8/8）
 ├── 原型-run-real.mjs                ← 真实四季 spec 套件（7/7）
+├── 数据-100模板清单.csv               ← 100 个模板全清单（可筛选）
+├── 数据-51落地页元数据.json           ← 51 份落地页 template.json 全量
+├── 数据-51落地页速览.md               ← 51 个落地页速览表
 ├── 原型-compile.mjs                 ← ★ 模板编译器原型（编译 + 校验 + 结构比对；七项全过）
 ├── 原型-compile-core.mjs            ← ★ 编译核心（无副作用，供测试复用，避免逻辑漂移）
 ├── 原型-audit-text-fit.mjs          ← ★ 文本容量审计器（模块 + CLI；第 2~50 个模板靠它算 maxChars）

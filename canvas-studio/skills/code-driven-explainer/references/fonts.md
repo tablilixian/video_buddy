@@ -41,3 +41,19 @@
 - **不要声明外链字体**：`src` 只接受同源 URL 或本项目资产目录内的绝对路径；带 `scheme://` 的一律被拒（防外链泄露）。
 - 一部片子**尽量只用一两种字族**；混排过多字族会明显拖慢渲染、也难统一观感。
 - 字体与 `@font-face` 的 `src` 不同源会导致**静默 404 → 回退系统字体**（最难查的一类）；因此能用缺省就别自造 `src`。
+
+## 展示字体的 Content-Type 契约（RQ-17，REQ-038 实测结论）
+
+`.woff2` 走资产路由返回的是 `application/octet-stream` + `nosniff`（`src/routes.ts` 的
+`ASSET_CONTENT_TYPES` 表**没有** `.woff2` 条目）—— **实测仍加载成功**：playsout 复刻的
+7 个展示字体全部经该路由进渲染，84px "The" 的墨迹宽 147.26px 与 HarfBuzz 无字距
+advance 147px 一致 ⇒ 字体真实生效，不是 fallback。
+
+**契约（写死，别再调研）**：
+1. `global.fonts[{family, weight, src}]` + 字体文件放**项目 assets 目录**（宿主物化为
+   `/canvas-studio/assets/...` 同源 URL）是可行路径；
+2. `@font-face` 的加载**不依赖**响应 Content-Type —— 浏览器按字节嗅探字体容器
+   （`nosniff` 只拦 script/style，不拦 font）；
+3. 因此**无需**为 `.woff2` 扩 `ASSET_CONTENT_TYPES`；改它反而要动路由表与测试，
+   收益为零；
+4. 排查字体问题时先看这条：**Content-Type: octet-stream 是预期行为，不是 bug**。

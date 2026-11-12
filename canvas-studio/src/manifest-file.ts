@@ -61,6 +61,8 @@ export function writeManifestFile(input: {
   writeTo: string
   json: string
   trackCount: number
+  /** RQ-20（REQ-038）：紧凑落盘体（缺省不写 —— 传了即以它落盘、`json` 另存 `.pretty.json`）。 */
+  compactJson?: string
 }): ManifestFileWrite {
   const raw = input.writeTo.trim()
   if (raw === '') throwError('CS-USER-ERR', { message: 'writeTo 不能为空' })
@@ -71,9 +73,15 @@ export function writeManifestFile(input: {
         + ' —— 骨架只写自己项目里的文件，跨项目/跨仓一律拒收。可直接传相对路径 build/manifest.json。',
     })
   }
-  const bytes = Buffer.byteLength(input.json, 'utf8')
+  // RQ-20（REQ-038）：落盘统一**紧凑 JSON**（缩进白占 33%，134.3KB → 90.4KB，E11）；
+  // 可读副本另存 `<path>.pretty.json`。预览永远来自 pretty（紧凑版一行没法核对）。
+  const onDisk = input.compactJson ?? input.json
+  const bytes = Buffer.byteLength(onDisk, 'utf8')
   mkdirSync(dirname(resolved), { recursive: true })
-  writeFileSync(resolved, input.json, 'utf8')
+  writeFileSync(resolved, onDisk, 'utf8')
+  if (input.compactJson !== undefined && input.compactJson !== input.json) {
+    writeFileSync(`${resolved}.pretty.json`, input.json, 'utf8')
+  }
   return {
     path: resolved,
     bytes,

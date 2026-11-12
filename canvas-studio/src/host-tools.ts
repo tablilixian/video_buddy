@@ -4678,6 +4678,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           throwError('CS-DEV-ERR', { message: `骨架生成后校验失败（这是产品缺陷，请报给开发）：${check.errors.join('；')}` })
         }
         const json = JSON.stringify(manifest, null, 2)
+        // RQ-20（REQ-038）：落盘统一紧凑 JSON（E11：缩进白占 33%），可读副本 .pretty.json。
+        const compactJson = JSON.stringify(manifest)
         // 主题/配方说明两处共用：落盘分支与回显分支都要给（模型拿到路径后仍要知道素材清单）。
         const hints = [
           ...(fellBack ? [`⚠️ 没找到主题 \`${String(a.theme)}\`，已回落到 ${theme.id}（可选：${Object.keys(THEMES).join(' / ')}）`] : []),
@@ -4698,6 +4700,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             projectDir: registry.projectDir(projectId),
             writeTo,
             json,
+            compactJson,
             trackCount: (manifest.tracks as unknown[]).length,
           })
           return {

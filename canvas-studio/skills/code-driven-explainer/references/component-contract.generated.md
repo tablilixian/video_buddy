@@ -91,7 +91,7 @@
 - `KNOWN_REVEAL_OUT_KEYS`: 'direction' | 'durationInFrames' | 'gapFrames'
 - `KNOWN_PERCENT_POINT_KEYS`: 'x' | 'y'
 - `KNOWN_AUDIO_KEYS`: 'bgmUrl' | 'voiceOverUrl' | 'voiceOver' | 'mix' | 'fadeInSeconds' | 'fadeOutSeconds' | 'duck' | 'sfx'
-- `KNOWN_SFX_KEYS`: 'src' | 'anchor' | 'startFrame' | 'startSec' | 'gain' | 'pan' | 'fadeInSec' | 'fadeOutSec' | 'type'
+- `KNOWN_SFX_KEYS`: 'src' | 'anchor' | 'startFrame' | 'startSec' | 'startFrom' | 'gain' | 'pan' | 'fadeInSec' | 'fadeOutSec' | 'type'
 - `KNOWN_MIX_KEYS`: 'bgmVolume' | 'voiceVolume'
 - `KNOWN_DUCK_KEYS`: 'amount'
 - `KNOWN_GLOBAL_KEYS`: 'fontFamily' | 'fonts' | 'theme' | 'brandColor' | 'logo'

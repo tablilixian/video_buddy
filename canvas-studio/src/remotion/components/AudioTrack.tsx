@@ -104,6 +104,9 @@ export const AudioTrack: React.FC<{
           <Sequence key={`sfx-${String(index)}`} from={startFrame} layout="none">
             <Audio
               src={sfx.src}
+              // RQ-08（REQ-038）：源内起始帧（`trimBefore` 帧口径，与 VideoClip 的
+              // `trimBeforeFrames` 同源换算）。缺省不传 = 从素材开头播（老行为）。
+              {...(sfx.startFrom !== undefined && sfx.startFrom > 0 ? { trimBefore: sfx.startFrom } : {})}
               volume={(frame: number) =>
                 sfxVolumeAt(startFrame + frame, {
                   startFrame,

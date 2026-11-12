@@ -326,6 +326,8 @@ export interface ManifestAudioLike {
     anchor?: { trackId: string; at: 'start' | 'end'; offsetSec?: number }
     startFrame?: number
     startSec?: number
+    /** RQ-08（REQ-038）：源内起始帧（与成片定位正交；缺省 = 从素材开头播）。 */
+    startFrom?: number
     gain?: number
     fadeInSec?: number
     fadeOutSec?: number
@@ -461,6 +463,11 @@ export function timelineFromManifestAudio(manifest: {
         url,
         startSec: fps > 0 ? Math.round((startFrame / fps) * 1000) / 1000 : 0,
         role: 'sfx',
+        // RQ-08（REQ-038）：源内起始帧 → 源内秒（与 startSec 同精度口径；fps 未知时
+        // 无法换算，跳过偏移 —— 定位仍然生效，只是从头播）。
+        ...(item.startFrom !== undefined && item.startFrom > 0 && fps > 0
+          ? { sourceOffsetSec: Math.round((item.startFrom / fps) * 1000) / 1000 }
+          : {}),
         ...(item.gain !== undefined ? { gain: item.gain } : {}),
         ...(item.fadeInSec !== undefined ? { fadeInSec: item.fadeInSec } : {}),
         ...(item.fadeOutSec !== undefined ? { fadeOutSec: item.fadeOutSec } : {}),

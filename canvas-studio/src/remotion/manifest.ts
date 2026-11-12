@@ -934,6 +934,14 @@ export interface ManifestSfx {
   startFrame?: number
   /** 三定位之三：成片绝对秒，渲染时 `Math.round(startSec * fps)`。跨 fps 复用靠它。 */
   startSec?: number
+  /**
+   * RQ-08（REQ-038）：**源内**起始帧 —— 音效不从素材开头播，而从素材第 N 帧起播
+   *（如长 impact 从第 55 帧起取尾段）。落 Remotion `<Audio trimBefore>`（帧口径，
+   * 与 `VideoClipTrack.trimBeforeFrames` 同源换算）。缺省不写 = 从头播（老 manifest
+   * 逐样本不变）。与成片定位（`anchor` / `startFrame` / `startSec`）正交：定位管
+   * 「什么时候响」，`startFrom` 管「从素材哪一帧开始响」。
+   */
+  startFrom?: number
   /** 线性增益 0–2（缺省 1）。1 = 原音量。 */
   gain?: number
   /**
@@ -1152,8 +1160,8 @@ const KNOWN_PERCENT_POINT_KEYS = new Set(['x', 'y'])
 const MAX_VOICE_OVER_CLIPS = 64
 
 const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'voiceOver', 'mix', 'fadeInSeconds', 'fadeOutSeconds', 'duck', 'sfx'])
-/** sfx 单条的已知键（契约外字段只告警不阻断，与 KNOWN_* 同策略）。 */
-const KNOWN_SFX_KEYS = new Set(['src', 'anchor', 'startFrame', 'startSec', 'gain', 'pan', 'fadeInSec', 'fadeOutSec', 'type'])
+/** sfx 单条的已知键（契约外字段只告警不阻断，与 KNOWN_* 同策略）。RQ-08 增 startFrom。 */
+const KNOWN_SFX_KEYS = new Set(['src', 'anchor', 'startFrame', 'startSec', 'startFrom', 'gain', 'pan', 'fadeInSec', 'fadeOutSec', 'type'])
 /** sfx 条数上限（对齐 MAX_VOICE_OVER_CLIPS 的量级）。 */
 const MAX_SFX_EVENTS = 64
 const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
@@ -2488,6 +2496,14 @@ function validateSfxList(
       const frame = item.startFrame
       if (typeof frame !== 'number' || !Number.isInteger(frame) || frame < 0) {
         errors.push(`${at}.startFrame 必须是非负整数`)
+      }
+    }
+
+    // RQ-08（REQ-038）：源内起始帧 —— 与成片定位正交，可与之同时给。
+    if (item.startFrom !== undefined) {
+      const from = item.startFrom
+      if (typeof from !== 'number' || !Number.isInteger(from) || from < 0) {
+        errors.push(`${at}.startFrom 必须是非负整数（源内起始帧；缺省不写 = 从素材开头播）`)
       }
     }
 

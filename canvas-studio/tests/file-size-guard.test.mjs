@@ -208,8 +208,9 @@ export const FILE_WHITELIST = {
   // REQ-038 批 2（同日）：RQ-04 radius/stroke/strokeWidthPx/dash + RQ-06 gradientType 族
   // 字段与注释 / rect-circle-gradient 三分支校验（+96，2606 → 2702）显式登记。
   // REQ-038 批 3（同日）：RQ-02 letterSpacing/letterSpacingEm 字段+校验、RQ-09 vignette
-  // shape/strength 字段+校验（+65，2702 → 2767）显式登记。
-  'src/remotion/manifest.ts': 2767,
+  // shape/strength 字段+校验（+65，2702 → 2767）；批 4：RQ-08 sfx.startFrom 字段+注释+
+  // 校验（+16，2767 → 2783）显式登记。
+  'src/remotion/manifest.ts': 2783,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

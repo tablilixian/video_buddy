@@ -28,6 +28,12 @@ export interface AudioSegment {
   url: string
   /** 绝对起点（秒，成片时间坐标）。旁白/音效必须有；BGM/原生段缺省 0。 */
   startSec: number
+  /**
+   * RQ-08（REQ-038）：**源内**起始秒 —— 段不从素材开头取，而从素材第 N 秒起取
+   *（装配层落 `atrim=start=N`，CSR 侧落 Remotion `trimBefore`）。缺省不写 = 从头
+   * 取（老 manifest 逐样本不变）。与 `startSec`（成片绝对起点）正交。
+   */
+  sourceOffsetSec?: number
   /** 期望占用时长（秒）。0/缺省 = 用素材真实时长（装配期探测后回填）。 */
   durationSec?: number
   /** 线性增益（0–1，1 = 原音量）。全系统只用这一套口径，不引入 dB 双轨。 */
@@ -412,6 +418,11 @@ export function buildAudioGraph(timeline: AudioTimeline): AudioGraph {
   segments.forEach((segment, index) => {
     const input = `[${index}:a]`
     const steps: string[] = ['aformat=sample_rates=48000:channel_layouts=stereo']
+    // RQ-08（REQ-038）：源内偏移 —— `atrim=start=N` 先把起点挪到素材第 N 秒，
+    // 后续 `atrim=duration` 在此基础上取段长（链式两次 atrim ≡ 单次 start+duration）。
+    if (segment.sourceOffsetSec !== undefined && segment.sourceOffsetSec > 0.0005) {
+      steps.push(`atrim=start=${segment.sourceOffsetSec.toFixed(3)}`)
+    }
     if (segment.durationSec !== undefined && segment.durationSec > 0) {
       steps.push(`atrim=duration=${segment.durationSec.toFixed(3)}`, 'asetpts=PTS-STARTPTS')
     }

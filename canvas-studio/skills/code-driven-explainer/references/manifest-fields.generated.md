@@ -339,6 +339,7 @@
 - `anchor`?: ManifestSfxAnchor — 三定位之一（三者必须**恰好给一个**）。模板写法：跟随轨道。
 - `startFrame`?: number — 三定位之二：成片绝对帧。GT 复刻验收用它（绕开秒→帧舍入）。
 - `startSec`?: number — 三定位之三：成片绝对秒，渲染时 `Math.round(startSec * fps)`。跨 fps 复用靠它。
+- `startFrom`?: number — RQ-08（REQ-038）：**源内**起始帧 —— 音效不从素材开头播，而从素材第 N 帧起播
 - `gain`?: number — 线性增益 0–2（缺省 1）。1 = 原音量。
 - `pan`?: number — 声明用声像 −1..1（0 = 居中）。**仅在素材由本仓合成库产出时生效**（pan 在合成期
 - `fadeInSec`?: number — 淡入（秒，缺省 0）。

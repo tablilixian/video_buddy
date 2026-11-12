@@ -12,7 +12,12 @@
  *
  * 产物：`<repo>/canvas-studio/build/assets/playsout/`（扁平，无子目录）
  *
- * 用法：node scripts/playsout-replica/stage-assets.mjs
+ * 用法：node scripts/playsout-replica/stage-assets.mjs --source "<源工程目录>"
+ *
+ * 源工程（只读参考，别人做的工程）目录由 **`--source <dir>`** 或**环境变量
+ * `PLAYOUT_SOURCE`** 提供（前者优先）。**刻意不留本机路径默认值**：硬编码默认值
+ * 会让脚本在别人机器上跑歪，也会因微信清缓存 / 升级而指向失效路径。
+ * 素材本体**不入库**，源工程必须由使用者自行提供。
  */
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -25,8 +30,15 @@ import { C } from './lib/theme.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
 
-/** 源工程（只读参考，别人做的工程）。 */
-const SOURCE = '/Users/wl/Library/Containers/com.tencent.xinWeChat/Data/Library/Application Support/com.tencent.xinWeChat/2.0b4.0.9/bcb7bedfe46e2611f7cbb950e9fd8a96/Message/MessageTemp/0bfc74436a4d0123b32df01e6d4369b1/File/playsout-promo'
+const argv = process.argv.slice(2)
+const argOf = (name, fallback) => {
+  const i = argv.indexOf(name)
+  return i >= 0 && i + 1 < argv.length ? argv[i + 1] : fallback
+}
+
+/** 源工程根目录（只读参考，别人做的工程）。空串 = 未提供（`resolve('')` 会变成 cwd，必须先判空）。 */
+const SOURCE_RAW = argOf('--source', process.env.PLAYOUT_SOURCE ?? '').trim()
+const SOURCE = SOURCE_RAW === '' ? '' : resolve(SOURCE_RAW)
 
 /** staging 目录（扁平）。 */
 const STAGE = join(REPO, 'build', 'assets', 'playsout')
@@ -328,13 +340,27 @@ function grayscaleViaFfmpeg(src, dest) {
 /* ─────────────────────────── 主流程 ─────────────────────────── */
 
 function main() {
-  if (!existsSync(SOURCE)) {
-    throw new Error(`源工程不存在：${SOURCE}`)
+  if (SOURCE === '' || !existsSync(SOURCE)) {
+    console.error([
+      `[stage] 找不到源工程目录：${SOURCE || '(未提供)'}`,
+      '',
+      '源工程（只读参考，别人做的工程）位置请用下面任一方式提供：',
+      '  ① 命令行参数：--source "<源工程目录>"',
+      '  ② 环境变量：  PLAYOUT_SOURCE="<源工程目录>"',
+      '',
+      '该目录需包含 public/ 子目录（素材本体从这里读，**不入库**）。',
+    ].join('\n'))
+    process.exit(2)
   }
+  const publicDir = join(SOURCE, 'public')
+  if (!existsSync(publicDir)) {
+    console.error(`[stage] 源工程缺少 public/ 子目录：${publicDir}`)
+    process.exit(2)
+  }
+  log(`源工程：${SOURCE}`)
   mkdirSync(STAGE, { recursive: true })
 
   // ① 拷贝素材
-  const publicDir = join(SOURCE, 'public')
   const files = walk(publicDir)
   const copied = []
   for (const rel of files) {

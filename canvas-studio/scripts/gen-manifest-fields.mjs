@@ -44,6 +44,8 @@ const workspaceRoot = join(here, '..')
 const SOURCES = [
   join(workspaceRoot, 'src', 'remotion', 'manifest.ts'),
   join(workspaceRoot, 'src', 'remotion', 'manifest-transform.ts'),
+  // REQ-038 RQ-22（2026-11-12）：聚合型原语 5 轨型的字段在独立文件（棘轮外提）。
+  join(workspaceRoot, 'src', 'remotion', 'manifest-aggregates.ts'),
 ]
 /** 生成物路径（skill 引用目录）。 */
 export const OUTPUT = join(workspaceRoot, 'skills', 'code-driven-explainer', 'references', 'manifest-fields.generated.md')

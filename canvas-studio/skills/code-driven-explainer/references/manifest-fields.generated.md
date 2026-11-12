@@ -48,7 +48,7 @@
 ## CompositionTrack
 > 轨道联合类型：视频 / 图片 / 文本卡 / 形状 / 转场 / 音频可视化 / 数据图表 / 词级字幕 / 3D 容器。
 
-定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack | CalloutTrack | GroupTrack
+定义：| VideoClipTrack | ImageClipTrack | TextCardTrack | ShapeTrack | TransitionTrack | AudioVizTrack | ChartTrack | CaptionTrack | CalloutTrack | GroupTrack // RQ-22（REQ-038）：聚合型原语 —— N 个同构元素压成 1 条轨。 | LogoWallTrack | AssetGridTrack | ChipRowTrack | CodePanelTrack | TickerTrack
 
 ## BaseTrack
 
@@ -415,3 +415,91 @@
 - `rotateY`?: number — 绕垂直轴偏转（度）；可插值。
 - `z`?: number — 沿视线方向平移（px）；可插值。
 - `opacity`?: number — 不透明度（0–1）；与轨道淡入淡出**相乘**（不是覆盖）。
+
+## AggregateFit
+> 单元内图片适配：logo 墙缺省 contain（不裁标），截图墙缺省 cover（填满裁切）。
+
+取值：'contain' | 'cover'
+
+## LogoWallTrack (extends BaseTrack)
+> RQ-22 · `logoWall` —— 合作方 logo 墙（灰阶 + 错峰入场）。
+
+- `type`: 'logoWall'
+- `logos`: string[] — logo 图片 URL（同源资产，逐个 `validateAssetRefField`）。
+- `columns`?: number — 列数（1–20；缺省按 √n 取方阵列数）。行数 = ceil(n / columns)。
+- `cellW`?: number — 单元格宽 / 高（设计 px；logo 墙建议同值方格）。
+- `cellH`?: number
+- `gapX`?: number — 单元间距（设计 px，缺省 24）。
+- `gapY`?: number
+- `radius`?: number — 单元圆角（设计 px，缺省 12；0 = 直角）。
+- `grayscale`?: boolean — 灰度显示（true = 21 张灰阶 logo 不再依赖预生成 PNG）。缺省 false。
+- `fit`?: AggregateFit — 单元内适配，缺省 `contain`（logo 不裁切）。
+- `unitStagger`?: number — 入场错峰（帧/单元，缺省 2；0 = 同步入场）。⚠️ 刻意不叫 `stagger`/`fadeFrames` —— 那两个名字在 `BaseTrack` 已占用（整轨级），单元级加 `unit` 前缀防模型混写。
+- `unitFadeFrames`?: number — 单元淡入时长（帧，缺省 6）。语义见 `unitStagger` 的改名注。
+- `cellBackground`?: string — 单元底色（缺省透明；logo 卡片感可给 rgba 白/黑）。
+
+## AssetGridTrack (extends BaseTrack)
+> RQ-22 · `assetGrid` —— 截图墙 / 海报墙 / 目录墙。
+
+- `type`: 'assetGrid'
+- `assets`: string[] — 图片 URL（同源资产）。
+- `columns`?: number — 列数（1–20；缺省按 √n 取方阵列数）。
+- `cellW`?: number
+- `cellH`?: number
+- `gapX`?: number
+- `gapY`?: number
+- `radius`?: number — 单元圆角（设计 px，缺省 8）。
+- `fit`?: AggregateFit — 单元内适配，缺省 `cover`（截图墙填满裁切）。
+- `unitStagger`?: number
+- `unitFadeFrames`?: number
+- `cellBackground`?: string
+
+## ChipRowTrack (extends BaseTrack)
+> RQ-22 · `chipRow` —— 芯片条 / 标签行（文本药丸）。
+
+- `type`: 'chipRow'
+- `chips`: string[] — 芯片文本（逐条非空）。
+- `direction`?: 'row' | 'column' — 排列方向，缺省 `row`。
+- `gap`?: number — 芯片间距（设计 px，缺省 12）。
+- `radius`?: number — 药丸圆角（设计 px，缺省 999 = 全圆药丸；0 = 直角标签）。
+- `fontPx`?: number — 芯片字号（设计 px，缺省 22）。
+- `color`?: string — 文本色（缺省 `#ECECF2`）。
+- `background`?: string — 药丸底色（缺省 `rgba(255,255,255,0.08)`；`'transparent'` = 纯文本条）。
+- `border`?: string — 药丸描边色（缺省不描）。
+- `padX`?: number — 水平内边距（设计 px，缺省 16）。
+- `padY`?: number — 垂直内边距（设计 px，缺省 8）。
+- `unitStagger`?: number
+- `unitFadeFrames`?: number
+
+## CodePanelTrack (extends BaseTrack)
+> RQ-22 · `codePanel` —— 代码面板（底板 + 窗栏 + 等宽代码 + 可选滚动）。
+
+- `type`: 'codePanel'
+- `code`: string — 代码文本（`\n` 分行；不折行，超宽被面板裁切）。
+- `title`?: string — 窗栏标题（如 `sdk.ts`；缺省无窗栏，只有面板）。
+- `fontPx`?: number — 代码字号（设计 px，缺省 18）。
+- `lineHeight`?: number — 行高倍数（缺省 1.5）。
+- `background`?: string — 面板底色（缺省 `#0D1117`）。
+- `radius`?: number — 面板圆角（设计 px，缺省 16）。
+- `color`?: string — 代码文本色（缺省 `#D4D4D8`）。
+- `accentColor`?: string — 窗栏三点的强调色（缺省 `#98A3FF`）。
+- `padding`?: number — 面板内边距（设计 px，缺省 24）。
+- `scrollSpeed`?: number — 向上滚动速度（设计 px/帧，缺省 0 = 静态；内容超面板高时用它滚出）。
+
+## TickerTrack (extends BaseTrack)
+> RQ-22 · `ticker` —— 无限滚动墙 / 跑马灯（文本循环平移）。
+
+- `type`: 'ticker'
+- `items`: string[] — 循环条目（逐条非空；用 `separator` 连接成一轮）。
+- `direction`?: 'left' | 'right' — 方向，缺省 `left`（向左滚）。
+- `speed`?: number — 平移速度（设计 px/帧，缺省 2）。
+- `gap`?: number — 条目间距（设计 px，缺省 48）。
+- `fontPx`?: number — 字号（设计 px，缺省 28）。
+- `color`?: string — 文本色（缺省 `#6E6E86`）。
+- `separator`?: string — 分隔符（缺省 ` · `；空串 = 无分隔直接拼）。
+- `fadeWidth`?: number — 两端淡出宽（设计 px，缺省 120；0 = 不淡出）。
+
+## AggregateTrack
+> 聚合轨 union（`CompositionTrack` 接线用）。
+
+定义：LogoWallTrack | AssetGridTrack | ChipRowTrack | CodePanelTrack | TickerTrack

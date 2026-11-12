@@ -48,7 +48,7 @@
 ### 合法值与合法键
 
 - `MEDIA_CLIPS`: 'circle'
-- `TRACK_TYPES`: 'video' | 'image' | 'textCard' | 'shape' | 'transition' | 'audioViz' | 'chart' | 'caption' | 'callout' | 'group'
+- `TRACK_TYPES`: 'video' | 'image' | 'textCard' | 'shape' | 'transition' | 'audioViz' | 'chart' | 'caption' | 'callout' | 'group' | 'logoWall' | 'assetGrid' | 'chipRow' | 'codePanel' | 'ticker'
 - `TEXT_VARIANTS`: 'subtitle' | 'dataCard' | 'title' | 'bullets' | 'timecode'
 - `SHAPES`: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'dotGrid' | 'vignette'
 - `EFFECTS`: 'fade' | 'slide' | 'zoom' | 'dissolve' | 'wipeLeft' | 'wipeRight' | 'clock' | 'flipX' | 'zoomBlur' | 'linearBlur' | 'crossWarp'

@@ -155,6 +155,12 @@ export type CompositionTrack =
   | CaptionTrack
   | CalloutTrack
   | GroupTrack
+  // RQ-22（REQ-038）：聚合型原语 —— N 个同构元素压成 1 条轨。
+  | LogoWallTrack
+  | AssetGridTrack
+  | ChipRowTrack
+  | CodePanelTrack
+  | TickerTrack
 
 export interface BaseTrack {
   /**
@@ -322,6 +328,20 @@ export interface ManifestBox {
 
 import type { Transform, VisualState } from './manifest-transform.js'
 export type { Transform, VisualState } from './manifest-transform.js'
+// RQ-22（REQ-038）：聚合型原语的类型在 `manifest-aggregates.ts`（棘轮外提，同
+// manifest-transform 先例）；本文件 re-export 并接线 union / TRACK_TYPES / 校验。
+export type {
+  AggregateFit,
+  AggregateTrack,
+  AssetGridTrack,
+  ChipRowTrack,
+  CodePanelTrack,
+  LogoWallTrack,
+  TickerTrack,
+} from './manifest-aggregates.js'
+export { AGGREGATE_KNOWN_KEYS, AGGREGATE_TYPES, validateAggregateTrack } from './manifest-aggregates.js'
+import { AGGREGATE_KNOWN_KEYS, validateAggregateTrack } from './manifest-aggregates.js'
+import type { AssetGridTrack, ChipRowTrack, CodePanelTrack, LogoWallTrack, TickerTrack } from './manifest-aggregates.js'
 
 /**
  * 缓动白名单（CV-334；三期 W2-1 扩档）。
@@ -1021,7 +1041,9 @@ export interface ManifestValidation {
   warnings: string[]
 }
 
-const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout', 'group'])
+// RQ-22（REQ-038）：聚合型原语 5 种（TRACK_TYPES 与 union 同步扩容）。
+const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout', 'group',
+  'logoWall', 'assetGrid', 'chipRow', 'codePanel', 'ticker'])
 const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets', 'timecode'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
@@ -1137,6 +1159,8 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
   // ≥95% 对齐 S1-B：group 3D 容器（children 白名单 / 角度 / id 唯一性校验在 validateGroupTrack）。
   group: new Set(['children']),
+  // RQ-22（REQ-038）：聚合型原语 —— 键集在 manifest-aggregates.ts（实现真实读取）。
+  ...AGGREGATE_KNOWN_KEYS,
 }
 const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'perspective'])
 const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'rotateX', 'rotateY', 'z', 'opacity'])
@@ -1836,6 +1860,15 @@ export function validateManifest(
     }
 
     switch (type) {
+      // RQ-22（REQ-038）：聚合型原语 —— 本族字段的校验在 manifest-aggregates.ts
+      //（validateAggregateTrack），通用字段（box/animate/fx/exit…）由上方通用段照常处理。
+      case 'logoWall':
+      case 'assetGrid':
+      case 'chipRow':
+      case 'codePanel':
+      case 'ticker':
+        validateAggregateTrack(track, at, errors, warnings)
+        break
       case 'video':
       case 'image':
         if (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src)) {

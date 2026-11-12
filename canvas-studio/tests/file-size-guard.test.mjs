@@ -209,8 +209,9 @@ export const FILE_WHITELIST = {
   // 字段与注释 / rect-circle-gradient 三分支校验（+96，2606 → 2702）显式登记。
   // REQ-038 批 3（同日）：RQ-02 letterSpacing/letterSpacingEm 字段+校验、RQ-09 vignette
   // shape/strength 字段+校验（+65，2702 → 2767）；批 4：RQ-08 sfx.startFrom 字段+注释+
-  // 校验（+16，2767 → 2783）显式登记。
-  'src/remotion/manifest.ts': 2783,
+  // 校验（+16，2767 → 2783）；批 5：RQ-22 五种聚合原语的 union/TRACK_TYPES/re-export/
+  // 校验 case 接线（类型与校验主体在 manifest-aggregates.ts 外提件，+33，2783 → 2816）。
+  'src/remotion/manifest.ts': 2816,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

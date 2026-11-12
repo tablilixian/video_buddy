@@ -8,6 +8,7 @@
 import type React from 'react'
 import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { chartDataFromTimeline } from '../chart-data.js'
+import { AssetGrid, ChipRow, CodePanel, LogoWall, Ticker } from './Aggregates.js'
 import { AudioViz } from './AudioViz.js'
 import { Caption } from './Caption.js'
 import { Chart } from './Chart.js'
@@ -41,6 +42,17 @@ export const TrackBody: React.FC<{ track: CompositionTrack; manifest: Compositio
     case 'group':
       // ≥95% 对齐 S1-B：3D 容器轨 —— 子轨包进一个 div，容器统一做 perspective/rotateY。
       return <Group track={track} manifest={manifest} />
+    // RQ-22（REQ-038）：聚合型原语 —— N 个同构元素压成 1 条轨。
+    case 'logoWall':
+      return <LogoWall track={track} />
+    case 'assetGrid':
+      return <AssetGrid track={track} />
+    case 'chipRow':
+      return <ChipRow track={track} />
+    case 'codePanel':
+      return <CodePanel track={track} />
+    case 'ticker':
+      return <Ticker track={track} />
     case 'transition':
       return null
   }

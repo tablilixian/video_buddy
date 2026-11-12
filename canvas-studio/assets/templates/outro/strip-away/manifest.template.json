@@ -1,0 +1,435 @@
+{
+  "id": "tpl-outro-strip-away",
+  "meta": {
+    "title": "{{brandMark}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 150,
+    "backgroundColor": "#050505"
+  },
+  "tracks": [
+    {
+      "id": "editor-bg",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#2b2f38",
+      "colorShift": {
+        "from": "#2b2f38",
+        "to": "#050505",
+        "startFrame": 80,
+        "durationInFrames": 20,
+        "easing": "easeInOut"
+      },
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0
+    },
+    {
+      "id": "ui-sidebar",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#262a33",
+      "box": {
+        "x": 12,
+        "y": 50,
+        "w": 14,
+        "h": 84
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": -140,
+            "y": 0
+          },
+          "startFrame": 64,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-leftpanel",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#333845",
+      "box": {
+        "x": 30,
+        "y": 50,
+        "w": 22,
+        "h": 84
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": -90,
+            "y": 20
+          },
+          "startFrame": 68,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-topleft",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#3f4552",
+      "box": {
+        "x": 26,
+        "y": 10,
+        "w": 30,
+        "h": 8
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": -80,
+            "y": -60
+          },
+          "startFrame": 76,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-topright",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#3f4552",
+      "box": {
+        "x": 74,
+        "y": 10,
+        "w": 30,
+        "h": 8
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": 80,
+            "y": -60
+          },
+          "startFrame": 76,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-card1",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#454c5c",
+      "box": {
+        "x": 40,
+        "y": 38,
+        "w": 20,
+        "h": 22
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": -70,
+            "y": 50
+          },
+          "startFrame": 72,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-card2",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#454c5c",
+      "box": {
+        "x": 62,
+        "y": 38,
+        "w": 20,
+        "h": 22
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": 70,
+            "y": 60
+          },
+          "startFrame": 75,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-card3",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#454c5c",
+      "box": {
+        "x": 51,
+        "y": 66,
+        "w": 20,
+        "h": 18
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": 0,
+            "y": 70
+          },
+          "startFrame": 78,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-canvasbg",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#363c48",
+      "box": {
+        "x": 51,
+        "y": 55,
+        "w": 44,
+        "h": 74
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": 0,
+            "y": 40
+          },
+          "startFrame": 80,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "ui-toolbar",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#262a33",
+      "box": {
+        "x": 51,
+        "y": 90,
+        "w": 44,
+        "h": 10
+      },
+      "startFrame": 0,
+      "durationInFrames": 150,
+      "fadeFrames": 0,
+      "animate": [
+        {
+          "from": {
+            "opacity": 1,
+            "x": 0,
+            "y": 0
+          },
+          "to": {
+            "opacity": 0,
+            "x": 0,
+            "y": -50
+          },
+          "startFrame": 84,
+          "durationInFrames": 14,
+          "easing": "easeIn"
+        }
+      ]
+    },
+    {
+      "id": "publish-btn",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#e8843c",
+      "radius": 6,
+      "box": {
+        "x": 51,
+        "y": 47,
+        "w": 12,
+        "h": 7
+      },
+      "animate": [
+        {
+          "from": {
+            "opacity": 1
+          },
+          "to": {
+            "opacity": 0
+          },
+          "startFrame": 112,
+          "durationInFrames": 12,
+          "easing": "easeInOut"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 124,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 12,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "publish-label",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{publishLabel}}",
+      "box": {
+        "x": 51,
+        "y": 47,
+        "w": 12,
+        "h": 6
+      },
+      "background": "transparent",
+      "color": "#141414",
+      "animate": [
+        {
+          "from": {
+            "opacity": 1
+          },
+          "to": {
+            "opacity": 0
+          },
+          "startFrame": 112,
+          "durationInFrames": 12,
+          "easing": "easeInOut"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 124,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 12,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "brand-mark",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{brandMark}}",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 56,
+        "h": 20
+      },
+      "plate": "none",
+      "color": "#f2f2f2",
+      "letterSpacingEm": 0.06,
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 22,
+        "blur": 6
+      },
+      "startFrame": 122,
+      "durationInFrames": 28,
+      "fadeFrames": 0
+    },
+    {
+      "id": "brand-sub",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{brandSub}}",
+      "box": {
+        "x": 50,
+        "y": 64,
+        "w": 36,
+        "h": 6
+      },
+      "background": "transparent",
+      "color": "#8a8f9c",
+      "anim": "fadeUp",
+      "startFrame": 132,
+      "durationInFrames": 18,
+      "fadeFrames": 0
+    }
+  ]
+}

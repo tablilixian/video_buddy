@@ -1,0 +1,38 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/impact-deep-whoosh.mp3",
+      "anchor": {
+        "trackId": "wordmark",
+        "at": "start"
+      },
+      "gain": 1.0,
+      "type": "impact-deep-whoosh"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
+      "anchor": {
+        "trackId": "flash-1",
+        "at": "start"
+      },
+      "gain": 0.8,
+      "type": "whoosh-fast"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/transition-snap.mp3",
+      "anchor": {
+        "trackId": "flash-2",
+        "at": "start"
+      },
+      "gain": 0.9,
+      "type": "transition-snap"
+    }
+  ],
+  "bgm": {
+    "prompt": "Warm paper-and-ink morning reading underscore, 78 BPM, soft felt piano, light string swells, gentle tape hiss texture, no drums, instrumental, no vocals",
+    "volume": 0.6,
+    "fadeInSeconds": 0.6,
+    "fadeOutSeconds": 1.0,
+    "durationSeconds": 9
+  }
+}

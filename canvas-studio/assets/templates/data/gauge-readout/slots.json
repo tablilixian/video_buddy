@@ -1,0 +1,86 @@
+{
+  "slots": [
+    {
+      "id": "panelTitle",
+      "label": "面板标题",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "semantic": "面板左上的小标题",
+      "styleRole": "eyebrow",
+      "example": "清洁效率实测",
+      "default": "清洁效率实测",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "needle1",
+      "label": "表1 指针角",
+      "type": "number",
+      "required": true,
+      "semantic": "0–270（0 = 右下起点，顺时针）",
+      "example": 190,
+      "default": 190,
+      "onOverflow": "reject"
+    },
+    {
+      "id": "value1",
+      "label": "表1 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "semantic": "盘下数值",
+      "styleRole": "subtitle",
+      "example": "62%",
+      "default": "62%",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "needle2",
+      "label": "表2 指针角",
+      "type": "number",
+      "required": true,
+      "semantic": "0–270",
+      "example": 120,
+      "default": 120,
+      "onOverflow": "reject"
+    },
+    {
+      "id": "value2",
+      "label": "表2 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "semantic": "盘下数值",
+      "styleRole": "subtitle",
+      "example": "44%",
+      "default": "44%",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "needle3",
+      "label": "表3 指针角",
+      "type": "number",
+      "required": true,
+      "semantic": "0–270",
+      "example": 235,
+      "default": 235,
+      "onOverflow": "reject"
+    },
+    {
+      "id": "value3",
+      "label": "表3 数值",
+      "type": "string",
+      "required": true,
+      "maxChars": 6,
+      "maxLines": 1,
+      "semantic": "盘下数值",
+      "styleRole": "subtitle",
+      "example": "81%",
+      "default": "81%",
+      "onOverflow": "reject"
+    }
+  ]
+}

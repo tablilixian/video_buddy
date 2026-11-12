@@ -1,0 +1,13 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/marker-pen-line.mp3",
+      "anchor": {
+        "trackId": "underline",
+        "at": "start"
+      },
+      "gain": 0.9,
+      "type": "marker-pen-line"
+    }
+  ]
+}

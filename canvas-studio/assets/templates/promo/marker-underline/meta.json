@@ -1,0 +1,28 @@
+{
+  "id": "promo/marker-underline",
+  "name": "促销 · 马克笔大字标题",
+  "family": "promo",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "白底大标题从下方弹入落定，一拍之后马克笔下划线从左到右描画（笔形微歪、粗细起伏、端头圆润）——2.5 秒单镜头，适合做信息流的首屏钩子或串场字卡",
+  "suitableFor": [
+    "信息流钩子",
+    "促销字卡",
+    "串场标题"
+  ],
+  "notSuitableFor": [
+    "深色画面（白底模板）",
+    "长文案"
+  ],
+  "durationInFrames": 75,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    2,
+    4
+  ],
+  "itemCapacity": 1,
+  "requiredAssets": [],
+  "furniture": [],
+  "usage": "2 个槽位：headline 主标题（建议 4–8 字，最后一个词留给下划线）与 lineColor 笔色。段落节拍固定：0–22 帧弹入、32–42 帧描线，不要增删。"
+}

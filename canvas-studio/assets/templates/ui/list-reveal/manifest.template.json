@@ -1,0 +1,272 @@
+{
+  "id": "tpl-ui-list-reveal",
+  "meta": {
+    "title": "List Reveal",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 108,
+    "backgroundColor": "#0a0b10"
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#0a0b10",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 108,
+      "fadeFrames": 0
+    },
+    {
+      "id": "menu-group",
+      "type": "group",
+      "animate": [
+        {
+          "from": {
+            "y": 16
+          },
+          "to": {
+            "y": -16
+          },
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "easing": "linear"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 108,
+      "fadeFrames": 0,
+      "children": [
+        {
+          "id": "item-1",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu1}}",
+          "box": {
+            "x": 50,
+            "y": 22,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 6,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "item-2",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu2}}",
+          "box": {
+            "x": 50,
+            "y": 33,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 16,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "item-3",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu3}}",
+          "box": {
+            "x": 50,
+            "y": 44,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 26,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "item-4",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu4}}",
+          "box": {
+            "x": 50,
+            "y": 55,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 36,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "item-5",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu5}}",
+          "box": {
+            "x": 50,
+            "y": 66,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 46,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "item-6",
+          "type": "textCard",
+          "variant": "subtitle",
+          "text": "{{menu6}}",
+          "box": {
+            "x": 50,
+            "y": 77,
+            "w": 34,
+            "h": 8
+          },
+          "background": "rgba(255,255,255,0.06)",
+          "color": "#e8eaf2",
+          "startFrame": 0,
+          "durationInFrames": 108,
+          "fadeFrames": 0,
+          "animate": [
+            {
+              "from": {
+                "opacity": 0,
+                "scale": 0.88
+              },
+              "to": {
+                "opacity": 1,
+                "scale": 1
+              },
+              "startFrame": 56,
+              "durationInFrames": 26,
+              "easing": "spring",
+              "spring": {
+                "stiffness": 120,
+                "damping": 12,
+                "mass": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -57,6 +57,12 @@ export interface TemplateMeta {
   itemCapacity?: number
   /** 适用时长区间（秒，闭区间）；缺省由 durationInFrames/fps 推一个 ±35% 的窗。 */
   durationRange?: [number, number]
+  /**
+   * 模板作者声明的**已知设计意图**体检豁免（如 `["ML-08"]` = 仪表盘常驻无退场是
+   * 原拍设计）。编译期把产物 warnings 里对应前缀的条目过滤掉 —— 模板是作者调好的
+   * 成品，通用建议不该诱导模型改坏它。只收 `ML-xx` 编号，写错前缀不生效。
+   */
+  lintSuppress?: string[]
   /** 必须由用户提供的素材（没有素材就不该选这个模板）。 */
   requiredAssets?: string[]
   /** 声明的装饰构件（与 furniture.json 的 id 列表一致，供 list_templates 展示）。 */
@@ -377,7 +383,12 @@ export function compileTemplate(
 
   // ⑥ 出厂自检：产物必须过校验（编译器对下游的承诺）
   const verdict = validateManifest(manifest as unknown as CompositionManifest)
-  const warnings = [...bgmWarnings, ...verdict.warnings]
+  // lintSuppress:模板作者声明的已知设计意图 —— 对应编号的编排体检告警不出厂
+  //（模板是调好的成品;自由编排的 manifest 不受影响,该机制只对模板编译生效）。
+  const suppressed = (meta.lintSuppress ?? []).filter((code) => /^ML-\d+$/.test(code))
+  const warnings = [...bgmWarnings, ...verdict.warnings.filter(
+    (warning) => !suppressed.some((code) => warning.includes(code)),
+  )]
   const stats: CompileStats = {
     trackCount: tracks.length,
     furnitureTracks: furnitureTracks.length,

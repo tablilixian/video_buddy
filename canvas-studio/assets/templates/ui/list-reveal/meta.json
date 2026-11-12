@@ -1,0 +1,28 @@
+{
+  "id": "ui/list-reveal",
+  "name": "UI · 菜单逐项找位",
+  "family": "ui",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "深底垂直菜单：六项依次 spring 过冲找位，整个列表同时缓慢上漂——两层运动分离；适合产品界面演示与功能罗列",
+  "suitableFor": [
+    "产品界面演示",
+    "功能清单",
+    "设置页动效"
+  ],
+  "notSuitableFor": [
+    "强节奏带货",
+    "数据可视化"
+  ],
+  "durationInFrames": 108,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    3,
+    5
+  ],
+  "itemCapacity": 6,
+  "requiredAssets": [],
+  "furniture": [],
+  "usage": "6 个菜单项槽位（英文菜单词最贴原拍，中文 ≤6 字）；两层运动的『容器上漂 + 逐项 spring』节拍固定。"
+}

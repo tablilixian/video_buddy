@@ -1,0 +1,297 @@
+{
+  "id": "tpl-data-gauge-readout",
+  "meta": {
+    "title": "{{panelTitle}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 120,
+    "backgroundColor": "#faf7f2",
+    "look": {
+      "grain": 0.02
+    }
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#faf7f2",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "panel-title",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{panelTitle}}",
+      "box": {
+        "x": 50,
+        "y": 12,
+        "w": 40,
+        "h": 6
+      },
+      "background": "transparent",
+      "color": "#7c2d12",
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g1-arc",
+      "type": "shape",
+      "shape": "path",
+      "color": "#e7ddd0",
+      "d": "M 20.70 61.19 A 7.50 13.00 0 1 1 31.30 61.19",
+      "strokeWidth": 0.9,
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g1-needle",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#b45309",
+      "box": {
+        "x": 26,
+        "y": 46.5,
+        "w": 0.55,
+        "h": 11
+      },
+      "pivot": {
+        "x": 50,
+        "y": 100
+      },
+      "animate": [
+        {
+          "from": {
+            "rotation": 0
+          },
+          "to": {
+            "rotation": 270
+          },
+          "startFrame": 12,
+          "durationInFrames": 12,
+          "easing": "easeOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 270
+          },
+          "to": {
+            "rotation": 182
+          },
+          "startFrame": 24,
+          "durationInFrames": 13,
+          "easing": "easeInOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 182
+          },
+          "to": {
+            "rotation": 190
+          },
+          "startFrame": 37,
+          "durationInFrames": 7,
+          "easing": "easeOutCubic"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g1-value",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "62%",
+      "box": {
+        "x": 26,
+        "y": 72,
+        "w": 14,
+        "h": 8
+      },
+      "background": "transparent",
+      "color": "#7c2d12",
+      "anim": "fadeUp",
+      "startFrame": 42,
+      "durationInFrames": 78,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g2-arc",
+      "type": "shape",
+      "shape": "path",
+      "color": "#e7ddd0",
+      "d": "M 44.70 61.19 A 7.50 13.00 0 1 1 55.30 61.19",
+      "strokeWidth": 0.9,
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g2-needle",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#b45309",
+      "box": {
+        "x": 50,
+        "y": 46.5,
+        "w": 0.55,
+        "h": 11
+      },
+      "pivot": {
+        "x": 50,
+        "y": 100
+      },
+      "animate": [
+        {
+          "from": {
+            "rotation": 0
+          },
+          "to": {
+            "rotation": 270
+          },
+          "startFrame": 16,
+          "durationInFrames": 12,
+          "easing": "easeOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 270
+          },
+          "to": {
+            "rotation": 112
+          },
+          "startFrame": 28,
+          "durationInFrames": 13,
+          "easing": "easeInOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 112
+          },
+          "to": {
+            "rotation": 120
+          },
+          "startFrame": 41,
+          "durationInFrames": 7,
+          "easing": "easeOutCubic"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g2-value",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "44%",
+      "box": {
+        "x": 50,
+        "y": 72,
+        "w": 14,
+        "h": 8
+      },
+      "background": "transparent",
+      "color": "#7c2d12",
+      "anim": "fadeUp",
+      "startFrame": 46,
+      "durationInFrames": 74,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g3-arc",
+      "type": "shape",
+      "shape": "path",
+      "color": "#e7ddd0",
+      "d": "M 68.70 61.19 A 7.50 13.00 0 1 1 79.30 61.19",
+      "strokeWidth": 0.9,
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g3-needle",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#b45309",
+      "box": {
+        "x": 74,
+        "y": 46.5,
+        "w": 0.55,
+        "h": 11
+      },
+      "pivot": {
+        "x": 50,
+        "y": 100
+      },
+      "animate": [
+        {
+          "from": {
+            "rotation": 0
+          },
+          "to": {
+            "rotation": 270
+          },
+          "startFrame": 20,
+          "durationInFrames": 12,
+          "easing": "easeOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 270
+          },
+          "to": {
+            "rotation": 227
+          },
+          "startFrame": 32,
+          "durationInFrames": 13,
+          "easing": "easeInOutCubic"
+        },
+        {
+          "from": {
+            "rotation": 227
+          },
+          "to": {
+            "rotation": 235
+          },
+          "startFrame": 45,
+          "durationInFrames": 7,
+          "easing": "easeOutCubic"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 120,
+      "fadeFrames": 0
+    },
+    {
+      "id": "g3-value",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "81%",
+      "box": {
+        "x": 74,
+        "y": 72,
+        "w": 14,
+        "h": 8
+      },
+      "background": "transparent",
+      "color": "#7c2d12",
+      "anim": "fadeUp",
+      "startFrame": 50,
+      "durationInFrames": 70,
+      "fadeFrames": 0
+    }
+  ]
+}

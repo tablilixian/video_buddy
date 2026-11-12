@@ -1,0 +1,13 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/ui-select-modern.mp3",
+      "anchor": {
+        "trackId": "menu-group",
+        "at": "start"
+      },
+      "gain": 0.85,
+      "type": "ui-select-modern"
+    }
+  ]
+}

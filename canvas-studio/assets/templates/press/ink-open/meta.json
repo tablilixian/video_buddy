@@ -1,0 +1,30 @@
+{
+  "id": "press/ink-open",
+  "name": "发布会 · 纸墨开场",
+  "family": "press",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "纸墨晨读风开场 9 秒：墨线描画 + 字标压印 → 产品全景截图 → 2.5D 相机推近聚光主卡（rotY 34° 侧视）→ 白闪切字卡呼吸位 —— 翻译自上游 Ink Press 整片工程的开场段",
+  "suitableFor": [
+    "产品发布开场",
+    "工具类宣传片",
+    "研究报告片头"
+  ],
+  "notSuitableFor": [
+    "无产品截图的纯动画",
+    "暖调生活内容"
+  ],
+  "durationInFrames": 270,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    8,
+    10
+  ],
+  "itemCapacity": 2,
+  "requiredAssets": [
+    "产品界面截图（1920×1080 或更宽的全页截图，user 通道；真实产品截图可用 RQ-24 采集链自产）"
+  ],
+  "furniture": [],
+  "usage": "5 个文案槽 + 1 张截图槽（shotImage 必填）。节拍固定：0–40 墨线字标、40–220 相机段（62 静止 / 78 推近 / 168 定格）、220 起字卡 + 白闪。"
+}

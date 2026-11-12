@@ -1,0 +1,31 @@
+{
+  "id": "data/gauge-readout",
+  "name": "数据 · 仪表盘扫针",
+  "family": "data",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "米纸底三联表盘：指针错峰点火甩满全弧，回落过头 8° 再回摆到真实值，数值同帧弹出——数据可信度镜头",
+  "suitableFor": [
+    "性能报告",
+    "指标展示",
+    "评测数据"
+  ],
+  "notSuitableFor": [
+    "无数据主张的促销",
+    "暗色调片子"
+  ],
+  "durationInFrames": 120,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    3,
+    5
+  ],
+  "itemCapacity": 3,
+  "requiredAssets": [],
+  "furniture": [],
+  "usage": "6 个数值槽（3 指针角度 0–270 / 3 数值标签）+ 标题。节拍固定：点火 12/16/20 帧、去程 12f、回落 13f、回摆 7f，不要改拍。",
+  "lintSuppress": [
+    "ML-08"
+  ]
+}

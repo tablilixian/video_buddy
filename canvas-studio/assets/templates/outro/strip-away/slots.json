@@ -1,0 +1,56 @@
+{
+  "slots": [
+    {
+      "id": "publishLabel",
+      "label": "按钮文案",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "semantic": "被点亮的那个按钮（如 发布 / Export）",
+      "styleRole": "subtitle",
+      "example": "发布",
+      "default": "发布",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "brandMark",
+      "label": "品牌字标",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "semantic": "黑场落版的品牌名",
+      "styleRole": "title",
+      "example": "Nova Studio",
+      "default": "Nova Studio",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "brandSub",
+      "label": "品牌副题",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "semantic": "字标下方一行小字",
+      "styleRole": "subtitle",
+      "example": "创作，更快一步",
+      "default": "创作，更快一步",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "ctaHint",
+      "label": "CTA 提示",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "结尾行动号召（可选展示）",
+      "styleRole": "subtitle",
+      "example": "点击了解",
+      "default": "点击了解",
+      "onOverflow": "reject"
+    }
+  ]
+}

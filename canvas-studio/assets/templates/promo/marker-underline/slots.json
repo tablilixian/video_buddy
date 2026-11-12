@@ -1,0 +1,31 @@
+{
+  "slots": [
+    {
+      "id": "headline",
+      "label": "主标题",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "maxCharsPerLine": 14,
+      "semantic": "白底大字标题；想用下划线强调的词放句尾",
+      "styleRole": "title",
+      "example": "限时 5 折",
+      "default": "限时 5 折",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "lineColor",
+      "label": "笔色",
+      "type": "string",
+      "required": true,
+      "maxChars": 9,
+      "maxLines": 1,
+      "semantic": "马克笔下划线颜色（#rrggbb）",
+      "styleRole": "accent",
+      "example": "#111111",
+      "default": "#111111",
+      "onOverflow": "reject"
+    }
+  ]
+}

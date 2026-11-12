@@ -1,0 +1,81 @@
+{
+  "slots": [
+    {
+      "id": "shotImage",
+      "label": "产品截图",
+      "type": "string",
+      "required": true,
+      "maxChars": 120,
+      "maxLines": 1,
+      "semantic": "产品界面的同源截图 URL（全页截图最贴近原片；普通 16:9 截图可用，推近焦点取画面内）",
+      "styleRole": "asset",
+      "example": "/canvas-studio/assets/press/dashboard-full.png",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "wordmark",
+      "label": "字标",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "semantic": "开场压印的品牌字标",
+      "styleRole": "title",
+      "example": "Nova Research",
+      "default": "Nova Research",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "kicker",
+      "label": "引导行",
+      "type": "string",
+      "required": true,
+      "maxChars": 22,
+      "maxLines": 1,
+      "semantic": "字标下方的小字引导行",
+      "styleRole": "eyebrow",
+      "example": "TEAM RESEARCH CONSOLE",
+      "default": "TEAM RESEARCH CONSOLE",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "captionA",
+      "label": "解说字幕 1",
+      "type": "string",
+      "required": true,
+      "maxChars": 22,
+      "maxLines": 1,
+      "semantic": "相机段的底部通栏字幕（前半）",
+      "styleRole": "subtitle",
+      "example": "所有调研，一个入口",
+      "default": "所有调研，一个入口",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "captionB",
+      "label": "解说字幕 2",
+      "type": "string",
+      "required": true,
+      "maxChars": 22,
+      "maxLines": 1,
+      "semantic": "相机段的底部通栏字幕（后半）",
+      "styleRole": "subtitle",
+      "example": "从收集到结论，不再来回切换",
+      "default": "从收集到结论，不再来回切换",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "titleLine",
+      "label": "字卡句",
+      "type": "string",
+      "required": true,
+      "maxChars": 18,
+      "maxLines": 1,
+      "semantic": "结尾字卡的呼吸位句子",
+      "styleRole": "title",
+      "example": "研究，从此只有一个地方",
+      "default": "研究，从此只有一个地方",
+      "onOverflow": "reject"
+    }
+  ]
+}

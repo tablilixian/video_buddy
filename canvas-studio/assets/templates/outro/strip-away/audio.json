@@ -1,0 +1,22 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/ui-select-modern.mp3",
+      "anchor": {
+        "trackId": "publish-btn",
+        "at": "start"
+      },
+      "gain": 1.0,
+      "type": "ui-select-modern"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/impact-transition.mp3",
+      "anchor": {
+        "trackId": "brand-mark",
+        "at": "start"
+      },
+      "gain": 1.1,
+      "type": "impact-transition"
+    }
+  ]
+}

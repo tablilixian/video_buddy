@@ -1,0 +1,82 @@
+{
+  "slots": [
+    {
+      "id": "menu1",
+      "label": "菜单项 1",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Dashboard",
+      "default": "Dashboard",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "menu2",
+      "label": "菜单项 2",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Projects",
+      "default": "Projects",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "menu3",
+      "label": "菜单项 3",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Analytics",
+      "default": "Analytics",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "menu4",
+      "label": "菜单项 4",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Messages",
+      "default": "Messages",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "menu5",
+      "label": "菜单项 5",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Settings",
+      "default": "Settings",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "menu6",
+      "label": "菜单项 6",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "semantic": "菜单词条",
+      "styleRole": "subtitle",
+      "example": "Sign out",
+      "default": "Sign out",
+      "onOverflow": "reject"
+    }
+  ]
+}

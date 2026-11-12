@@ -1,0 +1,31 @@
+{
+  "id": "outro/strip-away",
+  "name": "收尾 · UI 蒸发落版",
+  "family": "outro",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "满屏灰阶编辑器界面里按钮被点亮，UI 层层错峰蒸发退场（外围先走、离场加速），黑场只剩品牌字标 spring 落定——产品片收尾",
+  "suitableFor": [
+    "产品片收尾",
+    "工具类品牌落版",
+    "发布片结尾"
+  ],
+  "notSuitableFor": [
+    "暖调生活内容",
+    "无 UI 语境的片子"
+  ],
+  "durationInFrames": 150,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    4,
+    6
+  ],
+  "itemCapacity": 2,
+  "requiredAssets": [],
+  "furniture": [],
+  "usage": "4 个文案槽。蒸发节拍固定：点击后 4f 错峰、每层 14f、离场加速（easeIn）；外层先走内层后走，不要重排。",
+  "lintSuppress": [
+    "ML-07"
+  ]
+}

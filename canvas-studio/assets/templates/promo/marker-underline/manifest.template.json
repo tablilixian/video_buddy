@@ -1,0 +1,85 @@
+{
+  "id": "tpl-promo-marker-underline",
+  "meta": {
+    "title": "{{headline}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 75,
+    "backgroundColor": "#f4f4f2",
+    "look": {
+      "grain": 0.02
+    }
+  },
+  "tracks": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "shape": "rect",
+      "color": "#f4f4f2",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 75,
+      "fadeFrames": 0
+    },
+    {
+      "id": "title",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{headline}}",
+      "box": {
+        "x": 50,
+        "y": 44,
+        "w": 70,
+        "h": 24
+      },
+      "plate": "none",
+      "color": "#191919",
+      "letterSpacingEm": -0.02,
+      "animate": [
+        {
+          "from": {
+            "opacity": 0,
+            "scale": 0.96
+          },
+          "to": {
+            "opacity": 1,
+            "scale": 1
+          },
+          "startFrame": 0,
+          "durationInFrames": 22,
+          "easing": "backOut"
+        }
+      ],
+      "startFrame": 0,
+      "durationInFrames": 75,
+      "fadeFrames": 0
+    },
+    {
+      "id": "underline",
+      "type": "shape",
+      "shape": "path",
+      "color": "{{lineColor}}",
+      "d": "M50.00,56.82L50.33,56.82L50.65,56.83L50.98,56.83L51.30,56.83L51.62,56.83L51.95,56.82L52.27,56.82L52.60,56.81L52.92,56.79L53.25,56.78L53.58,56.76L53.90,56.75L54.23,56.72L54.55,56.70L54.88,56.68L55.20,56.65L55.52,56.62L55.85,56.59L56.17,56.56L56.50,56.53L56.83,56.50L57.15,56.46L57.48,56.43L57.80,56.40L58.12,56.37L58.45,56.34L58.77,56.31L59.10,56.28L59.42,56.25L59.75,56.23L60.08,56.21L60.40,56.19L60.73,56.17L61.05,56.16L61.38,56.14L61.70,56.13L62.02,56.12L62.35,56.12L62.67,56.11L63.00,56.11",
+      "strokeWidth": 0.78,
+      "pivot": {
+        "x": 0,
+        "y": 50
+      },
+      "draw": {
+        "to": 1,
+        "startFrame": 32,
+        "durationInFrames": 10,
+        "easing": "easeOut"
+      },
+      "startFrame": 0,
+      "durationInFrames": 75,
+      "fadeFrames": 0
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/switch-tap.mp3",
+      "anchor": {
+        "trackId": "g1-needle",
+        "at": "start"
+      },
+      "gain": 0.9,
+      "type": "switch-tap"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/switch-tap.mp3",
+      "anchor": {
+        "trackId": "g2-needle",
+        "at": "start"
+      },
+      "gain": 0.8,
+      "type": "switch-tap"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/ui-success-soft.mp3",
+      "anchor": {
+        "trackId": "g3-value",
+        "at": "start"
+      },
+      "gain": 0.9,
+      "type": "ui-success-soft"
+    }
+  ]
+}

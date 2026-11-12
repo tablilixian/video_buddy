@@ -175,11 +175,19 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
   const transitionTracks = manifest.tracks.filter((track) => track.type === 'transition')
   const metaDuration = Math.max(1, Math.floor(manifest.meta?.durationInFrames ?? 1))
 
-  // ML-01：≥3 条内容轨同帧入场且都带动画 ⇒ 观感「一起冒出来」。
+  // ML-01：≥3 条内容轨**首个动画在同一刻** ⇒ 观感「一起冒出来」。
+  // 2026-11-13 盲区修复：判定键从 `track.startFrame` 升级为「轨起点 + 首个动画段的
+  // 相对 startFrame」—— 段内错峰（同一轨 0 入场、动画段各自错开）是合法编排
+  //（仪表盘三针错峰点火、UI 蒸发逐层退场），旧判定把它们全误报。
+  const firstMotionStart = (track: CompositionTrack): number => {
+    const list = animateList(track) as Array<{ startFrame?: number }>
+    const offsets = list.map((seg) => (typeof seg.startFrame === 'number' && seg.startFrame >= 0 ? seg.startFrame : 0))
+    return track.startFrame + (offsets.length > 0 ? Math.min(...offsets) : 0)
+  }
   const byStart = new Map<number, CompositionTrack[]>()
   for (const track of tracks) {
     if (animateList(track).length === 0) continue
-    const start = track.startFrame
+    const start = firstMotionStart(track)
     const list = byStart.get(start) ?? []
     list.push(track)
     byStart.set(start, list)
@@ -231,6 +239,9 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
   // 都不该知道「它是构件」（那会把机制塞进热路径）。
   const FURNITURE_TRACK_PREFIX = 'fx-'
   const isFurnitureTrack = (trackId: string): boolean => trackId.startsWith(FURNITURE_TRACK_PREFIX)
+  // 2026-11-13：group 容器轨 id 集 —— ML-05（容器匀速漂移是构图手法）与 ML-09
+  // （容器级变换作用于整组，越界阈值放宽）按轨型区分，不靠 id 约定。
+  const groupTrackIds = new Set(tracks.filter((track) => track.type === 'group').map((track) => String(track.id)))
 
   // REQ-035 F-09：**往复呼吸不是拖沓**。
   // 一条轨的动画首尾状态相同（from ≈ to）说明它是"来回呼吸/循环脉动"，长时长恰恰是
@@ -294,7 +305,7 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
       segment.from.scale !== undefined || segment.from.rotation !== undefined ||
       segment.to.x !== undefined || segment.to.y !== undefined ||
       segment.to.scale !== undefined || segment.to.rotation !== undefined
-    if (moving && segment.easing === 'linear' && !isFurnitureTrack(segment.trackId)) {
+    if (moving && segment.easing === 'linear' && !isFurnitureTrack(segment.trackId) && !groupTrackIds.has(segment.trackId)) {
       push({
         code: 'ML-05',
         at: segment.trackId,
@@ -302,17 +313,23 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
         hint: '建议 easeOutCubic / easeOutExpo（入场）或 easeInOutCubic（往复）。',
       })
     }
-    // ML-09：动画端点越出画布。
-    for (const side of ['from', 'to'] as const) {
-      const state = side === 'from' ? segment.from : segment.to
-      const x = state.x
-      const y = state.y
-      if ((x !== undefined && (x < 0 || x > 100)) || (y !== undefined && (y < 0 || y > 100))) {
+    // ML-09：**进场端点**越出画布（2026-11-13 语义收窄）。旧版 from/to 都查 ——
+    // 但 to 端超界是合法演出手段：UI 蒸发退场（飞出画外）、spring 过冲、容器漂移
+    // 都会把 to 推出 0–100，逐个报会把作者调好的片子教坏。真正要提示的是
+    // 「元素从画外凭空进场」⇒ 只查 from；to 只在**普通轨**越界幅度 >200 时仍提示
+    //（完全离谱的参数），group 容器完全豁免（容器级变换作用于整组）。
+    {
+      const groupTolerance = groupTrackIds.has(segment.trackId)
+      const lo = groupTolerance ? -60 : -20
+      const hi = groupTolerance ? 160 : 110
+      const x = segment.from.x
+      const y = segment.from.y
+      if ((x !== undefined && (x < lo || x > hi)) || (y !== undefined && (y < lo || y > hi))) {
         push({
           code: 'ML-09',
           at: segment.trackId,
-          message: `轨「${segment.trackId}」的 ${side}.x/y 超出 0–100（x=${String(x)}, y=${String(y)}）`,
-          hint: '元素会跑出画布；若刻意要做画外进场，请确认起点仍在画布附近（如 -10 ~ 110）。',
+          message: `轨「${segment.trackId}」的 from.x/y 越出画布（x=${String(x)}, y=${String(y)}）`,
+          hint: '元素会从画外凭空进场；若刻意如此请忽略 —— to 端超界（退场/过冲）不再提示。',
         })
       }
     }

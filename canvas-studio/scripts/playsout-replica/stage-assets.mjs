@@ -77,30 +77,72 @@ function glowPng(spec) {
 }
 
 /**
- * 压暗条：竖直方向的一侧渐变（底/顶）。
- * @param {{ from: 'bottom'|'top', height: number, color: string, peak: number }} spec
+ * 压暗条：**贴住某一边**、厚度为 `height` 像素的竖直渐变带，带外完全透明。
+ *
+ * 源工程口径（CSS `linear-gradient` 三段线性，照抄）：
+ *   Hero    `0deg`   .96@0%  .80@42%  0@100%   height 300  贴底（Hero.tsx:36-42）
+ *   Sdk     `180deg` .94@0%  .72@55%  0@100%   height 210  贴顶（Sdk.tsx:45-53）
+ *   Caption `0deg`   .86@0%  .55@46%  0@100%   height 260  贴底（Captions.tsx:32-41）
+ *
+ * ⚠️ 旧实现把 `t = 1 - y/height` 当成「带内相对位置」，于是 y > height 时 t 变负、
+ * `t >= 1` 不成立、smoothstep 被钳到 0 ⇒ **带子以下整屏都是 peak**。
+ * 实测后果：字幕一出现，75% 画面被 86% 暗罩盖住（整帧均亮 41 → 12.7），
+ * 且字幕条无淡入淡出 ⇒ 全片 9 次「整屏忽明忽暗」的硬跳变。
+ *
+ * @param {{ from: 'bottom'|'top', height: number, color: string, peak: number, mid: number, midAt: number }} spec
  */
 function scrimPng(spec) {
-  const { from, height, color, peak } = spec
+  const { from, height, color, peak, mid, midAt } = spec
   const [r, g, b] = hexToRgb(color)
   const { data } = createCanvas(W, H, (x, y) => {
-    const t = from === 'bottom' ? 1 - y / height : y / height
-    const a = t >= 1 ? 0 : (1 - smoothstep(0, 1, t)) * peak
-    return [r, g, b, Math.round(a * 255)]
+    const d = from === 'bottom' ? H - 1 - y : y // 距该边的像素距离
+    if (d >= height) return [r, g, b, 0] // 带外：完全透明
+    const t = d / height // 0 = 贴边，1 = 带的另一端
+    const a = t <= midAt
+      ? peak + (mid - peak) * (t / midAt)
+      : mid * (1 - (t - midAt) / (1 - midAt))
+    return [r, g, b, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
   return encodePng(W, H, data)
 }
 
-/** 上下双压暗条（Compute / Audience 用）。 */
-function scrimTopBottomPng() {
-  const top = { height: 210, peak: 0.92 }
-  const bottom = { height: 300, peak: 0.92 }
-  const [r, g, b] = hexToRgb(C.bg)
+/**
+ * 上下双压暗条：整屏 `180deg` 渐变，中段透明。
+ *
+ * 源工程口径（两镜头参数不同 ⇒ 必须各出一张，不能共用）：
+ *   Compute  .92@0%  0@26%  0@74%  .92@100%（Compute.tsx 尾）
+ *   Audience .85@0%  0@20%  0@62%  .9@100% （Audience.tsx:46）
+ *
+ * ⚠️ 旧实现的下带是**反的**（带顶最暗、带底透明），与源工程相反。
+ */
+function scrimTopBottomPng(spec) {
+  const { topPeak, topEnd, bottomStart, bottomPeak, color } = spec
+  const [r, g, b] = hexToRgb(color)
   const { data } = createCanvas(W, H, (x, y) => {
-    const tTop = y < top.height ? 1 - y / top.height : 0
-    const tBottom = y > H - bottom.height ? (y - (H - bottom.height)) / bottom.height : 0
-    const a = Math.max((1 - smoothstep(0, 1, tTop)) * top.peak, (1 - smoothstep(0, 1, tBottom)) * bottom.peak)
-    return [r, g, b, Math.round(a * 255)]
+    const p = y / (H - 1) // 0 = 顶，1 = 底
+    let a = 0
+    if (p <= topEnd) a = topPeak * (1 - p / topEnd)
+    else if (p >= bottomStart) a = bottomPeak * ((p - bottomStart) / (1 - bottomStart))
+    return [r, g, b, Math.round(Math.max(0, Math.min(1, a)) * 255)]
+  })
+  return encodePng(W, H, data)
+}
+
+/**
+ * 暗角：源工程 `Vignette`（ui.tsx:48-55）的径向渐变。
+ * `radial-gradient(118% 88% at 50% 44%, transparent 38%, rgba(0,0,0,strength) 100%)`
+ * —— 椭圆半径 118%×88%、圆心 (50%,44%)，38% 以内全透明，到边缘线性升到 strength。
+ *
+ * DSL 的 `meta.look.vignetteBackground` 是**全局一份**（Root 用 multiply 混合），
+ * 逐镜头强度不同 ⇒ 只能预生成 PNG，逐镜头挂一条全屏 image 轨。
+ */
+function vignettePng(strength) {
+  const { data } = createCanvas(W, H, (x, y) => {
+    const dx = (x - 0.5 * W) / (1.18 * W)
+    const dy = (y - 0.44 * H) / (0.88 * H)
+    const d = Math.sqrt(dx * dx + dy * dy)
+    const a = d <= 0.38 ? 0 : strength * ((d - 0.38) / (1 - 0.38))
+    return [0, 0, 0, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
   return encodePng(W, H, data)
 }
@@ -327,10 +369,15 @@ function main() {
   emit('gen-glow-left2.png', glowPng({ cx: 0.26, cy: 0.52, rx: 0.56, ry: 0.54, color: C.blue, peak: 0.2 }))
   emit('gen-glow-mid.png', glowPng({ cx: 0.5, cy: 0.5, rx: 0.6, ry: 0.56, color: C.blue, peak: 0.18 }))
   emit('gen-core-light.png', glowPng({ cx: 0.5, cy: 0.5, rx: 340 / W, ry: 340 / H, color: '#BEC8FF', peak: 0.95, falloff: 0.5 }))
-  emit('gen-scrim-bottom.png', scrimPng({ from: 'bottom', height: 300, color: C.bg, peak: 0.96 }))
-  emit('gen-scrim-top.png', scrimPng({ from: 'top', height: 210, color: C.bg, peak: 0.94 }))
-  emit('gen-scrim-top-bottom.png', scrimTopBottomPng())
-  emit('gen-scrim-caption.png', scrimPng({ from: 'bottom', height: 260, color: C.bg, peak: 0.86 }))
+  emit('gen-scrim-bottom.png', scrimPng({ from: 'bottom', height: 300, color: C.bg, peak: 0.96, mid: 0.80, midAt: 0.42 }))
+  emit('gen-scrim-top.png', scrimPng({ from: 'top', height: 210, color: C.bg, peak: 0.94, mid: 0.72, midAt: 0.55 }))
+  emit('gen-scrim-top-bottom.png', scrimTopBottomPng({ color: C.bg, topPeak: 0.92, topEnd: 0.26, bottomStart: 0.74, bottomPeak: 0.92 }))
+  emit('gen-scrim-audience.png', scrimTopBottomPng({ color: C.bg, topPeak: 0.85, topEnd: 0.20, bottomStart: 0.62, bottomPeak: 0.90 }))
+  emit('gen-scrim-caption.png', scrimPng({ from: 'bottom', height: 260, color: C.bg, peak: 0.86, mid: 0.55, midAt: 0.46 }))
+  // 暗角：源工程 11 个镜头各一份（强度不同 ⇒ 按强度去重出图）
+  for (const strength of [0.45, 0.5, 0.52, 0.55, 0.58, 0.7]) {
+    emit(`gen-vignette-${String(Math.round(strength * 100)).padStart(2, '0')}.png`, vignettePng(strength))
+  }
   emit('gen-sweep.png', sweepPng())
   emit('gen-stage-light.png', stageLightPng())
   emit('gen-outro-scrim.png', outroScrimPng())

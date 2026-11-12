@@ -115,6 +115,26 @@ const push = (track) => {
   return track
 }
 
+/**
+ * 暗角轨：源工程 `ui.tsx` 的 `Vignette` 在**每个场景**里都挂一条（强度逐镜头不同：
+ * Open .7 / TitleCard .55 / Hero .5 / Metrics .55 / Sdk .52 / Prism .5 /
+ * Compute .45 / Catalogue .5 / Audience .45 / Outro .58）。
+ *
+ * DSL 的 `meta.look.vignetteBackground` 是全局一份（Root 用 `mixBlendMode: multiply`），
+ * 无法逐镜头改强度 ⇒ 预生成 PNG，按强度去重（6 张），逐镜头挂一条全屏 image 轨。
+ *
+ * 位置：该镜头内容之上、字幕层之下 —— 与源工程一致（`Vignette` 在场景内，
+ * `Captions` 在场景外）。
+ */
+const pushVignette = (from, dur, strength) => {
+  const key = String(Math.round(strength * 100)).padStart(2, '0')
+  push({
+    id: `vignette-${from}`, type: 'image', src: gen(`gen-vignette-${key}.png`),
+    fit: 'cover', hasAlpha: true,
+    startFrame: from, durationInFrames: dur, fadeFrames: 0,
+  })
+}
+
 /* ─────────────────────────── S1 · Open ─────────────────────────── */
 
 function buildOpen() {
@@ -246,6 +266,8 @@ function buildOpen() {
     box: labelBox(120, 92 + 10, EYEBROWS.open.text, 19).box,
     startFrame: from + EYEBROWS.open.from, durationInFrames: 150 - EYEBROWS.open.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.7)
 }
 
 /* ─────────────────────────── S2/S5/S11 · 呼吸字卡 ─────────────────────────── */
@@ -309,7 +331,7 @@ function buildTitleCard(card) {
         durationInFrames: dur,
         fadeFrames: 0,
         anim: preset,
-        animOptions: { wordDelayFrames: card.variant === 'wipe' ? 0 : 1, offsetY: 14, blur: 4 },
+        animOptions: { wordDelayFrames: card.variant === 'wipe' ? 0 : 1, offsetY: 26, blur: 10 },
       }
       if (seg.accent === true) track.fx = 'metal'
       // 行内首词的进场时机 = 源工程的全局词序
@@ -323,6 +345,8 @@ function buildTitleCard(card) {
       wordIndex += 1
     })
   })
+
+  pushVignette(from, dur, 0.55)
 }
 
 /* ─────────────────────────── S3 · Hero ─────────────────────────── */
@@ -417,6 +441,8 @@ function buildHero() {
     box: labelBox(120, 102, EYEBROWS.hero.text, 19).box,
     startFrame: from + EYEBROWS.hero.from, durationInFrames: dur - EYEBROWS.hero.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.5)
 }
 
 /* ─────────────────────────── S4 · Metrics ─────────────────────────── */
@@ -473,6 +499,8 @@ function buildMetrics() {
     box: labelBox(120, 102, EYEBROWS.metrics.text, 19).box,
     startFrame: from + EYEBROWS.metrics.from, durationInFrames: dur - EYEBROWS.metrics.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.55)
 }
 
 /* ─────────────────────────── S6 · SDK ─────────────────────────── */
@@ -582,6 +610,8 @@ function buildSdk() {
     box: labelBox(120, 102, EYEBROWS.sdk.text, 19).box,
     startFrame: from + EYEBROWS.sdk.from, durationInFrames: dur - EYEBROWS.sdk.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.52)
 }
 
 /* ─────────────────────────── S7 · PRISM ─────────────────────────── */
@@ -778,6 +808,8 @@ function buildPrism() {
       from: { opacity: 0 }, to: { opacity: 1 }, easing: 'easeOut',
     }],
   })
+
+  pushVignette(from, dur, 0.5)
 }
 
 /* ─────────────────────────── S8 · Compute ─────────────────────────── */
@@ -838,6 +870,8 @@ function buildCompute() {
     box: labelBox(120, 102, EYEBROWS.compute.text, 19).box,
     startFrame: from + EYEBROWS.compute.from, durationInFrames: dur - EYEBROWS.compute.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.45)
 }
 
 /* ─────────────────────────── S9 · Catalogue ─────────────────────────── */
@@ -882,6 +916,8 @@ function buildCatalogue() {
     box: labelBox(120, 102, EYEBROWS.catalogue.text, 19).box,
     startFrame: from + EYEBROWS.catalogue.from, durationInFrames: dur - EYEBROWS.catalogue.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.5)
 }
 
 /* ─────────────────────────── S10 · Audience ─────────────────────────── */
@@ -902,7 +938,7 @@ function buildAudience() {
     }],
   })
   push({
-    id: 'audience-scrim', type: 'image', src: gen('gen-scrim-top-bottom.png'), fit: 'cover', hasAlpha: true,
+    id: 'audience-scrim', type: 'image', src: gen('gen-scrim-audience.png'), fit: 'cover', hasAlpha: true,
     startFrame: from, durationInFrames: dur, fadeFrames: 0,
   })
 
@@ -932,6 +968,8 @@ function buildAudience() {
     box: labelBox(120, 102, EYEBROWS.audience.text, 19).box,
     startFrame: from + EYEBROWS.audience.from, durationInFrames: dur - EYEBROWS.audience.from, fadeFrames: 0,
   })
+
+  pushVignette(from, dur, 0.45)
 }
 
 /* ─────────────────────────── S12 · Outro ─────────────────────────── */
@@ -1058,6 +1096,9 @@ function buildOutro() {
       from: { x: -27 }, to: { x: 103 }, easing: 'easeInOut',
     }],
   })
+
+  // 暗角：源工程 Outro.tsx:146 `Vignette strength={0.58}`，是场景最后一个元素
+  pushVignette(from, dur, 0.58)
 }
 
 /* ─────────────────────────── 字幕（放在最后 ⇒ 最上层） ─────────────────────────── */
@@ -1072,11 +1113,19 @@ function buildCaptions() {
       // 末句的 scrim 会超出总时长（1702+100=1802 > 1800）⇒ 校验器报「超出总时长」，
       // 渲染器会裁切，但为了让「校验零错零越界」成立，这里按总时长收口。
       durationInFrames: Math.min(line.to - line.from + 8, CANVAS.total - (line.from - 4)),
-      fadeFrames: 0,
+      // 源工程 `Captions.tsx:25-27`：`fadeIn` 跨 [from-4, from+4]、`fadeOut` 跨 [to-2, to+4]，
+      // `o = min(fadeIn, fadeOut)`。`fadeFrames: 6` 正好让尾段淡出落在 [to-2, to+4]（与源一致），
+      // 首段淡入比源短 2 帧（源 8 帧 / 此 6 帧）。旧值 0 ⇒ 字幕条硬进硬出，
+      // 实测全片 9 次「整帧均亮 41 ↔ 13」的硬跳变。
+      fadeFrames: 6,
     })
     push({
       id: `caption-${i}`, type: 'caption', src: src(vo.src), text: line.text,
       fontSize: 35, widthPercent: 78,
+      // 源工程 `Captions.tsx:63` 是**整行同色** `C.text`（#ECECF2）；
+      // 产品 `caption` 变体默认「已读白 / 当前青 #5ad2ff / 未读 28% 白」三态卡拉OK，
+      // 与源片不一致（实测字幕大部分词是 28% 灰）⇒ 三个色位都写死成源片同色。
+      color: '#ECECF2', activeColor: '#ECECF2', dimColor: '#ECECF2',
       audioFrames: Math.round(vo.seconds * CANVAS.fps),
       startFrame: line.from, durationInFrames: line.to - line.from, fadeFrames: 0,
     })

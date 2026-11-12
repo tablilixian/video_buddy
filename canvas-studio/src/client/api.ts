@@ -8,6 +8,7 @@ import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryListFilte
 export { libraryMediaUrl } from '../contracts/asset-library.js'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoImportPayload, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
+import { buildRenderCommitFrame } from '../render-protocol.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
@@ -1224,15 +1225,25 @@ export async function commitStudioRenderJob(
   spot?: boolean,
 ): Promise<void> {
   const query = new URLSearchParams({ jobId })
-  if (warnings.length > 0) query.set('warnings', JSON.stringify([...warnings]))
-  if (report !== undefined && Object.keys(report).length > 0) query.set('metrics', JSON.stringify(report))
+  // RQ-01（REQ-038）：元数据**不再进 URL**（整片 265 轨的 query 实测 16,239B，
+  // 越过 Node 默认 header 上限 16,384B ⇒ 431，55s 渲染全白跑）。有元数据时走
+  // magic 帧格式（`render-protocol.ts`，服务端按帧拆包）；无元数据保留裸 body。
+  // jobId / spot 留在 query（几字节，永不越界）。
+  const hasMeta = warnings.length > 0 || (report !== undefined && Object.keys(report).length > 0)
+  const metaJson = hasMeta
+    ? JSON.stringify({
+      ...(warnings.length > 0 ? { warnings: JSON.stringify([...warnings]) } : {}),
+      ...(report !== undefined && Object.keys(report).length > 0 ? { metrics: JSON.stringify(report) } : {}),
+    })
+    : null
   if (spot === true) query.set('spot', '1')
+  const frameBody: Uint8Array = metaJson === null ? bytes : buildRenderCommitFrame(metaJson, bytes)
   await readJson<{ ok: boolean }>(await fetch(`/canvas-studio/remotion/commit?${query.toString()}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream' },
     // lib.dom 把 BodyInit 收窄到 ArrayBufferView<ArrayBuffer>，而 Uint8Array 缺省泛型是
     // ArrayBufferLike；运行时 fetch 完全接受 Uint8Array，故此处收窄断言。
-    body: bytes as unknown as BodyInit,
+    body: frameBody as unknown as BodyInit,
     ...(signal === undefined ? {} : { signal }),
   }))
 }

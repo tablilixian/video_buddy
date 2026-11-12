@@ -64,4 +64,55 @@ export interface RenderJobReport {
    * 老客户端不上报时缺省（不伪造空数组 —— 空数组等于「查过且没问题」，那是撒谎）。
    */
   textFit?: TextFitReportEntry[]
+  /**
+   * RQ-19（REQ-038）：**配方密度与覆盖率** —— 由 manifest 确定性推导（宿主手上就有
+   * manifest，不需要客户端上报）。E10 的度量代理：产品自产 0.04 轨/秒 vs 手搓 0.15
+   * 轨/秒是能力差距的可读数字。
+   */
+  recipeDensity?: RecipeDensityReport
+}
+
+/** RQ-19 · 配方密度报告（`deriveRecipeDensity` 的产出）。 */
+export interface RecipeDensityReport {
+  /** 轨/秒（tracks ÷ (durationInFrames ÷ fps)）。 */
+  tracksPerSec: number
+  /** 每轨字节（manifest JSON 序列化体积 ÷ 轨数）。 */
+  bytesPerTrack: number
+  /** 文字轨条数（textCard + caption）。 */
+  textTracks: number
+  /** 各轨型条数（聚合原语 `logoWall` 等一目了然 —— RQ-22 落地后的展开前口径）。 */
+  tracksByType: Record<string, number>
+  /** 配方覆盖率：meta.generatedBy 以 `recipe:` / `spec:` / `template:` 开头 = 1，手写 = 0。 */
+  recipeCoverage: number
+}
+
+/**
+ * RQ-19 · 从 manifest 推导配方密度（确定性；`manifestBytes` 缺省时按序列化体积算）。
+ * `meta.generatedBy` 是配方来源标记（scaffold_manifest / planFromSpec 写入约定）。
+ */
+export function deriveRecipeDensity(
+  manifest: { meta: { durationInFrames?: number; fps?: number; generatedBy?: string }; tracks: readonly { type?: string }[] },
+  manifestBytes?: number,
+): RecipeDensityReport {
+  const trackCount = manifest.tracks.length
+  const fps = typeof manifest.meta.fps === 'number' && manifest.meta.fps > 0 ? manifest.meta.fps : 30
+  const duration = typeof manifest.meta.durationInFrames === 'number' ? manifest.meta.durationInFrames : 0
+  const seconds = duration / fps
+  const tracksByType: Record<string, number> = {}
+  let textTracks = 0
+  for (const track of manifest.tracks) {
+    const type = typeof track.type === 'string' ? track.type : 'unknown'
+    tracksByType[type] = (tracksByType[type] ?? 0) + 1
+    if (type === 'textCard' || type === 'caption') textTracks += 1
+  }
+  const bytes = manifestBytes ?? JSON.stringify(manifest).length
+  const generatedBy = manifest.meta.generatedBy ?? ''
+  const isRecipe = /^(recipe:|spec:|template:)/.test(generatedBy)
+  return {
+    tracksPerSec: seconds > 0 ? trackCount / seconds : 0,
+    bytesPerTrack: trackCount > 0 ? bytes / trackCount : 0,
+    textTracks,
+    tracksByType,
+    recipeCoverage: isRecipe ? 1 : 0,
+  }
 }

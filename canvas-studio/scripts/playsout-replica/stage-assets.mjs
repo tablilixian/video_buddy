@@ -25,6 +25,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createCanvas, encodePng, hexToRgb, lerp, smoothstep } from './lib/png.mjs'
+// RQ-14（REQ-038）：出图即自检 —— alpha 剖面断言不满足即拒绝出图（E4 事故的资产期拦截）。
+import { decodePng, alphaProfile, assertAlphaProfile } from '../pixel-audit/lib/png.mjs'
 import { C } from './lib/theme.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -103,6 +105,18 @@ function glowPng(spec) {
  *
  * @param {{ from: 'bottom'|'top', height: number, color: string, peak: number, mid: number, midAt: number }} spec
  */
+/**
+ * RQ-14：出图即自检。`pngBytes`（PNG buffer）解码后按 options 断言 alpha 剖面，
+ * 不合格直接 throw（staging 即红，绝不把坏资产写进 build/ —— 渲染期零征兆是旧痛）。
+ */
+function checkedPng(pngBytes, name, options) {
+  const audit = assertAlphaProfile(alphaProfile(decodePng(pngBytes)), options)
+  if (!audit.ok) {
+    throw new Error(`[资产自检 RQ-14] ${name} alpha 剖面不合格：\n  - ${audit.reasons.join('\n  - ')}`)
+  }
+  return pngBytes
+}
+
 function scrimPng(spec) {
   const { from, height, color, peak, mid, midAt } = spec
   const [r, g, b] = hexToRgb(color)
@@ -115,7 +129,13 @@ function scrimPng(spec) {
       : mid * (1 - (t - midAt) / (1 - midAt))
     return [r, g, b, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
-  return encodePng(W, H, data)
+  // 自检：贴边峰值窗口 + 带外全透明（height = 带宽；带外 = 另一侧 H − height 行）。
+  return checkedPng(encodePng(W, H, data), `scrim-${from}-${height}`, {
+    topBand: from === 'bottom' ? H - height : 0,
+    bottomBand: from === 'top' ? H - height : 0,
+    peakFrom: from === 'bottom' ? 0.9 : 0,
+    peakTo: from === 'bottom' ? 1 : 0.1,
+  })
 }
 
 /**
@@ -137,7 +157,12 @@ function scrimTopBottomPng(spec) {
     else if (p >= bottomStart) a = bottomPeak * ((p - bottomStart) / (1 - bottomStart))
     return [r, g, b, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
-  return encodePng(W, H, data)
+  // 自检：上下双带峰值各在两端（中段透明由 lowWindow 覆盖）。
+  return checkedPng(encodePng(W, H, data), 'scrim-top-bottom', {
+    peakFrom: 0,
+    peakTo: 0.15,
+    lowWindow: { from: topEnd + 0.05, to: bottomStart - 0.05, maxAlpha: 20 },
+  })
 }
 
 /**
@@ -156,7 +181,13 @@ function vignettePng(strength) {
     const a = d <= 0.38 ? 0 : strength * ((d - 0.38) / (1 - 0.38))
     return [0, 0, 0, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
-  return encodePng(W, H, data)
+  // 自检：径向中心窗口（44%±10%）必须近透明 —— 38% 内全透明的口径（写反即红）。
+  return checkedPng(encodePng(W, H, data), `vignette-${strength}`, {
+    lowWindow: { from: 0.34, to: 0.54, maxAlpha: 12 },
+    peakMinAlpha: Math.round(strength * 255 * 0.9),
+    peakFrom: 0,
+    peakTo: 0.15,
+  })
 }
 
 /** 斜向扫光（Outro 用）：一条旋转 −18° 的横向渐变光带，已画进画布。 */

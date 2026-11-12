@@ -119,6 +119,7 @@ export interface PendingRenderJob {
 // render-diagnostics / render-budget 同款拆法），此处 re-export 保持既有导入路径不变。
 export type { RenderJobReport } from './render-report.js'
 import type { RenderJobReport } from './render-report.js'
+import { deriveRecipeDensity } from './render-report.js'
 
 /**
  * 隐藏窗口此刻为什么不能接单 / 接管 —— 拼进**模型可见**的文案。
@@ -1207,6 +1208,8 @@ export async function commitRenderJob(
     ...(timingCheck !== undefined ? { timingCheck } : {}),
     // 0B（CV-461）：文字容量体检明细（客户端渲前实测；宿主只搬运，不重算 —— 重算要 canvas）。
     ...(input.report?.textFit !== undefined ? { textFit: input.report.textFit } : {}),
+    // RQ-19（REQ-038）：配方密度由 manifest 推导（宿主确定性计算，不信任客户端上报）。
+    recipeDensity: deriveRecipeDensity(job.manifest),
   }
   const outcome: RenderJobOutcome = {
     url: saved.url,

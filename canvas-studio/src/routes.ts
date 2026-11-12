@@ -12,6 +12,7 @@ import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { parseRenderCommitFrame } from './render-protocol.js'
 import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
 import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
@@ -3336,11 +3337,30 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           })
           return
         }
-        const warnings = asRenderWarnings(requestUrl.searchParams.get('warnings'))
-        const report = asRenderReport(requestUrl.searchParams.get('metrics'))
-        // V1：spot-check 结算标记 —— 空字节 + spot=1，工单按「只产静帧」结算。
+        // RQ-01（REQ-038）：元数据默认走 **magic 帧格式**（body = CSREND01 + 4B metaLen +
+        // JSON + mp4 字节，`render-protocol.ts`）—— 旧 query 通道（16,384B header 上限）
+        // 在整片 265 轨时实测 431。双向兼容：帧未命中 ⇒ 整个 body 按裸 mp4（老格式），
+        // 且 query 的 warnings/metrics（旧客户端）仍然读取。
         const spot = requestUrl.searchParams.get('spot') === '1'
-        const bytes = await readRawBody(req, controller.signal, MAX_RENDER_BODY_BYTES)
+        const bodyBytes = await readRawBody(req, controller.signal, MAX_RENDER_BODY_BYTES)
+        const frame = parseRenderCommitFrame(bodyBytes)
+        let bytes: Uint8Array = bodyBytes
+        let warnings: string[]
+        let report: Partial<RenderJobReport> | undefined
+        if (frame !== null) {
+          let meta: Record<string, unknown> = {}
+          try {
+            meta = JSON.parse(frame.metaJson) as Record<string, unknown>
+          } catch {
+            meta = {}
+          }
+          warnings = asRenderWarnings(typeof meta.warnings === 'string' ? meta.warnings : null)
+          report = asRenderReport(typeof meta.metrics === 'string' ? meta.metrics : null)
+          bytes = frame.payload
+        } else {
+          warnings = asRenderWarnings(requestUrl.searchParams.get('warnings'))
+          report = asRenderReport(requestUrl.searchParams.get('metrics'))
+        }
         const result = await commitRenderJob(registry, jobId, {
           bytes,
           ...(spot ? { spot: true } : {}),

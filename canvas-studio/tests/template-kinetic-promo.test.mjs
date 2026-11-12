@@ -41,7 +41,7 @@ test('kinetic-promo：注册表可见、7 个条目齐全、身份字段正确',
   assert.ok(bundle.meta.furniture.includes('cardWall'), '第 2 步的构件必须真被模板用上')
 })
 
-test('kinetic-promo ★编译：零 error / 零 warning、172 轨（S4-R2 七段重排 / 蓝屏移段 / 仪表盘网格 / 辉光脉冲）、音效注入', () => {
+test('kinetic-promo ★编译：零 error / 零 warning、180 轨（S4-R2 七段重排 / 蓝屏移段 / 仪表盘网格 / 辉光脉冲 / R5 快切板置顶 + 3 补光轨 / R7 暖色重构 + 3 闪光板）、音效注入', () => {
   const { bundle } = loadTemplateBundle(ID)
   const out = compileTemplate(bundle, exampleValues(bundle))
   assert.equal(out.ok, true, `编译失败：${out.errors.join('；')}`)
@@ -50,7 +50,10 @@ test('kinetic-promo ★编译：零 error / 零 warning、172 轨（S4-R2 七段
   // S3：骨架 96 → 128（快切瀑布 / 白板快切）；S4-R1（2026-11-11）：七段重排
   // +闪光切点板 → 骨架 139；S4-R2：蓝屏移段 / 仪表盘网格 / 金色数字 → 150。
   // cardWall 容器 = 22 条构件（1 group：62 卡 + 24 条纹 + 9 辉光）⇒ 172。
-  assert.equal(out.manifest.tracks.length, 172)
+  // S4-R5（2026-11-12）：快切板置顶重排 + 新增 s7-panel-chip / s2-glow / s7-dim-glow 3 轨。
+  // S4-R7（2026-11-12）：hue 暖色重构 + 新增 s5-flash-0/1/2 3 轨
+  // ⇒ 骨架 158 + 构件 22 = 180（R3/R4 加轨时此断言未同步，R5 一并校正）。
+  assert.equal(out.manifest.tracks.length, 180)
   assert.equal(out.stats.sfxCount, bundle.audio.sfx.length)
   assert.equal(out.manifest.meta.templateId, ID)
   assert.equal(out.manifest.meta.family, 'tech')

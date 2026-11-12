@@ -7,12 +7,12 @@
   -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#34383e"/>
-      <stop offset="1" stop-color="#3e4249"/>
+      <stop offset="0" stop-color="#806655"/>
+      <stop offset="1" stop-color="#b49876"/>
     </linearGradient>
     <linearGradient id="figure" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#5d6066"/>
-      <stop offset="1" stop-color="#484b52"/>
+      <stop offset="0" stop-color="#6a5a48"/>
+      <stop offset="1" stop-color="#54483c"/>
     </linearGradient>
     <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
       <circle cx="13" cy="13" r="1.6" fill="#45484e"/>
@@ -26,10 +26,10 @@
     <path d="M 180 448 C 96 448 40 512 40 604 L 40 840 L 320 840 L 320 604 C 320 512 264 448 180 448 Z"/>
   </g>
   <!-- 顶部 / 底部电蓝描边（呼应 HUD 括线语言） -->
-  <rect x="18" y="18" width="80" height="5" fill="#3fa9f5"/>
-  <rect x="262" y="18" width="80" height="5" fill="#3fa9f5"/>
-  <rect x="18" y="817" width="80" height="5" fill="#3fa9f5"/>
-  <rect x="262" y="817" width="80" height="5" fill="#3fa9f5"/>
+  <rect x="18" y="18" width="80" height="5" fill="#eec094"/>
+  <rect x="262" y="18" width="80" height="5" fill="#eec094"/>
+  <rect x="18" y="817" width="80" height="5" fill="#eec094"/>
+  <rect x="262" y="817" width="80" height="5" fill="#eec094"/>
   <!-- 琥珀口播条 + PRESENTER 标签 -->
   <rect x="150" y="700" width="60" height="7" rx="3.5" fill="#f0a43a"/>
   <text x="180" y="760" text-anchor="middle" fill="#8f9297"

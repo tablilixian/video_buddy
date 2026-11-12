@@ -1,0 +1,14 @@
+[
+  {
+    "id": "progressBar",
+    "params": {
+      "bottomInset": 2.6,
+      "left": 6,
+      "right": 94,
+      "ticks": 28,
+      "tickColor": "rgba(255,255,255,0.28)",
+      "cursorColor": "#ffd166",
+      "cursorTravelFrames": 0
+    }
+  }
+]

@@ -25,7 +25,8 @@ import { gateTemplate, INFO_SUFFICIENCY_MIN_RATIO } from '../lib/remotion/templa
 import { listTemplateSummaries, loadTemplateBundle } from '../lib/remotion/template-registry.js'
 import { validateManifest } from '../lib/remotion/manifest.js'
 
-const REAL_TEMPLATES = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary', 'tech/kinetic-promo']
+// 2026-11-13：+ vo-ad/vo-spot-30s（口播广告,模板通道重开批）。
+const REAL_TEMPLATES = ['science/three-cards', 'product/feature-walkthrough', 'report/data-summary', 'tech/kinetic-promo', 'vo-ad/vo-spot-30s']
 
 /** 用模板自己的 `example` 当填参（最稳的「合法内容」来源：作者亲手写的示例）。 */
 function exampleValues(bundle) {

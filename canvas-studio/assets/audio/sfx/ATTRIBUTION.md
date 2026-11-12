@@ -42,3 +42,33 @@ c5eba091c94b5292d9a545576bbbee1c21dd5cbc2539822fb61ac2aec69836d0  impact-zoom-qu
 b88fd5d484251930efd6eca78c4340339908ea29d1e69bd24fb5191a10da4f78  whoosh-fast.mp3
 8bd0c7fd63fbb8a4442ffe1176aa41b260d1fafbcf728e3c63648eb5bcd4e16b  bass-hit-short.mp3
 ```
+
+## REQ-038 扩充批（2026-11-13 · 口播广告模板音效）
+
+为 `vo-ad/vo-spot-30s`（口播广告模板）扩充 19 支，来源与首批相同（video-shotcraft
+账本逐文件回溯到 Mixkit URL，Mixkit Sound Effects Free License 免署名可商用）。
+**剔除**了上游标注「无法反查」的 3 支（keyboard / riser-cine / whoosh-big）——
+本目录红线「无法溯源的一律不收」继续生效。SHA-256 汇总：与上游账本同批文件
+逐字节一致（cp 复制），身份以字节等同性钉死，不另立哈希表。
+
+| 文件 | 用途（建议钉点） | 原名（Mixkit） | URL |
+|---|---|---|---|
+| `air-whoosh-powerful.mp3` | 口播广告钉点（REQ-038 扩充批） | Powerful air whooshes | https://assets.mixkit.co/active_storage/sfx/3220/3220-preview.mp3 |
+| `air-woosh-quick.mp3` | 口播广告钉点（REQ-038 扩充批） | Quick air woosh | https://assets.mixkit.co/active_storage/sfx/2605/2605-preview.mp3 |
+| `wind-woosh-throw.mp3` | 口播广告钉点（REQ-038 扩充批） | Throw hard wind woosh | https://assets.mixkit.co/active_storage/sfx/1488/1488-preview.mp3 |
+| `hit-fast-exciting.mp3` | 口播广告钉点（REQ-038 扩充批） | Exciting fast hit | https://assets.mixkit.co/active_storage/sfx/2180/2180-preview.mp3 |
+| `impact-epic-trailer.mp3` | 口播广告钉点（REQ-038 扩充批） | Movie trailer epic impact | https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3 |
+| `impact-transition.mp3` | 口播广告钉点（REQ-038 扩充批） | Mixkit SFX Free License | Movie trailer epic impact · https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3 |
+| `stomp-apocalyptic.mp3` | 口播广告钉点（REQ-038 扩充批） | Apocalyptic stomp impact | https://assets.mixkit.co/active_storage/sfx/3057/3057-preview.mp3 |
+| `metal-spring-hit.mp3` | 口播广告钉点（REQ-038 扩充批） | Spring metal hit | https://assets.mixkit.co/active_storage/sfx/2302/2302-preview.mp3 |
+| `chime-crystal.mp3` | 口播广告钉点（REQ-038 扩充批） | Crystal chime | https://assets.mixkit.co/active_storage/sfx/3108/3108-preview.mp3 |
+| `pop-electric.mp3` | 口播广告钉点（REQ-038 扩充批） | Electric pop | https://assets.mixkit.co/active_storage/sfx/2365/2365-preview.mp3 |
+| `ui-success-soft.mp3` | 口播广告钉点（REQ-038 扩充批） | Success software tone | https://assets.mixkit.co/active_storage/sfx/2865/2865-preview.mp3 |
+| `ui-select-modern.mp3` | 口播广告钉点（REQ-038 扩充批） | Modern technology select | https://assets.mixkit.co/active_storage/sfx/3124/3124-preview.mp3 |
+| `switch-tap.mp3` | 口播广告钉点（REQ-038 扩充批） | On or off light switch tap | https://assets.mixkit.co/active_storage/sfx/2585/2585-preview.mp3 |
+| `clock-tick-single.mp3` | 口播广告钉点（REQ-038 扩充批） | Clock ticker single | https://assets.mixkit.co/active_storage/sfx/1061/1061-preview.mp3 |
+| `countdown-bleeps.mp3` | 口播广告钉点（REQ-038 扩充批） | Clock countdown bleeps | https://assets.mixkit.co/active_storage/sfx/916/916-preview.mp3 |
+| `applause-rhythmic-loop.mp3` | 口播广告钉点（REQ-038 扩充批） | Rhythmic audience clapping loop | https://assets.mixkit.co/active_storage/sfx/522/522-preview.mp3 |
+| `clap-single.mp3` | 口播广告钉点（REQ-038 扩充批） | One clap | https://assets.mixkit.co/active_storage/sfx/481/481-preview.mp3 |
+| `zoom-swipe-fast.mp3` | 口播广告钉点（REQ-038 扩充批） | Fast swipe zoom | https://assets.mixkit.co/active_storage/sfx/2627/2627-preview.mp3 |
+| `marker-pen-line.mp3` | 口播广告钉点（REQ-038 扩充批） | Pen marker line | https://assets.mixkit.co/active_storage/sfx/2998/2998-preview.mp3 |

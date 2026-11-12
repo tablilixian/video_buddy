@@ -213,7 +213,9 @@ export const FILE_WHITELIST = {
   // 校验 case 接线（类型与校验主体在 manifest-aggregates.ts 外提件，+33，2783 → 2816）；
   // 批 6：RQ-23 CameraKey/CameraMotion 类型与 ImageClipTrack.camera 注释 + 校验接线
   //（插值主体在 camera-motion.ts 外提件，+43，2816 → 2859）。
-  'src/remotion/manifest.ts': 2859,
+    // 2026-11-13 模板重开批：textCard.background 字段+校验 + 模板占位符 src 豁免
+  //（+18，2859 → 2877）显式登记。
+  'src/remotion/manifest.ts': 2877,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

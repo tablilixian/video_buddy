@@ -1,0 +1,34 @@
+{
+  "id": "vo-ad/vo-spot-30s",
+  "name": "口播广告 · 信息流 14 秒",
+  "family": "vo-ad",
+  "version": "1.0.0",
+  "contractVersion": "1",
+  "summary": "真人口播信息流广告：口播视频全屏打底，钩子大字 → 一句话主张 → 三条卖点花字错峰 → 促销+CTA 落版；词级节拍 SFX 钉帧，底部进度条",
+  "suitableFor": [
+    "信息流带货",
+    "口播种草",
+    "直播切片引流",
+    "本地门店推广"
+  ],
+  "notSuitableFor": [
+    "没有真人口播素材的纯动画广告",
+    "数据密度高的汇报",
+    "长讲解（>20s 请走口播长版，另行扩）"
+  ],
+  "durationInFrames": 420,
+  "fps": 30,
+  "aspect": "16:9",
+  "durationRange": [
+    13,
+    16
+  ],
+  "itemCapacity": 3,
+  "requiredAssets": [
+    "口播视频（真人对镜头说话，≥14 秒，横竖屏均可：竖屏会居中裁切）—— 真人素材必须用户提供（user 通道），AI 重画 = 假人出镜，禁止"
+  ],
+  "furniture": [
+    "progressBar"
+  ],
+  "usage": "10 个槽位全部必填、且全部带缺省文案（缺了不拒收，可直接出样片），改哪格就覆盖哪格；只有 voVideo 没有缺省 —— 口播视频必须真素材。段落序列与 SFX 节拍固定，不要增删段；花字按 maxChars 填，超了编译前拒收。"
+}

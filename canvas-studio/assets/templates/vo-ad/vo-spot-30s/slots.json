@@ -1,0 +1,145 @@
+{
+  "slots": [
+    {
+      "id": "voVideo",
+      "label": "口播视频",
+      "type": "string",
+      "required": true,
+      "semantic": "真人口播视频的同源资产 URL（/canvas-studio/assets/…）；≥14s；示例见 build/vo-ad-sample/（拷进项目资产目录后引用）",
+      "example": "/canvas-studio/assets/vo/vo-influencer-42323.mp4",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "hook",
+      "label": "钩子短句",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "开场 3 秒的全屏大字，一句话把人拦住；口语、带情绪",
+      "styleRole": "title",
+      "example": "别再乱买了",
+      "default": "别再乱买了",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "productName",
+      "label": "产品名",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "maxCharsPerLine": 12,
+      "semantic": "产品/品牌名，品牌写法照原样",
+      "styleRole": "eyebrow",
+      "example": "轻云洗地机",
+      "default": "轻云洗地机",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "claim",
+      "label": "一句话主张",
+      "type": "string",
+      "required": true,
+      "maxChars": 14,
+      "maxLines": 1,
+      "maxCharsPerLine": 14,
+      "semantic": "产品名后面跟的核心主张（它是什么/凭什么）",
+      "styleRole": "title",
+      "example": "吸拖一体，180° 平躺",
+      "default": "吸拖一体，180° 平躺",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "selling1",
+      "label": "卖点 1",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "maxCharsPerLine": 12,
+      "semantic": "第一条卖点（短句 + 数字最有说服力）",
+      "styleRole": "subtitle",
+      "example": "12 分钟吸完整屋",
+      "default": "12 分钟吸完整屋",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "selling2",
+      "label": "卖点 2",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "maxCharsPerLine": 12,
+      "semantic": "第二条卖点",
+      "styleRole": "subtitle",
+      "example": "毛发不缠绕",
+      "default": "毛发不缠绕",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "selling3",
+      "label": "卖点 3",
+      "type": "string",
+      "required": true,
+      "maxChars": 12,
+      "maxLines": 1,
+      "maxCharsPerLine": 12,
+      "semantic": "第三条卖点",
+      "styleRole": "subtitle",
+      "example": "躺平钻床底",
+      "default": "躺平钻床底",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "promoLine",
+      "label": "促销行",
+      "type": "string",
+      "required": true,
+      "maxChars": 16,
+      "maxLines": 1,
+      "maxCharsPerLine": 16,
+      "semantic": "CTA 上方的促销信息（价格/赠品/限时）",
+      "styleRole": "subtitle",
+      "example": "直播间下单立减 300",
+      "default": "直播间下单立减 300",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "cta",
+      "label": "行动号召",
+      "type": "string",
+      "required": true,
+      "maxChars": 8,
+      "maxLines": 1,
+      "maxCharsPerLine": 8,
+      "semantic": "落版大字（点谁/去哪/干什么）",
+      "styleRole": "title",
+      "example": "点击下方抢",
+      "default": "点击下方抢",
+      "onOverflow": "reject"
+    },
+    {
+      "id": "captionText",
+      "label": "口播字幕",
+      "type": "string[]",
+      "required": true,
+      "maxLines": 6,
+      "semantic": "口播台词的逐句字幕（字符串数组，一行一句；与口播对齐，4–12 字/句最易读）",
+      "styleRole": "subtitle",
+      "example": [
+        "家里毛发多的听我说",
+        "这台洗地机我用了两周",
+        "吸拖一起走，真的省时间"
+      ],
+      "default": [
+        "家里毛发多的听我说",
+        "这台洗地机我用了两周",
+        "吸拖一起走，真的省时间"
+      ],
+      "onOverflow": "reject"
+    }
+  ]
+}

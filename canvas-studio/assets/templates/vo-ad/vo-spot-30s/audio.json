@@ -1,0 +1,47 @@
+{
+  "sfx": [
+    {
+      "src": "/canvas-studio/remotion/fx/impact-zoom-quick.mp3",
+      "anchor": { "trackId": "s1-hook", "at": "start" },
+      "gain": 1.15,
+      "type": "impact-zoom-quick"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
+      "anchor": { "trackId": "s2-claim", "at": "start" },
+      "gain": 0.9,
+      "type": "whoosh-fast"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/pop-electric.mp3",
+      "anchor": { "trackId": "s4-sell1", "at": "start" },
+      "gain": 1.0,
+      "type": "pop-electric"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/pop-electric.mp3",
+      "anchor": { "trackId": "s5-sell2", "at": "start" },
+      "gain": 0.95,
+      "type": "pop-electric"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/pop-electric.mp3",
+      "anchor": { "trackId": "s6-sell3", "at": "start" },
+      "gain": 0.95,
+      "type": "pop-electric"
+    },
+    {
+      "src": "/canvas-studio/remotion/fx/chime-crystal.mp3",
+      "anchor": { "trackId": "s7-cta", "at": "start" },
+      "gain": 1.1,
+      "type": "chime-crystal"
+    }
+  ],
+  "bgm": {
+    "prompt": "Upbeat casual vlog underscore, 95 BPM, warm acoustic plucks with light hand claps, soft bass, gentle lift into the final 4 seconds, instrumental, no vocals",
+    "volume": 0.55,
+    "fadeInSeconds": 0.5,
+    "fadeOutSeconds": 1.0,
+    "durationSeconds": 14
+  }
+}

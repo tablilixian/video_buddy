@@ -575,6 +575,13 @@ export interface TextCardTrack extends BaseTrack {
    */
   plate?: 'auto' | 'none'
   /**
+   * RQ-038 口播模板批（2026-11-13）：`subtitle` 变体的**字幕条底色**。缺省 =
+   * 旧硬编码 `rgba(0,0,0,0.62)` ⇒ 老 manifest 逐像素不变。仅 subtitle 消费
+   *（信息流口播的卖点花字需要可配底色 —— 白底黄底黑字是口播观感的核心）；
+   * 其他变体写了只收 warning。
+   */
+  background?: string
+  /**
    * RQ-02（REQ-038）：字距（px，可为负做紧排）。度量与渲染**同源**：折行预算
    *（`text-fit-plan.ts` → `timing.ts` 的 `wrapByWidth`）与 CSS `letter-spacing`
    * 消费同一个值。缺省不写 = 不施加（老 manifest 逐像素不变）。
@@ -1183,7 +1190,7 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip', 'camera']),
   // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
   // RQ-02（REQ-038 批 3）：letterSpacing / letterSpacingEm —— 度量与渲染同源。
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'background', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource']),
   // REQ-038 批 2：radius/stroke/strokeWidthPx/dash（RQ-04）与 gradientType/gradientCenter/
   // gradientRadius/gradientTo（RQ-06）实现真实读取（Shape.tsx SVG 新路径）。
   // REQ-038 批 3：strength（RQ-09 轨级暗角）。
@@ -1910,7 +1917,10 @@ export function validateManifest(
         break
       case 'video':
       case 'image':
-        if (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src)) {
+        // 模板骨架态的 {{slot}} 占位符合法（compileTemplate 期整值替换，渲染器不会
+        // 见到它）—— 否则带 src 槽位的模板骨架过不了自洽校验。
+        const isTemplatePlaceholder = typeof track.src === 'string' && /^\{\{[A-Za-z0-9_.-]+\}\}$/.test(track.src)
+        if (!isTemplatePlaceholder && (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src))) {
           errors.push(`${at}.src 必须是 ${ASSET_URL_PREFIX} 开头的同源资产 URL（或以 / 开头的绝对路径，须位于本项目资产目录内，宿主会物化为同源 URL）`)
         }
         if (type === 'image' && track.fit !== undefined && (typeof track.fit !== 'string' || !IMAGE_FITS.has(track.fit))) {
@@ -1965,6 +1975,14 @@ export function validateManifest(
             errors.push(`${at}.plate 非法（${String(track.plate)}）—— 白名单：auto / none`)
           } else if (track.plate === 'none' && track.variant !== 'title') {
             warnings.push(`${at} 是 variant:'${String(track.variant)}'，plate:'none' 只在 variant:'title' 下生效（已忽略）`)
+          }
+        }
+        // RQ-038 口播模板批：subtitle 字幕条底色（缺省 = 旧硬编码底，老值不变）。
+        if (track.background !== undefined) {
+          if (!isNonEmptyString(track.background)) {
+            errors.push(`${at}.background 必须是非空字符串（字幕条底色；'transparent' = 无底）`)
+          } else if (track.variant !== 'subtitle') {
+            warnings.push(`${at} 是 variant:'${String(track.variant)}'，background 只在 variant:'subtitle' 下生效（已忽略）`)
           }
         }
         // RQ-02（REQ-038）：字距（px / em 二选一；同时给 em 优先）。度量与渲染同源消费。

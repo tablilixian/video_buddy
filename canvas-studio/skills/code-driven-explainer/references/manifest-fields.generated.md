@@ -214,6 +214,7 @@
 - `accentColor`?: string
 - `color`?: string — RQ-03（REQ-038）：**主文本色**（与 `accentColor` 分工 —— accent 染强调元素：
 - `plate`?: 'auto' | 'none' — RQ-07（REQ-038）：`title` 变体的底板（缺省 `'auto'` = 旧硬编码 `rgba(0,0,0,0.35)`
+- `background`?: string — RQ-038 口播模板批（2026-11-13）：`subtitle` 变体的**字幕条底色**。缺省 =
 - `letterSpacing`?: number — RQ-02（REQ-038）：字距（px，可为负做紧排）。度量与渲染**同源**：折行预算
 - `letterSpacingEm`?: number — RQ-02（REQ-038）：字距（em，相对**最终字号**）。源工程口径是 em 紧排
 - `anim`?: TextAnimPreset — 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。

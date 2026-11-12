@@ -67,7 +67,7 @@
 - `KNOWN_BASE_TRACK_KEYS`: 'id' | 'type' | 'startFrame' | 'durationInFrames' | 'transform' | 'animate' | 'fadeFrames' | 'box' | 'orbit' | 'fx' | 'exit' | 'startAfter' | 'colorShift' | 'blend' | 'reveal'
 - `KNOWN_TRACK_KEYS.video`: 'src' | 'kenBurns' | 'trimBeforeFrames' | 'playbackRate' | 'muted' | 'volume' | 'loop' | 'clip'
 - `KNOWN_TRACK_KEYS.image`: 'src' | 'fit' | 'caption' | 'sourceRect' | 'hasAlpha' | 'clip' | 'camera'
-- `KNOWN_TRACK_KEYS.textCard`: 'variant' | 'text' | 'data' | 'accentColor' | 'color' | 'plate' | 'letterSpacing' | 'letterSpacingEm' | 'anim' | 'animOptions' | 'countUp' | 'dataSource'
+- `KNOWN_TRACK_KEYS.textCard`: 'variant' | 'text' | 'data' | 'accentColor' | 'color' | 'plate' | 'background' | 'letterSpacing' | 'letterSpacingEm' | 'anim' | 'animOptions' | 'countUp' | 'dataSource'
 - `KNOWN_TRACK_KEYS.shape`: 'shape' | 'color' | 'd' | 'strokeWidth' | 'draw' | 'pivot' | 'dotRadius' | 'dotSpacing' | 'radius' | 'stroke' | 'strokeWidthPx' | 'dash' | 'gradientType' | 'gradientCenter' | 'gradientRadius' | 'gradientTo' | 'strength'
 - `KNOWN_TRACK_KEYS.transition`: 'effect' | 'fromTrackId' | 'toTrackId' | 'easing' | 'softness' | 'direction'
 - `KNOWN_TRACK_KEYS.audioViz`: 'src' | 'bars' | 'color' | 'mode' | 'gain' | 'heightPercent' | 'position' | 'smoothing' | 'gradient' | 'bandSplit' | 'bandColors'

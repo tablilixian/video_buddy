@@ -213,7 +213,8 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             maxWidth: box === undefined ? '86%' : '100%',
             padding: `${budget.padY}px ${budget.padX}px`,
             borderRadius: 14,
-            background: 'rgba(0,0,0,0.62)',
+            // RQ-038 口播模板批：底色可配（缺省 = 旧硬编码底 ⇒ 老 manifest 逐像素不变）。
+            background: track.background ?? 'rgba(0,0,0,0.62)',
             color: track.color ?? '#f4f7fb',
             fontFamily,
             fontSize: plan.fontPx,

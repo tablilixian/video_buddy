@@ -1,13 +1,12 @@
 /**
- * 模板通道「临时下线」的行为守卫（2026-11-12）。
+ * 模板通道开关的行为守卫（2026-11-12 下线批 → **2026-11-13 重开批语义反转**）。
  *
- * 守的不是「源码里有没有这行字」，而是两态的真实行为：
- *   - 关闭态（默认）：`list_templates` 不在工具清单、传 `templateId` 被拒且
- *     给出可执行的自由编排路径、system prompt 覆盖小节确实注册；
- *   - 开启态（env=1）：工具回归、模板仍可编译、覆盖小节不再注册。
+ * 历史语义：2026-11-12 临时下线时本文件守「缺省关闭」。**2026-11-13 用户拍板重开**
+ *（`DEFAULT_ENABLED = true`，并新增 vo-ad 口播模板）⇒ 守卫翻转为「缺省开启」；
+ * 关闭态行为改为**显式 env=0** 切入断言（关闭路径必须仍然可用 —— 应急下线的
+ * 能力不能因为重开而烂掉）。
  *
- * 这同时是反向变异：把 `DEFAULT_ENABLED` 改成 true 或让开关恒返回 true，
- * 关闭态三条断言必须变红 —— 证明守卫接的是真开关而不是常量摆设。
+ * 反向变异仍然成立：把 `DEFAULT_ENABLED` 改回 false，「缺省为开启态」断言必红。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -45,12 +44,18 @@ function tools(value) {
   return createStudioTools({}, 3000)
 }
 
-test('模板通道：缺省为关闭态（产品默认）', () => {
+test('模板通道：缺省为开启态（2026-11-13 用户拍板重开）', () => {
   setChannel(undefined)
-  assert.equal(templateChannelEnabled(), false, '默认必须关闭，否则等于没下线')
+  assert.equal(templateChannelEnabled(), true, '默认必须开启 —— 关闭只能通过 env=0 显式表达')
 })
 
-test('关闭态 ★list_templates 不出现在 Host 工具清单', () => {
+test('模板通道：env=0 显式关闭仍然可用（应急下线能力不烂）', () => {
+  setChannel('0')
+  assert.equal(templateChannelEnabled(), false)
+  setChannel(undefined)
+})
+
+test('关闭态（env=0）★list_templates 不出现在 Host 工具清单', () => {
   const names = tools('0').map((definition) => definition.name)
   assert.ok(!names.includes('list_templates'), '关闭态仍注册模板清单工具 = 模型能看见入口')
   assert.ok(names.includes('scaffold_manifest'), '自由编排的骨架工具必须还在')
@@ -107,7 +112,7 @@ test('开启态 ★工具回归、模板仍可编译、覆盖小节不注册（�
   assert.equal(sections.length, 0, '开启态不应再注入「模板下线」指令')
 })
 
-test('收尾：恢复环境，不把开启态泄漏给其它用例', () => {
+test('收尾：恢复环境，不把关闭态泄漏给其它用例', () => {
   setChannel(undefined)
-  assert.equal(templateChannelEnabled(), false)
+  assert.equal(templateChannelEnabled(), true)
 })

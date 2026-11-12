@@ -1,0 +1,257 @@
+{
+  "id": "tpl-vo-ad-vo-spot",
+  "meta": {
+    "title": "{{productName}}",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationInFrames": 420,
+    "backgroundColor": "#07070f",
+    "look": {
+      "contrast": 1.05,
+      "vignette": 0.3,
+      "grain": 0.02
+    }
+  },
+  "tracks": [
+    {
+      "id": "vo-full",
+      "type": "video",
+      "src": "{{voVideo}}",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 420,
+      "fadeFrames": 0
+    },
+    {
+      "id": "vo-dim",
+      "type": "shape",
+      "shape": "rect",
+      "color": "rgba(0,0,0,0.24)",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 100,
+        "h": 100
+      },
+      "startFrame": 0,
+      "durationInFrames": 420,
+      "fadeFrames": 0
+    },
+    {
+      "id": "s1-hook",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{hook}}",
+      "box": {
+        "x": 50,
+        "y": 26,
+        "w": 72,
+        "h": 22
+      },
+      "plate": "none",
+      "letterSpacingEm": -0.02,
+      "anim": "maskReveal",
+      "startFrame": 6,
+      "durationInFrames": 78,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 12,
+        "to": {
+          "opacity": 0,
+          "scale": 1.06
+        }
+      }
+    },
+    {
+      "id": "s2-brand",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{productName}}",
+      "box": {
+        "x": 50,
+        "y": 30,
+        "w": 30,
+        "h": 7
+      },
+      "color": "#ffd166",
+      "anim": "fadeUp",
+      "startFrame": 84,
+      "durationInFrames": 84,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 8,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "s2-claim",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{claim}}",
+      "box": {
+        "x": 50,
+        "y": 46,
+        "w": 76,
+        "h": 20
+      },
+      "plate": "none",
+      "letterSpacingEm": -0.02,
+      "color": "#ffffff",
+      "anim": "fadeUp",
+      "startFrame": 90,
+      "durationInFrames": 78,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 12,
+        "to": {
+          "opacity": 0,
+          "scale": 0.98
+        }
+      }
+    },
+    {
+      "id": "s4-sell1",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{selling1}}",
+      "box": {
+        "x": 30,
+        "y": 58,
+        "w": 40,
+        "h": 9
+      },
+      "background": "rgba(255,209,102,0.92)",
+      "color": "#141414",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 18
+      },
+      "startFrame": 168,
+      "durationInFrames": 78,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 8,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "s5-sell2",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{selling2}}",
+      "box": {
+        "x": 66,
+        "y": 70,
+        "w": 40,
+        "h": 9
+      },
+      "background": "rgba(255,255,255,0.94)",
+      "color": "#141414",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 18
+      },
+      "startFrame": 240,
+      "durationInFrames": 72,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 8,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "s6-sell3",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{selling3}}",
+      "box": {
+        "x": 34,
+        "y": 82,
+        "w": 40,
+        "h": 9
+      },
+      "background": "rgba(255,209,102,0.92)",
+      "color": "#141414",
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 18
+      },
+      "startFrame": 312,
+      "durationInFrames": 42,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 8,
+        "to": {
+          "opacity": 0
+        }
+      }
+    },
+    {
+      "id": "s7-cta",
+      "type": "textCard",
+      "variant": "title",
+      "text": "{{cta}}",
+      "box": {
+        "x": 50,
+        "y": 50,
+        "w": 60,
+        "h": 20
+      },
+      "plate": "none",
+      "color": "#ffd166",
+      "letterSpacingEm": 0.04,
+      "anim": "fadeUp",
+      "animOptions": {
+        "offsetY": 26,
+        "blur": 8
+      },
+      "startFrame": 342,
+      "durationInFrames": 78,
+      "fadeFrames": 0
+    },
+    {
+      "id": "s7-promo",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{promoLine}}",
+      "box": {
+        "x": 50,
+        "y": 66,
+        "w": 46,
+        "h": 9
+      },
+      "background": "rgba(0,0,0,0.72)",
+      "color": "#ffffff",
+      "startFrame": 354,
+      "durationInFrames": 66,
+      "fadeFrames": 0
+    },
+    {
+      "id": "s-cap",
+      "type": "textCard",
+      "variant": "subtitle",
+      "text": "{{captionText}}",
+      "startFrame": 0,
+      "durationInFrames": 336,
+      "fadeFrames": 0,
+      "exit": {
+        "durationInFrames": 8,
+        "to": {
+          "opacity": 0
+        }
+      }
+    }
+  ]
+}

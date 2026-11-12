@@ -2024,10 +2024,10 @@
       "shape": "rect",
       "color": "#f2c894",
       "box": {
-        "x": 70,
+        "x": 30,
         "y": 50,
-        "w": 30,
-        "h": 58
+        "w": 34,
+        "h": 62
       },
       "startFrame": 482,
       "durationInFrames": 14,
@@ -2066,10 +2066,10 @@
       "shape": "rect",
       "color": "#f2c894",
       "box": {
-        "x": 70,
+        "x": 30,
         "y": 50,
-        "w": 30,
-        "h": 58
+        "w": 34,
+        "h": 62
       },
       "startFrame": 522,
       "durationInFrames": 14,
@@ -2108,10 +2108,10 @@
       "shape": "rect",
       "color": "#f2c894",
       "box": {
-        "x": 70,
+        "x": 30,
         "y": 50,
-        "w": 30,
-        "h": 58
+        "w": 34,
+        "h": 62
       },
       "startFrame": 548,
       "durationInFrames": 14,
@@ -2131,8 +2131,8 @@
       "box": {
         "x": 30,
         "y": 50,
-        "w": 30,
-        "h": 58
+        "w": 34,
+        "h": 62
       },
       "startFrame": 564,
       "durationInFrames": 14,
@@ -2173,8 +2173,8 @@
       "box": {
         "x": 30,
         "y": 50,
-        "w": 30,
-        "h": 58
+        "w": 34,
+        "h": 62
       },
       "startFrame": 592,
       "durationInFrames": 14,

@@ -1,0 +1,100 @@
+{
+  "meta": {
+    "title": "产品 A 60 秒宣传片（同 brief 判据基线）",
+    "fps": 30,
+    "durationSec": 60,
+    "theme": "cold-tech"
+  },
+  "sections": [
+    {
+      "id": "open",
+      "card": "P1",
+      "copy": "把视频生产力交给每一个团队",
+      "durationSec": 5,
+      "assetSlots": {
+        "partnerLogos": "/canvas-studio/assets/demo/p1.png,/canvas-studio/assets/demo/p2.png,/canvas-studio/assets/demo/p3.png"
+      }
+    },
+    {
+      "id": "t1",
+      "card": "A2",
+      "copy": "创意到成片，只要一段话",
+      "durationSec": 2
+    },
+    {
+      "id": "hero",
+      "card": "C2",
+      "copy": "一段话，出一条片",
+      "label": "产品亮相",
+      "durationSec": 8,
+      "assetSlots": {
+        "mainVisual": "/canvas-studio/assets/demo/hero.png"
+      }
+    },
+    {
+      "id": "metrics",
+      "card": "P3",
+      "copy": "出品速度:3 倍;交付周期:-40%;人力:1 人成片",
+      "label": "数据说话",
+      "durationSec": 6
+    },
+    {
+      "id": "t2",
+      "card": "A5",
+      "copy": "从数据到能力",
+      "durationSec": 2
+    },
+    {
+      "id": "sdk",
+      "card": "P5",
+      "copy": "const studio = create()\nstudio.use(canvas)\nstudio.run()",
+      "label": "sdk.ts",
+      "durationSec": 6
+    },
+    {
+      "id": "prism",
+      "card": "A4",
+      "copy": "脚本生成；像素对拍；素材分流",
+      "label": "能力拆解",
+      "durationSec": 6
+    },
+    {
+      "id": "compute",
+      "card": "B1",
+      "copy": "日渲染量:10000 支;单支耗时:60 秒",
+      "label": "规模",
+      "durationSec": 6
+    },
+    {
+      "id": "catalogue",
+      "card": "E1",
+      "copy": "全部能力，一屏看完",
+      "durationSec": 6,
+      "assetSlots": {
+        "scene": "/canvas-studio/assets/demo/catalogue.png"
+      }
+    },
+    {
+      "id": "audience",
+      "card": "C2",
+      "copy": "谁在用、用在哪",
+      "label": "人群",
+      "durationSec": 6,
+      "assetSlots": {
+        "mainVisual": "/canvas-studio/assets/demo/audience.png"
+      }
+    },
+    {
+      "id": "t3",
+      "card": "A2",
+      "copy": "下一个成片，从这段话开始",
+      "durationSec": 2
+    },
+    {
+      "id": "outro",
+      "card": "A5",
+      "copy": "现在就来试",
+      "durationSec": 11
+    }
+  ]
+}

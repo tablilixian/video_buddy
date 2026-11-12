@@ -106,6 +106,42 @@ export const RECIPES: Readonly<Record<string, Recipe>> = {
       { name: '场景二图', type: 'image', source: 'user', segmentId: 'scene2', note: '与场景一有明显色温或构图差异，否则看不出转折。' },
     ],
   },
+'product-promo-60s': {
+    id: 'product-promo-60s',
+    title: '产品宣传片（60s · P 类体裁卡）',
+    note: 'RQ-11② 的 P 类体裁骨架：12 段位沿 playsout 复刻的时轴结构（open 0 / t1 150 / hero 204 / metrics 444 / t2 612 / sdk 666 / prism 834 / compute 1002 / catalogue 1170 / audience 1338 / t3 1506 / outro 1560，TOTAL 1800），按权重近似归一。**卡内容 = 设计输入（SB-2：先 3 张样卡 P1/P3/P5 跑判据分布，其余段位先用 A2/B1/E1 兜底，扩卡走注册表）**。素材：partner logo / 产品 UI 截图必须真实（user 通道，SB-5 红线）。',
+    theme: 'cold-tech',
+    segments: [
+      { id: 'open', label: '伙伴墙开场', card: 'P1 伙伴墙开场', weight: 140, copy: '把产品的一句话价值说清' },
+      { id: 't1', label: '呼吸字卡', card: 'A2 标题逐字', weight: 54, copy: '承接开场的问题' },
+      { id: 'hero', label: '产品亮相', card: 'C2 左右分栏', weight: 240, copy: '主视觉 + 核心卖点' },
+      { id: 'metrics', label: '数据卡', card: 'P3 芯片条 + 数据卡', weight: 168, copy: '指标一:数值一;指标二:数值二;指标三:数值三' },
+      { id: 't2', label: '转场字卡', card: 'A5 收尾落版', weight: 54, copy: '从数据到能力' },
+      { id: 'sdk', label: '代码演示', card: 'P5 代码面板演示', weight: 168, copy: 'const app = create()\napp.use(core())\napp.run()' },
+      { id: 'prism', label: '能力拆解', card: 'A4 要点逐词', weight: 168, copy: '能力一；能力二；能力三' },
+      { id: 'compute', label: '规模与性能', card: 'B1 数据卡', weight: 168, copy: '规模:数字;吞吐:数字' },
+      { id: 'catalogue', label: '目录墙', card: 'E1 素材推拉', weight: 168, copy: '全能力目录一屏' },
+      { id: 'audience', label: '人群与场景', card: 'C2 左右分栏', weight: 168, copy: '谁在用、用在哪' },
+      { id: 't3', label: '收束字卡', card: 'A2 标题逐字', weight: 54, copy: '一句话收束' },
+      { id: 'outro', label: '落版', card: 'A5 收尾落版', weight: 240, copy: '品牌落版 + 行动号召' },
+    ],
+    assets: [
+      {
+        name: '伙伴 logo 墙素材（多张，P1 的 partnerLogos 槽位）',
+        type: 'image',
+        source: 'user',
+        segmentId: 'open',
+        note: '合作方 logo 必须真实素材（user 通道）；AI 近似重画 = 品牌事故（SB-5）。缺了走 P1 降级（纯标题开场）。',
+      },
+      {
+        name: '产品 UI 截图（hero/catalogue/audience 用）',
+        type: 'image',
+        source: 'user',
+        segmentId: 'hero',
+        note: '真实页面截图走 RQ-24 采集链自产（scripts/page-capture/）—— 它是 user 通道里产品自己能解决的那部分。',
+      },
+    ],
+  },
 }
 
 export interface RecipePlanInput {

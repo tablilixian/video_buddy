@@ -448,3 +448,169 @@ registerCard({
     ]
   },
 })
+
+// ─────────────────── RQ-11② · P 类体裁卡（产品宣传片；SB-2：先 3 张样卡） ───────────────────
+//
+// P 卡 = 「参数化生成器 + 内容槽位」：输入 spec 的 copy / assetSlots / accentColor，
+// 输出完整版式轨。运动语法从 shotcraft 手法库取（shotcraft-catalog.md），不重复发明。
+// 每卡声明 ≥5 个可换参视觉维度（RQ-11 验收 3 的参数化率口径，维度清单见
+// skills/.../product-promo-cards.md 的卡条目）；换参必须**真实驱动画面**
+//（维度直接进轨参数，渲染即生效 —— paramEffective 的像素级判定由
+// scripts/pixel-audit 在真机跑）。
+
+/** P 卡公共底：暗底 + 点阵 + 暗角（playsout 设计语言的段级三件套，SB-6）。 */
+function promoBase(ctx: CardRenderContext, opts: { dots?: boolean } = {}): Record<string, unknown>[] {
+  const base: Record<string, unknown>[] = [
+    {
+      id: tid(ctx, 'p-base'),
+      type: 'shape',
+      shape: 'gradient',
+      color: '#07070f',
+      box: { x: 50, y: 50, w: 100, h: 100 },
+      startFrame: ctx.startFrame,
+      durationInFrames: ctx.durationInFrames,
+      fadeFrames: 0,
+    },
+    decorVignette(ctx),
+  ]
+  if (opts.dots !== false) base.push({ ...decorDots(ctx), id: tid(ctx, 'p-dots') })
+  return base
+}
+
+registerCard({
+  id: 'P1',
+  title: 'P1 · 伙伴墙开场（logoWall）',
+  assets: [{
+    slot: 'partnerLogos',
+    kind: 'logo',
+    source: 'user',
+    required: false,
+    fallback: 'logo 缺席降级为纯标题开场（logoWall 不出轨）—— 品牌/UI 禁 AI 重画（SB-5）',
+  }],
+  generate: (ctx) => {
+    const logos = (ctx.assetSrc('partnerLogos') ?? '').split(/[,\n]/).map((line) => line.trim()).filter((line) => line.length > 0)
+    const tracks: Record<string, unknown>[] = [
+      ...promoBase(ctx),
+      {
+        id: tid(ctx, 'p-title'),
+        type: 'textCard',
+        variant: 'title',
+        text: ctx.copy,
+        box: { x: 50, y: 30, w: 76, h: 24 },
+        plate: 'none',
+        letterSpacingEm: -0.022,
+        startFrame: ctx.startFrame + 6,
+        durationInFrames: Math.max(12, ctx.durationInFrames - 12),
+        fadeFrames: 0,
+        anim: 'maskReveal',
+      },
+      accentLine(ctx, { x: 50, y: 45, w: 12, h: 0.8 }),
+    ]
+    // logo 墙 = **1 条轨**（RQ-22 判据：21 元素手搓 21 轨 → 1 条）。
+    if (logos.length > 0) {
+      tracks.push({
+        id: tid(ctx, 'p-logowall'),
+        type: 'logoWall',
+        logos,
+        columns: 7,
+        cellW: 150,
+        cellH: 84,
+        gapX: 36,
+        gapY: 28,
+        radius: 10,
+        grayscale: true,
+        unitStagger: 3,
+        box: { x: 50, y: 70, w: 78, h: 34 },
+        startFrame: ctx.startFrame + 14,
+        durationInFrames: Math.max(12, ctx.durationInFrames - 24),
+        fadeFrames: 0,
+      })
+    }
+    return tracks
+  },
+})
+
+registerCard({
+  id: 'P3',
+  title: 'P3 · 芯片条 + 数据卡',
+  assets: [],
+  generate: (ctx) => {
+    const chips = ctx.copy.split(/[；;\n]/).map((line) => line.trim()).filter((line) => line.length > 0).slice(0, 8)
+    return [
+      ...promoBase(ctx),
+      eyebrow(ctx),
+      {
+        id: tid(ctx, 'p-chips'),
+        type: 'chipRow',
+        chips,
+        gap: 14,
+        radius: 999,
+        fontPx: 24,
+        color: '#ECECF2',
+        background: 'rgba(152,163,255,0.14)',
+        border: 'rgba(152,163,255,0.4)',
+        unitStagger: 4,
+        box: { x: 50, y: 24, w: 76, h: 8 },
+        startFrame: ctx.startFrame + 6,
+        durationInFrames: Math.max(12, ctx.durationInFrames - 12),
+        fadeFrames: 0,
+      },
+      {
+        id: tid(ctx, 'p-data'),
+        type: 'textCard',
+        variant: 'dataCard',
+        text: ctx.label,
+        data: chips.slice(0, 3).map((chip) => {
+          const sep = chip.lastIndexOf(':') >= 0 ? chip.lastIndexOf(':') : chip.lastIndexOf('：')
+          return sep > 0 ? { k: chip.slice(0, sep).trim(), v: chip.slice(sep + 1).trim() } : { k: chip, v: '—' }
+        }),
+        accentColor: ctx.accentColor,
+        countUp: true,
+        box: { x: 50, y: 58, w: 50, h: 56 },
+        startFrame: ctx.startFrame + 12,
+        durationInFrames: Math.max(12, ctx.durationInFrames - 20),
+        fadeFrames: 0,
+      },
+      decorGlow(ctx),
+    ]
+  },
+})
+
+registerCard({
+  id: 'P5',
+  title: 'P5 · 代码面板演示',
+  assets: [],
+  generate: (ctx) => [
+    ...promoBase(ctx, { dots: false }),
+    eyebrow(ctx),
+    {
+      id: tid(ctx, 'p-code'),
+      type: 'codePanel',
+      code: ctx.copy,
+      title: ctx.label,
+      fontPx: 20,
+      lineHeight: 1.55,
+      background: '#0D1117',
+      radius: 16,
+      color: '#D4D4D8',
+      accentColor: ctx.accentColor,
+      padding: 28,
+      scrollSpeed: 0.8,
+      box: { x: 44, y: 56, w: 62, h: 62 },
+      startFrame: ctx.startFrame + 6,
+      durationInFrames: Math.max(12, ctx.durationInFrames - 12),
+      fadeFrames: 0,
+    },
+    {
+      id: tid(ctx, 'p-codecopy'),
+      type: 'textCard',
+      variant: 'title',
+      text: `${ctx.label} · 接入`,
+      box: { x: 82, y: 40, w: 26, h: 40 },
+      plate: 'none',
+      startFrame: ctx.startFrame + 16,
+      durationInFrames: Math.max(10, ctx.durationInFrames - 24),
+      fadeFrames: 6,
+    },
+  ],
+})

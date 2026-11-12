@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "title": "产品 B 60 秒宣传片（换内容变体）",
+    "fps": 30,
+    "durationSec": 60,
+    "theme": "warm-ember"
+  },
+  "sections": [
+    {
+      "id": "open",
+      "card": "P1",
+      "copy": "让每个想法都被看见",
+      "durationSec": 5,
+      "assetSlots": {
+        "partnerLogos": "/canvas-studio/assets/demo/q1.png,/canvas-studio/assets/demo/q2.png,/canvas-studio/assets/demo/q3.png,/canvas-studio/assets/demo/q4.png"
+      }
+    },
+    {
+      "id": "t1",
+      "card": "A2",
+      "copy": "一句话，一部片",
+      "durationSec": 2
+    },
+    {
+      "id": "hero",
+      "card": "C2",
+      "copy": "看见你的第一个成片",
+      "label": "产品亮相",
+      "durationSec": 8,
+      "assetSlots": {
+        "mainVisual": "/canvas-studio/assets/demo/hero.png"
+      }
+    },
+    {
+      "id": "metrics",
+      "card": "P3",
+      "copy": "增长:120%;留存:85%;NPS:72",
+      "label": "成绩单",
+      "durationSec": 6,
+      "accentColor": "#F59E0B"
+    },
+    {
+      "id": "t2",
+      "card": "A5",
+      "copy": "从增长到品牌",
+      "durationSec": 2
+    },
+    {
+      "id": "sdk",
+      "card": "P5",
+      "copy": "import { magic } from 'b'\nmagic.start()\nmagic.share()",
+      "label": "main.ts",
+      "durationSec": 6,
+      "accentColor": "#22C55E"
+    },
+    {
+      "id": "prism",
+      "card": "A4",
+      "copy": "模板复用；批量出片；一键分发",
+      "label": "魔法",
+      "durationSec": 6
+    },
+    {
+      "id": "compute",
+      "card": "B1",
+      "copy": "月产能:40 万支;爆款率:12%",
+      "label": "产能",
+      "durationSec": 6
+    },
+    {
+      "id": "catalogue",
+      "card": "E1",
+      "copy": "魔法目录，滚动呈现",
+      "durationSec": 6,
+      "assetSlots": {
+        "scene": "/canvas-studio/assets/demo/catalogue.png"
+      }
+    },
+    {
+      "id": "audience",
+      "card": "C2",
+      "copy": "品牌团队在用、电商在用",
+      "label": "人群",
+      "durationSec": 6,
+      "assetSlots": {
+        "mainVisual": "/canvas-studio/assets/demo/audience.png"
+      }
+    },
+    {
+      "id": "t3",
+      "card": "A2",
+      "copy": "下一个爆款，今天出发",
+      "durationSec": 2
+    },
+    {
+      "id": "outro",
+      "card": "A5",
+      "copy": "立刻开始",
+      "durationSec": 11
+    }
+  ]
+}

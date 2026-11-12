@@ -71,9 +71,22 @@ const ASSET_ROOT = (() => {
   return resolve(p, '..', 'assets')
 })()
 
+/**
+ * 同源资产 URL 前缀（产品语义）：`/canvas-studio/assets/<projectId>/<file>`。
+ * 渲染进程按这个前缀取素材，projectId 段由磁盘定位（取证台用 ASSET_ROOT 代替）。
+ */
+const PROJECT_ASSET_URL_PREFIX = '/canvas-studio/assets/'
+
 function resolveAsset(rel) {
   const direct = join(ASSET_ROOT, rel)
   if (existsSync(direct)) return direct
+  // URL 形如 `<projectId>/<file>`：产品的磁盘落点是「项目 assets 目录 / <file>」，
+  // 而 ASSET_ROOT 已经是那个目录 ⇒ 去掉 projectId 段再试一次。
+  const parts = rel.split('/').filter(Boolean)
+  if (parts.length >= 2) {
+    const stripped = join(ASSET_ROOT, ...parts.slice(1))
+    if (existsSync(stripped)) return stripped
+  }
   // 会话里 watch-hero.png 被客户端重启删掉了，但源图还在 —— 用源图顶上，
   // 这也顺带证明「素材可重建」而产品没有自动做。
   if (rel === REAL_ASSETS.image) {
@@ -191,8 +204,12 @@ function startServer(groups) {
         return
       }
 
-      if (u.pathname.startsWith(PROJECT_ASSET_PREFIX)) {
-        const rel = decodeURIComponent(u.pathname.slice(PROJECT_ASSET_PREFIX.length))
+      // 资产路由：**按产品语义**解析 —— URL 形如 `/canvas-studio/assets/<projectId>/<file>`，
+      // 磁盘上落在「项目 assets 目录」的 `<file>`（产品的 `registry.assetsDir(projectId)`）。
+      // 取证台的 ASSET_ROOT 就是那个目录 ⇒ 去掉 URL 里的 projectId 段即可。
+      // （此前写死一个 projectId 前缀，换一份 manifest 的 projectId 就整片 404。）
+      if (u.pathname.startsWith(PROJECT_ASSET_URL_PREFIX)) {
+        const rel = decodeURIComponent(u.pathname.slice(PROJECT_ASSET_URL_PREFIX.length))
         const f = resolveAsset(rel)
         if (f === null) { res.writeHead(404); res.end('missing'); return }
         streamFile(req, res, f)

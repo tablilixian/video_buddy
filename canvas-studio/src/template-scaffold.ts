@@ -20,6 +20,7 @@
  */
 import { writeManifestFile } from './manifest-file.js'
 import { throwError } from './error-system.js'
+import { templateChannelEnabled } from './template-channel.js'
 import { loadTemplateBundle } from './remotion/template-registry.js'
 import type { SlotContract } from './remotion/slot-contract.js'
 import { charCount } from './remotion/slot-contract.js'
@@ -142,6 +143,14 @@ function bgmHint(bundle: TemplateBundle, request: TemplateBgm, input: TemplateSc
  * 而不是等出片后发现字被裁。
  */
 export function scaffoldFromTemplate(input: TemplateScaffoldInput): { text: string } {
+  // 临时下线（2026-11-12）的唯一拒收点：工具壳仍带 templateId 参数，模型万一
+  // 按旧 skill 文档误传，必须在这里给出可执行的自由编排路径，而不是静默出模板片。
+  if (!templateChannelEnabled()) {
+    throwError('CS-USER-ERR', {
+      message: '整片模板通道已临时下线。请改走自由编排：scaffold_manifest({ title, durationSeconds, recipe?, writeTo: "build/manifest.json" }) → render_composition({ manifestPath })。不要传 templateId / slots / dryRun / bgmUrl。',
+      detail: 'template channel disabled',
+    })
+  }
   let bundle: TemplateBundle
   try {
     bundle = loadTemplateBundle(input.templateId).bundle

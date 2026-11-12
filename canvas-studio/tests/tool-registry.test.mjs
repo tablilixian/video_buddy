@@ -31,6 +31,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
+import { templateChannelEnabled } from '../lib/template-channel.js'
 
 /** 实测 33 = `host-tools.ts` 32 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
 // CV-394（2026-11-02）：+image_matting（纯色底抠透明底），35 → 36。
@@ -46,7 +47,9 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 // CV-448（2026-11-06，后端 0.9.0）：+asr2txt（语音识别：文本 + 词级/句段时间戳 + 转写 JSON），49 → 50。
 // 2026-11-10 香水样本 P0-2：+attach_canvas_asset（本地现成产物 → 画布节点，经 canvas.json 唯一写口），50 → 51。
 // 1（CV-463，视频模板化）：+list_templates（模板清单：体裁 / 需求筛选 + 五判据适配判定），51 → 52。
-const EXPECTED_TOOL_COUNT = 52
+// 2026-11-12 模板通道临时下线：关闭态该工具不注册 ⇒ 基线 51；开关打开自动回到 52。
+const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 52 : 51
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -82,8 +85,8 @@ const EXPECTED_TOOL_NAMES = [
   'list_library_assets',
   'list_references',
   'list_shots',
-  // 1（CV-463）：模板清单（只读，选模板的入口）。
-  'list_templates',
+  // 1（CV-463）：模板清单（只读）。临时下线时随开关从基线移除，恢复时自动回来。
+  ...(TEMPLATE_CHANNEL_ON ? ['list_templates'] : []),
   'look_card',
   'music_generation',
   // REQ-036 C3（2026-11-03）：媒体探针（时长/分辨率/fps/音轨/容器/响度统一入口）。

@@ -37,6 +37,10 @@ import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 import { codeIsUserFacing, getErrorSpec, routeError, CanvasStudioError } from '../lib/error-system.js'
 import '../lib/errors/catalog.js'
 
+// 参数分类表要守「完整工具面」：模板通道临时下线不该削弱这份覆盖，故锁开启态。
+// 关闭态的行为断言另见 tests/template-channel-off.test.mjs。
+process.env.CANVAS_STUDIO_TEMPLATE_CHANNEL = '1'
+
 /**
  * 实测出现过的占位写法（「先占位、稍后回填」的各种拼法）。
  * `placeholder2`…`placeholder5` 与 `placeholder-will-retry` 是用户会话里的原样取值。

@@ -18,6 +18,7 @@ import { createStudioTools, resolveProjectId } from './host-tools.js'
 import { registerMinimaxSkills } from './skills/minimax-skills.js'
 import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
+import { registerTemplateChannelPrompt } from './skills/template-channel-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
@@ -511,6 +512,8 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 主动读 catalog 摘要；常驻小节让「先加载再澄清」在每一轮都可见，且不占
   // description 的长度配额（该配额留给负向路由语）。
   ctx.effect(() => registerSkillRoutingPrompt(ctx), 'canvas-studio: skill routing prompt')
+  // 模板通道临时下线：关闭态注入覆盖指令，开启态不注册任何小节（一行恢复）。
+  ctx.effect(() => registerTemplateChannelPrompt(ctx), 'canvas-studio: template channel prompt')
   // CV-099：项目预置小节——创建项目时锁定的画幅/目标总时长注入 system prompt，
   // 让澄清阶段跳过已预置要素（`agent/created` 预热缓存，首轮即可见）。
   ctx.effect(() => registerProjectPlanPrompt(ctx, registry), 'canvas-studio: project plan prompt')

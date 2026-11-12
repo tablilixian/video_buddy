@@ -19,6 +19,10 @@ import { loadTemplateBundle } from '../lib/remotion/template-registry.js'
 import { ANIMATE_EASINGS } from '../lib/remotion/manifest-track-validate.js'
 import '../lib/errors/catalog.js'
 
+// 本文件测的是「模板能力本身」：锁开启态，确保临时下线期间实现与回归覆盖都在。
+// 产品默认关闭态的行为断言另见 tests/template-channel-off.test.mjs。
+process.env.CANVAS_STUDIO_TEMPLATE_CHANNEL = '1'
+
 const exec = {}
 
 function tool(name, registry = {}) {

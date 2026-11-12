@@ -11,6 +11,7 @@
  */
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { renderTextResult } from './tool-result-text.js'
+import { templateChannelEnabled } from './template-channel.js'
 import { MANIFEST_CONTRACT_VERSION } from './remotion/manifest.js'
 import { gateTemplate, type TemplateRequirement } from './remotion/template-gate.js'
 import { listTemplateSummaries } from './remotion/template-registry.js'
@@ -34,6 +35,8 @@ function readRequirement(raw: unknown): TemplateRequirement {
 }
 
 export function defineTemplateTools() {
+  // 临时下线（2026-11-12）：入口不注册，工具定义与判据实现原样保留，开关打开即恢复。
+  if (!templateChannelEnabled()) return []
   return [
     defineTool({
       name: 'list_templates',

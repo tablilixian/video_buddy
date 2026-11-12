@@ -191,11 +191,14 @@ export const FURNITURE_DEFAULTS = {
     pushFrom: 0.9,
     pushTo: 1.25,
     /** 批次入场：首帧（组内相对）、批间隔、首批张数、常规批张数（批帧差 ≈ 张数×单卡屏幕占比）。 */
-    batchStart: 30,
-    batchFrames: 39,
+    batchStart: 0,
+    batchFrames: 37,
     firstBatch: 16,
-    /** 常规批张数（首批之后每批几张；S3 调参：批差要落在参考片 0.09–0.12 帧差带内）。 */
-    perBatch: 8,
+    /** 常规批张数（首批之后每批几张；S3 调参：批差要落在参考片 0.09–0.12 帧差带内）。
+     *  R10（2026-11-12）：batchStart/batchFrames/perBatch 三值曾为 30/39/8 的调参残留，
+     *  与同提交新建的 cardwall 容器测试（首批 0 帧 / 批距 37 / 9 批次）及 kinetic-promo
+     *  furniture.json 实际覆盖值三方矛盾，测试出生即红 —— 统一回 0/37/6（默认=契约=模板）。 */
+    perBatch: 6,
     /** 特征卡条纹：每隔 stripeEvery 张卡带 3 条卡内条纹（数据卡观感），0 = 不画。 */
     stripeEvery: 8,
     /** 墙退场帧数（1 = 硬切；0 = 不写 exit，需调用方自查 ML-02）。 */

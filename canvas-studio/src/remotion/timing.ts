@@ -861,6 +861,22 @@ export function colorWithAlphaZero(value: string): string {
 }
 
 /**
+ * RQ-09（REQ-038）：任意 alpha 的颜色折算（`#rgb` / `#rrggbb` / `rgb()` / `rgba()` →
+ * `rgba(r, g, b, alpha)`）。解析失败兜底 `rgba(0,0,0,alpha)` —— vignette 的
+ * `color` 常态就是黑，错色退黑比渲染出纯白暗角安全。`alpha` 夹在 0–1。
+ */
+export function colorWithAlpha(value: string, alpha: number): string {
+  const a = clampUnit(alpha)
+  const hex = parseHexColor(value)
+  if (hex !== null) return `rgba(${hex[0]}, ${hex[1]}, ${hex[2]}, ${a})`
+  const match = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/u.exec(value.trim())
+  if (match !== null) {
+    return `rgba(${match[1]}, ${match[2]}, ${match[3]}, ${a})`
+  }
+  return `rgba(0, 0, 0, ${a})`
+}
+
+/**
  * 轨道在轨内相对帧 `localFrame` 处的渐变色（`null` = 本轨没有 `colorShift` / 值非法）。
  *
  * 区间外取端点（端点收敛）；缓动沿用 `AnimateEasing` 白名单。
@@ -1106,6 +1122,18 @@ export interface TextFitOptions {
   family?: string | undefined
   /** 测量用的字重（缺省 400）。 */
   weight?: number | undefined
+  /**
+   * RQ-02（REQ-038）：字距（px，可为负）。折行预算的每字符宽要加上它 ——
+   * 与 CSS `letter-spacing` 消费同一个值 ⇒ 度量与渲染同源（`TextCard.tsx` 与
+   * `text-fit-audit.ts` 传同一份）。
+   */
+  letterSpacingPx?: number | undefined
+  /**
+   * RQ-02（REQ-038）：字距（em，相对**当前迭代字号**）。缩号循环里每轮按当轮
+   * `fontPx × em` 折算 —— 与渲染层 CSS `em`（相对最终字号）同口径。
+   * 与 `letterSpacingPx` 同时给时相加（em 是主口径，px 追加；调用层已做互斥告警）。
+   */
+  letterSpacingEm?: number | undefined
 }
 
 /**
@@ -1148,6 +1176,9 @@ function wrapByWidth(text: string, maxWidthPx: number, fontPx: number, options: 
   const measure = options.measure
   const family = options.family ?? ''
   const weight = options.weight ?? 400
+  // RQ-02（REQ-038）：字距进折行预算 —— em 按当前迭代字号折算（与渲染层 CSS em
+  // 相对最终字号同口径），px 直接加。缺省 0 ⇒ 老调用逐字符行为不变。
+  const spacing = (options.letterSpacingPx ?? 0) + (options.letterSpacingEm ?? 0) * fontPx
   const widthOf = (value: string): number =>
     measure === undefined ? [...value].reduce((sum, char) => sum + charWidthRatio(char) * fontPx, 0) : measure(value, fontPx, family, weight)
   const lines: string[] = []
@@ -1157,7 +1188,8 @@ function wrapByWidth(text: string, maxWidthPx: number, fontPx: number, options: 
     for (const char of [...paragraph]) {
       // 有测量器时用「逐字宽度」累加：忽略字距（kerning），但比字符比例表准一档，
       // 且不需要 O(n²) 反复测量整行 —— 逐字结果由测量器的缓存兜住。
-      const w = measure === undefined ? charWidthRatio(char) * fontPx : widthOf(char)
+      // 字距加在每个字符之后（CSS letter-spacing 语义）；行尾多算半个字距在预算内。
+      const w = (measure === undefined ? charWidthRatio(char) * fontPx : widthOf(char)) + spacing
       if (current !== '' && width + w > maxWidthPx) {
         lines.push(current)
         current = char

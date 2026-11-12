@@ -137,10 +137,19 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     canvasWidth,
     canvasHeight,
     dataRows: (track.data ?? []).length,
+    // RQ-02（REQ-038）：字距进折行预算 —— 与下方 CSS 的同一份值（度量与渲染同源）。
+    ...(track.letterSpacing === undefined ? {} : { letterSpacingPx: track.letterSpacing }),
+    ...(track.letterSpacingEm === undefined ? {} : { letterSpacingEm: track.letterSpacingEm }),
     ...(measurer === undefined ? {} : { measure: measurer }),
     family: fontFamily,
     weight: 700,
   }), [track, box, canvasWidth, canvasHeight, fontFamily, measurer])
+
+  // RQ-02（REQ-038）：渲染层的字距 —— em 优先（CSS `em` 串相对最终字号，与折行预算
+  // 的逐轮折算同口径）；px 原值。缺省 undefined ⇒ 不落属性（老 manifest 样式串不变）。
+  const letterSpacingCss: string | number | undefined = track.letterSpacingEm !== undefined
+    ? `${track.letterSpacingEm}em`
+    : track.letterSpacing
 
   /** 三期 W4-2：有 `anim` 时逐词渲染，否则原样返回纯文本（老路径）。 */
   const animated = (value: string): React.ReactNode => {
@@ -211,6 +220,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             lineHeight: SUBTITLE_LINE_HEIGHT,
             textAlign: 'center',
             whiteSpace: 'pre-line',
+            ...(letterSpacingCss === undefined ? {} : { letterSpacing: letterSpacingCss }),
             ...textFx,
           }}
         >
@@ -238,6 +248,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             textAlign: 'center',
             lineHeight: 1.15,
             whiteSpace: 'pre-line',
+            ...(letterSpacingCss === undefined ? {} : { letterSpacing: letterSpacingCss }),
             ...textFx,
           }}
         >
@@ -276,7 +287,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
           }}
         >
-          <div style={{ fontSize: plan.fontPx, fontWeight: 700, color: mainColor, ...textFx }}>
+          <div style={{ fontSize: plan.fontPx, fontWeight: 700, color: mainColor, ...(letterSpacingCss === undefined ? {} : { letterSpacing: letterSpacingCss }), ...textFx }}>
             {animated(plan.renderText)}
           </div>
           <div style={{ height: 2, background: accent, margin: `${px(26)}px 0 ${px(10)}px` }} />
@@ -313,7 +324,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
         {bulletLines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>
             <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, marginRight: 24 }} />
-            <div style={{ fontSize: plan.fontPx, color: mainColor, ...textFx }}>
+            <div style={{ fontSize: plan.fontPx, color: mainColor, ...(letterSpacingCss === undefined ? {} : { letterSpacing: letterSpacingCss }), ...textFx }}>
               {animated(line)}
             </div>
           </div>

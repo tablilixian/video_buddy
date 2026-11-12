@@ -87,6 +87,9 @@ export function auditTextFit(
           canvasWidth: width,
           canvasHeight: height,
           dataRows: (track.data ?? []).length,
+          // RQ-02（REQ-038）：字距与组件同一份 ⇒ 体检折行 = 成片折行。
+          ...(track.letterSpacing === undefined ? {} : { letterSpacingPx: track.letterSpacing }),
+          ...(track.letterSpacingEm === undefined ? {} : { letterSpacingEm: track.letterSpacingEm }),
           ...(measurer === undefined ? {} : { measure: measurer }),
           ...(family === undefined ? {} : { family }),
           weight: 700,

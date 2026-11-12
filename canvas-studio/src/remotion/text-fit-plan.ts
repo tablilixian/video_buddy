@@ -119,6 +119,12 @@ export interface TextFitPlanInput {
   family?: string | undefined
   /** 测量用的字重（缺省 400，与 `fitTextPolicy` 一致；组件实际用 700）。 */
   weight?: number | undefined
+  /**
+   * RQ-02（REQ-038）：字距（px / em；em 相对当前迭代字号）。组件与体检传**同一份**
+   * `track.letterSpacing` / `track.letterSpacingEm` ⇒ 度量与渲染同源（折行一致）。
+   */
+  letterSpacingPx?: number | undefined
+  letterSpacingEm?: number | undefined
 }
 
 /** 单条 variant 的排版预算（内部形状）。 */
@@ -308,6 +314,8 @@ export function planTextFit(input: TextFitPlanInput): TextFitPlan {
     ...(input.measure === undefined ? {} : { measure: input.measure }),
     ...(input.family === undefined ? {} : { family: input.family }),
     ...(input.weight === undefined ? {} : { weight: input.weight }),
+    ...(input.letterSpacingPx === undefined ? {} : { letterSpacingPx: input.letterSpacingPx }),
+    ...(input.letterSpacingEm === undefined ? {} : { letterSpacingEm: input.letterSpacingEm }),
   })
   const overflow = fit.lines.length > budget.maxLines
   // 「没缩号」= 字号没降且没溢出 ⇒ 原样交给浏览器（它才知道真正的折行点）。
@@ -386,6 +394,9 @@ export function textCardCapacityWarnings(input: {
   canvasWidth: number
   canvasHeight: number
   dataRows?: number | undefined
+  /** RQ-02（REQ-038）：字距与组件/体检同一份（度量三处同源）。 */
+  letterSpacingPx?: number | undefined
+  letterSpacingEm?: number | undefined
 }): string[] {
   try {
     const plan = planTextFit(input)

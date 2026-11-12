@@ -195,6 +195,8 @@
 - `accentColor`?: string
 - `color`?: string — RQ-03（REQ-038）：**主文本色**（与 `accentColor` 分工 —— accent 染强调元素：
 - `plate`?: 'auto' | 'none' — RQ-07（REQ-038）：`title` 变体的底板（缺省 `'auto'` = 旧硬编码 `rgba(0,0,0,0.35)`
+- `letterSpacing`?: number — RQ-02（REQ-038）：字距（px，可为负做紧排）。度量与渲染**同源**：折行预算
+- `letterSpacingEm`?: number — RQ-02（REQ-038）：字距（em，相对**最终字号**）。源工程口径是 em 紧排
 - `anim`?: TextAnimPreset — 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。
 - `animOptions`?: TextAnimOptions — 三期 W4-2：文本动效参数。
 - `countUp`?: boolean — P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」
@@ -203,7 +205,7 @@
 ## ShapeTrack (extends BaseTrack)
 
 - `type`: 'shape'
-- `shape`: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'dotGrid' — 形状种类：
+- `shape`: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon' | 'dotGrid' | 'vignette' — 形状种类：
 - `color`: string
 - `d`?: string — `shape:'path'` 必填：SVG path 的 `d`。
 - `strokeWidth`?: number — `shape:'path'` 的描边宽度（百分比单位，缺省 0.5；相对 100 单位盒）。
@@ -219,6 +221,7 @@
 - `gradientCenter`?: { x?: number; y?: number } — RQ-06：radial 圆心（box 百分比，缺省 `{x:50, y:50}` = 盒中心）。
 - `gradientRadius`?: { x?: number; y?: number } — RQ-06：radial 半径（box 百分比，缺省 `{x:60, y:50}`；源片光晕 60%/50% 量级）。
 - `gradientTo`?: string — RQ-06：radial 边缘色。缺省 = `color` 同 RGB 全透明（hex 可解析时）/ `'transparent'`。
+- `strength`?: number — RQ-09（REQ-038）：`shape:'vignette'` 的边缘暗度（0–1，边缘 = `color` @ 该 alpha）。
 
 ## TransitionTrack (extends BaseTrack)
 

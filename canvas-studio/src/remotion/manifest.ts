@@ -516,6 +516,20 @@ export interface TextCardTrack extends BaseTrack {
    * 仅 `title` 变体消费，其他变体写了只收 warning 不生效。
    */
   plate?: 'auto' | 'none'
+  /**
+   * RQ-02（REQ-038）：字距（px，可为负做紧排）。度量与渲染**同源**：折行预算
+   *（`text-fit-plan.ts` → `timing.ts` 的 `wrapByWidth`）与 CSS `letter-spacing`
+   * 消费同一个值。缺省不写 = 不施加（老 manifest 逐像素不变）。
+   */
+  letterSpacing?: number
+  /**
+   * RQ-02（REQ-038）：字距（em，相对**最终字号**）。源工程口径是 em 紧排
+   *（`TitleCard.tsx` 正文 `-0.022em`）—— em 直接写比手算 px 更贴近设计稿。
+   * 与 `letterSpacing` 同时给时 **em 优先**（px 被忽略）；渲染层落 CSS `em`
+   * 串（浏览器相对最终字号换算），度量层在折行时按当前迭代字号 × em 同步折算
+   * ⇒ 缩号迭代下两者口径仍一致。
+   */
+  letterSpacingEm?: number
   /** 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。 */
   anim?: TextAnimPreset
   /** 三期 W4-2：文本动效参数。 */
@@ -550,9 +564,14 @@ export interface ShapeTrack extends BaseTrack {
    *   `dotSpacing`；**必须走 SVG pattern** —— CSS `radial-gradient` 平铺被
    *   web-renderer 4.0.535 整个忽略，#16 首轮实证）。缺省铺满画布（背景底纹定位），
    *   与老形状缺省的 30×20 小块不同，契约里写明。
+   * - `vignette`（RQ-09，REQ-038）：**轨级暗角**（配 `strength`）。源工程 11 个场景
+   *   全部挂 `Vignette strength=0.45–0.7`（`src/po/ui.tsx:48-55`），产品此前只有
+   *   `meta.look.vignette` 全局一份 ⇒ 逐镜头强度不可表达。缺省铺满画布（暗角是
+   *   镜头级 overlay）；中心 50%/44%、透明环 38%、半径 118%/88% = 源工程口径。
    */
   shape: 'rect' | 'circle' | 'line' | 'gradient' | 'path' | 'arrow' | 'triangle' | 'star' | 'polygon'
     | 'dotGrid'
+    | 'vignette'
   color: string
   // `box` 已上提到 `BaseTrack`（会话效率优化 2026-10-26）——语义不变（0–100、x/y 中心），
   // shape 轨经继承继续持有；`path` 轨铺满画布、`box` 不生效（校验层 warning）。
@@ -611,6 +630,11 @@ export interface ShapeTrack extends BaseTrack {
   gradientRadius?: { x?: number; y?: number }
   /** RQ-06：radial 边缘色。缺省 = `color` 同 RGB 全透明（hex 可解析时）/ `'transparent'`。 */
   gradientTo?: string
+  /**
+   * RQ-09（REQ-038）：`shape:'vignette'` 的边缘暗度（0–1，边缘 = `color` @ 该 alpha）。
+   * 缺省 0.5。源工程 11 镜头实测 0.45–0.7。
+   */
+  strength?: number
 }
 
 export interface TransitionTrack extends BaseTrack {
@@ -997,6 +1021,8 @@ const SHAPES = new Set([
   'path', 'arrow', 'triangle', 'star', 'polygon',
   // ≥95% 对齐 S1-B：SVG pattern 点阵（CSS radial-gradient 平铺被 web-renderer 忽略）
   'dotGrid',
+  // RQ-09（REQ-038）：轨级暗角（逐镜头强度；源工程 11 场景全挂 0.45–0.7）
+  'vignette',
 ])
 const EFFECTS = new Set([
   'fade', 'slide', 'zoom', 'dissolve',
@@ -1087,11 +1113,14 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   // （sprite.ts / ImageClip.tsx），此前漏登记 ⇒ 每次使用都被告警「不会生效」。
   image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip']),
   // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'anim', 'animOptions', 'countUp', 'dataSource']),
+  // RQ-02（REQ-038 批 3）：letterSpacing / letterSpacingEm —— 度量与渲染同源。
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource']),
   // REQ-038 批 2：radius/stroke/strokeWidthPx/dash（RQ-04）与 gradientType/gradientCenter/
   // gradientRadius/gradientTo（RQ-06）实现真实读取（Shape.tsx SVG 新路径）。
+  // REQ-038 批 3：strength（RQ-09 轨级暗角）。
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot', 'dotRadius', 'dotSpacing',
-    'radius', 'stroke', 'strokeWidthPx', 'dash', 'gradientType', 'gradientCenter', 'gradientRadius', 'gradientTo']),
+    'radius', 'stroke', 'strokeWidthPx', 'dash', 'gradientType', 'gradientCenter', 'gradientRadius', 'gradientTo',
+    'strength']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
@@ -1854,6 +1883,27 @@ export function validateManifest(
             warnings.push(`${at} 是 variant:'${String(track.variant)}'，plate:'none' 只在 variant:'title' 下生效（已忽略）`)
           }
         }
+        // RQ-02（REQ-038）：字距（px / em 二选一；同时给 em 优先）。度量与渲染同源消费。
+        // track 在本函数是 Record<string, unknown>（input: unknown），先收窄成 number。
+        const letterSpacing = typeof track.letterSpacing === 'number' && Number.isFinite(track.letterSpacing)
+          ? track.letterSpacing
+          : undefined
+        if (track.letterSpacing !== undefined && letterSpacing === undefined) {
+          errors.push(`${at}.letterSpacing 必须是 |值| ≤ 200 的有限数（px，可为负做紧排；源片 -0.022em @86px ≈ -1.9px）`)
+        } else if (letterSpacing !== undefined && Math.abs(letterSpacing) > 200) {
+          errors.push(`${at}.letterSpacing 必须是 |值| ≤ 200 的有限数（px，可为负做紧排；源片 -0.022em @86px ≈ -1.9px）`)
+        }
+        const letterSpacingEm = typeof track.letterSpacingEm === 'number' && Number.isFinite(track.letterSpacingEm)
+          ? track.letterSpacingEm
+          : undefined
+        if (track.letterSpacingEm !== undefined && letterSpacingEm === undefined) {
+          errors.push(`${at}.letterSpacingEm 必须是 |值| ≤ 2 的有限数（em，相对字号；源片 -0.022）`)
+        } else if (letterSpacingEm !== undefined && Math.abs(letterSpacingEm) > 2) {
+          errors.push(`${at}.letterSpacingEm 必须是 |值| ≤ 2 的有限数（em，相对字号；源片 -0.022）`)
+        }
+        if (letterSpacing !== undefined && letterSpacingEm !== undefined) {
+          warnings.push(`${at} 同时给了 letterSpacing 与 letterSpacingEm —— em 优先，px 被忽略`)
+        }
         if (track.animOptions !== undefined) {
           if (!isRecord(track.animOptions)) {
             errors.push(`${at}.animOptions 必须是对象`)
@@ -1895,6 +1945,9 @@ export function validateManifest(
             canvasWidth: typeof meta.width === 'number' ? meta.width : 1920,
             canvasHeight: typeof meta.height === 'number' ? meta.height : 1080,
             dataRows: Array.isArray(track.data) ? track.data.length : 0,
+            // RQ-02（REQ-038）：字距进静态粗判 —— 组件 / 体检 / 校验三处同源。
+            ...(letterSpacing === undefined ? {} : { letterSpacingPx: letterSpacing }),
+            ...(letterSpacingEm === undefined ? {} : { letterSpacingEm }),
           })) {
             warnings.push(`${at} ${note}`)
           }
@@ -2007,6 +2060,18 @@ export function validateManifest(
             }
             if (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined) {
               warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle' 上生效（已忽略）`)
+            }
+          } else if (track.shape === 'vignette') {
+            // RQ-09（REQ-038）：轨级暗角 —— 边缘暗度 0–1（缺省 0.5）。
+            const strength = track.strength
+            if (strength !== undefined && (typeof strength !== 'number' || !Number.isFinite(strength) || strength < 0 || strength > 1)) {
+              errors.push(`${at}.strength 必须是 0–1 的数值（vignette 边缘暗度；源工程 11 镜头 0.45–0.7）`)
+            }
+            if (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined) {
+              warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle' 上生效（已忽略）`)
+            }
+            if (track.gradientType !== undefined || track.gradientCenter !== undefined || track.gradientRadius !== undefined || track.gradientTo !== undefined) {
+              warnings.push(`${at} 的 gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:'gradient' 上生效（已忽略）`)
             }
           } else {
             // 其他形状（line）写了新字段：不阻断，只告知不生效。

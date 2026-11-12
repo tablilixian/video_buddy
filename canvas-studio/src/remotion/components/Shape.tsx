@@ -16,7 +16,7 @@ import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ShapeTrack } from '../manifest.js'
 import { boxStyle, pivotOriginStyle, polygonPointsForShape } from '../shape-geometry.js'
-import { colorShiftAt, colorWithAlphaZero, drawProgressAt } from '../timing.js'
+import { colorShiftAt, colorWithAlpha, colorWithAlphaZero, drawProgressAt } from '../timing.js'
 
 /** `fx` 里与容器相关的三项（文字类效果由各文本组件自己贴）。 */
 function containerFx(anim: ReturnType<typeof resolveAnimatedStyle>): React.CSSProperties {
@@ -122,6 +122,42 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+          </svg>
+        </div>
+      </AbsoluteFill>
+    )
+  }
+
+  // ── RQ-09（REQ-038）：`vignette` 轨级暗角（SVG radialGradient，源工程口径） ──
+  // 源工程 `Vignette`（src/po/ui.tsx:48-55）= `radial-gradient(118% 88% at 50% 44%,
+  // transparent 38%, rgba(0,0,0,strength) 100%)`；11 个场景逐镜头 strength 0.45–0.7。
+  // 产品 `meta.look.vignette` 是全局一份（Root 层 multiply），逐镜头强度不可表达 ⇒
+  // 下沉为轨：中心 50%/44%、透明环 38%、半径 118%/88%（ellipse 长轴超盒是刻意的
+  // —— 暗角压不到四角就没了暗角感）。缺省铺满画布（与 dotGrid 同：背景 overlay 定位）。
+  if (track.shape === 'vignette') {
+    const boxW = (box.w / 100) * width
+    const boxH = (box.h / 100) * height
+    const strength = track.strength ?? 0.5
+    const vignetteId = `vig-${svgIdSafe(track.id ?? '')}`
+    return (
+      <AbsoluteFill style={{ opacity: anim.opacity, ...containerFx(anim) }}>
+        <div
+          style={{
+            position: 'absolute',
+            ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
+            ...originStyle,
+          }}
+        >
+          <svg width={boxW} height={boxH} style={{ display: 'block' }}>
+            <defs>
+              <radialGradient id={vignetteId} cx={0.5} cy={0.44} r={1}
+                gradientTransform="translate(0.5 0.44) scale(1.18 0.88) translate(-0.5 -0.44)">
+                <stop offset="0" stopColor="transparent" />
+                <stop offset="0.38" stopColor="transparent" />
+                <stop offset="1" stopColor={colorWithAlpha(color, strength)} />
+              </radialGradient>
+            </defs>
+            <rect x={0} y={0} width={boxW} height={boxH} fill={`url(#${vignetteId})`} />
           </svg>
         </div>
       </AbsoluteFill>

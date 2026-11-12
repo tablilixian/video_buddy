@@ -47,6 +47,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 **0 个** ⇒ 按上面的 `recipe` 自由编排；**≥2 个** ⇒ **列给用户挑，不许自选**。槽位超限只删字、不缩字号；
 产物可继续手改（不是二选一）→ `references/template-usage.md`。
 手写整份也行，但**先读 `references/manifest-contract.md` 顶部速查表**（四类首轮高频坑）与硬约束（顶层 `id` 必填最常见）。`meta` + `tracks` + 可选 `audio`。
+**大 manifest 禁止手写（RQ-18，REQ-038）**：目标超过 **40 轨**（或超过 3 个镜头/段）时，禁止逐条手写轨 —— 必须走 `scaffold_manifest` 的 `recipe`（片型配方，卡自动长出完整版式）或按 `references/content-spec.md` 的 spec schema 填空生成；同构元素（logo 墙 / 截图墙 / 标签行）一律用聚合原语 `logoWall` / `assetGrid` / `chipRow` / `codePanel` / `ticker`（一条轨顶 N 条），不要逐条摆 `image`。手搓 265 轨的历史（playsout 复刻）产出过 3 个真 bug 且不可维护 —— 结构要由数据（spec / recipe / 卡）生成，人不写轨。
 3. **方案预览（可选，非审批门；与第 0 步分工：第 0 步问"事实"，这里给"方案"）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **先出片，再丰富**（下节 R0–R6）：拿到骨架就渲一版 `quality:"draft"`，之后每轮只加一层、每轮都出片 → 见下一节。**不要等 manifest 写完才渲**。
 5. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。

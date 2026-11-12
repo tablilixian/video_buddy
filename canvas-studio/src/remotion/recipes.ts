@@ -21,6 +21,7 @@
  *   （`status:"pending"` 会阻断落地，见 `validateForSeed`）。
  */
 import type { StoryboardAssetSource } from '../contracts/storyboard.js'
+import { getCard, lookupCardId } from './recipe-cards.js'
 
 export interface RecipeAssetNeed {
   /** 素材名（写进 §07 的 `name`）。 */
@@ -111,6 +112,13 @@ export interface RecipePlanInput {
   readonly title: string
   readonly totalFrames: number
   readonly recipe: Recipe
+  /**
+   * RQ-10（REQ-038）：素材槽位表（segmentId → slot → 同源 URL）。
+   * 卡生成器经 `ctx.assetSrc(slot)` 取用；未给（或槽位缺）⇒ 生成器落降级版式。
+   */
+  readonly assetSlots?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /** RQ-10：卡生成器的强调色（缺省 #4f9cf9）。 */
+  readonly accentColor?: string
 }
 
 export interface RecipePlan {
@@ -120,7 +128,11 @@ export interface RecipePlan {
 }
 
 /**
- * 按权重把总时长切给各段，并生成**合法可渲的最小占位轨**（每段一张文字卡）。
+ * 按权重把总时长切给各段，并生成段轨。
+ *
+ * RQ-10（REQ-038）接线：`segment.card` 查 `recipe-cards.ts` 注册表 ——
+ * 已注册卡走**生成器**（完整版式，多轨）；未注册卡**回落占位文字卡**
+ *（下面的原实现，老 manifest 逐像素不变 —— RQ-10 验收 1 的回落路径）。
  *
  * 时间轴算法刻意简单：前 n-1 段向下取整，余数全给最后一段 —— 保证
  * `Σ = totalFrames`（时长自洽是硬约束，差一帧都会被打回）。
@@ -145,6 +157,8 @@ export function planRecipe(input: RecipePlanInput): RecipePlan {
     cursor += span
   })
 
+  const assetSlots = input.assetSlots ?? {}
+  const accentColor = input.accentColor ?? '#4f9cf9'
   const tracks: Record<string, unknown>[] = [
     {
       id: 'bg',
@@ -156,10 +170,27 @@ export function planRecipe(input: RecipePlanInput): RecipePlan {
       durationInFrames: totalFrames,
       fadeFrames: 0,
     },
-    ...recipe.segments.map((segment, index) => {
+    ...recipe.segments.flatMap((segment, index) => {
       const slot = timeline[index] as RecipePlan['timeline'][number]
+      // RQ-10：查卡注册表 —— 命中走生成器（完整版式），未命中回落占位轨。
+      const cardId = lookupCardId(segment.card)
+      const card = cardId === null ? undefined : getCard(cardId)
+      if (card !== undefined) {
+        const slots = assetSlots[segment.id] ?? {}
+        return card.generate({
+          segmentId: segment.id,
+          label: segment.label,
+          copy: segment.copy,
+          startFrame: slot.startFrame,
+          durationInFrames: slot.durationInFrames,
+          index,
+          sectionCount: recipe.segments.length,
+          assetSrc: (name: string) => slots[name],
+          accentColor,
+        })
+      }
       // 占位用 `subtitle` variant：它自带压暗与底边定位，不会盖住后面要加的视觉主体。
-      return {
+      return [{
         id: `seg-${segment.id}`,
         type: 'textCard',
         variant: 'subtitle',
@@ -167,7 +198,7 @@ export function planRecipe(input: RecipePlanInput): RecipePlan {
         startFrame: slot.startFrame,
         durationInFrames: slot.durationInFrames,
         fadeFrames: 0,
-      }
+      }]
     }),
   ]
 

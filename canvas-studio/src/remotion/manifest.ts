@@ -415,6 +415,7 @@ export interface DrawMotion {
  * 与工具描述。折算在 `resolveAnimatedStyle`（唯一接线点），组件只负责贴样式。
  */
 export type TrackFx = 'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline' | 'metal'
+  | 'grayscale'
 
 /**
  * ≥95% 对齐 S1-B：**媒体轨裁切形态**（`video` / `image` 轨的 `clip` 字段）。
@@ -503,6 +504,18 @@ export interface TextCardTrack extends BaseTrack {
   /** `dataCard` 专用：键值对（如 `[{k:'全球老龄化',v:'16%'}]`）。 */
   data?: { k: string; v: string }[]
   accentColor?: string
+  /**
+   * RQ-03（REQ-038）：**主文本色**（与 `accentColor` 分工 —— accent 染强调元素：
+   * timecode 标签 / dataCard 边框与数值 / bullets 圆点；`color` 染正文本身）。
+   * 各变体旧硬编码色成为缺省值 ⇒ 老 manifest 逐像素不变。
+   */
+  color?: string
+  /**
+   * RQ-07（REQ-038）：`title` 变体的底板（缺省 `'auto'` = 旧硬编码 `rgba(0,0,0,0.35)`
+   * 暗底，老 manifest 逐像素不变）；`'none'` = 无底板（标题直接叠在画面上）。
+   * 仅 `title` 变体消费，其他变体写了只收 warning 不生效。
+   */
+  plate?: 'auto' | 'none'
   /** 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。 */
   anim?: TextAnimPreset
   /** 三期 W4-2：文本动效参数。 */
@@ -964,8 +977,8 @@ const EFFECTS = new Set([
   'zoomBlur', 'linearBlur', 'crossWarp',
 ])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
-/** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。 */
-const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline', 'metal'])
+/** 二期 A2：视觉效果白名单（与 `TrackFx` 同域）。RQ-05（REQ-038）增 `grayscale`。 */
+const TRACK_FX = new Set(['glow', 'stroke', 'shadow', 'blur', 'maskFade', 'outline', 'metal', 'grayscale'])
 /** 二期 A1：公转方向白名单。 */
 const ORBIT_DIRECTIONS = new Set(['cw', 'ccw'])
 /** 二期 B1：音频可视化形态白名单。 */
@@ -976,6 +989,8 @@ const TRACK_BLENDS = new Set(['normal', 'screen', 'multiply', 'overlay', 'soft-l
 const TRANSITION_DIRECTIONS = new Set(['left', 'right', 'up', 'down'])
 /** 三期 W4-2：文本动效预设白名单。 */
 const TEXT_ANIM_PRESETS = new Set(['fadeUp', 'maskReveal', 'typewriter', 'wordStagger'])
+/** RQ-07（REQ-038）：`title` 底板白名单（缺省 auto = 旧硬编码暗底）。 */
+const TEXT_CARD_PLATES = new Set(['auto', 'none'])
 /** 三期 W5-3：质量档白名单。 */
 const RENDER_QUALITIES = new Set(['draft', 'standard', 'high'])
 
@@ -1040,7 +1055,8 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   // P-02：sourceRect（CV-392 精灵图子区域裁切）/ hasAlpha（复刻批）实现真实读取
   // （sprite.ts / ImageClip.tsx），此前漏登记 ⇒ 每次使用都被告警「不会生效」。
   image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip']),
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'anim', 'animOptions', 'countUp', 'dataSource']),
+  // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'anim', 'animOptions', 'countUp', 'dataSource']),
   shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot', 'dotRadius', 'dotSpacing']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
@@ -1791,6 +1807,18 @@ export function validateManifest(
         // 三期 W4-2：文本动效预设。
         if (track.anim !== undefined && (typeof track.anim !== 'string' || !TEXT_ANIM_PRESETS.has(track.anim))) {
           errors.push(`${at}.anim 非法（${String(track.anim)}）—— 只允许 fadeUp / maskReveal / typewriter / wordStagger`)
+        }
+        // RQ-03（REQ-038）：主文本色（与 accentColor 分工；旧硬编码色即缺省 ⇒ 老值不变）。
+        if (track.color !== undefined && !isNonEmptyString(track.color)) {
+          errors.push(`${at}.color 必须是非空字符串（主文本色；强调色请用 accentColor）`)
+        }
+        // RQ-07（REQ-038）：title 底板 —— 'none' 去掉旧硬编码暗底；其他变体只告警不生效。
+        if (track.plate !== undefined) {
+          if (typeof track.plate !== 'string' || !TEXT_CARD_PLATES.has(track.plate)) {
+            errors.push(`${at}.plate 非法（${String(track.plate)}）—— 白名单：auto / none`)
+          } else if (track.plate === 'none' && track.variant !== 'title') {
+            warnings.push(`${at} 是 variant:'${String(track.variant)}'，plate:'none' 只在 variant:'title' 下生效（已忽略）`)
+          }
         }
         if (track.animOptions !== undefined) {
           if (!isRecord(track.animOptions)) {

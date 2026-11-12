@@ -1054,6 +1054,10 @@ export function fxStyles(fx: TrackFx | undefined): FxStyle {
       }
     case 'blur':
       return { filter: 'blur(3px)' }
+    case 'grayscale':
+      // RQ-05（REQ-038）：整轨灰度 —— 21 张灰阶 logo 不再依赖预生成 PNG。
+      // `filter` 通路与 blur / drop-shadow 同栈（web-renderer 4.0.535 已实证放行）。
+      return { filter: 'grayscale(1)' }
     case 'maskFade':
       return { maskImage: 'linear-gradient(180deg, #000 0%, #000 62%, transparent 100%)' }
     case 'metal':

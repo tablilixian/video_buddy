@@ -145,7 +145,7 @@
 ## TrackFx
 > 二期 A2：**视觉效果**（单值枚举，不做组合数组 —— 组合会让模型乱搭）。
 
-取值：'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline' | 'metal'
+取值：'glow' | 'stroke' | 'shadow' | 'blur' | 'maskFade' | 'outline' | 'metal' | 'grayscale'
 
 ## TrackClip
 > ≥95% 对齐 S1-B：**媒体轨裁切形态**（`video` / `image` 轨的 `clip` 字段）。
@@ -193,6 +193,8 @@
 - `text`: string | string[] — 主文本（`subtitle` / `title` / `bullets` 每行一条）。
 - `data`?: { k: string; v: string }[] — `dataCard` 专用：键值对（如 `[{k:'全球老龄化',v:'16%'}]`）。
 - `accentColor`?: string
+- `color`?: string — RQ-03（REQ-038）：**主文本色**（与 `accentColor` 分工 —— accent 染强调元素：
+- `plate`?: 'auto' | 'none' — RQ-07（REQ-038）：`title` 变体的底板（缺省 `'auto'` = 旧硬编码 `rgba(0,0,0,0.35)`
 - `anim`?: TextAnimPreset — 三期 W4-2：入场文本动效预设（缺省无 —— 与三期之前一致）。
 - `animOptions`?: TextAnimOptions — 三期 W4-2：文本动效参数。
 - `countUp`?: boolean — P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」

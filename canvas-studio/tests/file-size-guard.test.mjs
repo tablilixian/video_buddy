@@ -203,7 +203,9 @@ export const FILE_WHITELIST = {
   // 消化路径：contract 小件继续按 manifest-track-validate / group-children 外提，不回灌本文件。
   // S3（2026-11-11）：group 子轨合成校验豁免 manifest 级聚合体检 —— validateManifest
   // 加可选 opts 参数（groupSubCheck）线程到 lintMotion（+8），2570 → 2578 显式登记。
-  'src/remotion/manifest.ts': 2578,
+  // REQ-038 批 1（2026-11-12）：RQ-03 textCard.color / RQ-07 plate 字段与注释 / 校验分支 /
+  // TrackFx 加 grayscale / TRACK_FX 与 KNOWN_TRACK_KEYS 扩容（+28，2578 → 2606）显式登记。
+  'src/remotion/manifest.ts': 2606,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

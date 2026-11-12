@@ -83,6 +83,9 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   })
   // 三期 W2-3：`colorShift` 覆盖静态强调色（缺省 null ⇒ 原色）。
   const accent = colorShiftAt(track, frame) ?? track.accentColor ?? '#4f9cf9'
+  // RQ-03（REQ-038）：主文本色 —— 各变体的旧硬编码色即缺省值 ⇒ 老 manifest 逐像素不变。
+  // 强调元素（timecode 标签 / dataCard 边框与数值 / bullets 圆点）仍走 `accent`。
+  const mainColor = track.color ?? '#e6edf3'
   const lines = linesOf(track.text)
   // 二期 A2：效果统一由 `resolveAnimatedStyle` 折算，这里只展开 —— 不各自解读枚举。
   const textFx: React.CSSProperties = {
@@ -159,7 +162,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             fontVariantNumeric: 'tabular-nums',
             fontSize: plan.fontPx,
             fontWeight: 700,
-            color: '#e6edf3',
+            color: mainColor,
             letterSpacing: 2,
             display: 'flex',
             alignItems: 'baseline',
@@ -202,7 +205,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             padding: `${budget.padY}px ${budget.padX}px`,
             borderRadius: 14,
             background: 'rgba(0,0,0,0.62)',
-            color: '#f4f7fb',
+            color: track.color ?? '#f4f7fb',
             fontFamily,
             fontSize: plan.fontPx,
             lineHeight: SUBTITLE_LINE_HEIGHT,
@@ -221,14 +224,17 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     // A5：标题最多 2 行、字号从 84 起缩。可用宽由 `planTextFit` 给：
     // 带 `box` 时按**盒宽**（0B-4 修的既有缺陷 —— 旧实现一律按画布 90%，窄盒里的标题
     // 字号算得偏大 ⇒ 折行后被盒子的 `overflow:hidden` 两侧裁掉），不带 box 走画布 90%。
+    // RQ-07（REQ-038）：旧硬编码暗底降级为 `plate` 缺省值 `'auto'`；显式 `'none'`
+    // = 无底板（标题直接叠画面）。不写 plate 的老 manifest 样式串逐字符一致。
+    const plate = track.plate === 'none' ? undefined : 'rgba(0,0,0,0.35)'
     return (
-      <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
+      <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center', ...(plate === undefined ? {} : { background: plate }) }}>
         <div
           style={{
             fontFamily,
             fontSize: plan.fontPx,
             fontWeight: 700,
-            color: '#e6edf3',
+            color: mainColor,
             textAlign: 'center',
             lineHeight: 1.15,
             whiteSpace: 'pre-line',
@@ -270,7 +276,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...(anim.fx.boxShadow !== undefined ? { boxShadow: anim.fx.boxShadow } : {}),
           }}
         >
-          <div style={{ fontSize: plan.fontPx, fontWeight: 700, color: '#e6edf3', ...textFx }}>
+          <div style={{ fontSize: plan.fontPx, fontWeight: 700, color: mainColor, ...textFx }}>
             {animated(plan.renderText)}
           </div>
           <div style={{ height: 2, background: accent, margin: `${px(26)}px 0 ${px(10)}px` }} />
@@ -307,7 +313,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
         {bulletLines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>
             <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, marginRight: 24 }} />
-            <div style={{ fontSize: plan.fontPx, color: '#e6edf3', ...textFx }}>
+            <div style={{ fontSize: plan.fontPx, color: mainColor, ...textFx }}>
               {animated(line)}
             </div>
           </div>

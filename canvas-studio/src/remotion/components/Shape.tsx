@@ -16,7 +16,7 @@ import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ShapeTrack } from '../manifest.js'
 import { boxStyle, pivotOriginStyle, polygonPointsForShape } from '../shape-geometry.js'
-import { colorShiftAt, drawProgressAt } from '../timing.js'
+import { colorShiftAt, colorWithAlphaZero, drawProgressAt } from '../timing.js'
 
 /** `fx` 里与容器相关的三项（文字类效果由各文本组件自己贴）。 */
 function containerFx(anim: ReturnType<typeof resolveAnimatedStyle>): React.CSSProperties {
@@ -39,7 +39,8 @@ function svgIdSafe(id: string): string {
 
 export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
-  const { width } = useVideoConfig()
+  // height 只被 RQ-04/06 的 SVG 像素坐标新路径消费（box 百分比 → px）。
+  const { width, height } = useVideoConfig()
   const anim = resolveAnimatedStyle(track, frame)
   // 三期 W2-3：`colorShift` 覆盖静态 `color`（缺省 `null` ⇒ 原色，老 manifest 不变）。
   const color = colorShiftAt(track, frame) ?? track.color
@@ -121,6 +122,90 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
               </pattern>
             </defs>
             <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+          </svg>
+        </div>
+      </AbsoluteFill>
+    )
+  }
+
+  // ── RQ-04 / RQ-06（REQ-038）：rect/circle SVG 增强路径 + gradient 径向新路径 ──
+  // 触发条件（缺省即旧行为）：
+  // - rect/circle 声明 radius / stroke / dash 任一 ⇒ SVG 像素坐标新路径
+  //  （老 div 实现不支持描边/虚线/圆角；不动老实现 ⇒ 未声明这些字段的 manifest 逐像素不变）；
+  // - gradient 声明 gradientType:'radial' ⇒ SVG radialGradient
+  //  （CSS radial-gradient 被 web-renderer 4.0.535 忽略，#16 实证；dotGrid 同一结论）。
+  // 坐标空间 = **真实像素**（box 百分比 × 画布尺寸），不用 0-100 viewBox：
+  // radius / strokeWidthPx / dash 都是 px 口径，经 preserveAspectRatio 拉伸会变形。
+  const svgEnhanced = (track.shape === 'rect' || track.shape === 'circle')
+    && (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined)
+  const svgRadial = track.shape === 'gradient' && track.gradientType === 'radial'
+  if (svgEnhanced || svgRadial) {
+    const boxW = (box.w / 100) * width
+    const boxH = (box.h / 100) * height
+    const sw = Math.max(1, track.strokeWidthPx ?? 2)
+    const dash = track.dash
+    const gradientId = `shp-${svgIdSafe(track.id ?? 'grad')}`
+    let inner: React.ReactNode
+    if (svgRadial) {
+      // 径向光晕：radialGradient 用 objectBoundingBox 单位（0–1 相对盒），r=1 配
+      // gradientTransform 的双轴 scale ⇒ x/y 半径独立可控（缺省 60%×50%，源片光晕量级）。
+      const cx = (track.gradientCenter?.x ?? 50) / 100
+      const cy = (track.gradientCenter?.y ?? 50) / 100
+      const rx = (track.gradientRadius?.x ?? 60) / 100
+      const ry = (track.gradientRadius?.y ?? 50) / 100
+      const to = track.gradientTo ?? colorWithAlphaZero(color)
+      inner = (
+        <>
+          <defs>
+            <radialGradient id={gradientId} cx={cx} cy={cy} r={1}
+              gradientTransform={`translate(${cx} ${cy}) scale(${rx} ${ry}) translate(${-cx} ${-cy})`}>
+              <stop offset="0" stopColor={color} />
+              <stop offset="1" stopColor={to} />
+            </radialGradient>
+          </defs>
+          <rect x={0} y={0} width={boxW} height={boxH} fill={`url(#${gradientId})`} />
+        </>
+      )
+    } else if (track.shape === 'circle') {
+      // 与老 circle 视觉口径对齐：直径 = box.w%（老实现 height:0 + paddingBottom:w%）。
+      const r = Math.max(0, boxW / 2 - sw / 2)
+      inner = (
+        <circle
+          cx={boxW / 2}
+          cy={boxH / 2}
+          r={r}
+          fill={color}
+          {...(track.stroke !== undefined ? { stroke: track.stroke, strokeWidth: sw } : {})}
+          {...(dash !== undefined ? { strokeDasharray: `${dash[0]} ${dash[1]}` } : {})}
+        />
+      )
+    } else {
+      // rect：描边画在盒内（x/y 内缩 sw/2），与 CSS border 占盒内空间的直觉一致；
+      // rx 不内缩 —— CSS border-radius 同样按盒边算。
+      inner = (
+        <rect
+          x={sw / 2}
+          y={sw / 2}
+          width={Math.max(0, boxW - sw)}
+          height={Math.max(0, boxH - sw)}
+          rx={track.radius ?? 0}
+          fill={color}
+          {...(track.stroke !== undefined ? { stroke: track.stroke, strokeWidth: sw } : {})}
+          {...(dash !== undefined ? { strokeDasharray: `${dash[0]} ${dash[1]}` } : {})}
+        />
+      )
+    }
+    return (
+      <AbsoluteFill style={{ opacity: anim.opacity, ...containerFx(anim) }}>
+        <div
+          style={{
+            position: 'absolute',
+            ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
+            ...originStyle,
+          }}
+        >
+          <svg width={boxW} height={boxH} style={{ display: 'block', overflow: 'visible' }}>
+            {inner}
           </svg>
         </div>
       </AbsoluteFill>

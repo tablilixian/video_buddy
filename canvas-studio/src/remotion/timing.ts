@@ -851,6 +851,16 @@ export function mixColor(from: string, to: string, progress: number): string | n
 }
 
 /**
+ * RQ-06（REQ-038）：径向渐变**边缘色缺省** —— 同 RGB 全透明（hex 可解析时）/
+ * `'transparent'`（否则）。比 CSS `transparent`（= `rgba(0,0,0,0)`）精确：紫色光晕
+ * 渐隐到 `rgba(0,0,0,0)` 中途会泛灰，同色 alpha 0 不会。
+ */
+export function colorWithAlphaZero(value: string): string {
+  const rgb = parseHexColor(value)
+  return rgb === null ? 'transparent' : `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`
+}
+
+/**
  * 轨道在轨内相对帧 `localFrame` 处的渐变色（`null` = 本轨没有 `colorShift` / 值非法）。
  *
  * 区间外取端点（端点收敛）；缓动沿用 `AnimateEasing` 白名单。

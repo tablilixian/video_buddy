@@ -211,6 +211,14 @@
 - `dotSpacing`?: number — `shape:'dotGrid'`：相邻点位的**中心距**（px，pattern 单元边长；缺省 24）。
 - `dotRadius`?: number — `shape:'dotGrid'`：点半径（px，缺省 2）。颜色取本轨 `color`。
 - `pivot`?: { x?: number; y?: number } — 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
+- `radius`?: number — RQ-04（REQ-038）：`rect` 圆角（px；药丸 = 高度一半）。缺省 0 = 直角（老行为）。
+- `stroke`?: string — RQ-04（REQ-038）：`rect` / `circle` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
+- `strokeWidthPx`?: number — RQ-04（REQ-038）：`rect` / `circle` 描边宽（px，缺省 2）。见 `stroke` 注释。
+- `dash`?: [number, number] — RQ-04（REQ-038）：虚线 `[dash, gap]`（px，`stroke-dasharray`）。缺省实线。
+- `gradientType`?: 'linear' | 'radial' — RQ-06（REQ-038）：`shape:'gradient'` 的渐变类型。缺省 `'linear'` = 老 div 实现
+- `gradientCenter`?: { x?: number; y?: number } — RQ-06：radial 圆心（box 百分比，缺省 `{x:50, y:50}` = 盒中心）。
+- `gradientRadius`?: { x?: number; y?: number } — RQ-06：radial 半径（box 百分比，缺省 `{x:60, y:50}`；源片光晕 60%/50% 量级）。
+- `gradientTo`?: string — RQ-06：radial 边缘色。缺省 = `color` 同 RGB 全透明（hex 可解析时）/ `'transparent'`。
 
 ## TransitionTrack (extends BaseTrack)
 

@@ -582,6 +582,35 @@ export interface ShapeTrack extends BaseTrack {
    * `shape:'path'` 的渲染层是铺满画布的 AbsoluteFill，此时轴心按**画布百分比**解释。
    */
   pivot?: { x?: number; y?: number }
+  /**
+   * RQ-04（REQ-038）：`rect` 圆角（px；药丸 = 高度一半）。缺省 0 = 直角（老行为）。
+   * 与 `stroke` / `dash` 任一声明 ⇒ rect/circle 切到 **SVG 像素坐标新路径**
+   * （老 div 实现不支持描边/虚线/圆角）；三个都不写 ⇒ 老 div 路径，逐像素不变。
+   */
+  radius?: number
+  /**
+   * RQ-04（REQ-038）：`rect` / `circle` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
+   * 命中环）。描边宽用 `strokeWidthPx` —— **刻意不复用** `shape:'path'` 的 `strokeWidth`
+   *（百分比单位）：同名字段双单位必然误用（仓内先例：`fx` 刻意避开 `effect` 撞名）。
+   */
+  stroke?: string
+  /** RQ-04（REQ-038）：`rect` / `circle` 描边宽（px，缺省 2）。见 `stroke` 注释。 */
+  strokeWidthPx?: number
+  /** RQ-04（REQ-038）：虚线 `[dash, gap]`（px，`stroke-dasharray`）。缺省实线。 */
+  dash?: [number, number]
+  /**
+   * RQ-06（REQ-038）：`shape:'gradient'` 的渐变类型。缺省 `'linear'` = 老 div 实现
+   *（`linear-gradient(135deg, color, rgba(0,0,0,0.15))`，逐像素不变）。`'radial'` 走
+   * SVG `radialGradient` —— CSS `radial-gradient` 平铺被 web-renderer 4.0.535 整个忽略
+   *（#16 实证，`timing.ts` fxStyles('metal') 注释同结论），必须走 SVG（与 dotGrid 同路）。
+   */
+  gradientType?: 'linear' | 'radial'
+  /** RQ-06：radial 圆心（box 百分比，缺省 `{x:50, y:50}` = 盒中心）。 */
+  gradientCenter?: { x?: number; y?: number }
+  /** RQ-06：radial 半径（box 百分比，缺省 `{x:60, y:50}`；源片光晕 60%/50% 量级）。 */
+  gradientRadius?: { x?: number; y?: number }
+  /** RQ-06：radial 边缘色。缺省 = `color` 同 RGB 全透明（hex 可解析时）/ `'transparent'`。 */
+  gradientTo?: string
 }
 
 export interface TransitionTrack extends BaseTrack {
@@ -991,6 +1020,8 @@ const TRANSITION_DIRECTIONS = new Set(['left', 'right', 'up', 'down'])
 const TEXT_ANIM_PRESETS = new Set(['fadeUp', 'maskReveal', 'typewriter', 'wordStagger'])
 /** RQ-07（REQ-038）：`title` 底板白名单（缺省 auto = 旧硬编码暗底）。 */
 const TEXT_CARD_PLATES = new Set(['auto', 'none'])
+/** RQ-06（REQ-038）：`shape:'gradient'` 渐变类型白名单（缺省 linear = 老 div 实现）。 */
+const GRADIENT_TYPES = new Set(['linear', 'radial'])
 /** 三期 W5-3：质量档白名单。 */
 const RENDER_QUALITIES = new Set(['draft', 'standard', 'high'])
 
@@ -1057,7 +1088,10 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip']),
   // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'anim', 'animOptions', 'countUp', 'dataSource']),
-  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot', 'dotRadius', 'dotSpacing']),
+  // REQ-038 批 2：radius/stroke/strokeWidthPx/dash（RQ-04）与 gradientType/gradientCenter/
+  // gradientRadius/gradientTo（RQ-06）实现真实读取（Shape.tsx SVG 新路径）。
+  shape: new Set(['shape', 'color', 'd', 'strokeWidth', 'draw', 'pivot', 'dotRadius', 'dotSpacing',
+    'radius', 'stroke', 'strokeWidthPx', 'dash', 'gradientType', 'gradientCenter', 'gradientRadius', 'gradientTo']),
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
@@ -1920,6 +1954,68 @@ export function validateManifest(
           }
           if (track.dotRadius !== undefined || track.dotSpacing !== undefined) {
             warnings.push(`${at} 的 dotRadius/dotSpacing 只在 shape:'dotGrid' 上生效（已忽略）`)
+          }
+          // RQ-04（REQ-038）：rect/circle SVG 新路径字段 —— 校验 + 冗余告知。
+          if (track.shape === 'rect' || track.shape === 'circle') {
+            const radius = track.radius
+            if (radius !== undefined && (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 0)) {
+              errors.push(`${at}.radius 必须是 >= 0 的有限数（px，rect 圆角；药丸 = 盒高一半）`)
+            }
+            if (track.stroke !== undefined && !isNonEmptyString(track.stroke)) {
+              errors.push(`${at}.stroke 必须是非空字符串（描边色；空心框配 color:'transparent'）`)
+            }
+            const strokeWidthPx = track.strokeWidthPx
+            if (strokeWidthPx !== undefined && (typeof strokeWidthPx !== 'number' || !Number.isFinite(strokeWidthPx) || strokeWidthPx <= 0 || strokeWidthPx > 200)) {
+              errors.push(`${at}.strokeWidthPx 必须是 (0, 200] 的数值（px；缺省 2）`)
+            }
+            const dash = track.dash
+            if (dash !== undefined) {
+              if (!Array.isArray(dash) || dash.length !== 2 || dash.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v <= 0)) {
+                errors.push(`${at}.dash 必须是 [dash, gap] 两个正数（px，stroke-dasharray）`)
+              } else if (track.stroke === undefined) {
+                warnings.push(`${at} 写了 dash 但没写 stroke —— 虚线只在声明描边色时画出`)
+              }
+            }
+            if (track.strokeWidthPx !== undefined && track.stroke === undefined) {
+              warnings.push(`${at} 写了 strokeWidthPx 但没写 stroke —— 描边宽只在声明描边色时生效`)
+            }
+            if (track.gradientType !== undefined || track.gradientCenter !== undefined || track.gradientRadius !== undefined || track.gradientTo !== undefined) {
+              warnings.push(`${at} 的 gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:'gradient' 上生效（已忽略）`)
+            }
+          } else if (track.shape === 'gradient') {
+            // RQ-06（REQ-038）：radial 渐变参数。
+            if (track.gradientType !== undefined && (typeof track.gradientType !== 'string' || !GRADIENT_TYPES.has(track.gradientType))) {
+              errors.push(`${at}.gradientType 非法（${String(track.gradientType)}）—— 白名单：linear / radial`)
+            }
+            for (const [field, def] of [['gradientCenter', { x: 50, y: 50 }], ['gradientRadius', { x: 60, y: 50 }]] as const) {
+              const value = track[field]
+              if (value === undefined) continue
+              if (!isRecord(value)) {
+                errors.push(`${at}.${field} 必须是对象（{ x?, y? }，box 百分比，缺省 ${def.x}/${def.y}）`)
+              } else {
+                for (const axis of ['x', 'y'] as const) {
+                  const v = value[axis]
+                  if (v === undefined) continue
+                  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 200) {
+                    errors.push(`${at}.${field}.${axis} 必须是 (0, 200] 的有限数（box 百分比）`)
+                  }
+                }
+              }
+            }
+            if (track.gradientTo !== undefined && !isNonEmptyString(track.gradientTo)) {
+              errors.push(`${at}.gradientTo 必须是非空字符串（radial 边缘色；缺省同 color 全透明）`)
+            }
+            if (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined) {
+              warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle' 上生效（已忽略）`)
+            }
+          } else {
+            // 其他形状（line）写了新字段：不阻断，只告知不生效。
+            if (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined) {
+              warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle' 上生效（已忽略）`)
+            }
+            if (track.gradientType !== undefined || track.gradientCenter !== undefined || track.gradientRadius !== undefined || track.gradientTo !== undefined) {
+              warnings.push(`${at} 的 gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:'gradient' 上生效（已忽略）`)
+            }
           }
         }
         break

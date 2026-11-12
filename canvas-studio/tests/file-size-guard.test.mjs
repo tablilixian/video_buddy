@@ -205,7 +205,9 @@ export const FILE_WHITELIST = {
   // 加可选 opts 参数（groupSubCheck）线程到 lintMotion（+8），2570 → 2578 显式登记。
   // REQ-038 批 1（2026-11-12）：RQ-03 textCard.color / RQ-07 plate 字段与注释 / 校验分支 /
   // TrackFx 加 grayscale / TRACK_FX 与 KNOWN_TRACK_KEYS 扩容（+28，2578 → 2606）显式登记。
-  'src/remotion/manifest.ts': 2606,
+  // REQ-038 批 2（同日）：RQ-04 radius/stroke/strokeWidthPx/dash + RQ-06 gradientType 族
+  // 字段与注释 / rect-circle-gradient 三分支校验（+96，2606 → 2702）显式登记。
+  'src/remotion/manifest.ts': 2702,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。
@@ -248,7 +250,9 @@ export const FILE_WHITELIST = {
   // 折算分支，+10 净行，1502 → 1512 显式登记。消化路径同上（音频域拆分时随 fx 段外提）。
   // 95% 对齐 S1-B（同日）：reconcileManifestVideoDurations 改走 mapTracksDeep（容器子轨
   // 时长回核）+2 净行，1512 → 1514 显式登记。
-  'src/remotion/timing.ts': 1514,
+  // REQ-038 批 1（2026-11-12）：fxStyles 加 grayscale 分支（+4，1514 → 1518）；批 2：
+  // colorWithAlphaZero 导出（radial 边缘色缺省，+10，1518 → 1528）。消化路径同上。
+  'src/remotion/timing.ts': 1528,
   // 订阅与积分（2026-11-02）：三个计费请求封装（快照/checkout/portal）+ 错误信封
   // 增加 Retry-After 解析，1268 → 1339。消化路径：client api 按域拆分时随 billing 段外提。
   // 复刻提效批（2026-11-02）：PendingStudioRenderJob.spotFrames + commit spot 参数，+7（1339 → 1346）。

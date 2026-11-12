@@ -1,22 +1,22 @@
 {
   "sfx": [
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "kpi",
         "at": "start"
       },
       "gain": 0.45,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
       "anchor": {
         "trackId": "conclusion",
         "at": "start"
       },
       "gain": 0.35,
-      "type": "swoosh"
+      "type": "whoosh-fast"
     }
   ],
   "bgm": {

@@ -27,7 +27,7 @@
   必须写进 `color`，用 `rgba(r,g,b,a)` 形式（如 `color: 'rgba(150,190,235,0.3)'`）。写在
   `transform.opacity` 上会被契约静默忽略（不报错，但没效果）。
 - **真圆要算像素空间再换算**：`box.x / box.y` 是 0–100 的画布百分比，x 按宽、y 按高各自换算。
-  直接 `x:50+rcost` 当百分比用，在 1280×720 下会把正圆拉成扁椭圆。正解：
+  直接 `x:50+rcost` 当百分比用，在 16:9 画布上会把正圆拉成扁椭圆。正解：
   `x% = cx + r·cos(θ) / (W/100)`，`y% = cy + r·sin(θ) / (H/100)`（`motion-helpers.mjs` 的
   `trueCirclePoint` 就是这个）。同理正多边形、等距网格都要先算像素再除。
 - **转场必须落在重叠区**：`transition` 的 `startFrame` + `durationInFrames` 必须同时压住
@@ -68,7 +68,7 @@
 
 ## 2. 范式库（可直接改写的 manifest 片段）
 
-下面每个范式给「轨道形状 + 关键 `animate` 写法」。坐标按 `W=1280,H=720` 举例，换画幅按比例调。
+下面每个范式给「轨道形状 + 关键 `animate` 写法」。坐标按 `W=1920,H=1080` 举例（1080 档缺省），换画幅按比例调。
 
 ### 2.1 中心环绕 / 卫星（hub + revolving bodies）
 适用：太阳系、原子结构（核 + 电子）、齿轮系的中心轮、地月、任意「一个中心 + 多个绕转体」。
@@ -129,8 +129,8 @@
 { id:'body-0-trail-0', type:'shape', shape:'circle', color:'rgba(90,169,255,0.32)',
   box:{x:50,y:50,w:3.4,h:3.4}, startFrame:0, durationInFrames:360, fadeFrames:0,
   transform:{scale:0.92},
-  animate: orbitSegs({cx:50,cy:50,radiusPx:150,periodFrames:180,totalFrames:360,
-    phase: lagPhaseOffset(180,3), W:1280,H:720}) }
+  animate: orbitSegs({cx:50,cy:50,radiusPx:225,periodFrames:180,totalFrames:360,
+    phase: lagPhaseOffset(180,3), W:1920,H:1080}) }
 ```
 
 ### 2.7 量级对比（一瞬到位、各给不同 scale）

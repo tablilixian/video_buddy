@@ -145,5 +145,5 @@
 
 ### 默认 / 边界常量
 
-- `SIZES` = { '16:9': { width: 1280, height: 720 }, '9:16': { width: 720, height: 1280 }, '1:1': { width: 720, height: 720 }, }
+- `SIZES` = { '16:9': { width: 1920, height: 1080 }, '9:16': { width: 1080, height: 1920 }, '1:1': { width: 1080, height: 1080 }, }
 - `DEFAULT_THEME` = { background: '#0b1220', layer: '#111827', accent: '#38bdf8' }

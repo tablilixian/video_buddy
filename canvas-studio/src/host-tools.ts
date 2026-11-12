@@ -4534,7 +4534,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             + '跨项目/跨仓/`..` 逃逸一律 CS-USER-ERR 拒收且零副作用；给了它就不再回显完整 JSON（只给前 40 行核对）',
         },
         fps: { type: 'number' as const, description: '可选：24 / 25 / 30 / 60，缺省 30' },
-        aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1280×720 / 720×1280 / 720×720）' },
+        aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1920×1080 / 1080×1920 / 1080×1080 —— 1080 档，竖版与横版同面积）' },
         theme: {
           type: 'string' as const,
           enum: ['cold-tech', 'ink-press', 'warm-ember', 'neon-data'] as const,
@@ -4601,12 +4601,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (seconds > 1800) throwError('CS-USER-ERR', { message: 'durationSeconds 上限 1800 秒（30 分钟）；更长的片子请分段出片再拼' })
         const fps = a.fps === 24 || a.fps === 25 || a.fps === 30 || a.fps === 60 ? a.fps : 30
         const SIZES: Record<string, { width: number; height: number }> = {
-          '16:9': { width: 1280, height: 720 },
-          '9:16': { width: 720, height: 1280 },
-          '1:1': { width: 720, height: 720 },
+          '16:9': { width: 1920, height: 1080 },
+          '9:16': { width: 1080, height: 1920 },
+          '1:1': { width: 1080, height: 1080 },
         }
         const aspect = typeof a.aspect === 'string' && SIZES[a.aspect] !== undefined ? a.aspect : '16:9'
-        const size = SIZES[aspect] ?? { width: 1280, height: 720 }
+        const size = SIZES[aspect] ?? { width: 1920, height: 1080 }
         // 片型配方（2026-10-25）：先解析 recipe，再定主题 —— recipe 自带的推荐主题只作**缺省**
         // （显式传 theme 优先），这样「选配方」和「改配色」互不干扰。
         const recipe = a.recipe === undefined

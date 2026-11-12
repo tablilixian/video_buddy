@@ -32,8 +32,8 @@ async function scaffold(args) {
 test('B2-3：默认参数产出合法骨架，且 meta.durationInFrames === 最大结束帧', async () => {
   const { manifest } = await scaffold({ title: '测试片', durationSeconds: 10 })
   assert.equal(manifest.meta.fps, 30)
-  assert.equal(manifest.meta.width, 1280)
-  assert.equal(manifest.meta.height, 720)
+  assert.equal(manifest.meta.width, 1920)
+  assert.equal(manifest.meta.height, 1080)
   assert.equal(manifest.meta.durationInFrames, 300)
   const maxEnd = Math.max(...manifest.tracks.map((t) => t.startFrame + t.durationInFrames))
   assert.equal(manifest.meta.durationInFrames, maxEnd, '尾部完整性：总时长必须等于最大结束帧')
@@ -52,13 +52,14 @@ test('B2-3：exit 不超轨道时长（短片也不会生成非法退场）', as
 test('B2-3：fps / aspect 生效，非法值回落缺省', async () => {
   const v = await scaffold({ title: '竖屏', durationSeconds: 8, fps: 60, aspect: '9:16' })
   assert.equal(v.manifest.meta.fps, 60)
-  assert.equal(v.manifest.meta.width, 720)
-  assert.equal(v.manifest.meta.height, 1280)
+  assert.equal(v.manifest.meta.width, 1080)
+  assert.equal(v.manifest.meta.height, 1920)
   assert.equal(v.manifest.meta.durationInFrames, 480)
 
   const fallback = await scaffold({ title: '乱填', durationSeconds: 3, fps: 17, aspect: '4:3' })
   assert.equal(fallback.manifest.meta.fps, 30, '非法 fps 回落 30')
-  assert.equal(fallback.manifest.meta.width, 1280, '非法 aspect 回落 16:9')
+  assert.equal(fallback.manifest.meta.width, 1920, '非法 aspect 回落 16:9')
+  assert.equal(fallback.manifest.meta.height, 1080, '非法 aspect 回落 16:9')
 })
 
 test('B2-3：title 为空 / durationSeconds 非正数时拒收（不生成非法骨架）', async () => {

@@ -347,6 +347,11 @@ const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
 // 会被资产路由解析成 projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
 // 与 `src/audio-sfx/index.ts` 的 `SFX_URL_PREFIX` 必须字面一致。
 const ROUTE_REMOTION_SFX = '/canvas-studio/remotion/sfx'
+// CV-464：真素材音效库（`assets/audio/sfx/*.mp3`，CV-371 入库的 Mixkit Free License，
+// 免署名可商用，授权与 SHA-256 见该目录 ATTRIBUTION.md）。与 `remotion/sfx` 并存：
+// 前者是程序化合成的验收夹具（5 支，CV-460），后者是设计音效素材（12 支）。
+// 新产出（模板 / skill / 模型）一律指向这里。
+const ROUTE_REMOTION_FX = '/canvas-studio/remotion/fx'
 // ≥95% 对齐 S2：模板自带静态占位资产（剪影 SVG 等）的随包只读路由。
 // 与 sfx 同因挂在 `remotion/` 下：`/canvas-studio/assets/…` 会被资产路由解析成
 // projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
@@ -382,6 +387,8 @@ const REMOTION_FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..',
 const REMOTION_GRAIN_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'remotion', 'grain.png')
 /** 0A · CV-460：随包音效目录（`scripts/build-sfx.mjs` 产出，产物入库）。 */
 const REMOTION_SFX_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'sfx')
+/** CV-464：真素材音效目录（`assets/audio/sfx`，CV-371 入库，人工审批过的授权素材）。 */
+const REMOTION_FX_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'audio', 'sfx')
 /** ≥95% 对齐 S2：模板自带静态占位资产（`assets/templates/<family>/<id>/frames/*`，产物入库）。
  * 模板 manifest 的 `src` 引用形如 `/canvas-studio/remotion/templates/tech/kinetic-promo/frames/x.svg`
  * —— 人像端口与圆形 PIP 的**程序生成占位**（剪影 SVG，非真人肖像）；有路由才能在
@@ -3609,6 +3616,49 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'sfx not found' })
+      }
+    }}),
+
+    // ── CV-464：真素材音效（`assets/audio/sfx/*.mp3`）只读面 ──
+    // 与 sfx 同口径：loopback authority + GET-only + 单段文件名白名单
+    //（`^[a-z0-9-]+\.mp3$` 天然挡掉 `..`、子目录与扩展名伪装）+ join/startsWith 防穿越
+    // + 静态不可变强缓存。**不**放行清单文件：这 12 支是人工入库的固定集合，
+    // 清单元数据在契约文档与 ATTRIBUTION.md 里，不给渲染进程按需拉取。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_REMOTION_FX, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion fx only support GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort())}`)
+      let file = ''
+      try {
+        file = decodeURIComponent(requestUrl.pathname.slice(ROUTE_REMOTION_FX.length)).replace(/^\/+/, '')
+      } catch {
+        sendJson(res, 400, { error: 'malformed fx path' })
+        return
+      }
+      if (!/^[a-z0-9-]+\.mp3$/.test(file)) {
+        sendJson(res, 400, { error: 'fx path must be /<name>.mp3' })
+        return
+      }
+      const target = join(REMOTION_FX_DIR, file)
+      if (!target.startsWith(REMOTION_FX_DIR + sep)) {
+        sendJson(res, 403, { error: 'forbidden fx path' })
+        return
+      }
+      try {
+        const data = await readFile(target)
+        res.setHeader('content-type', ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'fx not found' })
       }
     }}),
 

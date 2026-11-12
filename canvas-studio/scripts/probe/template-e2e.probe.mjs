@@ -167,6 +167,19 @@ const server = createServer((req, res) => {
       }
       return
     }
+    // CV-464：真素材音效（`assets/audio/sfx/*.mp3`）。模板 audio.json 已全部改用这批，
+    // 探针 server 不 serve 它的话，渲染进程同源 fetch 会 404 ⇒ 成片静音而探针仍判绿。
+    if (req.method === 'GET' && url.pathname.startsWith('/canvas-studio/remotion/fx/')) {
+      const file = url.pathname.slice('/canvas-studio/remotion/fx/'.length)
+      try {
+        if (!/^[a-z0-9-]+\.mp3$/.test(file)) throw new Error('bad name')
+        res.writeHead(200, { 'content-type': 'audio/mpeg', 'cache-control': 'public, max-age=31536000, immutable' })
+        res.end(readFileSync(join(packageRoot, 'assets', 'audio', 'sfx', file)))
+      } catch {
+        json(404, { error: `probe: fx not found: ${file}` })
+      }
+      return
+    }
     // S2：模板自带静态占位资产（剪影 SVG）—— 与真实宿主 routes.ts 的
     // ROUTE_REMOTION_TEMPLATES 同口径（4 段路径 + 逐段白名单），探针 server 也要
     // serve 它，渲染进程才能同源 fetch 到占位图。

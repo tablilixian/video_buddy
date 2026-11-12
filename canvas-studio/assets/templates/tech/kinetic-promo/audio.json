@@ -1,94 +1,94 @@
 {
   "sfx": [
     {
-      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
       "anchor": {
         "trackId": "s1-brand",
         "at": "start"
       },
       "gain": 1.05,
-      "type": "swoosh"
+      "type": "whoosh-fast"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "s2-number",
         "at": "start"
       },
       "gain": 1.28,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "src": "/canvas-studio/remotion/fx/click-camera.mp3",
       "anchor": {
         "trackId": "s3-title",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "card"
+      "type": "click-camera"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/write.wav",
+      "src": "/canvas-studio/remotion/fx/sweep-scifi-fast.mp3",
       "anchor": {
         "trackId": "s4-data",
         "at": "start"
       },
       "gain": 1.05,
-      "type": "write"
+      "type": "sweep-scifi-fast"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/swipe.wav",
+      "src": "/canvas-studio/remotion/fx/transition-snap.mp3",
       "anchor": {
         "trackId": "s7-k1",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "swipe"
+      "type": "transition-snap"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "s11-name-0",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "s11-name-1",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "s11-name-2",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/thud.wav",
+      "src": "/canvas-studio/remotion/fx/bass-hit-short.mp3",
       "anchor": {
         "trackId": "s11-name-3",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "thud"
+      "type": "bass-hit-short"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
       "anchor": {
         "trackId": "s12-cta",
         "at": "start"
       },
       "gain": 1.17,
-      "type": "swoosh"
+      "type": "whoosh-fast"
     }
   ],
   "bgm": {

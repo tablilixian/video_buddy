@@ -77,7 +77,7 @@ export interface CompositionManifest {
 
 export interface ManifestMeta {
   title: string
-  /** 输出像素（与 `sizeForAspectRatio` 对齐，16:9 默认 1280×720 或 1920×1088）。 */
+  /** 输出像素（1080 档：16:9 用 1920×1080、9:16 用 1080×1920；渲染尺寸 = 本值 × 质量档 scale）。 */
   width: number
   height: number
   fps: number

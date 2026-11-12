@@ -1,40 +1,40 @@
 {
   "sfx": [
     {
-      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "src": "/canvas-studio/remotion/fx/click-camera.mp3",
       "anchor": {
         "trackId": "feature1",
         "at": "start"
       },
       "gain": 0.45,
-      "type": "card"
+      "type": "click-camera"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "src": "/canvas-studio/remotion/fx/click-camera.mp3",
       "anchor": {
         "trackId": "feature2",
         "at": "start"
       },
       "gain": 0.45,
-      "type": "card"
+      "type": "click-camera"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/card.wav",
+      "src": "/canvas-studio/remotion/fx/click-camera.mp3",
       "anchor": {
         "trackId": "feature3",
         "at": "start"
       },
       "gain": 0.45,
-      "type": "card"
+      "type": "click-camera"
     },
     {
-      "src": "/canvas-studio/remotion/sfx/swoosh.wav",
+      "src": "/canvas-studio/remotion/fx/whoosh-fast.mp3",
       "anchor": {
         "trackId": "cta",
         "at": "start"
       },
       "gain": 0.4,
-      "type": "swoosh"
+      "type": "whoosh-fast"
     }
   ],
   "bgm": {

@@ -195,7 +195,14 @@ test('0B-1 / 0B-4：bullets ⇒ 48px / 6 行；容器宽 min(900, 90%)、文字�
   // 480p 画布（864）：旧实现容器写死 900 ⇒ 直接溢出画面。
   const small = planTextFit({ variant: 'bullets', text: ['第一条'], canvasWidth: 864, canvasHeight: 480 })
   assert.ok(small.containerWidthPx < 864, `480p 下容器宽必须收进画布，实际 ${small.containerWidthPx}`)
-  assert.equal(Math.round(small.containerWidthPx), Math.round(Math.max(300, 864 * 0.9)))
+  // 容器上限与圆点占位都是「按 1080 高设计」的 px 常量 ⇒ 480 高画布上随字号一起缩到 0.44×，
+  // 否则 21px 的字会排进 778px 的容器（约 33 字/行），与设计意图不符。
+  const scale480 = 480 / 1080
+  assert.equal(
+    Math.round(small.containerWidthPx),
+    Math.round(Math.min(900 * scale480, Math.max(300 * scale480, 864 * 0.9))),
+  )
+  assert.equal(Math.round(small.maxWidthPx), Math.round(small.containerWidthPx - 42 * scale480))
 })
 
 test('0B-1：dataCard 不缩字号（字号由 dataCardMetrics 的缩放系数决定）', () => {

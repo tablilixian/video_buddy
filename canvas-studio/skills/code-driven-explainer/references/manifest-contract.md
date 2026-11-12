@@ -60,8 +60,8 @@ list_templates({ requirements: { contentChars, itemCount, assetCount, durationSe
   "id": "cmp-0001",              // 唯一 id（便于血缘与重试）
   "meta": {
     "title": "全球老龄化速览",
-    "width": 1280,               // 与画幅对齐：16:9 用 1280×720 或 1920×1088
-    "height": 720,
+    "width": 1920,               // 与画幅对齐：16:9 用 1920×1080、9:16 用 1080×1920
+    "height": 1080,
     "fps": 30,
     "durationInFrames": 900,     // 总帧数 = max(track.startFrame + track.durationInFrames)
     "backgroundColor": "#0B1020"
@@ -692,17 +692,27 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
 - `fadeInSec` 可用；`fadeOutSec` **只在显式给了 `durationInFrames` 时生效**（渲染器不知道素材真实时长）。
 - `pan` 仅对**本仓合成库**产出的素材生效；指向外部素材会被忽略并发 warning。
 - 上限 **64 条**，超了整份拒收。
-- **可用素材只有下面 5 个**（`assets/sfx/`，仓内合成、有路由）：**不要**引 `assets/audio/sfx/` 那 12 个 mp3（**没有路由服务**，引用即「缺素材」硬失败）。
+- **可用素材只有下面 12 个**（`assets/audio/sfx/`，Mixkit Free License，路由前缀 `/canvas-studio/remotion/fx/`）。旧的 `/canvas-studio/remotion/sfx/*.wav` 五支仍可播（历史数据兼容），但**新产出只用这 12 支**。
+- ⚠️ `src` 必须写完整文件名（含 `.mp3`）。路由只认 `^[a-z0-9-]+\.mp3$`，多一层目录或换扩展名都会 400 硬失败。
 
 | URL（`src`） | 时长 | 什么时候响 |
 |---|---|---|
-| `/canvas-studio/remotion/sfx/thud.wav` | 0.15s | 句子落地 / 元素砸下 |
-| `/canvas-studio/remotion/sfx/card.wav` | 0.30s | 卡片依次弹出 |
-| `/canvas-studio/remotion/sfx/swoosh.wav` | 0.30s | 元素飞出 / 场景切换 |
-| `/canvas-studio/remotion/sfx/swipe.wav` | 0.25s | 收尾 / 翻页 |
-| `/canvas-studio/remotion/sfx/write.wav` | 1.20s | 长句书写氛围（跨多帧，**别叠用**） |
+| `/canvas-studio/remotion/fx/click-camera.mp3` | 0.39s | 卡片弹出 / 轻点状 UI（**最短**，点状场景首选） |
+| `/canvas-studio/remotion/fx/transition-snap.mp3` | 0.60s | 收尾 / 翻页 / 定版 |
+| `/canvas-studio/remotion/fx/camera-shutter-hard.mp3` | 0.68s | 硬切点 / 描线落定 |
+| `/canvas-studio/remotion/fx/sweep-fast-small.mp3` | 0.81s | 长卷急刹 / 快速扫过 |
+| `/canvas-studio/remotion/fx/glitch-electric-small.mp3` | 1.07s | 扫描标注 / 识别命中 / 故障感 |
+| `/canvas-studio/remotion/fx/bass-hit-short.mp3` | 1.15s | 句子落地 / 数字跳出 / 结论重拍 |
+| `/canvas-studio/remotion/fx/impact-zoom-quick.mp3` | 1.25s | 元素砸落 / 快速推近 |
+| `/canvas-studio/remotion/fx/sweep-scifi-fast.mp3` | 1.25s | 数据飞线 / 弧线生长 / 字句浮现 |
+| `/canvas-studio/remotion/fx/whoosh-fast.mp3` | 1.80s | 通用转场 / 元素飞出 |
+| `/canvas-studio/remotion/fx/shimmer-sparkle-sweep.mp3` | 3.03s | 高光扫过 / 强调 / 加冕 |
+| `/canvas-studio/remotion/fx/impact-deep-whoosh.mp3` | 4.10s | 段首 / 大标题进场（长尾） |
+| `/canvas-studio/remotion/fx/camera-autofocus.mp3` | 9.64s | 槽位轮换 / 换词咔哒（**太长，非连续对焦场景别用**） |
 
-> 唯一清单元数据（峰值 / 字节 / recipe）：`assets/sfx/manifest.json`。混音总量别再叠加 —— 5 条以上 `gain` 合计建议 ≤ 2，否则旁白会被压。
+> ⚠️ **sfx 条目一旦触发就整条播完，无法裁剪**（契约里没有 `durationInFrames`）。素材时长 = 实际占用时长，排布时按上表避让；表格按定时长升序，点状场景优先用前几行。
+> 这 12 支都是外部素材 ⇒ **`pan` 一律被忽略并发 warning**，别写。
+> 混音总量：`gain` 合计建议 ≤ 2，否则旁白会被压。授权与 SHA-256 见 `assets/audio/sfx/ATTRIBUTION.md`。
 
 ### 编排体检回执（lint）
 
@@ -771,6 +781,8 @@ BaseTrack 的 `transform` / `animate` / `exit` / `reveal` 照常可用（作用�
 
 1. **渲染只缩字号，不截断**：从基准号（`title` 84 / `bullets` 48 / `subtitle` 44 或按盒高算）以
    0.94 递减，最低到 **0.55×基准**；再放不下就是「溢出」。
+   **基准号是按 1080 高画布的设计值**，实际字号 = 基准号 × (画布高 ÷ 1080)：16:9 的
+   1920×1080 恰好是 84，竖版 1080×1920 是 149。所以竖版能塞的字比横版少，别照抄横版字数。
 2. **溢出会被那一层的 `overflow:hidden` 静默裁掉** —— 所以 0B 起有两条出口：
    - **校验期**（`validateManifest`，Node 无 canvas，只能按字符宽估算）：出 **warning**，
      **不拒收**（估算没资格拦一份能渲的 manifest；也是为了让校验期就能早发现）；

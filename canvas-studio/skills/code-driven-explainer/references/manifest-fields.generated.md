@@ -18,7 +18,7 @@
 ## ManifestMeta
 
 - `title`: string
-- `width`: number — 输出像素（与 `sizeForAspectRatio` 对齐，16:9 默认 1280×720 或 1920×1088）。
+- `width`: number — 输出像素（1080 档：16:9 用 1920×1080、9:16 用 1080×1920；渲染尺寸 = 本值 × 质量档 scale）。
 - `height`: number
 - `fps`: number
 - `durationInFrames`: number — 总时长（帧）；= max(track.endFrame)。

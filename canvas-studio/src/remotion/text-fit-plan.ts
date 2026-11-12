@@ -32,6 +32,7 @@ import { DATA_CARD_PADDING_X, dataCardDesignHeight, dataCardMetrics } from './da
 import type { TextCardTrack } from './manifest.js'
 import { SUBTITLE_LINE_HEIGHT, subtitleFitBudget } from './subtitle-fit.js'
 import { fitTextPolicy, type TextMeasurer } from './timing.js'
+import { DESIGN_CANVAS_HEIGHT, DESIGN_CANVAS_WIDTH, scaleDesignPx } from './type-scale.js'
 
 /**
  * 文本轨的排版形态。前四个 = `TextCardTrack.variant`；`caption` 是词级字幕轨
@@ -39,7 +40,7 @@ import { fitTextPolicy, type TextMeasurer } from './timing.js'
  */
 export type TextFitVariant = TextCardTrack['variant'] | 'caption'
 
-/** `title` 基准字号（px）—— 与 `TextCard.tsx` 的 title 分支一致。 */
+/** `title` 基准字号（**设计 px，1080 高画布上**）—— 实际字号经 `canvasTextScale` 换算。 */
 export const TITLE_BASE_FONT_PX = 84
 /** `title` 行数上限。 */
 export const TITLE_MAX_LINES = 2
@@ -48,7 +49,7 @@ export const TITLE_LINE_HEIGHT = 1.15
 /** `title` 带 box 时的最小可用宽（px，极窄盒不至于算出 0 宽）。 */
 export const TITLE_MIN_WIDTH_PX = 120
 
-/** `bullets` 基准字号（px）。 */
+/** `bullets` 基准字号（**设计 px，1080 高画布上**）。 */
 export const BULLETS_BASE_FONT_PX = 48
 /** `bullets` 行数上限。 */
 export const BULLETS_MAX_LINES = 6
@@ -62,7 +63,7 @@ export const DATA_CARD_TITLE_FONT_PX = 40
 /** `dataCard` 标题行高（设计 px，与 `DATA_CARD_TITLE_LINE_HEIGHT` 同值）。 */
 export const DATA_CARD_TITLE_LINE_HEIGHT = 50
 
-/** `timecode`（≥95% 对齐 S1-B）基准字号（px）—— HUD 时间码一行，不缩号。 */
+/** `timecode`（≥95% 对齐 S1-B）基准字号（**设计 px，1080 高画布上**）—— HUD 时间码一行，不缩号。 */
 export const TIMECODE_BASE_FONT_PX = 36
 
 /** `caption` 软行数上限：超过不裁字，但会顶到画面下沿（只提示，不做硬判）。 */
@@ -166,8 +167,19 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
   const { variant, canvasWidth, canvasHeight, box } = input
   const positive = (value: number, fallback: number): number =>
     Number.isFinite(value) && value > 0 ? value : fallback
-  const canvasW = positive(canvasWidth, 1920)
-  const canvasH = positive(canvasHeight, 1080)
+  const canvasW = positive(canvasWidth, DESIGN_CANVAS_WIDTH)
+  const canvasH = positive(canvasHeight, DESIGN_CANVAS_HEIGHT)
+  /**
+   * 基准号 → 当前画布的实际字号（口径见 `type-scale.ts`）。
+   *
+   * 只作用于 `title` / `bullets` / `timecode` 这三个**绝对 px** 的 variant。
+   * 另外三个变体各有自己的相对口径，不能再乘一次，否则会双缩放：
+   * - `subtitle` —— 横向文本，真正的约束是宽度（`maxWidthPx` 已按 `canvasW` 算），
+   *   按画布高放大会让整行占满画面；
+   * - `caption` —— 已经是 `canvasH × 0.11` 的比例口径；
+   * - `dataCard` —— 由容器宽驱动（`dataCardMetrics` 的 `scale`），本身会随画布收放。
+   */
+  const fontPxOf = (designPx: number): number => scaleDesignPx(designPx, canvasH)
 
   if (variant === 'subtitle') {
     // 预算口径在 `subtitle-fit.ts`（带 box 按盒子算，不带 box 走老参数）。
@@ -195,7 +207,7 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       : Math.max(240, canvasW * 0.9)
     return {
       maxWidthPx,
-      baseFontPx: TITLE_BASE_FONT_PX,
+      baseFontPx: fontPxOf(TITLE_BASE_FONT_PX),
       maxLines: TITLE_MAX_LINES,
       lineHeight: TITLE_LINE_HEIGHT,
       containerWidthPx: maxWidthPx,
@@ -206,10 +218,15 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
   if (variant === 'bullets') {
     // 0B-4 缺陷修复：旧实现容器宽写死 900（480p 画布 864 时直接溢出画面），
     // 且折行按 900 算、**没扣 42px 圆点**（18 点 + 24 右距）⇒ 估算比实际宽 5%。
-    const containerWidthPx = Math.min(BULLETS_CONTAINER_MAX_PX, Math.max(300, canvasW * 0.9))
+    // 容器上限与圆点占位都跟字号一起缩放（都是同一套「按 1080 高设计」的 px 常量）；
+    // 外层 `min(..., canvasW × 0.9)` 仍是画布硬约束，不会因为放大而溢出画面。
+    const containerWidthPx = Math.min(
+      fontPxOf(BULLETS_CONTAINER_MAX_PX),
+      Math.max(fontPxOf(300), canvasW * 0.9),
+    )
     return {
-      maxWidthPx: Math.max(80, containerWidthPx - BULLET_DOT_ALLOWANCE_PX),
-      baseFontPx: BULLETS_BASE_FONT_PX,
+      maxWidthPx: Math.max(80, containerWidthPx - fontPxOf(BULLET_DOT_ALLOWANCE_PX)),
+      baseFontPx: fontPxOf(BULLETS_BASE_FONT_PX),
       maxLines: BULLETS_MAX_LINES,
       lineHeight: 1.35,
       containerWidthPx,
@@ -223,7 +240,7 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
     const maxWidthPx = Math.max(240, canvasW * 0.5)
     return {
       maxWidthPx,
-      baseFontPx: TIMECODE_BASE_FONT_PX,
+      baseFontPx: fontPxOf(TIMECODE_BASE_FONT_PX),
       maxLines: declaredLineCount(input.text),
       lineHeight: 1.2,
       containerWidthPx: maxWidthPx,

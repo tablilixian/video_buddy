@@ -89,8 +89,23 @@ export function materializeManifestSources(
 
   // S1-B：容器子轨与顶层轨同权 —— 漏了它，group 里的素材没被物化，asset-check 的
   // fail-closed 会把整条渲染拒掉（「非同源资产 URL，未经物化」）。
+  // REQ-038 RQ-22：聚合原语的素材在**数组字段**里（logoWall.logos / assetGrid.assets）
+  // —— 漏物化 = 真机渲染整墙 404（自查 review 抓到，修法与 src 同一 toUrl 通路）。
   const tracks = mapTracksDeep(manifest.tracks, (track) => {
-    if (track.type !== 'video' && track.type !== 'image') return track
+    if (track.type !== 'video' && track.type !== 'image' && track.type !== 'logoWall' && track.type !== 'assetGrid') return track
+    if (track.type === 'logoWall' || track.type === 'assetGrid') {
+      const field = track.type === 'logoWall' ? 'logos' : 'assets'
+      const list = (track as unknown as Record<string, unknown>)[field]
+      if (!Array.isArray(list)) return track
+      let changed = false
+      const next = list.map((ref, index) => {
+        if (typeof ref !== 'string') return ref
+        const url = toUrl(ref, `tracks[${track.id}].${field}[${index}]`)
+        if (url !== ref) changed = true
+        return url
+      })
+      return changed ? ({ ...track, [field]: next } as typeof track) : track
+    }
     const url = toUrl(track.src, `tracks[${track.id}].src`)
     return url === track.src ? track : { ...track, src: url }
   })
@@ -102,6 +117,15 @@ export function materializeManifestSources(
         if (typeof next.bgmUrl === 'string') next.bgmUrl = toUrl(next.bgmUrl, 'audio.bgmUrl')
         if (typeof next.voiceOverUrl === 'string') next.voiceOverUrl = toUrl(next.voiceOverUrl, 'audio.voiceOverUrl')
         // O-10：多轨旁白逐条物化（少物化一条 = 那一句在渲染进程里 404，成片静音）。
+        // REQ-038 批 4 同款：sfx[].src 也是「同源 URL 或本地绝对路径」约束（0A 既有缺口，
+        // 自查 review 补上 —— 漏物化的音效在渲染进程 404，成片少一声响且无人报错）。
+        if (Array.isArray(next.sfx)) {
+          next.sfx = next.sfx.map((item, index) => {
+            if (typeof item.src !== 'string') return item
+            const url = toUrl(item.src, `audio.sfx[${index}].src`)
+            return url === item.src ? item : { ...item, src: url }
+          })
+        }
         if (Array.isArray(next.voiceOver)) {
           next.voiceOver = next.voiceOver.map((clip, index) => {
             if (typeof clip.src !== 'string') return clip

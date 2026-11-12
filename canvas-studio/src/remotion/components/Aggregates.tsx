@@ -200,9 +200,11 @@ export const ChipRow: React.FC<{ track: ChipRowTrack }> = ({ track }) => {
           display: 'flex',
           flexDirection: isColumn ? 'column' : 'row',
           alignItems: 'center',
-          justifyContent: isColumn ? 'center' : 'flex-start',
-          ...(isColumn ? {} : { paddingLeft: offsets[0] ?? 0 }),
-          ...(isColumn ? { paddingTop: offsets[0] ?? 0 } : {}),
+          // 起点 = flowLayout 的居中起点（row 用 paddingLeft / column 用 paddingTop），
+          // 主轴一律 flex-start —— column 用 justifyContent:'center' 会与 paddingTop
+          // 双重居中（自查 review 修）。
+          justifyContent: 'flex-start',
+          ...(isColumn ? { paddingTop: offsets[0] ?? 0 } : { paddingLeft: offsets[0] ?? 0 }),
         }}
       >
         {track.chips.map((chip, index) => {
@@ -303,7 +305,7 @@ export const CodePanel: React.FC<{ track: CodePanelTrack }> = ({ track }) => {
 
 export const Ticker: React.FC<{ track: TickerTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
-  const { height } = useVideoConfig()
+  const { width: canvasW, height } = useVideoConfig()
   const local = trackLocalFrame({ startFrame: track.startFrame }, frame)
   const s = (designPx: number): number => scaleDesignPx(designPx, height)
   const fontPx = s(track.fontPx ?? 28)
@@ -317,9 +319,13 @@ export const Ticker: React.FC<{ track: TickerTrack }> = ({ track }) => {
   const loopW = estimateTextWidthPx(loopText, fontPx) + gap
   // 循环取模（速度 × 帧号，纯帧函数；right 方向反向）。
   const offset = loopW > 0 ? (local * speed) % loopW : 0
+  // shift ∈ [-loopW, 0)：可见区从 -shift 起最长「容器宽 + loopW」
+  // ⇒ 轮数按容器宽动态 = ceil(viewport / loopW) + 2（自查 review 修：固定三轮
+  // 在「短内容 × 宽容器」时会露底）。
+  const boxW = ((track.box?.w ?? 80) / 100) * canvasW
+  const roundCount = loopW > 0 ? Math.max(3, Math.ceil(boxW / loopW) + 2) : 1
   const shift = track.direction === 'right' ? offset - loopW : -offset
-  // 三轮拼接保证覆盖任意容器宽。
-  const rounds = [loopText, loopText, loopText]
+  const rounds = Array.from({ length: roundCount }, () => loopText)
   return (
     <AggShell track={track}>
       <div

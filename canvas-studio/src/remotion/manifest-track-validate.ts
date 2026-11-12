@@ -512,7 +512,9 @@ function exitCanRescueOpacity(track: Record<string, unknown>): boolean {
 // ─────────────── ≥95% 对齐 S1-B（2026-11-11）· `group` 3D 容器 ───────────────
 
 /** 子轨类型白名单（transition / caption / audioViz / 嵌套 group 不收 —— 理由见 GroupTrack 注释）。 */
-export const GROUP_CHILD_TYPES = new Set<string>(['video', 'image', 'textCard', 'shape', 'chart', 'callout'])
+// REQ-038 RQ-22：聚合原语同样可进容器（深遍历/物化/asset-check 已同权处理）。
+export const GROUP_CHILD_TYPES = new Set<string>(['video', 'image', 'textCard', 'shape', 'chart', 'callout',
+  'logoWall', 'assetGrid', 'chipRow', 'codePanel', 'ticker'])
 /** 子轨条数上限（62 卡墙 + 余量；防一份 manifest 塞几百条把容器渲染压垮）。 */
 export const GROUP_MAX_CHILDREN = 96
 /**

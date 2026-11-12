@@ -181,6 +181,23 @@ export async function checkManifestAssets(
   const videoSources = new Map<string, string>()
   // S1-B：容器子轨与顶层轨同权（漏子轨 = 容器里的素材缺盘没人拦，渲染期才炸）。
   for (const track of flattenTracksDeep(manifest.tracks)) {
+    // REQ-038 RQ-22：聚合原语的素材在数组字段 —— 与 src 同一 fail-closed 口径
+    //（缺盘不拦 = 渲染期整墙 404；自查 review 抓到的第二个面）。
+    if (track.type === 'logoWall' || track.type === 'assetGrid') {
+      const field = track.type === 'logoWall' ? 'logos' : 'assets'
+      const list = (track as unknown as Record<string, unknown>)[field]
+      if (!Array.isArray(list)) continue
+      for (const [index, ref] of list.entries()) {
+        if (typeof ref !== 'string') continue
+        if (!ref.startsWith(ASSET_URL_PREFIX)) {
+          missing.push(`${track.id}.${field}[${index}] → ${ref}（非同源资产 URL，未经物化）`)
+          continue
+        }
+        const local = urlToAssetPath(assetsDir, ref)
+        if (!existsSync(local)) missing.push(`${track.id}.${field}[${index}] → ${ref}`)
+      }
+      continue
+    }
     if (track.type !== 'video' && track.type !== 'image') continue
     const src = track.src
     // 物化层（`materializeManifestSources`）已把**本项目资产目录内**的本地绝对路径转成同源

@@ -182,11 +182,10 @@ function vignettePng(strength) {
     return [0, 0, 0, Math.round(Math.max(0, Math.min(1, a)) * 255)]
   })
   // 自检：径向中心窗口（44%±10%）必须近透明 —— 38% 内全透明的口径（写反即红）。
+  // 行剖面峰值在底边中点（≈0.48×strength，椭圆中心 44% 高）；只查下限不查窗口。
   return checkedPng(encodePng(W, H, data), `vignette-${strength}`, {
     lowWindow: { from: 0.34, to: 0.54, maxAlpha: 12 },
-    peakMinAlpha: Math.round(strength * 255 * 0.9),
-    peakFrom: 0,
-    peakTo: 0.15,
+    peakMinAlpha: Math.round(strength * 255 * 0.4),
   })
 }
 

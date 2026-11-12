@@ -210,8 +210,10 @@ export const FILE_WHITELIST = {
   // REQ-038 批 3（同日）：RQ-02 letterSpacing/letterSpacingEm 字段+校验、RQ-09 vignette
   // shape/strength 字段+校验（+65，2702 → 2767）；批 4：RQ-08 sfx.startFrom 字段+注释+
   // 校验（+16，2767 → 2783）；批 5：RQ-22 五种聚合原语的 union/TRACK_TYPES/re-export/
-  // 校验 case 接线（类型与校验主体在 manifest-aggregates.ts 外提件，+33，2783 → 2816）。
-  'src/remotion/manifest.ts': 2816,
+  // 校验 case 接线（类型与校验主体在 manifest-aggregates.ts 外提件，+33，2783 → 2816）；
+  // 批 6：RQ-23 CameraKey/CameraMotion 类型与 ImageClipTrack.camera 注释 + 校验接线
+  //（插值主体在 camera-motion.ts 外提件，+43，2816 → 2859）。
+  'src/remotion/manifest.ts': 2859,
   // 批四（2026-11-02）：Q2 时序闸接线 —— commitRenderJob 内 verifyTeardown 调用 +
   // timingSegments 字段三处（options/job/report）+43，1193 → 1236 显式登记。
   // 回核算法在 teardown-verify.ts / timing-segments.ts，这里只是薄接线。

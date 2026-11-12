@@ -49,6 +49,7 @@ import {
   validateVisualStateFields,
 } from './manifest-track-validate.js'
 import { validateReveal } from './reveal.js'
+import { validateCameraMotion } from './camera-motion.js'
 import { lintZOrder } from './manifest-lint.js'
 import { flattenTracksDeep } from './group-children.js'
 import { textCardCapacityWarnings, type TextFitVariant } from './text-fit-plan.js'
@@ -472,6 +473,36 @@ export interface VideoClipTrack extends BaseTrack {
   loop?: boolean
 }
 
+/**
+ * RQ-23（REQ-038）：**多关键帧相机**的单个关键帧（2D 轻量版，零新依赖 —— 不引入
+ * `three` / `@remotion/three`，守「零打包 +0MB」路线）。
+ *
+ * `frame` 是**轨内本地帧**；x/y 是设计 px（1080 基准，`scaleDesignPx` 换算）；
+ * `zoom` 缩放、`rotZ` 平面旋转、`rotX`/`rotY` 借 CSS `perspective()` 做伪 3D 俯仰/
+ * 偏航（覆盖 80% 推镜需求；真 3D 不在本条范围，需求正本 §3 RQ-23 明确）。
+ * 每个字段可缺省 —— 缺省即取静态缺省（x/y=0、zoom=1、rot=0、persp=800）。
+ */
+export interface CameraKey {
+  /** 轨内本地帧（≥0；keys 按 frame 严格递增）。 */
+  frame: number
+  x?: number
+  y?: number
+  zoom?: number
+  rotX?: number
+  rotY?: number
+  rotZ?: number
+  /** 透视距离（px，CSS `perspective()`；缺省 800）。 */
+  persp?: number
+}
+
+/** RQ-23：多关键帧相机运动 —— 段内按 `easing` 插值，相邻 key 之间线性插值字段。 */
+export interface CameraMotion {
+  /** 关键帧序列（1–64，frame 严格递增；≥3 帧才有「平滑多段」意义）。 */
+  keys: CameraKey[]
+  /** 插值缓动（沿用 `AnimateEasing` 白名单；缺省 easeInOut —— 老 animate 同缺省）。 */
+  easing?: AnimateEasing
+}
+
 export interface ImageClipTrack extends BaseTrack {
   type: 'image'
   src: string
@@ -495,6 +526,13 @@ export interface ImageClipTrack extends BaseTrack {
    * 缺省（老 manifest）＝垫底，逐帧不变。
    */
   hasAlpha?: boolean
+  /**
+   * RQ-23（REQ-038）：多关键帧相机（2D 轻量版）。声明即接管媒体层的位移/缩放/
+   * 旋转（叠加在 `animate` 的整轨变换之上、`kenburns` 的 extraScale 之外）；
+   * 插值与缺省由 `camera-motion.ts` 纯函数承担（同 manifest 全域禁随机源）。
+   * 缺省不写 = 无相机层（老 manifest 逐像素不变，DOM 结构也不多一层）。
+   */
+  camera?: CameraMotion
   caption?: string
 }
 
@@ -1141,7 +1179,8 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   video: new Set(['src', 'kenBurns', 'trimBeforeFrames', 'playbackRate', 'muted', 'volume', 'loop', 'clip']),
   // P-02：sourceRect（CV-392 精灵图子区域裁切）/ hasAlpha（复刻批）实现真实读取
   // （sprite.ts / ImageClip.tsx），此前漏登记 ⇒ 每次使用都被告警「不会生效」。
-  image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip']),
+  // REQ-038 批 6：camera（RQ-23 多关键帧相机）实现真实读取（camera-motion.ts / ImageClip.tsx）。
+  image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip', 'camera']),
   // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
   // RQ-02（REQ-038 批 3）：letterSpacing / letterSpacingEm —— 度量与渲染同源。
   textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource']),
@@ -1883,6 +1922,10 @@ export function validateManifest(
         }
         if (type === 'image' && track.sourceRect !== undefined) {
           validateSpriteRect(track.sourceRect, at, errors)
+        }
+        // RQ-23（REQ-038）：多关键帧相机 —— keys 形状 / 取值域 / frame 严格递增。
+        if (type === 'image' && track.camera !== undefined) {
+          validateCameraMotion(track.camera, at, errors)
         }
         // 三期 W3-1：裁剪 / 速率 / 静音 / 音量 / 循环（只对 video 有意义）。
         if (type === 'video') {

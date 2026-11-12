@@ -12,9 +12,12 @@ import { useState } from 'react'
 import type React from 'react'
 import { AbsoluteFill, Img, continueRender, delayRender, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
+import { cameraStateAt, cameraTransformStyle } from '../camera-motion.js'
 import { boxStyle } from '../shape-geometry.js'
 import type { ImageClipTrack } from '../manifest.js'
 import { spriteRegionStyle } from '../sprite.js'
+import { trackLocalFrame } from '../timing.js'
+import { scaleDesignPx } from '../type-scale.js'
 import { useFontFamilyStack } from './font-context.js'
 
 export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
@@ -24,6 +27,14 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   const duration = Math.max(1, track.durationInFrames)
   const fit = track.fit ?? 'cover'
   const kenBurns = fit === 'kenburns' ? 1 + 0.08 * (frame / duration) : 1
+  // RQ-23（REQ-038）：多关键帧相机 —— 声明即接管媒体层的位移/缩放/旋转。
+  // 插值纯函数（camera-motion.ts）；x/y 是设计 px，按画布高换算成渲染 px。
+  // 缺省不写 = 无相机层（DOM 不多一层，老 manifest 逐像素不变）。
+  const camState = track.camera === undefined ? null : cameraStateAt(track.camera, trackLocalFrame(track, frame))
+  const cameraStyle: React.CSSProperties = camState === null ? {} : (() => {
+    const state = { ...camState, x: scaleDesignPx(camState.x, canvasH), y: scaleDesignPx(camState.y, canvasH) }
+    return { transform: cameraTransformStyle(state), transformOrigin: 'center' }
+  })()
   // CV-334：KenBurns 作为 `extraScale` 与动画 scale **相乘** —— "缓推 + 入场缩放"能叠加。
   // 缺省参数下 `layerTransform` 是恒等串，与 CV-334 之前的 `scale(kenBurns)` 等价。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
@@ -59,6 +70,31 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   // 真出画；挂**媒体层**（而不是外层容器）⇒ caption 渐变不受裁切。缺省不写 ⇒ 无此样式，
   // 老 manifest 逐帧不变。
   if (track.clip === 'circle') layerStyle.clipPath = 'circle(50% at 50% 50%)'
+  const media = sourceRect === undefined ? (
+    <Img
+      src={track.src}
+      style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}
+    />
+  ) : (
+    <Img
+      src={track.src}
+      onLoad={(e) => settleWith(e.currentTarget)}
+      onError={() => settleWith(null)}
+      style={
+        natural === null
+          ? { position: 'absolute', visibility: 'hidden', width: '100%', height: '100%' }
+          : {
+              position: 'absolute',
+              objectFit: 'fill',
+              ...spriteRegionStyle(sourceRect, natural, {
+                mode: fit === 'contain' ? 'contain' : 'cover',
+                layerW,
+                layerH,
+              }),
+            }
+      }
+    />
+  )
   return (
     <AbsoluteFill
       style={{
@@ -70,31 +106,10 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
       }}
     >
       <AbsoluteFill style={layerStyle}>
-        {sourceRect === undefined ? (
-          <Img
-            src={track.src}
-            style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}
-          />
-        ) : (
-          <Img
-            src={track.src}
-            onLoad={(e) => settleWith(e.currentTarget)}
-            onError={() => settleWith(null)}
-            style={
-              natural === null
-                ? { position: 'absolute', visibility: 'hidden', width: '100%', height: '100%' }
-                : {
-                    position: 'absolute',
-                    objectFit: 'fill',
-                    ...spriteRegionStyle(sourceRect, natural, {
-                      mode: fit === 'contain' ? 'contain' : 'cover',
-                      layerW,
-                      layerH,
-                    }),
-                  }
-            }
-          />
-        )}
+        {/* RQ-23：相机层仅在声明 `camera` 时存在（老 manifest 的 DOM 少一层）。
+            作用在媒体 wrapper 上 ⇒ 与整轨 animate（layerStyle 层）和 kenburns
+            （extraScale 进 anim）正交叠加。 */}
+        {camState === null ? media : <AbsoluteFill style={cameraStyle}>{media}</AbsoluteFill>}
       </AbsoluteFill>
       {track.caption !== undefined && track.caption.length > 0 ? (
         <AbsoluteFill

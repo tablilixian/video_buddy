@@ -164,6 +164,24 @@
 - `volume`?: number — 三期 W3-1：音量（0–1）。缺省 1。
 - `loop`?: boolean — 三期 W3-1：轨道时长超过素材时循环播放。缺省 false。
 
+## CameraKey
+> RQ-23（REQ-038）：**多关键帧相机**的单个关键帧（2D 轻量版，零新依赖 —— 不引入
+
+- `frame`: number — 轨内本地帧（≥0；keys 按 frame 严格递增）。
+- `x`?: number
+- `y`?: number
+- `zoom`?: number
+- `rotX`?: number
+- `rotY`?: number
+- `rotZ`?: number
+- `persp`?: number — 透视距离（px，CSS `perspective()`；缺省 800）。
+
+## CameraMotion
+> RQ-23：多关键帧相机运动 —— 段内按 `easing` 插值，相邻 key 之间线性插值字段。
+
+- `keys`: CameraKey[] — 关键帧序列（1–64，frame 严格递增；≥3 帧才有「平滑多段」意义）。
+- `easing`?: AnimateEasing — 插值缓动（沿用 `AnimateEasing` 白名单；缺省 easeInOut —— 老 animate 同缺省）。
+
 ## ImageClipTrack (extends BaseTrack)
 
 - `type`: 'image'
@@ -172,6 +190,7 @@
 - `clip`?: TrackClip — ≥95% 对齐 S1-B：裁切形态（缺省不写 = 不裁，老 manifest 逐帧不变）。
 - `sourceRect`?: SpriteRect — CV-392（REQ-036 R-2）：精灵图子区域裁切 —— 百分比 `{x,y,w,h}`（0–100，与 box
 - `hasAlpha`?: boolean — 素材含 alpha 通道（宿主在渲染前探测 PNG colorType 4/6 / WebP alpha 位后写入，
+- `camera`?: CameraMotion — RQ-23（REQ-038）：多关键帧相机（2D 轻量版）。声明即接管媒体层的位移/缩放/
 - `caption`?: string
 
 ## TextAnimPreset

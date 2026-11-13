@@ -22,9 +22,38 @@
  * （命名冲突 / 体积 / 幂等 / 清理），需单独决策，不在本批范围。
  */
 
-import { basename, resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { ASSET_URL_PREFIX, type CompositionManifest } from './manifest.js'
 import { mapTracksDeep } from './group-children.js'
+
+/**
+ * 随包只读资产路由前缀（宿主直服、渲染进程同源 fetch 必可达）。
+ *
+ * 与 `src/routes.ts` 的 `ROUTE_REMOTION_*` 常量**字面一致**（那边的注册与本清单必须同步改）：
+ * - `fx/`：真素材音效库（CV-464，`assets/audio/sfx/*.mp3`）—— **10 个整片模板的
+ *   `audio.json` 全部引用它**；
+ * - `sfx/`：程序化合成音效（CV-460 验收夹具）；
+ * - `templates/`：模板自带静态占位资产（剪影 SVG 等）；
+ * - `fonts/`：随包中文字体子集（REQ-034 R1）；
+ * - `grain`：颗粒 tile 单文件路由（三期 W2-4）。
+ *
+ * ⚠️ 2026-11-13 真机教训（用例 1）：本清单缺位时，`/canvas-studio/remotion/fx/…`
+ * 以 `/` 开头会被误判成本地绝对路径 → 不在资产目录下 → **rejected**，模板音效 100%
+ * 被拒收。白名单恰好兜住乱写：不在清单里的 `remotion/*` 路径（含 pending/commit 等
+ * API 端点）仍走绝对路径判定被拒收。
+ */
+export const BUNDLED_ASSET_URL_PREFIXES: readonly string[] = [
+  '/canvas-studio/remotion/fx/',
+  '/canvas-studio/remotion/sfx/',
+  '/canvas-studio/remotion/templates/',
+  '/canvas-studio/remotion/fonts/',
+  '/canvas-studio/remotion/grain',
+]
+
+/** 引用是否指向宿主随包只读路由（渲染进程同源 fetch 必可达，无需物化、无需盘上核对）。 */
+export function isBundledAssetUrl(ref: string): boolean {
+  return BUNDLED_ASSET_URL_PREFIXES.some((prefix) => ref.startsWith(prefix))
+}
 
 /** 物化结论。 */
 export interface MaterializeResult {
@@ -38,9 +67,9 @@ export interface MaterializeResult {
   rejected: string[]
 }
 
-/** 已是同源资产 URL（宿主与渲染进程都能解析）。 */
+/** 已是渲染进程可直接 fetch 的 URL：项目资产 URL（宿主与渲染进程都能解析）或随包只读路由。 */
 function isSameOrigin(ref: string): boolean {
-  return ref.startsWith(ASSET_URL_PREFIX)
+  return ref.startsWith(ASSET_URL_PREFIX) || isBundledAssetUrl(ref)
 }
 
 /** 本地绝对路径形态（与 `isAllowedManifestAssetRef` 同口径：排除协议相对 `//host`）。 */
@@ -72,7 +101,7 @@ export function materializeManifestSources(
   const rejected: string[] = []
   let remapped = 0
 
-  /** 单条引用 → 可渲染 URL：同源原样；域内路径转 URL；域外记拒收（原值返回）。 */
+  /** 单条引用 → 可渲染 URL：可渲染 URL 原样；域内根层路径转 URL；域内子目录 / 域外记拒收（原值返回）。 */
   const toUrl = (ref: string, label: string): string => {
     if (isSameOrigin(ref)) return ref
     if (!isAbsolutePath(ref)) return ref
@@ -80,8 +109,19 @@ export function materializeManifestSources(
     // 只接受**资产目录之下**的路径（前缀比较必须带 `sep`：`<root>-evil` 是同前缀兄弟
     // 目录、不是子路径）。目录自身（`abs === root`）不是素材文件，一并拒收。
     if (abs.startsWith(root + sep)) {
+      // 2026-11-13 真机教训（用例 1 / Bug C）：资产路由只服务 `<assetsDir>/<file>`
+      // **根层单层**文件（`routes.ts` 资产路由把 URL 段数限死为 2）。此前对子目录内
+      // 文件用 `basename` 扁平化重映射 —— URL 指向根下同名文件 ⇒ 必然 404，且 404
+      // 只发生在渲染进程（音频提取 delayRender 28s 超时 CS-RENDER-002，宿主无感）。
+      // 改为显式拒收 + 可执行提示，把静默失败换成一次明确的失败。
+      const rel = relative(root, abs)
+      if (rel.includes(sep)) {
+        rejected.push(`${label} → ${ref}（位于资产目录子目录内 —— 资产路由只服务根层文件，`
+          + '物化成根层 URL 必然 404；请把文件放到资产目录根层，或先经画布资产上传通道登记后引用同源 URL）')
+        return ref
+      }
       remapped += 1
-      return `${ASSET_URL_PREFIX}${projectId}/${basename(abs)}`
+      return `${ASSET_URL_PREFIX}${projectId}/${rel}`
     }
     rejected.push(`${label} → ${ref}`)
     return ref

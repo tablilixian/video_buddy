@@ -22,6 +22,7 @@ import { urlToAssetPath } from '../compose.js'
 import { probeMediaInfo } from '../ffmpeg-run.js'
 import { ASSET_URL_PREFIX, type CompositionManifest } from './manifest.js'
 import { flattenTracksDeep } from './group-children.js'
+import { isBundledAssetUrl } from './materialize.js'
 
 /**
  * 素材核对结论。
@@ -162,6 +163,25 @@ async function runWithConcurrency<T, R>(
 }
 
 /**
+ * 核对一条**已物化**的素材引用（同源 URL / 随包只读路由）。缺失或不合规记入 `missing`。
+ *
+ * 口径（与轨 src 的 fail-closed 完全一致）：
+ * - 随包只读路由（`/canvas-studio/remotion/fx|sfx|templates|fonts|grain`）→ 宿主直服，
+ *   必可用，跳过盘上核对（2026-11-13 真机教训：模板 audio.json 全部走 fx 路由，
+ *   不放行会把 10 个模板的音效全判成缺失）；
+ * - 非同源资产 URL → 上游漏物化，fail-closed；
+ * - 同源资产 URL → `existsSync` 盘上核对。
+ */
+function checkSingleAssetRef(label: string, ref: string, assetsDir: string, missing: string[]): void {
+  if (isBundledAssetUrl(ref)) return
+  if (!ref.startsWith(ASSET_URL_PREFIX)) {
+    missing.push(`${label} → ${ref}（非同源资产 URL，未经物化）`)
+    return
+  }
+  if (!existsSync(urlToAssetPath(assetsDir, ref))) missing.push(`${label} → ${ref}`)
+}
+
+/**
  * 核对 Manifest 引用的素材（只核对、不拷贝，devdoc §8.2）。
  *
  * @param manifest - 待渲染的 `CompositionManifest`。
@@ -189,12 +209,7 @@ export async function checkManifestAssets(
       if (!Array.isArray(list)) continue
       for (const [index, ref] of list.entries()) {
         if (typeof ref !== 'string') continue
-        if (!ref.startsWith(ASSET_URL_PREFIX)) {
-          missing.push(`${track.id}.${field}[${index}] → ${ref}（非同源资产 URL，未经物化）`)
-          continue
-        }
-        const local = urlToAssetPath(assetsDir, ref)
-        if (!existsSync(local)) missing.push(`${track.id}.${field}[${index}] → ${ref}`)
+        checkSingleAssetRef(`${track.id}.${field}[${index}]`, ref, assetsDir, missing)
       }
       continue
     }
@@ -204,7 +219,11 @@ export async function checkManifestAssets(
     // URL ⇒ 此处理论上只剩同源 URL。非前缀值按**上游漏物化**处理并记缺失（fail-closed）：
     // 跳过它会重新引入「放行但不核对」的静默 404。
     if (!src.startsWith(ASSET_URL_PREFIX)) {
-      missing.push(`${track.id} → ${src}（非同源资产 URL，未经物化）`)
+      if (!isBundledAssetUrl(src)) {
+        missing.push(`${track.id} → ${src}（非同源资产 URL，未经物化）`)
+        continue
+      }
+      // 随包只读路由：宿主直服，必可用（见 checkSingleAssetRef 注释）。
       continue
     }
     const local = urlToAssetPath(assetsDir, src)
@@ -215,6 +234,30 @@ export async function checkManifestAssets(
     if (track.type === 'video' && !videoSources.has(src)) videoSources.set(src, local)
     // alpha 探测只读文件头（≤33 字节），不做缓存 —— 与 ffprobe 的毫秒级开销不在一个量级。
     if (track.type === 'image' && alphaSources[src] === undefined) alphaSources[src] = detectImageAlpha(local)
+  }
+
+  // 2026-11-13 真机教训（用例 1 / Bug C②）：音频引用此前**完全不在核对范围** ——
+  // 物化产出的 URL 在盘上 404（子目录扁平化）时，宿主照常放行，渲染进程音频提取
+  // delayRender 挂满 28s 才报 CS-RENDER-002 且无上下文。这里把四类音频引用纳入
+  // 同一 fail-closed 口径，把渲染进程的静默 404 换成宿主侧一条带定位的硬失败。
+  const audio = manifest.audio
+  if (audio !== undefined) {
+    if (typeof audio.bgmUrl === 'string') checkSingleAssetRef('audio.bgmUrl', audio.bgmUrl, assetsDir, missing)
+    if (typeof audio.voiceOverUrl === 'string') checkSingleAssetRef('audio.voiceOverUrl', audio.voiceOverUrl, assetsDir, missing)
+    if (Array.isArray(audio.sfx)) {
+      for (const [index, item] of audio.sfx.entries()) {
+        if (item !== null && typeof item === 'object' && typeof item.src === 'string') {
+          checkSingleAssetRef(`audio.sfx[${index}].src`, item.src, assetsDir, missing)
+        }
+      }
+    }
+    if (Array.isArray(audio.voiceOver)) {
+      for (const [index, clip] of audio.voiceOver.entries()) {
+        if (clip !== null && typeof clip === 'object' && typeof clip.src === 'string') {
+          checkSingleAssetRef(`audio.voiceOver[${index}].src`, clip.src, assetsDir, missing)
+        }
+      }
+    }
   }
 
   const cache = readProbeCache(assetsDir)

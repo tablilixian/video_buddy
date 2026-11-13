@@ -16,7 +16,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSET_URL_PREFIX } from '../lib/remotion/manifest.js'
-import { materializeManifestSources } from '../lib/remotion/materialize.js'
+import { materializeManifestSources, isBundledAssetUrl, BUNDLED_ASSET_URL_PREFIXES } from '../lib/remotion/materialize.js'
 import { checkManifestAssets } from '../lib/remotion/asset-check.js'
 
 const PROJECT = 'p1'
@@ -135,6 +135,41 @@ test('物化：资产目录**自身**（非文件）⇒ rejected —— 只有�
   })
 })
 
+// ---------------------------------------------- 随包只读路由（2026-11-13 用例 1 / Bug B）
+
+test('物化：随包 remotion/* 路由 URL ⇒ 原样放行（不拒收、不 remap、零改动）', () => {
+  for (const prefix of BUNDLED_ASSET_URL_PREFIXES) {
+    const ref = `${prefix}switch-tap.mp3`
+    const m = manifest({ audio: { sfx: [{ src: ref, gain: 0.9 }] } })
+    const r = materializeManifestSources(m, '/tmp/whatever/p1', PROJECT)
+    assert.deepEqual(r.rejected, [], `${prefix} 必须放行（模板 audio.json 全部引用 fx 路由）`)
+    assert.equal(r.remapped, 0)
+    assert.equal(r.manifest.audio.sfx[0].src, ref, '原值返回，不做任何改写')
+  }
+})
+
+test('isBundledAssetUrl：白名单命中 / 乱写 remotion 子路径不命中（API 端点仍被拒收）', () => {
+  assert.equal(isBundledAssetUrl('/canvas-studio/remotion/fx/switch-tap.mp3'), true)
+  assert.equal(isBundledAssetUrl('/canvas-studio/remotion/grain'), true)
+  assert.equal(isBundledAssetUrl('/canvas-studio/remotion/pending'), false, 'pending/commit 是 API 端点，不在白名单')
+  assert.equal(isBundledAssetUrl('/canvas-studio/assets/p1/x.mp4'), false, '项目资产 URL 不归本函数管')
+})
+
+// ---------------------------------------------- 子目录拒收（2026-11-13 用例 1 / Bug C）
+
+test('物化：资产目录**子目录**内的绝对路径 ⇒ rejected（basename 扁平化会得到 404 URL）', async () => {
+  await withAssetsDir(async ({ assetsDir }) => {
+    await mkdir(join(assetsDir, 'sfx'), { recursive: true })
+    const m = manifest({ audio: { sfx: [{ src: join(assetsDir, 'sfx', 'switch-tap.mp3'), gain: 0.9 }] } })
+    const r = materializeManifestSources(m, assetsDir, PROJECT)
+    assert.equal(r.rejected.length, 1, '子目录路径必须显式拒收，不得扁平化重映射')
+    assert.match(r.rejected[0], /audio\.sfx\[0\]\.src/)
+    assert.match(r.rejected[0], /子目录/, '拒收文案必须给出可执行原因')
+    assert.equal(r.remapped, 0)
+    assert.equal(r.manifest.audio.sfx[0].src, join(assetsDir, 'sfx', 'switch-tap.mp3'), '原值返回')
+  })
+})
+
 // ---------------------------------------------------------------- 核对（Z-8 硬失败）
 
 test('核对：素材不存在的同源 URL ⇒ 记入 missing（调用方据此硬失败）', async () => {
@@ -163,5 +198,56 @@ test('核对：**未经物化的非同源值也记 missing**（fail-closed，不
     const r = await checkManifestAssets(m, assetsDir)
     assert.equal(r.missing.length, 2, '域外路径 + 不存在的 still.png')
     assert.match(r.missing[0], /未经物化/)
+  })
+})
+
+// ---------------------------------------------- 音频引用核对（2026-11-13 用例 1 / Bug C②）
+
+test('核对：随包 remotion/fx 音效 URL ⇒ 不判缺失（模板音效是宿主直服的）', async () => {
+  await withAssetsDir(async ({ assetsDir }) => {
+    // tracks 工厂默认引用的两轨先落盘，隔离变量：missing 只可能来自 audio.sfx。
+    await writeFile(join(assetsDir, 'clip.mp4'), Buffer.from([0, 0, 0, 0]))
+    await writeFile(join(assetsDir, 'still.png'), Buffer.from([0, 0, 0, 0]))
+    const m = manifest({
+      audio: { sfx: [{ src: '/canvas-studio/remotion/fx/switch-tap.mp3', gain: 0.9 }] },
+    })
+    const r = await checkManifestAssets(m, assetsDir)
+    assert.deepEqual(r.missing, [], 'fx 随包路由必可用，不得 fail-closed')
+  })
+})
+
+test('核对：同源音频 URL 缺盘 ⇒ 记 missing（把渲染进程的静默 404 换成宿主显式失败）', async () => {
+  await withAssetsDir(async ({ assetsDir }) => {
+    await writeFile(join(assetsDir, 'clip.mp4'), Buffer.from([0, 0, 0, 0]))
+    await writeFile(join(assetsDir, 'still.png'), Buffer.from([0, 0, 0, 0]))
+    const m = manifest({
+      audio: {
+        bgmUrl: `${ASSET_URL_PREFIX}${PROJECT}/bgm.mp3`,
+        sfx: [{ src: `${ASSET_URL_PREFIX}${PROJECT}/switch-tap.mp3`, gain: 0.9 }],
+        voiceOver: [{ src: `${ASSET_URL_PREFIX}${PROJECT}/vo.mp3`, startFrame: 0 }],
+      },
+    })
+    const r = await checkManifestAssets(m, assetsDir)
+    assert.equal(r.missing.length, 3, 'tracks 两轨已写文件；bgm + sfx + voiceOver 三条音频全缺盘')
+    assert.match(r.missing.join('\n'), /audio\.bgmUrl/)
+    assert.match(r.missing.join('\n'), /audio\.sfx\[0\]\.src/)
+    assert.match(r.missing.join('\n'), /audio\.voiceOver\[0\]\.src/)
+  })
+})
+
+test('核对：同源音频 URL 盘上存在 ⇒ missing 为空', async () => {
+  await withAssetsDir(async ({ assetsDir }) => {
+    await writeFile(join(assetsDir, 'clip.mp4'), Buffer.from([0, 0, 0, 0]))
+    await writeFile(join(assetsDir, 'still.png'), Buffer.from([0, 0, 0, 0]))
+    await writeFile(join(assetsDir, 'bgm.mp3'), Buffer.from([0, 0, 0, 0]))
+    await writeFile(join(assetsDir, 'switch-tap.mp3'), Buffer.from([0, 0, 0, 0]))
+    const m = manifest({
+      audio: {
+        bgmUrl: `${ASSET_URL_PREFIX}${PROJECT}/bgm.mp3`,
+        sfx: [{ src: `${ASSET_URL_PREFIX}${PROJECT}/switch-tap.mp3`, gain: 0.9 }],
+      },
+    })
+    const r = await checkManifestAssets(m, assetsDir)
+    assert.deepEqual(r.missing, [])
   })
 })

@@ -13,6 +13,9 @@
  * 零依赖（纯类型 + 纯函数）⇒ 不会与 `host-tools.ts` 形成循环 import。
  */
 import type { TextFitReportEntry } from './remotion/text-fit-audit.js'
+// 纯类型 import（零运行时依赖不变）：RQ-19 的配方密度报告形状在 remotion/render-report.ts，
+// 这里只引用类型保证「工具回执形状」与「宿主产出」同源。
+import type { RecipeDensityReport } from './remotion/render-report.js'
 
 /** `compose_video` 返回结构里的 `report` 子对象（由 `formatRenderReport` 消费）。 */
 export interface ComposeRenderReport {
@@ -48,6 +51,16 @@ export interface ComposeRenderReport {
    * 缺省 = 老客户端没上报 ⇒ **不能当成「查过且没问题」**（自检行会显式说「未实测」）。
    */
   textFit?: TextFitReportEntry[]
+  /**
+   * RQ-19：配方密度（宿主由 manifest 确定性推导，不信任客户端上报）。
+   *
+   * ⚠️ 2026-11-13 真机教训（用例 1）：本字段当初只加在了 `RenderJobReport`（remotion 侧）
+   * 与 output schema 之外的 TS 类型层，**output schema 漏声明** ⇒ `additionalProperties:false`
+   * 把整个回执拒掉 —— 8 次成功渲染 8 次回执全丢（CV-146 同款教训第三次复发）。
+   * 现在 host-tools 的 `RenderReportSchemaCoverage` 编译期守卫已下沉到 report 层，
+   * 本类型再加字段而 schema 不跟上会直接 `tsc` 失败。
+   */
+  recipeDensity?: RecipeDensityReport
 }
 
 /**

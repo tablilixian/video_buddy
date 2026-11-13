@@ -248,6 +248,29 @@ const resultSchema = {
           },
           description: '文字容量体检（渲前在浏览器里按真实字形实测，逐条文字轨一条）。文字放不下时这里给实测值，warnings 给可执行建议（改短到 N 字 / 加大 box）。**overflow=true 的轨道必须处理或如实告知用户「这段字会被裁」**',
         },
+        // RQ-19：配方密度（宿主由 manifest 确定性推导）。2026-11-13 真机教训（用例 1）：
+        // 当初只加在 `RenderJobReport`（remotion 侧），本 schema 漏声明 ⇒
+        // `additionalProperties:false` 把整个回执拒掉 —— 8 次成功渲染 8 次回执全丢，
+        // agent 只能 ls/ffprobe/读 canvas.json 自证（CV-146 同款教训第三次复发）。
+        recipeDensity: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            tracksPerSec: { type: 'number' as const, description: '轨/秒（tracks ÷ 成片秒数）——配方密度的主指标' },
+            bytesPerTrack: { type: 'number' as const, description: '每轨字节（manifest 序列化体积 ÷ 轨数）' },
+            textTracks: { type: 'integer' as const, description: '文字轨条数（textCard + caption）' },
+            tracksByType: {
+              type: 'object' as const,
+              // dsh-tools 的 schema 类型里 additionalProperties 只收 boolean：
+              // true = 开放对象（键 = 轨型、值 = 条数）。`as const` 必须 ——
+              // 不写会被拓宽成 boolean，编译期推断落进 Record<string, never> 分支。
+              additionalProperties: true as const,
+              description: '各轨型条数（键 = 轨型，值 = 条数；聚合原语 logoWall 等按展开前口径计）',
+            },
+            recipeCoverage: { type: 'number' as const, description: '配方覆盖率：meta.generatedBy 以 recipe:/spec:/template: 开头 = 1，手写 = 0' },
+          },
+          description: '配方密度报告（RQ-19）：判断这条片的编排密度与来源（模板/配方/手写）。宿主推导，勿自行复算',
+        },
       },
       description: '渲染报告：耗时 / 码率 / 字节 / 抽帧数 / 编排体检计数 / 文字容量体检。用于判断「这条片花了多久、质量档是否生效、有没有字被裁」',
     },
@@ -423,6 +446,15 @@ type MustBeNever<T extends never> = T
  */
 export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResultSchema, MusicResult>>
 export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSchema, ComposeToolResult>>
+/**
+ * CV-146 守卫**下沉到 report 层**（2026-11-13 真机教训）：顶层守卫只查 `keyof ComposeToolResult`，
+ * report 的嵌套字段漏声明它看不见 —— RQ-19 的 `recipeDensity` 就这样漏过编译期、
+ * 只在真机上以「8 次成功渲染 8 次回执全丢」的形式炸出来。本类型把
+ * `ComposeRenderReport` 的全部字段钉死在 `resultSchema.properties.report.properties` 上，
+ * 以后 report 加字段而 schema 不跟上 ⇒ `tsc` 在本行失败，错误信息里就是漏掉的字段名。
+ */
+type RenderReportSchemaProps = typeof resultSchema.properties.report.properties
+export type RenderReportSchemaCoverage = MustBeNever<Exclude<keyof ComposeRenderReport, keyof RenderReportSchemaProps>>
 /** CV-157 同款守卫：`look_card` 结果字段必须全部出现在 schema 里。 */
 export type LookCardSchemaCoverage = MustBeNever<MissingInSchema<typeof lookCardSchema, LookCardResult>>
 /** BUG-002 同款守卫：`cut_audio` 结果字段必须全部出现在 schema 里。 */

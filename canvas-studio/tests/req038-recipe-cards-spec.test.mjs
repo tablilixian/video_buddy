@@ -13,7 +13,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { RECIPES, planRecipe } from '../lib/remotion/recipes.js'
-import { registeredCardIds, lookupCardId, registerCard, getCard } from '../lib/remotion/recipe-cards.js'
+import { registeredCardIds, lookupCardId, registerCard, getCard } from '../lib/remotion/recipe-cards-all.js'
 import { validateContentSpec, specAssetNeeds, planFromSpec } from '../lib/remotion/content-spec.js'
 
 const PRODUCT = RECIPES['product-walkthrough']

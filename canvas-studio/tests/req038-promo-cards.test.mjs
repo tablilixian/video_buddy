@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { registeredCardIds, getCard, lookupCardId } from '../lib/remotion/recipe-cards.js'
+import { registeredCardIds, getCard, lookupCardId } from '../lib/remotion/recipe-cards-all.js'
 import { RECIPES, planRecipe } from '../lib/remotion/recipes.js'
 import { validateContentSpec, planFromSpec } from '../lib/remotion/content-spec.js'
 

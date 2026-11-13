@@ -22,7 +22,7 @@
  * - 确定性：一切数值来源 spec 本身（禁时钟/随机），同 spec ⇒ 同 manifest。
  */
 import type { CardAssetDecl } from './recipe-cards.js'
-import { getCard, lookupCardId } from './recipe-cards.js'
+import { getCard, lookupCardId } from './recipe-cards-all.js'
 import type { RecipePlan } from './recipes.js'
 import { planRecipe } from './recipes.js'
 import type { Recipe, RecipeSegment } from './recipes.js'

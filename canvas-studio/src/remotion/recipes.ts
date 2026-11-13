@@ -21,7 +21,7 @@
  *   （`status:"pending"` 会阻断落地，见 `validateForSeed`）。
  */
 import type { StoryboardAssetSource } from '../contracts/storyboard.js'
-import { getCard, lookupCardId } from './recipe-cards.js'
+import { getCard, lookupCardId } from './recipe-cards-all.js'
 
 export interface RecipeAssetNeed {
   /** 素材名（写进 §07 的 `name`）。 */

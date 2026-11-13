@@ -80,8 +80,10 @@ export function registerCard(card: CardDefinition): void {
   // 注册期防呆走 CS-DEV-ERR（开发者错误：模块加载期就炸，不进用户视线）——
   // 静态守卫要求 src/ 零裸 throw，全部收进 error-system。
   const devFail = (detail: string): never => throwError('CS-DEV-ERR', { detail: `registerCard: ${detail}` })
-  if (!/^[A-Z]\d+$/.test(card.id)) {
-    devFail(`卡编号必须是「字母+数字」形态（如 A2），收到 "${card.id}"`)
+  // 2026-11-13 SSR 消化批:放宽为 1–3 个大写字母 + 序号(如 A2 / P1 / CAM1 / TYP05)
+  // —— 类目前缀隔离上游 10 类目与既有 A/P 卡,不撞号。
+  if (!/^[A-Z]{1,3}\d+$/.test(card.id)) {
+    devFail(`卡编号必须是「1–3 位大写字母 + 数字」形态（如 A2 / CAM1），收到 "${card.id}"`)
   }
   if (REGISTRY.has(card.id)) {
     devFail(`卡 ${card.id} 已注册（${REGISTRY.get(card.id)?.title}），不允许静默覆盖`)
@@ -114,7 +116,7 @@ export function getCard(id: string): CardDefinition | undefined {
  */
 export function lookupCardId(card: string): string | null {
   const first = card.trim().split(/[\s:：]/)[0] ?? ''
-  return /^[A-Z]\d+$/.test(first) && REGISTRY.has(first) ? first : null
+  return /^[A-Z]{1,3}\d+$/.test(first) && REGISTRY.has(first) ? first : null
 }
 
 /** 已注册卡编号（确定性顺序，测试与文档用）。 */

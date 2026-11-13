@@ -26,6 +26,34 @@ import { getCard, lookupCardId } from './recipe-cards-all.js'
 import type { RecipePlan } from './recipes.js'
 import { planRecipe } from './recipes.js'
 import type { Recipe, RecipeSegment } from './recipes.js'
+import type { CellRect } from './cell-projection.js'
+import { projectBoxToCell } from './cell-projection.js'
+
+/** 一屏内的一个单元（RQ-25）：主视觉 + 文案 + 自己的格位。 */
+export interface SpecUnit {
+  /** 卡编号或卡名（'A2' / 'A2 标题逐字'）；未注册即回落占位。 */
+  card: string
+  /** 该单元的主文案（卡生成器的 copy 槽位）。 */
+  copy: string
+  label?: string
+  /** 该单元独占的格位；缺省 = 该屏的 `sections[].cell`，再缺省 = 全屏。 */
+  cell?: CellRect
+  assetSlots?: Record<string, string>
+  accentColor?: string
+}
+
+/** 跨屏常驻层（RQ-26）：一条非全屏底板，从 fromSection 首帧铺到 toSection 末帧。 */
+export interface SpecCarry {
+  id: string
+  box: CellRect
+  color: string
+  /** 圆角（px）；缺省 0。 */
+  radius?: number
+  /** 覆盖起点屏 id；缺省 = 第一屏。 */
+  fromSection?: string
+  /** 覆盖终点屏 id；缺省 = 最后一屏。 */
+  toSection?: string
+}
 
 /** 内容规格（schema 正本；字段语义见各注释）。 */
 export interface ContentSpec {
@@ -38,7 +66,7 @@ export interface ContentSpec {
     /** 总时长（秒；与 sections 的时长/权重共同定帧）。 */
     durationSec?: number
   }
-  /** 段序列（每段 = 一张卡 + 内容槽位）。 */
+  /** 段序列（每段 = 一屏；一屏可含 1–4 个单元）。 */
   sections: Array<{
     id: string
     /** 卡编号或卡名（'A2' / 'A2 标题逐字'）；缺省 = 占位段（回落路径）。 */
@@ -55,11 +83,23 @@ export interface ContentSpec {
     assetSlots?: Record<string, string>
     /** 强调色覆盖（缺省统一 #4f9cf9）。 */
     accentColor?: string
+    /**
+     * 该屏的缺省格位（RQ-25）。给了 `units` 而未逐个给 `cell` 时，所有单元共享它；
+     * 两者都缺省 = 全屏（与今天行为逐字段一致）。
+     */
+    cell?: CellRect
+    /**
+     * 一屏多单元（RQ-25）：1–4 个，共享该屏的时间窗、各占自己的格位。
+     * **与 `card` 互斥**（同给即校验失败）。
+     */
+    units?: SpecUnit[]
   }>
   /** 字幕表（可选；词级字幕请走 caption 轨，本表只做占位校对）。 */
   captions?: Array<{ text: string; startSec?: number; endSec?: number }>
   /** 音效钉帧表（可选；由 VO 能量谷推导的工具另行落）。 */
   sfx?: Array<{ name: string; startSec?: number; gain?: number }>
+  /** 跨屏常驻层（RQ-26）：真机 45s 版为 0 块，手写 60s 版 9 块，差的就是这个字段。 */
+  carry?: SpecCarry[]
 }
 
 /** 素材需求清单条目（RQ-21 分流的数据面；比 CardAssetDecl 多 slot 上下文）。 */
@@ -78,6 +118,31 @@ export interface ContentSpecValidation {
 const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** 格位校验（RQ-25）：中心点百分比，宽高为正；`fontScale` 缺省由短边推导。 */
+function checkCell(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at} 必须是对象（{ x, y, w, h } 百分比中心点，与 box 同口径）`)
+    return
+  }
+  for (const key of ['x', 'y', 'w', 'h'] as const) {
+    const n = value[key]
+    if (typeof n !== 'number' || !Number.isFinite(n)) {
+      errors.push(`${at}.${key} 必须是数值`)
+      continue
+    }
+    if (key === 'w' || key === 'h') {
+      if (n <= 0 || n > 100) errors.push(`${at}.${key} 必须在 (0, 100] 内（当前 ${String(n)}）`)
+    } else if (n < 0 || n > 100) {
+      errors.push(`${at}.${key} 必须在 [0, 100] 内（当前 ${String(n)}）`)
+    }
+  }
+  if (value.fontScale !== undefined) {
+    // 保留字段但不承诺生效：textCard 白名单没有 fontSize，字号由 planTextFit 按 box 推。
+    // 仍然校验形态，避免将来接线时留一个没人验过的字段。
+    errors.push(`${at}.fontScale 暂不生效 —— textCard 的字号由 planTextFit 按 box 宽度推，请改用格位宽度控制字号`)
+  }
+}
 
 /** spec → 校验结论（只报 schema 事实：必填 / 取值域 / 卡可解析性；不猜意图）。 */
 export function validateContentSpec(spec: unknown): ContentSpecValidation {
@@ -118,6 +183,32 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
       if (section.card !== undefined && isNonEmptyString(section.card) && lookupCardId(section.card) === null) {
         warnings.push(`${at}.card "${section.card}" 未注册 —— 该段将走占位回落（RQ-10 回落路径）`)
       }
+      // RQ-25：格位与多单元。两者都是可选字段，缺省即旧行为（这是回归纪律）。
+      if (section.card !== undefined && section.units !== undefined) {
+        errors.push(`${at} 的 card 与 units 互斥 —— 单单元写 card，多单元写 units（两个都给会让「谁是主视觉」无解）`)
+      }
+      if (section.cell !== undefined) checkCell(section.cell, `${at}.cell`, errors)
+      if (section.units !== undefined) {
+        if (!Array.isArray(section.units) || section.units.length === 0) {
+          errors.push(`${at}.units 必须是非空数组（不分区就别写这个字段）`)
+        } else if (section.units.length > 4) {
+          errors.push(`${at}.units 最多 4 个单元（当前 ${String(section.units.length)}）—— 一屏塞 5 个东西谁也不读`)
+        } else {
+          section.units.forEach((unit, unitIndex) => {
+            const unitAt = `${at}.units[${String(unitIndex)}]`
+            if (!isRecord(unit)) {
+              errors.push(`${unitAt} 必须是对象`)
+              return
+            }
+            if (!isNonEmptyString(unit.card)) errors.push(`${unitAt}.card 必须是非空字符串`)
+            else if (lookupCardId(unit.card) === null) {
+              warnings.push(`${unitAt}.card "${unit.card}" 未注册 —— 该单元将走占位回落`)
+            }
+            if (!isNonEmptyString(unit.copy)) errors.push(`${unitAt}.copy 必须是非空字符串`)
+            if (unit.cell !== undefined) checkCell(unit.cell, `${unitAt}.cell`, errors)
+          })
+        }
+      }
       const slots = section.assetSlots
       if (slots !== undefined) {
         if (!isRecord(slots)) errors.push(`${at}.assetSlots 必须是对象（slot → URL）`)
@@ -150,6 +241,42 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
         }
         if (isRecord(event) && event.startSec !== undefined && (typeof event.startSec !== 'number' || event.startSec < 0)) {
           errors.push(`spec.sfx[${index}].startSec 必须是 ≥0 的数值（秒）`)
+        }
+      })
+    }
+  }
+  // RQ-26：跨屏常驻层。fromSection / toSection 指向不存在的屏必须报错 ——
+  // 静默丢一条常驻层就是「又变回 0 块底板」，而这个错误在成片里看不出来。
+  const carry = spec.carry
+  if (carry !== undefined) {
+    if (!Array.isArray(carry)) errors.push('spec.carry 必须是数组')
+    else {
+      const order = new Map<string, number>()
+      if (Array.isArray(sections)) {
+        sections.forEach((section, index) => {
+          if (isRecord(section) && isNonEmptyString(section.id) && !order.has(section.id)) order.set(section.id, index)
+        })
+      }
+      carry.forEach((item, index) => {
+        const at = `spec.carry[${index}]`
+        if (!isRecord(item)) {
+          errors.push(`${at} 必须是对象`)
+          return
+        }
+        if (!isNonEmptyString(item.id)) errors.push(`${at}.id 必须是非空字符串`)
+        if (!isNonEmptyString(item.color)) errors.push(`${at}.color 必须是非空字符串`)
+        if (item.box === undefined) errors.push(`${at}.box 必填（常驻层的形状与位置）`)
+        else checkCell(item.box, `${at}.box`, errors)
+        for (const key of ['fromSection', 'toSection'] as const) {
+          const id = item[key]
+          if (id === undefined) continue
+          if (!isNonEmptyString(id)) errors.push(`${at}.${key} 必须是非空字符串`)
+          else if (!order.has(id)) errors.push(`${at}.${key} 指向不存在的屏 "${id}"`)
+        }
+        const from = isNonEmptyString(item.fromSection) ? order.get(item.fromSection) : 0
+        const to = isNonEmptyString(item.toSection) ? order.get(item.toSection) : (order.size === 0 ? 0 : order.size - 1)
+        if (from !== undefined && to !== undefined && from > to) {
+          errors.push(`${at} 的 fromSection 在 toSection 之后 —— 常驻层的时间窗是空的`)
         }
       })
     }
@@ -202,6 +329,77 @@ function toRecipe(spec: ContentSpec): Recipe {
   }
 }
 
+/** 一屏的单元列表（RQ-25）：`units` 优先，否则把 `card` 当唯一单元（旧行为）。 */
+function resolveUnits(section: ContentSpec['sections'][number]): SpecUnit[] {
+  if (Array.isArray(section.units) && section.units.length > 0) return section.units
+  return [{
+    card: section.card ?? '',
+    copy: section.copy,
+    ...(section.label === undefined ? {} : { label: section.label }),
+    ...(section.assetSlots === undefined ? {} : { assetSlots: section.assetSlots }),
+    ...(section.accentColor === undefined ? {} : { accentColor: section.accentColor }),
+  }]
+}
+
+/**
+ * 把一组单元轨投影进格位（RQ-25）。
+ *
+ * - 几何：`projectBoxToCell` 仿射映射（卡内部仍是 100%×100% 坐标系，卡不用改）；
+ * - 字号：**不在这里动** —— `textCard` 白名单没有 `fontSize`，字由 `planTextFit`
+ *   按 box 宽度实时推（详见 `cell-projection.ts` 头注释）。硬塞会被校验拒收；
+ * - id：多单元时加 `u{i}-` 前缀，否则两个单元各自生成的 `t1` 会撞号（manifest 查重）。
+ *
+ * `cell === undefined` 时**原样返回**（同一个数组引用）—— 这是「旧 spec 逐字段不变」的
+ * 执行点：不投影、不改 id。
+ */
+function projectUnitTracks(
+  generated: Record<string, unknown>[],
+  cell: CellRect | undefined,
+  idPrefix: string | undefined,
+): Record<string, unknown>[] {
+  if (cell === undefined) return generated
+  const prefix = idPrefix ?? ''
+  return generated.map((track) => {
+    const next: Record<string, unknown> = { ...track }
+    if (prefix !== '' && typeof next.id === 'string') next.id = `${prefix}${next.id}`
+    const box = next.box
+    if (isRecord(box)
+      && typeof box.x === 'number' && typeof box.y === 'number'
+      && typeof box.w === 'number' && typeof box.h === 'number') {
+      next.box = projectBoxToCell({ x: box.x, y: box.y, w: box.w, h: box.h }, cell)
+    }
+    return next
+  })
+}
+
+/** 跨屏常驻层 → 轨（RQ-26）：帧窗 = fromSection 首帧到 toSection 末帧。 */
+function buildCarryTracks(spec: ContentSpec, timeline: RecipePlan['timeline']): Record<string, unknown>[] {
+  const carries = spec.carry
+  if (!Array.isArray(carries) || carries.length === 0) return []
+  const first = timeline[0]
+  const last = timeline[timeline.length - 1]
+  if (first === undefined || last === undefined) return []
+  const byId = new Map(timeline.map((slot) => [slot.id, slot]))
+  const out: Record<string, unknown>[] = []
+  for (const item of carries) {
+    const from = item.fromSection === undefined ? first : (byId.get(item.fromSection) ?? first)
+    const to = item.toSection === undefined ? last : (byId.get(item.toSection) ?? last)
+    out.push({
+      id: item.id,
+      type: 'shape',
+      shape: 'rect',
+      color: item.color,
+      box: { x: item.box.x, y: item.box.y, w: item.box.w, h: item.box.h },
+      ...(item.radius === undefined ? {} : { radius: item.radius }),
+      startFrame: from.startFrame,
+      durationInFrames: Math.max(1, to.startFrame + to.durationInFrames - from.startFrame),
+      // 常驻层不做入场：每进一屏闪一次就不叫常驻了。
+      fadeFrames: 0,
+    })
+  }
+  return out
+}
+
 /**
  * spec → 配方计划（确定性）。卡已注册的段走生成器（RQ-10 接线）；
  * 未注册的段回落 planRecipe 的占位轨。返回里带素材需求清单（RQ-21）。
@@ -213,26 +411,34 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
   for (const slot of plan.timeline) {
     const section = spec.sections.find((candidate) => candidate.id === slot.id)
     if (section === undefined) continue
-    const cardId = section.card === undefined ? null : lookupCardId(section.card)
-    const card = cardId === null ? undefined : getCard(cardId)
-    if (card === undefined) {
-      // 回落：保留 planRecipe 的占位轨（老行为）。
-      const placeholder = plan.tracks.find((track) => track.id === `seg-${slot.id}`)
-      if (placeholder !== undefined) tracks.push(placeholder)
-      continue
-    }
-    const slots = section.assetSlots ?? {}
-    tracks.push(...card.generate({
-      segmentId: slot.id,
-      label: section.label ?? slot.label,
-      copy: section.copy,
-      startFrame: slot.startFrame,
-      durationInFrames: slot.durationInFrames,
-      index: spec.sections.indexOf(section),
-      sectionCount: spec.sections.length,
-      assetSrc: (name: string) => slots[name],
-      accentColor: section.accentColor ?? '#4f9cf9',
-    }))
+    const units = resolveUnits(section)
+    const multi = units.length > 1
+    units.forEach((unit, unitIndex) => {
+      const cardId = lookupCardId(unit.card)
+      const card = cardId === null ? undefined : getCard(cardId)
+      if (card === undefined) {
+        // 回落：保留 planRecipe 的占位轨（老行为）。多单元时只在一屏全未注册时回落一次，
+        // 避免「3 个单元里 1 个没注册」产出 3 张占位卡叠在同一个位置。
+        if (!multi) {
+          const placeholder = plan.tracks.find((track) => track.id === `seg-${slot.id}`)
+          if (placeholder !== undefined) tracks.push(placeholder)
+        }
+        return
+      }
+      const slots = unit.assetSlots ?? section.assetSlots ?? {}
+      const generated = card.generate({
+        segmentId: multi ? `${slot.id}-u${String(unitIndex)}` : slot.id,
+        label: unit.label ?? section.label ?? slot.label,
+        copy: unit.copy,
+        startFrame: slot.startFrame,
+        durationInFrames: slot.durationInFrames,
+        index: spec.sections.indexOf(section),
+        sectionCount: spec.sections.length,
+        assetSrc: (name: string) => slots[name],
+        accentColor: unit.accentColor ?? section.accentColor ?? '#4f9cf9',
+      })
+      tracks.push(...projectUnitTracks(generated, unit.cell ?? section.cell, multi ? `u${String(unitIndex)}-` : undefined))
+    })
   }
   // 背景底轨（与 planRecipe 一致；若卡已出过 base 也保留这层全片底色）。
   const hasBg = tracks.some((track) => track.id === 'bg')
@@ -248,5 +454,8 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
       fadeFrames: 0,
     })
   }
+  // 常驻层压在内容之下、底色之上（轨序即层叠：后画的在上）。
+  const carryTracks = buildCarryTracks(spec, plan.timeline)
+  if (carryTracks.length > 0) tracks.splice(1, 0, ...carryTracks)
   return { tracks, timeline: plan.timeline, assetNeeds: specAssetNeeds(spec) }
 }

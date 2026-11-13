@@ -319,6 +319,11 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // 真风险是路径逃逸 / 写坏项目目录，由 `manifest-file.ts` 的包含校验拒收
   // （`..` 逃逸、同前缀兄弟目录、指向目录本身一律 CS-USER-ERR）。
   writeTo: '写入路径（相对项目根或绝对路径），不是读取句柄；合法性由 manifest-file.ts 的目录包含校验拒收',
+  // —— R7（REQ-038 · RQ-27）scaffold_manifest({ specPath }) ——
+  // 与 manifestPath 同判：绝对路径指向**磁盘上已存在的 spec JSON**，内容由
+  // `validateContentSpec` 逐字段拒收（必填 / 取值域 / 卡可解析性）。通用占位尺子在这里
+  // 反而误伤 —— `build/spec.json` 是真实存在的相对路径写法，该由「必须绝对路径」拒收。
+  specPath: '绝对路径（spec JSON 文件），execute 校验 startsWith(sep) 且由 validateContentSpec 拒收，比通用占位尺子更准',
   // —— 批次 1（2026-11-10）attach_canvas_asset：本地现成产物登记 ——
   // `path` 与 videoPath / filePath 同判：它指向**磁盘上已经存在的文件**，合法性靠
   // 三重实测（stat 存在性 + 非空 + 体积上限、魔数复核内容、扩展名分类），

@@ -40,6 +40,9 @@ import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 // 1（CV-463）· 模板库：`list_templates` 工具组 + 模板通道编排（判据全在 remotion/template-*.ts 纯函数里）
 import { defineTemplateTools } from './host-tools-template.js'
 import { scaffoldFromTemplate } from './template-scaffold.js'
+// R7（REQ-038 · RQ-27）· 起点 D：内容规格（屏表）。逻辑在 host-tools-spec.ts ——
+// 这里只接线，避免又给本文件的函数长度闸加压。
+import { scaffoldFromSpec } from './host-tools-spec.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
@@ -4533,6 +4536,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '**起点 A（推荐）：传 `templateId` + `slots`** —— 用 `list_templates` 挑一个模板，只填内容、不动结构；'
         + '槽位超字数/行数/条目数会在**编译前**被拦下并给出「改到多少字」的建议（不会出片后才发现字被裁）。'
         + '`templateId` 与 `recipe` / `title` 互斥；加 `dryRun: true` 只看槽位合同（= describe_template，不编译不落盘）。'
+        + '**起点 D（唯一能做「一屏多元素」）：传 `specPath`** —— 内容规格（屏表）JSON 的绝对路径。'
+        + '`sections[]` 每屏可含 1–4 个 `units`（各带 `cell` 格位）+ 顶层 `carry[]` 跨屏常驻层；'
+        + '与 templateId / recipe / title / durationSeconds / theme 全互斥。数据汇报、45 秒以上的片优先用它 ——'
+        + 'recipe 的段是**整屏互斥**单位，做不出并置，也留不住跨屏底板（真机 45s 片因此 51% 的秒数只有 1 个元素）。'
         + '**模板带配乐位时**（`dryRun` 会列出来）：先生成一条 ≥ 模板时长的纯器乐，再把产物 URL 传给 `bgmUrl` 重编 —— '
         + '音量/淡入淡出按模板建议值自动写入 `audio`，**不要手改 manifest 的 audio 段**（那是改错 JSON 的第一高发地）。'
         + '**改了末尾轨时长就必须同步 `meta.durationInFrames`**（保持等于最大结束帧），或整片重跑本工具。'
@@ -4584,6 +4591,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           enum: ['explainer-cards', 'product-walkthrough', 'story-arc'] as const,
           description: '可选：**片型配方**（结构起点）—— 给出段序列 + 时间轴 + 素材需求，并接管 tracks 骨架。explainer-cards = 零素材科普图卡；product-walkthrough = 需 1 张产品图；story-arc = 需 2 张场景图。给了它就不按「片头+片尾」三轨出，而是按段出占位卡',
         },
+        specPath: {
+          type: 'string' as const,
+          description: '可选：**内容规格（屏表）起点** —— spec JSON 的绝对路径（≤8MB）。'
+            + 'spec 以「屏」为单位：每屏 1–4 个单元（units，各占格位 cell）+ 跨屏常驻层（carry）。'
+            + '与 templateId / recipe / title / durationSeconds / theme 全部互斥（片名、时长、主题都在 spec.meta 里）。'
+            + '这是**唯一能做「一屏多元素」的起点**：recipe 的段是整屏互斥单位，做不出并置。'
+            + '校验失败即拒收且零副作用；字段语义见 skill 的 references/content-spec.md',
+        },
       },
       output: {
         schema: {
@@ -4599,7 +4614,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const a = args as {
           title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown
           recipe?: unknown; writeTo?: unknown; templateId?: unknown; slots?: unknown; dryRun?: unknown
-          bgmUrl?: unknown
+          bgmUrl?: unknown; specPath?: unknown
         }
         const writeToRaw = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
         const templateId = typeof a.templateId === 'string' ? a.templateId.trim() : ''
@@ -4631,6 +4646,36 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             // A1：配乐位 —— 模板声明的音量/淡入淡出在编译期写入，模型不用碰 manifest.audio。
             ...(typeof a.bgmUrl === 'string' && a.bgmUrl.trim() !== '' ? { bgmUrl: a.bgmUrl.trim() } : {}),
             ...(projectDir === undefined ? {} : { projectDir }),
+          })
+        }
+        // 2（REQ-038 R7 · RQ-27）· 起点 D：内容规格（屏表）。与另外三个起点互斥。
+        // 存在的理由：spec 通道在 2026-11-12 就实现了，但没有入口 —— 模型在真机里看不见它，
+        // 于是自己写生成器。这一步就是把「有代码、无入口」接上。
+        const specPath = typeof a.specPath === 'string' ? a.specPath.trim() : ''
+        if (specPath !== '') {
+          if (templateId !== '') {
+            throwError('CS-USER-ERR', {
+              message: 'specPath 与 templateId 互斥 —— 模板是整片结构，spec 也是结构起点，两个都给等于两个事实来源。',
+            })
+          }
+          if (a.recipe !== undefined) {
+            throwError('CS-USER-ERR', {
+              message: 'specPath 与 recipe 互斥 —— recipe 是段结构起点（每段一张卡），spec 自带屏表与格位。二选一。',
+            })
+          }
+          if (a.title !== undefined || a.durationSeconds !== undefined || a.theme !== undefined) {
+            throwError('CS-USER-ERR', {
+              message: 'specPath 与 title / durationSeconds / theme 互斥 —— 片名、时长、主题都写在 spec 的 meta 里'
+                + '（同一份事实只留一个来源，否则「spec 说 45s、参数说 60s」无法裁决）。',
+            })
+          }
+          const specProjectDir = writeToRaw === ''
+            ? undefined
+            : registry.projectDir(await resolveProjectId(registry, exec.agent?.session.header.cwd))
+          return scaffoldFromSpec({
+            specPath,
+            ...(writeToRaw === '' ? {} : { writeTo: writeToRaw }),
+            ...(specProjectDir === undefined ? {} : { projectDir: specProjectDir }),
           })
         }
         const title = typeof a.title === 'string' ? a.title.trim() : ''

@@ -18,7 +18,7 @@ import { MIN_VISIBLE_OVERLAP_FRAMES } from './normalize-timing.js'
 import { motionIntervalsFor, trackMotionFeatures } from './motion-features.js'
 
 export interface MotionLintIssue {
-  /** `ML-01` … `ML-15`。 */
+  /** `ML-01` … `ML-17`（ML-16 / ML-17 是版面层判据，REQ-038 R7）。 */
   code: string
   /** 回执主文案（说清「哪里」+「为什么不好」）。 */
   message: string
@@ -39,6 +39,22 @@ interface AbsoluteSegment {
 }
 
 const MAX_ISSUES = 12
+
+/**
+ * ML-16 阈值（REQ-038 R7 · RQ-28）：同屏视觉元素 ≤1 的采样帧占比上限。
+ *
+ * 25% 的来历：真机 45s 版实测 **51%**（23 秒整屏只有一个元素），手写 60s 版同屏
+ * 均值 5.88 —— 拿 51% 与手写版的分布一夹，25% 是「明显不该这样」的下界。
+ * **只有两个样本，属未标定**（R7 §6），补测后可能上调；所以做成常量供变异测试改它。
+ */
+const ML16_SOLO_RATIO = 0.25
+
+/** ML-17 阈值：常驻层至少要覆盖全片这个比例（不足即视为「没有常驻层」）。 */
+const ML17_CARRY_SPAN = 0.3
+
+/** ML-16/17 只在足够长的片子上判 —— 10 秒三屏的片子谈不上「版面单调」。 */
+const ML16_MIN_SECONDS = 12
+const ML17_MIN_SECONDS = 15
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -174,6 +190,79 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
   const tracks = manifest.tracks.filter((track) => track.type !== 'transition')
   const transitionTracks = manifest.tracks.filter((track) => track.type === 'transition')
   const metaDuration = Math.max(1, Math.floor(manifest.meta?.durationInFrames ?? 1))
+
+  // ── 版面层（REQ-038 R7 · RQ-28）：**先于既有规则入列** ────────────────────────
+  // 为什么必须放在 ML-01 之前：`MAX_ISSUES = 12` 是先到先得的截断，而版面两条是
+  // manifest 级聚合（全片只出一个结论）—— 一旦被几十条 ML-02 挤出去就永远看不见，
+  // 那正是「加了判据等于没加」。ML-02 曾累计 337 次的教训就在这儿。
+  const lintFps = Math.max(1, manifest.meta?.fps ?? 30)
+  const lintSeconds = metaDuration / lintFps
+  /** 非内容轨：转场幕布、字幕、音频可视化、全屏底色/暗角。它们不构成「屏内元素」。 */
+  const isNonContent = (track: CompositionTrack): boolean => {
+    if (track.type === 'transition' || track.type === 'caption' || track.type === 'audioViz') return true
+    if (track.type === 'shape') {
+      const shape = (track as { shape?: string }).shape
+      if (shape === 'gradient' || shape === 'vignette') return true
+    }
+    if (track.type === 'textCard' && (track as { variant?: string }).variant === 'subtitle') return true
+    return false
+  }
+  const contentTracks = manifest.tracks.filter((track) => !isNonContent(track))
+
+  if (lintSeconds >= ML16_MIN_SECONDS && contentTracks.length > 0) {
+    // 逐秒采样（不是逐帧）：lint 在每次校验时都跑，1500 帧 × 60 轨逐帧算是 9 万次比较；
+    // 每秒一个样本已足够表达「整屏只有 1 个元素」这种秒级现象。
+    const step = Math.max(1, Math.round(lintFps))
+    let soloSamples = 0
+    let samples = 0
+    for (let frame = 0; frame < metaDuration; frame += step) {
+      samples += 1
+      let active = 0
+      for (const track of contentTracks) {
+        if (track.startFrame <= frame && frame < track.startFrame + track.durationInFrames) {
+          active += 1
+          if (active > 1) break
+        }
+      }
+      if (active <= 1) soloSamples += 1
+    }
+    const soloRatio = samples === 0 ? 0 : soloSamples / samples
+    if (soloRatio > ML16_SOLO_RATIO) {
+      push({
+        code: 'ML-16',
+        at: 'manifest',
+        message: `${String(Math.round(soloRatio * 100))}% 的采样秒里同屏视觉元素 ≤1 个`
+          + `（${String(soloSamples)}/${String(samples)} 秒）—— 观感是「一屏一个东西依次替换」`,
+        hint: '给一屏配第二层：并置两个单元（spec 的 sections[].units + cell 格位），'
+          + '或让上一单元 carry 到下一屏。单元素时长占比建议 ≤25%（真机 45s 片实测 51%）。',
+      })
+    }
+  }
+
+  if (lintSeconds >= ML17_MIN_SECONDS) {
+    const hasCarry = manifest.tracks.some((track) => {
+      if (track.type !== 'shape' && track.type !== 'image') return false
+      if (track.durationInFrames < metaDuration * ML17_CARRY_SPAN) return false
+      // 常驻层的定义是「跨屏存在」，不是「零入场」—— 一条 300s 底板带 6 帧淡入
+      // 仍然是常驻层。所以只排除「入场占了可观比例」的轨（那更像一屏一张大卡）。
+      const fade = (track as { fadeFrames?: number }).fadeFrames ?? 0
+      if (fade > track.durationInFrames * 0.1) return false
+      const box = (track as { box?: { w?: number; h?: number } }).box
+      // 全屏底色/暗角在每支片里都有，判不出编排意图 —— 不算常驻层。
+      if (box !== undefined && (box.w ?? 0) >= 99 && (box.h ?? 0) >= 99) return false
+      return true
+    })
+    if (!hasCarry) {
+      push({
+        code: 'ML-17',
+        at: 'manifest',
+        message: '全片没有常驻层：没有任何一条非全屏 shape/image 轨覆盖 ≥30% 片长且无入场动画'
+          + ' —— 每换一屏画面全空一次，观感是「幻灯片」而不是「一张版面上换内容」',
+        hint: '声明一条跨屏底板（spec 的 carry[]：box + 颜色 + fromSection/toSection），'
+          + '手写 60s 版有 9 块常驻底板，真机 45s 版是 0 块 —— 这不是美术差异，是没处声明。',
+      })
+    }
+  }
 
   // ML-01：≥3 条内容轨**首个动画在同一刻** ⇒ 观感「一起冒出来」。
   // 2026-11-13 盲区修复：判定键从 `track.startFrame` 升级为「轨起点 + 首个动画段的

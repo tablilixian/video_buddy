@@ -276,7 +276,7 @@ export function validateChartTrack(
     }
     // 四季片 D-09（Q-A3）：标签抽稀 —— 只抽标签不改数据点。整数 ≥1；显式 labelEvery
     // 优先于 maxLabels（两处都写不报错，但 maxLabels 被忽略，warning 提一句防误配）。
-    for (const key of ['labelEvery', 'maxLabels'] as const) {
+    for (const key of ['labelEvery', 'maxLabels', 'maxValueLabels'] as const) {
       const raw = track[key]
       if (raw === undefined) continue
       if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {

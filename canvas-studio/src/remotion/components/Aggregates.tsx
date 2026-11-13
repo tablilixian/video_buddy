@@ -17,7 +17,6 @@ import { flowLayout, gridLayout, unitEnterAt, estimateTextWidthPx } from '../agg
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { AssetGridTrack, ChipRowTrack, CodePanelTrack, LogoWallTrack, TickerTrack } from '../manifest-aggregates.js'
 import { boxStyle } from '../shape-geometry.js'
-import { trackLocalFrame } from '../timing.js'
 import { scaleDesignPx } from '../type-scale.js'
 
 /** 整轨壳：通用动画折算 + box 定位（与 Shape/TextCard 同构；子元素盒内 absolute）。 */
@@ -65,10 +64,14 @@ const GridWall: React.FC<{
   cellBackground?: string | undefined
   track: Parameters<typeof resolveAnimatedStyle>[0]
   localStartFrame: number
-}> = ({ entries, columns, cellW, cellH, gapX, gapY, radius, grayscale, fit, unitStagger, unitFadeFrames, cellBackground, track, localStartFrame }) => {
+}> = ({ entries, columns, cellW, cellH, gapX, gapY, radius, grayscale, fit, unitStagger, unitFadeFrames, cellBackground, track }) => {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
-  const local = trackLocalFrame({ startFrame: localStartFrame }, frame)
+  // 帧号口径：本组件由 Root 的 `<Sequence from={track.startFrame}>` 包住，
+  // `useCurrentFrame()` 已经是**轨内局部帧**（轨首帧 = 0）。再减一次 startFrame 会让
+  // 单元入场延迟整整一个 startFrame（真机：startFrame=360 的 chipRow 第 720 帧才出现，
+  // 晚出来的篇幅直接整段不可见）。局部帧直接用，不要再做二次换算。
+  const local = frame
   const s = (designPx: number): number => scaleDesignPx(designPx, height)
   const cw = s(cellW ?? 120)
   const ch = s(cellH ?? cw)
@@ -162,7 +165,9 @@ export const AssetGrid: React.FC<{ track: AssetGridTrack }> = ({ track }) => (
 export const ChipRow: React.FC<{ track: ChipRowTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
-  const local = trackLocalFrame({ startFrame: track.startFrame }, frame)
+  // 局部帧口径：Sequence 已把 `startFrame` 偏移掉，这里不再二次相减（否则芯片要等
+  // 到第 2×startFrame 帧才淡入，晚段芯片整段不可见）。
+  const local = frame
   const s = (designPx: number): number => scaleDesignPx(designPx, height)
   const fontPx = s(track.fontPx ?? 22)
   const gap = s(track.gap ?? 12)
@@ -245,7 +250,8 @@ const CODE_FONT_STACK = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 export const CodePanel: React.FC<{ track: CodePanelTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { height } = useVideoConfig()
-  const local = trackLocalFrame({ startFrame: track.startFrame }, frame)
+  // 局部帧口径同上：Sequence 已偏移，`frame` 即轨内帧。
+  const local = frame
   const s = (designPx: number): number => scaleDesignPx(designPx, height)
   const fontPx = s(track.fontPx ?? 18)
   const lineHeight = track.lineHeight ?? 1.5
@@ -306,7 +312,8 @@ export const CodePanel: React.FC<{ track: CodePanelTrack }> = ({ track }) => {
 export const Ticker: React.FC<{ track: TickerTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const { width: canvasW, height } = useVideoConfig()
-  const local = trackLocalFrame({ startFrame: track.startFrame }, frame)
+  // 局部帧口径同上：Sequence 已偏移，`frame` 即轨内帧。
+  const local = frame
   const s = (designPx: number): number => scaleDesignPx(designPx, height)
   const fontPx = s(track.fontPx ?? 28)
   const gap = s(track.gap ?? 48)

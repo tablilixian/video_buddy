@@ -6,6 +6,8 @@
  * `overflow: hidden` 裁掉。真机里 agent 三次裁切取证 + `inspect_image` 像素确认
  * 「确实没渲染出来」，最后放弃修复、把年份塞进头部卡绕过。
  */
+
+import { estimateTextWidthPx } from './aggregate-layout.js'
 export const CHART_PLOT = { left: 9, right: 8, top: 7, bottom: 12 } as const
 
 /** 绘图区高度（百分比）。 */
@@ -36,6 +38,52 @@ export function chartPlotFor(hasTitle: boolean): { left: number; right: number; 
 export function chartCategoryLabelTopPercent(hasTitle: boolean): number {
   const plot = chartPlotFor(hasTitle)
   return plot.top + (100 - plot.top - plot.bottom)
+}
+
+/**
+ * 单槽宽（**绘图容器内**百分比；100 = 绘图区自身宽度）。
+ *
+ * 铁律：柱、柱顶数值、类目标签、折线点的 x **全部**由这一个数派生 —— 只能有一把尺子。
+ *
+ * 曾经这里是 `plotW / n`（83/20 = 4.15），却用在绘图容器**内部**：容器的 100% 早已不是
+ * 盒子的 100%，于是柱与折线落在两个不同的 x 尺度上。真机 S3/S9 表现：折线右端探到绘图区
+ * 最右，柱子只排到五分之四处（`2025-12` 之后的柱子几乎全挤在左半屏）；同时每根柱的数值
+ * 标签因槽宽少算约 17% 而折行，`42055人` 变成「42055 / 人」，第二个字溢出轴外。
+ *
+ * 不变量（`tests/chart-axis-scale.test.mjs` 锁定）：`slot × pointCount === 100`，且
+ * 柱中心与折线点 x **逐点相等**。
+ */
+export function chartSlotPercent(pointCount: number): number {
+  return 100 / Math.max(1, pointCount)
+}
+
+/** 第 i 个数据点的 x 中心（容器内百分比）：柱中心与折线点共用，尺度不可能再分叉。 */
+export function chartPointXPercent(index: number, pointCount: number): number {
+  return (index + 0.5) * chartSlotPercent(pointCount)
+}
+
+/**
+ * 类目 / 数值标签盒（容器内百分比）：宽度按「相邻两个**实际显示**标签的间距」给，不是单槽宽。
+ *
+ * 抽稀后（20 点只画 10 个标签）若仍按单槽给盒子，5 字符的 `25/04` 照样被
+ * `text-overflow: ellipsis` 剪成 `25…` —— 抽稀就白做了。`step = 点数 / 显示数`。
+ * 允许左右探出绘图区（`left` 可为负）：外侧是 `plot.left/right` 的轴标签带，不是裁切边界。
+ */
+export function chartLabelBox(index: number, pointCount: number, step: number): { left: number; width: number } {
+  const width = chartSlotPercent(pointCount) * Math.max(1, step)
+  return { left: chartPointXPercent(index, pointCount) - width / 2, width }
+}
+
+/**
+ * 类目标签字号（px）：盒子塞不下就等比缩，**缩到 `minRatio × fontPx` 为止**（再小低于可读
+ * 下限，宁可交回省略号）。真机 S7：10 个游戏名里有 14 字符的长名挤 134px 槽，21px 必然剪
+ * 成 `KittyCru…` —— 而这一屏的结论恰恰是「哪几款游戏吃掉了六成」。
+ */
+export function chartLabelFontPx(text: string, fontPx: number, boxWidthPx: number, minRatio = 0.7): number {
+  if (boxWidthPx <= 0 || fontPx <= 0) return fontPx
+  const estimated = estimateTextWidthPx(text, fontPx)
+  if (estimated <= boxWidthPx) return fontPx
+  return Math.max(fontPx * minRatio, (fontPx * boxWidthPx) / estimated)
 }
 
 /**

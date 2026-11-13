@@ -279,6 +279,7 @@
 - `title`?: string — 图表标题（1–40 字，D-06）；仅在场时启用绘图区上方标题带（老 manifest 几何不变）。
 - `labelEvery`?: number — x 轴标签抽稀步进（≥1 整数，优先于 maxLabels）；只抽标签不改数据点，首末点强制保留（D-09）。
 - `maxLabels`?: number — 标签数上限（≥1 整数；未给 labelEvery 时等距取；首末点强制保留 ⇒ 1 等价 2）。
+- `maxValueLabels`?: number — **柱顶数值标签**数上限（≥1 整数；缺省 = 全画，老 manifest 几何不变）。
 - `variant`: 'bars' | 'dual' | 'line' | 'pie' | 'donut' | 'gauge' — 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
 - `labels`: string[] — 类目标签（与 `values` 一一对应；上限 32 项）。
 - `values`: number[] — 主序列（柱，左轴；非负、有限，至少一个 > 0）。

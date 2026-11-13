@@ -804,6 +804,15 @@ export interface ChartTrack extends BaseTrack {
   /** 标签数上限（≥1 整数；未给 labelEvery 时等距取；首末点强制保留 ⇒ 1 等价 2）。 */
   maxLabels?: number
   /**
+   * **柱顶数值标签**数上限（≥1 整数；缺省 = 全画，老 manifest 几何不变）。
+   *
+   * 只有柱子会受影响（类目标签走 `maxLabels`）。20 根柱一根一个数值时，槽宽
+   * （真机 1920 画布、box 84% ≈ 67px）小于标签宽度（`42055人` ≈ 82px），
+   * 相邻数字直接互相压住 —— 这是真机事故点。给了上限就按等距抽取，
+   * 首末柱强制保留（首尾是两个最该被读到的数）。
+   */
+  maxValueLabels?: number
+  /**
    * 图表形态（P2' 扩型，2026-11-03；4.1 扩型 2026-11-04）：`bars` = 柱状图；
    * `dual` = 柱状 + 折线双轴（`lineValues` 必填）；`line` = 独立折线图（主序列
    * `values` 直接画折线，左轴，折线色用 `color`，30%→55% 从左往右揭示；不画柱子）；
@@ -1200,7 +1209,7 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   transition: new Set(['effect', 'fromTrackId', 'toTrackId', 'easing', 'softness', 'direction']),
   audioViz: new Set(['src', 'bars', 'color', 'mode', 'gain', 'heightPercent', 'position', 'smoothing', 'gradient', 'bandSplit', 'bandColors']),
   // P-02：gaugeMax / palette（4.1 扩型）实现真实读取（chart-pie.ts），此前漏登记同病。
-  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'title', 'labelEvery', 'maxLabels', 'gaugeMax', 'palette']),
+  chart: new Set(['source', 'variant', 'labels', 'values', 'lineValues', 'lineLabel', 'unit', 'lineUnit', 'color', 'lineColor', 'dataSource', 'baseline', 'title', 'labelEvery', 'maxLabels', 'maxValueLabels', 'gaugeMax', 'palette']),
   caption: new Set(['src', 'text', 'words', 'fontSize', 'widthPercent', 'color', 'activeColor', 'dimColor', 'audioFrames']),
   callout: new Set(['anchor', 'text', 'line', 'color', 'labelBackground']),
   // ≥95% 对齐 S1-B：group 3D 容器（children 白名单 / 角度 / id 唯一性校验在 validateGroupTrack）。

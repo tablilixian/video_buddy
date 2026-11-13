@@ -280,7 +280,11 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
       visual = { ...base, borderRadius: '50%', background: color, height: '0%', paddingBottom: `${box.w}%` }
       break
     case 'line':
-      visual = { ...base, height: 4, background: color, transform: `translate(0, -50%) ${anim.shapeTransform}` }
+      // 线高固定 4px，但**不能覆盖** base.transform：boxStyle 给的
+      // `translate(-50%, -50%)` 是中心对齐语义的一半，覆盖成 `translate(0, -50%)`
+      // 会让线整体右移半个盒宽（真机：横贯全幅的细线只从 50% 处开始画）。
+      // 垂直方向 -50% 取的是元素自身 4px，正好把线居中在 box 中心。
+      visual = { ...base, height: 4, background: color }
       break
     case 'gradient':
       visual = { ...base, background: `linear-gradient(135deg, ${color}, rgba(0,0,0,0.15))` }

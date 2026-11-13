@@ -15,13 +15,37 @@ import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remo
 import { donutSlicePath, gaugeDashArray, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
 import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
-import { chartCategoryLabelTopPercent, chartPlotFor, CHART_TITLE_BAND_PERCENT, pickLabelIndices } from '../chart-layout.js'
+import {
+  chartCategoryLabelTopPercent,
+  chartLabelBox,
+  chartLabelFontPx,
+  chartPlotFor,
+  chartPointXPercent,
+  chartSlotPercent,
+  CHART_TITLE_BAND_PERCENT,
+  pickLabelIndices,
+} from '../chart-layout.js'
+
 import { resolveAnimatedStyle } from '../animated-style.js'
 import { countUpTextAt } from '../count-up.js'
 import { useFontFamilyStack } from './font-context.js'
 
 /** 数值标签格式：最多两位小数、去尾零（7.2666 → 7.27；8 → 8）。 */
 function formatValue(v: number): string {
+  return String(Number(v.toFixed(2)))
+}
+
+/**
+ * 刻度文案：轴上的值只用来定标，不该带 2 位小数。
+ *
+ * 真机事故：20 个月新增的轴顶 ≈ 52,550，四等分后出现 `47108.52 人` —— 四位有效
+ * 数字挤在 74px 的轴标签位里既读不出量级也压线。按量级收小数位（≥10 取整），
+ * 数值本身的量级不动（不换单位，避免与柱顶标签口径打架）。
+ */
+function formatTick(v: number): string {
+  const a = Math.abs(v)
+  if (a >= 10) return String(Math.round(v))
+  if (a >= 1) return String(Number(v.toFixed(1)))
   return String(Number(v.toFixed(2)))
 }
 
@@ -65,12 +89,18 @@ const PieFamily: React.FC<{
   if (isGauge) {
     const max = track.gaugeMax ?? 100
     const progress = Math.min(1, Math.max(0, (values[0] ?? 0) / max))
-    const sweep = interpolate(frame, [0, dur * 0.45], [0, 1], {
+    // 扫针与中心数字的时长：短轨按 45% 铺满，长轨**必须封顶**。
+    // 不封顶时 dur 是整段跨句窗口（真机 S4 的 gauge 跨 8 句 ≈ 700 帧），扫针要 315 帧
+    // 才走完，中段长时间停在「4%」这类中间值上，和旁边的标题 6.94% 直接矛盾。
+    const revealFrames = Math.min(Math.max(8, Math.round(dur * 0.45)), 40)
+    const sweep = interpolate(frame, [0, revealFrames], [0, 1], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     })
     const dash = gaugeDashArray(progress * sweep)
-    const centerText = countUpTextAt(`${Math.round(progress * 100)}%`, frame, Math.max(1, Math.round(dur * 0.45)))
+    // 中心数字用**原始值**（6.94%），不能 `Math.round(progress*100)` ——
+    // 那会把 6.94% 抹成 7%，标题与实际读数对不上。
+    const centerText = countUpTextAt(`${formatValue(values[0] ?? 0)}${unit}`, frame, revealFrames)
     return (
       <AbsoluteFill>
         <svg viewBox="0 0 100 100" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}>
@@ -160,7 +190,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
   timelineData,
 }) => {
   const frame = useCurrentFrame()
-  const { width: canvasWidth } = useVideoConfig()
+  const { width: canvasWidth, height: canvasHeight } = useVideoConfig()
   const fontFamily = useFontFamilyStack()
   const anim = resolveAnimatedStyle(track, frame)
 
@@ -195,9 +225,28 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
   const plot = chartPlotFor(hasTitle)
   const plotW = 100 - plot.left - plot.right
   const plotH = 100 - plot.top - plot.bottom
-  const slot = plotW / Math.max(1, n)
+  // 容器内百分比尺度：下面的柱 / 标签 / 折线点都住在这个已 inset 的容器里，
+  // 尺子只有一把（见 chartSlotPercent 注释里的真机事故）。
+  const slot = chartSlotPercent(n)
+  // 绘图区像素宽（用于判断标签放不放得下）：盒宽 × 绘图区占比。
+  const plotWidthPx = canvasWidth * ((track.box?.w ?? 100) / 100) * (plotW / 100)
+
   // 标签抽稀（Q-A3）：只抽标签不改数据点；首末点强制保留（末点是 countUp 终值锚点）。
   const pickedLabels = new Set(pickLabelIndices(n, track.labelEvery, track.maxLabels))
+  // 柱顶数值标签：缺省全画（老 manifest 不变）；给了 `maxValueLabels` 就等距抽取。
+  // 槽宽不足时相邻数字会互相压住（20 根柱一柱一数 = 真机事故），抽稀是唯一解 ——
+  // 不能靠缩字号，缩到能塞下就低于可读下限了。
+  const valueLabelIndices = new Set(
+    track.maxValueLabels === undefined ? values.map((_, i) => i) : pickLabelIndices(n, undefined, track.maxValueLabels),
+  )
+  // 抽稀后的实际间距（以槽计）：标签盒按这个宽度给，否则 5 字符的 `25/04` 照样被剪成 `25…`。
+  const labelStep = n / Math.max(1, pickedLabels.size)
+  const valueStep = n / Math.max(1, valueLabelIndices.size)
+  // 柱顶数值标签的下限：矮柱（断崖后的月度只剩几百）标签会掉进类目标签带，
+  // 直接压在 `26/06` 这种月份上（真机 S3/S9：轴上一排「26/05 4 6 0 人 26/08」）。
+  // 压到标签带就往上提，贴着绘图区底边排 —— 数字仍在自己那根柱的列里。
+  const plotHeightPx = canvasHeight * ((track.box?.h ?? 100) / 100) * (plotH / 100)
+  const valueLabelMinTop = chartCategoryLabelTopPercent(hasTitle) - (valueFont * 1.2 * 100) / Math.max(1, plotHeightPx)
 
   // CV-334 同款分层：整轨位置/缩放走 layerTransform，box 在场改盒子定位层。
   const box = track.box
@@ -244,7 +293,24 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
           {track.title}
         </div>
       ) : null}
-      <AbsoluteFill style={{ margin: `${plot.top}% ${plot.right}% ${plot.bottom}% ${plot.left}%` }}>
+      {/*
+        绘图区留白必须走 **inset**（top/right/bottom/left），不能用 `margin`：
+        CSS 百分比 margin **四个方向都按包含块宽度**解析（不是高度），盒高 38% 时
+        `margin-top:15%` 会被算成 0.15×宽（1920×0.84 时 ≈242px）而不是 0.15×高，
+        于是整块绘图区被推到底部之外，再由外层 `overflow:hidden` 裁掉 ——
+        真机表现是「柱图只画出最左边一两根柱」，其余全在可视盒下面（DOM 几何完全正确，
+        只有像素缺失，极难从结构上发现）。inset 的 top/bottom 百分比才按高度解析。
+      */}
+      <AbsoluteFill
+        style={{
+          top: `${plot.top}%`,
+          right: `${plot.right}%`,
+          bottom: `${plot.bottom}%`,
+          left: `${plot.left}%`,
+          width: 'auto',
+          height: 'auto',
+        }}
+      >
         {/* 4.1：pie / donut / gauge 分支（无轴无网格，整域交给 PieFamily） */}
         {track.variant === 'pie' || track.variant === 'donut' || track.variant === 'gauge' ? (
           <PieFamily
@@ -287,9 +353,12 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                 width: axisFont * 3.4,
                 textAlign: 'right',
                 opacity: 0.9,
+                // 刻度文案必须单行：`47109` + `人` 在 3.4em 宽的盒里折成两行，
+                // 第二个字落到下一行轴位、与下方刻度错位（真机 S3/S9 满屏都是孤立「人」）。
+                whiteSpace: 'nowrap',
               }}
             >
-              {formatValue(t * barMax)}
+              {formatTick(t * barMax)}
               {unit}
             </div>
             {lineValues ? (
@@ -305,7 +374,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                   opacity: 0.9,
                 }}
               >
-                {formatValue(t * lineMax)}
+                {formatTick(t * lineMax)}
                 {lineUnit}
               </div>
             ) : null}
@@ -321,12 +390,17 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
           })
           const eased = 1 - (1 - grown) * (1 - grown)
           const h = (v / barMax) * plotH * eased
+          const center = chartPointXPercent(i, n)
+          const valueBox = chartLabelBox(i, n, valueStep)
+          const catBox = chartLabelBox(i, n, labelStep)
+          const catText = labels[i] ?? ''
+          const catFont = chartLabelFontPx(catText, axisFont, (catBox.width / 100) * plotWidthPx)
           return (
             <React.Fragment key={i}>
               <div
                 style={{
                   position: 'absolute',
-                  left: `${(i * slot + slot * 0.18).toFixed(3)}%`,
+                  left: `${(center - slot * 0.32).toFixed(3)}%`,
                   width: `${(slot * 0.64).toFixed(3)}%`,
                   top: `${(100 - (h / plotH) * 100).toFixed(3)}%`,
                   height: `${((h / plotH) * 100).toFixed(3)}%`,
@@ -334,17 +408,19 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                   borderRadius: '4px 4px 0 0',
                 }}
               />
-              {grown >= 1 ? (
+              {grown >= 1 && valueLabelIndices.has(i) ? (
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${(i * slot).toFixed(3)}%`,
-                    width: `${slot.toFixed(3)}%`,
-                    top: `${((1 - h / plotH) * 100 - 7).toFixed(3)}%`,
+                    left: `${valueBox.left.toFixed(3)}%`,
+                    width: `${valueBox.width.toFixed(3)}%`,
+                    top: `${Math.min((1 - h / plotH) * 100 - 7, valueLabelMinTop).toFixed(3)}%`,
                     textAlign: 'center',
                     fontFamily,
                     fontSize: valueFont,
                     color: '#e8eefc',
+                    // 同理单行：盒宽按抽稀后的间距给，`42055人` 才不会被折成「42055 / 人」。
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {formatValue(v)}
@@ -355,8 +431,8 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${(i * slot).toFixed(3)}%`,
-                    width: `${slot.toFixed(3)}%`,
+                    left: `${catBox.left.toFixed(3)}%`,
+                    width: `${catBox.width.toFixed(3)}%`,
                     // 2026-11-06 修（真机事故）：此处原为 `top: '100%'` = **容器底部**，
                     // 而布局已经用 `plot.bottom: 12` 在容器内预留了标签带 ⇒ 标签落在
                     // 预留区**下方**，被 box 层的 `overflow: hidden` 整条裁掉（agent 三次
@@ -366,7 +442,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                     marginTop: axisFont * 0.6,
                     textAlign: 'center',
                     fontFamily,
-                    fontSize: axisFont,
+                    fontSize: catFont,
                     color: 'rgba(138,160,198,0.95)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -382,19 +458,23 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
 
         {/* P2'：variant:'line' 的类目标签（无柱时单独铺一行，样式与柱状图一致；同受抽稀） */}
         {track.variant === 'line'
-          ? labels.map((l, i) => pickedLabels.has(i) ? (
+          ? labels.map((l, i) => {
+            if (!pickedLabels.has(i)) return null
+            const catBox = chartLabelBox(i, n, labelStep)
+            const catFont = chartLabelFontPx(l, axisFont, (catBox.width / 100) * plotWidthPx)
+            return (
             <div
               key={`cat-${i}`}
               style={{
                 position: 'absolute',
-                left: `${(i * slot).toFixed(3)}%`,
-                width: `${slot.toFixed(3)}%`,
+                left: `${catBox.left.toFixed(3)}%`,
+                width: `${catBox.width.toFixed(3)}%`,
                 // 同上（折线分支）：`top: '100%'` 会落进 `overflow: hidden` 的裁切区。
                 top: `${chartCategoryLabelTopPercent(hasTitle).toFixed(3)}%`,
                 marginTop: axisFont * 0.6,
                 textAlign: 'center',
                 fontFamily,
-                fontSize: axisFont,
+                fontSize: catFont,
                 color: 'rgba(138,160,198,0.95)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -403,7 +483,8 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
             >
               {l}
             </div>
-          ) : null)
+            )
+          })
           : null}
 
         {/* P2'：独立折线 —— 主序列 values，左轴量纲，同一 30%→55% 揭示；
@@ -429,14 +510,14 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
               points={values
                 .map(
                   (v, i) =>
-                    `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(2)},${(100 - (v / barMax) * 100).toFixed(2)}`,
+                    `${chartPointXPercent(i, n).toFixed(2)},${(100 - (v / barMax) * 100).toFixed(2)}`,
                 )
                 .join(' ')}
             />
             {values.map((v, i) => (
               <circle
                 key={i}
-                cx={((i + 0.5) / Math.max(1, n)) * 100}
+                cx={chartPointXPercent(i, n)}
                 cy={100 - (v / barMax) * 100}
                 r={1.3}
                 fill={barColor}
@@ -451,7 +532,7 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
                 key={`val-${i}`}
                 style={{
                   position: 'absolute',
-                  left: `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(3)}%`,
+                  left: `${chartPointXPercent(i, n).toFixed(3)}%`,
                   top: `${((1 - v / barMax) * 100 - 7).toFixed(3)}%`,
                   transform: 'translateX(-50%)',
                   fontFamily,
@@ -489,14 +570,14 @@ export const Chart: React.FC<{ track: ChartTrack; timelineData?: ChartTimelineDa
               points={lineValues
                 .map(
                   (v, i) =>
-                    `${(((i + 0.5) / Math.max(1, n)) * 100).toFixed(2)},${(100 - (v / lineMax) * 100).toFixed(2)}`,
+                    `${chartPointXPercent(i, n).toFixed(2)},${(100 - (v / lineMax) * 100).toFixed(2)}`,
                 )
                 .join(' ')}
             />
             {lineValues.map((v, i) => (
               <circle
                 key={i}
-                cx={((i + 0.5) / Math.max(1, n)) * 100}
+                cx={chartPointXPercent(i, n)}
                 cy={100 - (v / lineMax) * 100}
                 r={1.3}
                 fill={lineColor}

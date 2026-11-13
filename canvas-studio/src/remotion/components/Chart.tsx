@@ -12,7 +12,7 @@
  */
 import React from 'react'
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
-import { donutSlicePath, gaugeDashArray, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
+import { donutSlicePath, gaugeDashArray, GAUGE_R, GAUGE_STROKE_WIDTH, PIE_PALETTE, sliceFractions, wedgePath } from '../chart-pie.js'
 import type { ChartTimelineData } from '../chart-data.js'
 import type { ChartTrack } from '../manifest.js'
 import {
@@ -104,14 +104,14 @@ const PieFamily: React.FC<{
     return (
       <AbsoluteFill>
         <svg viewBox="0 0 100 100" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}>
-          <circle cx={50} cy={50} r={46} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={9} />
+          <circle cx={50} cy={50} r={GAUGE_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={GAUGE_STROKE_WIDTH} />
           <circle
             cx={50}
             cy={50}
-            r={46}
+            r={GAUGE_R}
             fill="none"
             stroke={color0}
-            strokeWidth={9}
+            strokeWidth={GAUGE_STROKE_WIDTH}
             strokeLinecap="round"
             strokeDasharray={dash}
             transform="rotate(-90 50 50)"

@@ -29,6 +29,19 @@ const CX = 50
 const CY = 50
 const R = 46
 
+/**
+ * gauge 专属几何（2026-11-13 真机用例 1 复盘）：**不能复用 R=46**。
+ * gauge 是描边圆（strokeWidth 9），外径 = r + stroke/2；r=46 时外径 50.5 **超出
+ * viewBox 50**，SVG 缺省 overflow:hidden 会把环四周平切 —— 真机表现为「圆环右边
+ * 和下面被截掉」，且与 box 无关、改多大 box 都在裁（agent 盲猜 24 渲染 40 分钟）。
+ * pie/donut 是无描边填充、贴边是设计意图，仍用 R=46 不动。
+ *
+ * 不变量（`tests/chart-pie-donut-gauge.test.mjs` 锁定）：`GAUGE_R + GAUGE_STROKE_WIDTH/2 ≤ 50`
+ * ——外径必须收敛进 viewBox，留 ≥1% 余量。
+ */
+export const GAUGE_R = 44
+export const GAUGE_STROKE_WIDTH = 9
+
 /** 份额数组：v / sum（sum ≤ 0 时全 0 —— 调用前校验已保证至少一个 > 0）。 */
 export function sliceFractions(values: readonly number[]): number[] {
   const sum = values.reduce((acc, v) => acc + Math.max(0, v), 0)
@@ -87,8 +100,8 @@ export function donutSlicePath(frac: number, startFrac: number, radius: number =
   ].join(' ')
 }
 
-/** 圆周长（gauge 扫描的 dasharray 基准，与组件侧 r 必须同值）。 */
-export const GAUGE_CIRCUMFERENCE = 2 * Math.PI * R
+/** 圆周长（gauge 扫描的 dasharray 基准，与组件侧 r 必须同值 —— 组件侧用 `GAUGE_R`）。 */
+export const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_R
 
 /**
  * gauge 扫描的 stroke-dasharray（进度 frac 0–1）。

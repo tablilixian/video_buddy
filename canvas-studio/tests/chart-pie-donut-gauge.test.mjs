@@ -59,6 +59,16 @@ test('4.1 几何：份额归一 + 扇形路径端点（12 点钟起顺时针）'
   assert.equal(gaugeDashArray(-3), `0.000 ${GAUGE_CIRCUMFERENCE.toFixed(3)}`)
 })
 
+// 2026-11-13 真机用例 1：gauge 外径曾为 46+9/2=50.5 > viewBox 50 ⇒ SVG 缺省裁边，
+// 真机「圆环右边和下面被截掉」且与 box 无关，agent 盲猜 24 渲染 40 分钟未收敛。
+// 本闸锁死「外径收敛进 viewBox」不变量 —— r 或 stroke 调大导致外径出界直接变红。
+test('4.1 几何：gauge 外径必须收敛进 viewBox（GAUGE_R + GAUGE_STROKE_WIDTH/2 ≤ 50）', async () => {
+  const { GAUGE_R, GAUGE_STROKE_WIDTH } = await import('../lib/remotion/chart-pie.js')
+  const outer = GAUGE_R + GAUGE_STROKE_WIDTH / 2
+  assert.ok(outer <= 50, `gauge 外径 ${outer} 超出 viewBox 50 —— 会被 SVG 缺省裁边（真机 2026-11-13 教训）`)
+  assert.ok(outer <= 49.5, `gauge 外径 ${outer} 应留 ≥0.5% 余量（贴边视觉上仍像被裁）`)
+})
+
 test('4.1 校验：合法三变体放行 + gauge 专属语义 + palette 形状', async () => {
   const { validateManifest } = await import('../lib/remotion/manifest.js')
   // 合法 gauge / pie / donut 放行

@@ -53,7 +53,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 **对话附件（REQ-037）**：用户在项目里发的附件**默认未落画布**（暂存在「待落画布」条）——需要用作生成素材时，**先提醒用户点「落进画布」**再用 `list_references` 取节点 id，不要假装读得到；链接类参考用 `download_video` 落盘，不受此限。
 **先粗后精**：要「快速出效果」→ `quality:"draft"` + 位置参数框先出一版按反馈调，勿先做像素量测（定位用 `inspect_image` bbox）；声明「不需要精准」后禁量测。
 1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `clarification.md`）；第 ② 步按 `look.md` 采集 5 项 tokens 并出 1 张基调样张，**确认通过后调 `look_card` 落卡**（§9.1）。放手跑自行假设。
-2b. **拍摄定稿创作**（两种形态必经）：读 `screenplay.md` + `shot-format.md`，用 `write_storyboard` 落**拍摄定稿**（`storyboard.json`）——剧本进 §00 / §03 / §05，分镜进 §04。**禁止另建大纲节点**；阶段一不要写文案节点。
+2b. **拍摄定稿创作**（两种形态必经）：**前置硬门——本轮尚未调过 `confirm_intent_card` 就先调它（意图卡），再 `write_storyboard`；顺序反了会被 CS-USER-ERR 拦（连续 3 个真机会话在此重复失手，不要成为第 4 个）**。然后读 `screenplay.md` + `shot-format.md`，用 `write_storyboard` 落**拍摄定稿**（`storyboard.json`）——剧本进 §00 / §03 / §05，分镜进 §04。**禁止另建大纲节点**；阶段一不要写文案节点。
 2c. **分次写、逐步填满**：`write_storyboard` 是**分节合并**语义——传了的替换、**没传的保留不动**。不要憋大招一次写完；**每笔之间不要问用户**，**收尾笔传 `awaitingLanding=true`**。⚠️ 版本次数不因分次写而增长。四笔怎么分见 `screenplay.md` 第 7 条；**短稿（≤60s 且九节 ≤10k 字符）允许一笔九节齐写 + `awaitingLanding=true`**，阈值与判据也在该条第 7 条。
 2d. **声音规划**（分镜定稿后、出视频前一次定死；细则见 `references/audio-first.md`）：三件事——**人声/纯器乐**、**有没有旁白**（逐步确认模式下把第 8 步的「是否需要配音」问在这里）、**BGM 目标时长 = 预计成片总时长**（余量梯度见 `toolchain.md` §"BGM 时长铁律"）。多句旁白写 `voiceOverNodeIds`（起点 = 镜头起始秒 + 入点留白，**禁止自己算 ffmpeg**）；BGM 先行/视频先行两条路线的失败判据见 `audio-first.md`。
 3. **落地（用户操作）**：覆盖层点「确认落地」→ Host 跑三层校验并 seed 落画布，有缺项会弹清单。**落地前不要抢跑**（样张 / 定妆照除外，见 `clarification.md`）。

@@ -844,6 +844,13 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     lines.push(`锚点 v${String(v.anchor.version)} · ${String(v.anchor.trackCount)} 轨 · 已写入 ${v.anchor.progressPath}`
       + '（下一轮读它或该版快照续做，**不要重推整片**）')
   }
+  // 收尾交付反指令（2026-11-13 真机用例 1）：交付环节此前零指引 ⇒ 模型带着其他环境
+  // 的先验幻觉调用不存在的 `present` 工具（UNKNOWN_TOOL + 一次 write_note 兜底）。
+  // 这句话必须出现在回执尾部 = 幻觉发生的精确时刻；草稿 / 探针渲染不是交付时点，不占口。
+  if (v.probe !== true && v.report?.quality !== 'draft') {
+    lines.push('成片已落项目资产并在画布可见。收尾交付：`write_note` 落交付卡（片长 / 分辨率 / 音轨 / 成片路径）'
+      + '+ 回复 1-3 行结论即可 —— **工具清单里没有 present / show / deliver 类工具，勿调用**。')
+  }
   return [{ type: 'text', text: lines.join('\n') }]
 }
 

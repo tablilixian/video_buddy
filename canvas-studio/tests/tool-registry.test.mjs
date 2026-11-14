@@ -49,7 +49,8 @@ import { templateChannelEnabled } from '../lib/template-channel.js'
 // 1（CV-463，视频模板化）：+list_templates（模板清单：体裁 / 需求筛选 + 五判据适配判定），51 → 52。
 // 2026-11-12 模板通道临时下线：关闭态该工具不注册 ⇒ 基线 51；开关打开自动回到 52。
 const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
-const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 52 : 51
+// RQ-R9/P1-10（2026-11-14）：+validate_manifest（离线体检，复盘 #10）—— 53 / 关模板 52
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 53 : 52
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -114,6 +115,8 @@ const EXPECTED_TOOL_NAMES = [
   'tts_narration',
   'tts_voiceover',
   'upload_image',
+  // RQ-R9/P1-10（2026-11-14 复盘 #10）：离线 manifest 体检（schema/编排/文字容量一次列全）
+  'validate_manifest',
   'video2vl',
   'video_composite',
   'video_generate',

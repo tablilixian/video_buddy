@@ -29,6 +29,8 @@ import { validateManifest } from './remotion/manifest.js'
 import type { CompositionManifest } from './remotion/manifest.js'
 import type { ContentSpec } from './remotion/content-spec.js'
 import { planFromSpec, validateContentSpec } from './remotion/content-spec.js'
+import { formatMotionLint, lintMotion } from './remotion/motion-lint.js'
+import { auditTextFit, textFitWarnings } from './remotion/text-fit-audit.js'
 import { resolveTheme } from './remotion/themes.js'
 
 /** spec 文件上限：与 `render_composition` 的 manifestPath 同口径（8MB）。 */
@@ -149,6 +151,22 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     )
   }
 
+  // A2（RQ-R8）：编译期编排体检 —— 渲染前把 ML-* 全量给到（C2 合并治理后通常 ≤5 条）。
+  // 渲染期仍会以成片再跑一次为准；这里给的是「渲之前就能看到」的预估。
+  const lintIssues = lintMotion(manifest as unknown as CompositionManifest)
+  const lintLines = lintIssues.length === 0
+    ? []
+    : [`编排体检（编译期预估 ${String(lintIssues.length)} 条，渲染时以成片体检为准）：`,
+      ...formatMotionLint(lintIssues).map((line) => `· ${line}`)]
+
+  // A3：编译期文字容量预估 —— Node 侧自动走字符宽度估算口径（auditTextFit 从不抛错）；
+  // 溢出 = 折行数超出盒子的设计行数（成片会被裁）。渲染时以 report.textFit 真值为准。
+  const textFitNotes = textFitWarnings(auditTextFit(manifest as unknown as CompositionManifest))
+  const textFitLines = textFitNotes.length === 0
+    ? []
+    : ['文字容量预估（估算口径，渲染时以 report.textFit 为准；格位宽度就是字号旋钮）：',
+      ...textFitNotes.map((line) => `· ${line}`)]
+
   const needs = plan.assetNeeds
   const assetHints = needs.user.length === 0 ? [] : [
     `⚠️ **必须由用户提供的素材**（${String(needs.user.length)} 项；缺了会走降级版式，不会停）：`,
@@ -159,6 +177,8 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     ...(check.warnings.length === 0 ? [] : ['⚠️ spec 警告（不阻断）：', ...check.warnings.map((warning) => `· ${warning}`)]),
     ...screenTable,
     ...rhythmNote,
+    ...lintLines,
+    ...textFitLines,
     ...assetHints,
     `密度自检：本次 ${String(plan.tracks.length)} 轨 / ${String(seconds)}s = ${String(Math.round((plan.tracks.length / seconds) * 100) / 100)} 轨每秒`
       + '（真机 45s 版是 0.53 —— 低于 1.0 通常意味着「一屏一个单元」，回看 spec 的 units）。',

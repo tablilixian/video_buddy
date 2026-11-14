@@ -345,7 +345,7 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   slots: '对象容器（slotId → 值），逐值由 slot-contract 的 validateSlotValues 拒收（类型 / 总字数 / 行数 / 单行字数），容器本身无占位形态',
   dryRun: '布尔开关（只看槽位合同不编译）',
   family: '过滤词（science / product / report 等体裁名），查不到即返回「没有该体裁」清单，无破坏性',
-  requirements: '对象容器（contentChars / itemCount / assetCount / durationSeconds 四个数值），逐字段由 readRequirement 收口，非法值当没给',
+  requirements: '对象容器（contentChars / itemCount / assetCount / durationSeconds / stageSeconds / totalSeconds 六个数值），逐字段由 readRequirement 收口，非法值当没给',
   minInfoRatio: '数值（信息充足度阈值 0–1），≤0 或非有限值视为「用缺省 0.35」',
 }
 

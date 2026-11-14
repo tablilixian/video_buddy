@@ -4551,11 +4551,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, description: '片名（写进 meta.title 与片头卡文案）。**传 templateId 时可省**（模板自带文案骨架）' },
-        durationSeconds: { type: 'number' as const, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧。**传 templateId 时可省**（模板是整片，时长已固化）' },
+        durationSeconds: { type: 'number' as const, description: '目标总时长（秒，必须 > 0）；按 fps 折成整数帧。**传 templateId 时可省**（模板是屏级版式单元，时长已固化）' },
         templateId: {
           type: 'string' as const,
           description: '可选：**模板 id**（`list_templates` 返回的 `family/id`）。给了它就走模板通道：只填 `slots`、不动结构；'
-            + '与 `recipe` / `title` / `durationSeconds` 互斥（模板是整片，时长与结构都由模板定）',
+            + '与 `recipe` / `title` / `durationSeconds` 互斥（模板是屏级版式单元，时长与结构都由模板定；≥45s 多屏片模板只占 1–3 屏，主力走 spec 通道）',
         },
         slots: {
           type: 'object' as const,

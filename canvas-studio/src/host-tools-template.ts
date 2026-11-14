@@ -27,10 +27,14 @@ function readRequirement(raw: unknown): TemplateRequirement {
   const itemCount = num('itemCount')
   const assetCount = num('assetCount')
   const durationSeconds = num('durationSeconds')
+  const stageSeconds = num('stageSeconds')
+  const totalSeconds = num('totalSeconds')
   if (contentChars !== undefined) requirement.contentChars = contentChars
   if (itemCount !== undefined) requirement.itemCount = itemCount
   if (assetCount !== undefined) requirement.assetCount = assetCount
   if (durationSeconds !== undefined) requirement.durationSeconds = durationSeconds
+  if (stageSeconds !== undefined) requirement.stageSeconds = stageSeconds
+  if (totalSeconds !== undefined) requirement.totalSeconds = totalSeconds
   return requirement
 }
 
@@ -41,7 +45,8 @@ export function defineTemplateTools() {
     defineTool({
       name: 'list_templates',
       description:
-        '**列出可用视频模板**（整片级：版式 + 时序 + 槽位合同 + 音效 + 装饰构件都已固化）。'
+        '**列出可用视频模板**（屏级可复用版式单元：一段固定节拍的版式 + 槽位合同 + 音效 + 装饰构件都已固化；'
+        + 'D2 定位 —— 长片里模板最多吃 2–3 屏，主力是卡 + 格位）。'
         + '选模板**先调这个**，别自己从零编排 —— 模板的价值是「审美已验过、只改内容不动结构」。'
         + '传 `requirements` 会按五条判据（容量 / 素材 / 时长 / 条目数 / 信息充足度）**机器判定**适配性，'
         + '每条模板给出 ✅/❌ 与原因。'
@@ -57,12 +62,14 @@ export function defineTemplateTools() {
         requirements: {
           type: 'object' as const,
           additionalProperties: false,
-          description: '可选：你的内容需求（用于五条判据）。四个字段都可缺省 —— 缺的判据不参与判定',
+          description: '可选：你的内容需求（用于五条判据）。字段都可缺省 —— 缺的判据不参与判定',
           properties: {
             contentChars: { type: 'number' as const, description: '要讲的内容总字数（原话信息量，不含客套）' },
             itemCount: { type: 'number' as const, description: '用户列举的条目数（「三点」「4 个特性」）' },
             assetCount: { type: 'number' as const, description: '手上已有几张素材（图 / 视频）' },
-            durationSeconds: { type: 'number' as const, description: '目标时长（秒）' },
+            stageSeconds: { type: 'number' as const, description: '这一屏分给模板的秒数（屏表预留；屏级判定主入口，≥45s 多屏片必传）' },
+            totalSeconds: { type: 'number' as const, description: '整片总时长（秒）—— 只用来估屏数（提示），不参与拒收' },
+            durationSeconds: { type: 'number' as const, description: '目标时长（秒）—— 旧整片口径，仅单模板短片用；屏表调用请传 stageSeconds' },
           },
         },
         minInfoRatio: {
@@ -127,6 +134,7 @@ export function defineTemplateTools() {
             `   构件：${(item.meta.furniture ?? []).join(' + ') || '无'}　素材：${(item.meta.requiredAssets ?? []).join(' / ') || '无'}`
               + `${item.contractOk ? '' : '　⚠️ 契约版本不符，不可用'}`,
             `   ${verdict}`,
+            ...(gate.stageHint === undefined ? [] : [`   ${gate.stageHint}`]),
             `   → \`scaffold_manifest({ templateId: ${JSON.stringify(item.meta.id)}, slots: {…}, writeTo: "build/manifest.json" })\``
               + `；看完整槽位说明加 \`dryRun: true\``,
           ].join('\n')

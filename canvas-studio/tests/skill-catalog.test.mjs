@@ -106,6 +106,18 @@ const CREATION_BOOKLETS = [
   'layout-recipes.md', 'style-library.md',
 ]
 
+/** executor 侧分册清单（code-driven-explainer）。screen-plan.md 为 2026-11-14 版面层（R7-B2）新增：
+ * 与 CREATION_BOOKLETS 同纪律 —— 分册增删必须显式改这份清单，删文件/改名没同步即判红。
+ * 注意：CREATION_BOOKLETS 绑的是 canvas-studio-creation（总纲），executor 侧此前无清单，本条补齐。 */
+const EXPLAINER_BOOKLETS = [
+  'animation-and-assets.md', 'component-contract.generated.md', 'content-spec.md', 'errors.md',
+  'explainer-patterns.md', 'facts.md', 'fonts.md', 'format-directors.md',
+  'manifest-builder.md', 'manifest-contract.md', 'manifest-fields.generated.md', 'motion-brief.md',
+  'motion-patterns.md', 'pitfalls.md', 'product-promo-cards.md', 'screen-plan.md',
+  'shot-cards.md', 'shotcraft-catalog.md', 'source-duration.md', 'subtitle-timing.md',
+  'template-usage.md', 'verification.md',
+]
+
 /** 分册指针判据：提到任一分册名、提到 references/ 或用 § 指向章节，都算「已下沉」。 */
 const BOOKLET_POINTER = new RegExp(
   `${CREATION_BOOKLETS.map((name) => name.replace('.', '\\.')).join('|')}|references/|§`,
@@ -197,4 +209,30 @@ test('CV-121：风格预设表与 skill 集合对齐（加 skill 忘配预设行
   for (const id of styleIds) {
     assert.ok(presets.includes(id), '风格预设表缺少 skill 行：' + id + '（新增风格必须同步 style-presets.md）')
   }
+})
+
+test('R7-B2：executor 侧分册清单（code-driven-explainer）逐个在位，增删必须显式改 EXPLAINER_BOOKLETS', async () => {
+  const { readFile, stat } = await import('node:fs/promises')
+  const { join, dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'code-driven-explainer')
+  for (const name of EXPLAINER_BOOKLETS) {
+    const p = join(skillDir, 'references', name)
+    const s = await stat(p).catch(() => null)
+    assert.ok(s && s.size > 200, '分册缺失或过小：code-driven-explainer/references/' + name)
+  }
+  // 屏表分册的三条硬内容：autoStages 口径、6.5s 标定指针、与分镜的三处差异
+  const screenPlan = await readFile(join(skillDir, 'references', 'screen-plan.md'), 'utf8')
+  for (const marker of ['autoStages', 'TARGET_STAGE_SEC', 'carry', '机器可校验']) {
+    assert.ok(screenPlan.includes(marker), 'screen-plan.md 缺关键口径：' + marker)
+  }
+  // 真渲静帧必须在位（样例的锚点价值全靠它们）
+  for (const frame of ['screen-plan-example-s1.png', 'screen-plan-example-s3.png', 'screen-plan-example-s6.png']) {
+    const f = await stat(join(skillDir, 'assets', frame)).catch(() => null)
+    assert.ok(f && f.size > 50 * 1024, '样例静帧缺失或过小：assets/' + frame)
+  }
+  // SKILL.md 必须有 R3.5 指针（版面档进了 R 阶梯）
+  const skill = await readFile(join(skillDir, 'SKILL.md'), 'utf8')
+  assert.ok(skill.includes('R3.5'), 'SKILL.md 缺 R3.5 版面档')
+  assert.ok(Buffer.byteLength(skill) <= 40 * 1024, `SKILL.md 超过 40KB 体积闸（${Buffer.byteLength(skill)}B）`)
 })

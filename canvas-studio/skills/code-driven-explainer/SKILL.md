@@ -64,6 +64,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 | R0 | 结构可渲 | `scaffold_manifest(recipe)` → `write` → `render(draft)` | 有 url、时长 = 目标 |
 | R1 | 真文案（**M1**） | `write(spec)` → `bash(生成+自检)` → `render(draft)` → `spotFrames` → `read_image` | 字幕是真实句子、不溢出 |
 | R2/R3 | 视觉主体 | 改 spec → `bash` → `render(draft)` → `spotFrames` | 数据卡不超框、数字与源一致 |
+| R3.5 | 版面（屏） | spec 加 `meta.autoStages` + 各屏 `cell`/`units`、`carry` → `bash` → `render(draft)` → `spotFrames` | 同屏 ≥2 单元、常驻层在场、屏长 4–10s → `references/screen-plan.md` |
 | R4 | 运动 | spec 补 animate / kenBurns / transition → `render(draft)` | 帧间有变化、无闪背景 |
 | R5 | 声音 | `tts` 真值 → spec.audio → `render(standard)` | 句起点误差 ≤1 帧 |
 | R6 | 定稿 | `render(high)` → `spotFrames`（成片后仅 1 次，取尾段）→ `read_image` | 未决项已复述 |
@@ -81,6 +82,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
 - **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；四种结构模板（陈述/对比/时间线/原理拆解）与卡片形态 → `references/explainer-patterns.md`。
+- **屏表与格位（≥45s 多屏片先读）**：屏数与节奏交给 `meta.autoStages` 让工具算（自己写 durationSec 数屏 = 真机 45s 离散 3.7× 的根因）；一屏 1–4 个单元各占 `cell`，跨屏底板走 `carry` → `references/screen-plan.md`。
 - **动效五要素**：动笔前按 beat / 主次 / 帧预算 / 进出场 / 禁用项过一遍 → `references/motion-brief.md`。
 - **动感范式（默认开）**：按 `references/motion-patterns.md` 的范式与决策表给画面加运动。
 - **上游体裁壳（必读）**：点名本 skill **仍须先加载**壳定向 → `references/format-directors.md`。

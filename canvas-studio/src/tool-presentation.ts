@@ -79,6 +79,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   plan_generation_units: { tier: 'A', title: '生成单元规划', icon: '划' },
   make_compare: { tier: 'A', title: '对比片', icon: '比' },
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
+  // RQ-R9/P1-10（2026-11-14 复盘 #10）：离线体检——schema/编排/文字容量一次列全，零副作用。
+  validate_manifest: { tier: 'A', title: '离线体检', icon: '检' },
   // 1（CV-463）：模板清单（只读；选模板是「生成骨架」的前一步，所以同档 A）。
   list_templates: { tier: 'A', title: '模板清单', icon: '模' },
   // 故事板强约束 L4（2026-10-25）：老项目迁移，从画布已有分镜卡反推故事板骨架。

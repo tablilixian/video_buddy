@@ -136,11 +136,22 @@ test('ML-02 归零：2 屏组合产物无「戛然而止」（对照：摘掉转
   assert.ok(issues2.some((issue) => issue.code === 'ML-02'), '摘掉转场后 ML-02 必须回潮（硬切是真的）')
 })
 
-test('39s 六屏样例：65 条转场、lint 0 条（真机样例验收线）', () => {
+test('39s 六屏样例：每边界一组转场（结构性断言）+ lint 0（真机样例验收线）', () => {
   const spec = JSON.parse(readFileSync(new URL('../skills/code-driven-explainer/assets/screen-plan-example.json', import.meta.url), 'utf8'))
-  const { plan, manifest } = composed(spec)
+  const plan = planFromSpec(spec, 1170)
   const transitions = plan.tracks.filter((track) => track.type === 'transition')
-  // 5 边界 × 13 配对 - 3 条晚偏移 to 轨（δ≥T 不参与边界切变，由卡内部入场节拍管）
-  assert.equal(transitions.length, 62, '65 内容轨 + 62 转场 = 127 轨')
+  // 结构断言而非总数魔数：转场数随卡片内部偏移（P2-14 错峰等）自然浮动——
+  // 真正要钉的是「每边界恰一组窗、窗口几何正确、引用存在、渐隐覆盖完整」。
+  assert.equal(new Set(transitions.map((t) => `${String(t.startFrame)}:${String(t.durationInFrames)}`)).size, plan.timeline.length - 1,
+    '每个屏边界恰一组窗口')
+  for (const t of transitions) {
+    assert.equal(t.effect, 'fade')
+    const from = plan.tracks.find((track) => track.id === t.fromTrackId)
+    const to = plan.tracks.find((track) => track.id === t.toTrackId)
+    assert.ok(from !== undefined && to !== undefined, 'from/to 引用必须存在')
+    assert.equal(t.startFrame + t.durationInFrames, from.startFrame + from.durationInFrames,
+      '转场末端必须贴住 from 末端（渐隐覆盖完整，ML-02 豁免的前提）')
+  }
+  const manifest = { id: 'x', meta: { title: 'x', width: 1920, height: 1080, fps: 30, durationInFrames: 1170, backgroundColor: '#0B1220' }, tracks: plan.tracks }
   assert.equal(lintMotion(manifest).length, 0, '整份 manifest 体检零告警')
 })

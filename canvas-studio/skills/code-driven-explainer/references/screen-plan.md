@@ -94,6 +94,10 @@ durationSec**）、1 标题屏 + 4 数据屏（各 2 单元）+ 1 收尾屏、1 
 复现：`NODE_OPTIONS= node docs/archive/2026-11-14-r7-b2-stills/still-example.mjs`
 （bundle 入口同目录 `entry-example.tsx`；静帧 = 屏中点帧 97/487/1072）。
 
+**渲前自查（手写 / 脚本 manifest 必做）**：`validate_manifest({ manifestPath })` —— 毫秒级、
+零副作用，schema 全量错误 + 编排体检 + 文字容量预估**一次列全**；渲染报错后也用它定位
+全部问题，修完确认全绿再渲（别用渲染试错）。
+
 **从这份样例学四件事**：① 每屏 1–4 个单元、各占自己的 `cell`，不重叠不留大空白；
 ② 底板是 `carry` 一条声明，不是每屏重画；③ 屏与屏之间没有运镜衔接 —— 动感来自卡内动画与节奏；
 ④ **数据卡 copy 语法只有一种**：`;` 或换行分行、`:` 分键值（B1/DAT3/UI5 都是）；

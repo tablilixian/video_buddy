@@ -32,6 +32,7 @@ import { expandGroups } from './remotion/groups.js'
 import { readAnchorState, segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
 import { resolveAssetPathIn } from './asset-path.js'
 import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
+import { auditManifestFile, formatManifestAudit } from './manifest-audit.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 // A4/P1-6（2026-11-11 真机复盘）：抽帧 URL → 磁盘绝对路径。回执里只给 `/canvas-studio/assets/…`
@@ -4566,6 +4567,40 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           return { text: renderLayoutTable(next, loaded.dropped) }
         }
         throwError('CS-USER-ERR', { message: 'action 只能是 "read" / "write" / "clear"。' })
+      },
+    }),
+    defineTool({
+      name: 'validate_manifest',
+      description:
+        '**离线 manifest 体检**（毫秒级、零副作用：不渲染、不落盘、不建节点）。什么时候用：'
+        + '① 手写 / 脚本生成的 manifest 在 `render_composition` 之前**先过一遍**（schema 全量错误'
+        + '一次列全 + 编排体检 + 文字容量预估，别用渲染试错）；② 渲染报错后用它定位全部问题；'
+        + '③ spec 通道产物自查（scaffold 回执已带体检，通常不必再跑）。'
+        + '只读校验，不改 manifest —— 修完用本工具确认全绿再渲染。',
+      parameters: {
+        manifestPath: {
+          type: 'string' as const,
+          required: true,
+          description: 'manifest 文件的**绝对路径**（相对路径会被拒收 —— 歧义读上一版是最贵的错）',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '三段式体检报告（schema / 编排体检 / 文字容量）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args) {
+        const a = args as { manifestPath?: unknown }
+        if (typeof a.manifestPath !== 'string' || a.manifestPath.trim() === '') {
+          throwError('CS-USER-ERR', { message: 'manifestPath 必须是非空字符串（绝对路径）。' })
+        }
+        const result = auditManifestFile(a.manifestPath.trim())
+        return { text: formatManifestAudit(result, a.manifestPath.trim()) }
       },
     }),
     defineTool({

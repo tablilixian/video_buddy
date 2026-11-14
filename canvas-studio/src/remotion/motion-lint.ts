@@ -593,7 +593,8 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
           code: 'ML-13',
           at: `${a.id} × ${b.id}`,
           message: `文本卡「${a.id}」与「${b.id}」时间与空间双重叠（重叠 ≥ ${Math.round((inter() / minArea) * 100)}%）`,
-          hint: '文字会互相压字；建议错开 box 位置或时间，或把两段文案合并成一张卡的多行排版。',
+          hint: '文字会互相压字；建议错开 box 位置或时间，或把两段文案合并成一张卡的多行排版。'
+        + '（spec 通道请改写 units 的 cell 错开格位；刻意叠层写 "overlap": true 声明设计意图）',
         })
       }
     }

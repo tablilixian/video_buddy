@@ -36,6 +36,11 @@ import { applyStageTransitions } from './stage-transition.js'
 export interface SpecUnit {
   /** 卡编号或卡名（'A2' / 'A2 标题逐字'）；未注册即回落占位。 */
   card: string
+  /**
+   * **刻意叠层声明**（RQ-R8）：本单元格位与同屏其他单元相交超过容忍阈值时，
+   * 写 `true` 才放行 —— 静默遮挡是错，显式声明是设计。缺省 false（无声明）。
+   */
+  overlap?: boolean
   /** 该单元的主文案（卡生成器的 copy 槽位）。 */
   copy: string
   label?: string
@@ -135,6 +140,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /** 格位校验（RQ-25）：中心点百分比，宽高为正；`fontScale` 缺省由短边推导。 */
+/**
+ * 同屏格位相交的容忍阈值（占较小格位面积的百分比）。
+ * D4 标定初值 5%（贴边 / 呼吸位预留 / 浮点），标定表见 docs/plans/REQ-038-R7-…md §11.6；
+ * 复核条件：出现被误拒的合法叠层样本 → 放宽；出现 5–10% 的明显遮挡漏网 → 收紧。改值只改此处。
+ */
+export const CELL_OVERLAP_TOLERANT_PERCENT = 5
+
+/**
+ * 两格位的相交率（box 中心语义，与 ML-13 的 box 交同口径）：相交面积 / 较小格位面积 × 100。
+ */
+export function cellOverlapPercent(a: CellRect, b: CellRect): number {
+  const ax0 = a.x - a.w / 2
+  const ax1 = a.x + a.w / 2
+  const ay0 = a.y - a.h / 2
+  const ay1 = a.y + a.h / 2
+  const bx0 = b.x - b.w / 2
+  const bx1 = b.x + b.w / 2
+  const by0 = b.y - b.h / 2
+  const by1 = b.y + b.h / 2
+  const iw = Math.min(ax1, bx1) - Math.max(ax0, bx0)
+  const ih = Math.min(ay1, by1) - Math.max(ay0, by0)
+  if (iw <= 0 || ih <= 0) return 0
+  const minArea = Math.min(a.w * a.h, b.w * b.h)
+  if (minArea <= 0) return 0
+  return ((iw * ih) / minArea) * 100
+}
+
 function checkCell(value: unknown, at: string, errors: string[]): void {
   if (!isRecord(value)) {
     errors.push(`${at} 必须是对象（{ x, y, w, h } 百分比中心点，与 box 同口径）`)
@@ -224,7 +256,38 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
             }
             if (!isNonEmptyString(unit.copy)) errors.push(`${unitAt}.copy 必须是非空字符串`)
             if (unit.cell !== undefined) checkCell(unit.cell, `${unitAt}.cell`, errors)
+            if (unit.overlap !== undefined && typeof unit.overlap !== 'boolean') {
+              errors.push(`${unitAt}.overlap 必须是布尔值（刻意叠层声明：true = 本格位允许与同屏其他单元相交）`)
+            }
           })
+          // RQ-R8（A1）：同屏格位相交分级校验 —— 动效在格位内部（卡内动画），跨格位的长期
+          // 并存只有两种解释：写错了，或刻意叠层（overlap: true 显式声明）。≤5% 贴边放行。
+          const pairCells = section.units.map((unit) => {
+            const raw = (isRecord(unit) && isRecord((unit as Record<string, unknown>).cell))
+              ? (unit as Record<string, unknown>).cell as Record<string, unknown>
+              : (isRecord(section.cell) ? section.cell as Record<string, unknown> : {})
+            return {
+              x: typeof raw.x === 'number' ? raw.x : 50,
+              y: typeof raw.y === 'number' ? raw.y : 50,
+              w: typeof raw.w === 'number' ? raw.w : 100,
+              h: typeof raw.h === 'number' ? raw.h : 100,
+            }
+          })
+          for (let i = 0; i < section.units.length; i++) {
+            for (let j = i + 1; j < section.units.length; j++) {
+              const ui = section.units[i] as { overlap?: unknown } | null
+              const uj = section.units[j] as { overlap?: unknown } | null
+              if (ui?.overlap === true || uj?.overlap === true) continue
+              const pct = cellOverlapPercent(pairCells[i] as CellRect, pairCells[j] as CellRect)
+              if (pct > CELL_OVERLAP_TOLERANT_PERCENT) {
+                errors.push(
+                  `${at} 的格位 units[${String(i)}] 与 units[${String(j)}] 相交 ${String(Math.round(pct))}%（占较小格位）—— `
+                    + '同屏内容格位长期并存是遮挡不是动效（动效在格位内部）：把两个格位错开，'
+                    + `或在刻意叠层的单元上写 "overlap": true 声明设计意图（≤${String(CELL_OVERLAP_TOLERANT_PERCENT)}% 贴边自动放行）`,
+                )
+              }
+            }
+          }
         }
       }
       const slots = section.assetSlots

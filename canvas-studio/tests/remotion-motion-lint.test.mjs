@@ -215,16 +215,18 @@ test('ML-11 / ML-12：字幕超 3 行、单行超 28 字', () => {
   assert.ok(!codes(boundary).includes('ML-12'))
 })
 
-test('上限 12 条：超出折成 ML-00 汇总（不刷屏）', () => {
+test('上限 12 条：同 code 先合并（C2），13 类以上才折 ML-00', () => {
   const tracks = Array.from({ length: 20 }, (_, index) => ({
     id: `t${index}`, type: 'textCard', variant: 'title', text: `T${index}`,
     startFrame: index * 2, durationInFrames: 120,
     animate: { from: { opacity: 0 }, to: { opacity: 1 }, durationInFrames: 3, easing: 'easeOutCubic' },
   }))
   const issues = lintMotion(manifest(tracks))
-  assert.equal(issues.filter((issue) => issue.code !== 'ML-00').length, 12, '正文最多 12 条')
-  assert.equal(issues.at(-1).code, 'ML-00', '最后一条必须是汇总')
-  assert.match(issues.at(-1).message, /仅显示前 12 条/)
+  // C2 同类合并（2026-11-14）：20 条同源 ML-03 合并成 1 条（计数 + 前 3 处），不再用 12 条挤爆预算 ——
+  // 这正是「337 条同类 ML-02 让告警被无视」的修法；只有 ≥13 个**不同** code 同时爆才走 ML-00 截断。
+  assert.deepEqual(issues.map((issue) => issue.code), ['ML-03', 'ML-08'], '20 条同源 ML-03 合并成 1 条 + 全片无退场 ML-08')
+  assert.match(issues[0].message, /共 20 处/)
+  assert.match(issues[0].message, /前 3 处/)
 })
 
 test('formatMotionLint：文案带编号与定位，message 与 hint 之间有句号（不粘成一句）', () => {

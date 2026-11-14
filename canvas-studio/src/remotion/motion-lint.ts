@@ -176,16 +176,16 @@ function unionLength(
 export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck?: boolean }): MotionLintIssue[] {
   if (manifest.meta?.lint === 'off') return []
   const groupSubCheck = opts?.groupSubCheck === true
-  const issues: MotionLintIssue[] = []
   // REQ-035 F-09：同一 (code, at) 只留一条。
   // 原实现按**分段**逐条 push，于是「一条轨上有 3 段长呼吸动画」会产出 3 条一模一样的
   // ML-04（2026-10-24 事故里 3 条 glow 轨刷出 14 条），把真正该看的告警挤出 MAX_ISSUES。
   const seen = new Set<string>()
+  const collected: MotionLintIssue[] = []
   const push = (issue: MotionLintIssue): void => {
     const key = `${issue.code}|${issue.at}`
     if (seen.has(key)) return
     seen.add(key)
-    if (issues.length < MAX_ISSUES) issues.push(issue)
+    collected.push(issue)
   }
   const tracks = manifest.tracks.filter((track) => track.type !== 'transition')
   const transitionTracks = manifest.tracks.filter((track) => track.type === 'transition')
@@ -648,15 +648,43 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
     }
   }
 
-  if (issues.length === MAX_ISSUES) {
-    issues.push({
+  // C2（REQ-038 R7 后续）· **同类合并**：同 code 合并成一条（计数 + 前 3 处位置）。
+  // 为什么：先到先得的 12 条上限下，337 条同类 ML-02 能把整个预算吃光 —— 这正是
+  // 「告警被无视」的直接原因。合并从同 code 第 2 条起生效；**单条 code 的输出逐字段不变**
+  // （既有断言零波及），多处的 code 用第一条的 message/hint 作代表，位置列前 3 处。
+  const byCode = new Map<string, MotionLintIssue[]>()
+  for (const issue of collected) {
+    const list = byCode.get(issue.code)
+    if (list === undefined) byCode.set(issue.code, [issue])
+    else (list as MotionLintIssue[]).push(issue)
+  }
+  const merged: MotionLintIssue[] = []
+  for (const list of byCode.values()) {
+    if (list.length === 1) {
+      merged.push(list[0] as MotionLintIssue)
+      continue
+    }
+    const first = list[0] as MotionLintIssue
+    const positions = list.slice(0, 3).map((issue) => issue.at)
+    merged.push({
+      code: first.code,
+      at: first.at,
+      message: `同类告警共 ${String(list.length)} 处（前 ${String(Math.min(3, list.length))} 处：${positions.join(' / ')}）—— ${first.message}`,
+      hint: first.hint,
+    })
+  }
+
+  // 外层截断保留（合并后仍可能超过 12 —— 需要 13 个以上不同 code 同时爆）：超出折 ML-00。
+  if (merged.length > MAX_ISSUES) {
+    merged.length = MAX_ISSUES
+    merged.push({
       code: 'ML-00',
       at: 'manifest',
       message: `编排体检结果过多，仅显示前 ${MAX_ISSUES} 条`,
       hint: '先修最靠前的几条（通常同源），其余会自动消失。',
     })
   }
-  return issues
+  return merged
 }
 
 /** 体检结果转成 `warnings` 文案（并入工具结果）。 */

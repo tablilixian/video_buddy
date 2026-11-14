@@ -51,6 +51,8 @@ interface BudgetState {
   delivered: boolean
   /** 成片后已用掉的批注探针次数。 */
   annotations: number
+  /** RQ-R9/P2-4：返回抽帧的渲染总数（软计数只统计不拦截——硬口径挂账等真机数据）。 */
+  framesRendered: number
 }
 
 const states = new Map<string, BudgetState>()
@@ -60,7 +62,7 @@ const KEY_FALLBACK = '_current'
 function stateOf(key: string): BudgetState {
   const found = states.get(key)
   if (found !== undefined) return found
-  const fresh: BudgetState = { probes: 0, delivered: false, annotations: 0 }
+  const fresh: BudgetState = { probes: 0, delivered: false, annotations: 0, framesRendered: 0 }
   states.set(key, fresh)
   return fresh
 }
@@ -196,4 +198,32 @@ export function commitProbeBudget(toolName: string, args: unknown, sessionKey?: 
 /** 测试用：清空全部计数。 */
 export function resetProbeBudget(): void {
   states.clear()
+}
+
+
+// ── RQ-R9/P2-4（2026-11-14 复盘 #4，D5 拍板 v1 软计数）────────────────────────
+//
+// 复盘判据「单次会话渲染次数中位数 9.6 → ≤4」的**观测层**：所有返回抽帧的渲染
+// （probe / spotFrames / 普通渲染的 sampleFrames）都计数进回执，>12 给建议性提示。
+// **不拦截**——压次数的真正杠杆是 A2/A3（编译期前置体检）与 B4（消重渲源头），
+// 它们刚落，先看真机数据；硬统一口径挂账（K3）。
+
+/** 软计数提示行（纯函数）：≤12 只报数；>12 追加转定稿建议。 */
+export function frameCountNote(count: number): string {
+  const head = `🎬 抽帧渲染计数：本会话第 ${String(count)} 次（口径：所有返回抽帧的渲染，含 draft）`
+  return count > 12
+    ? `${head}——渲染次数偏高：按 verification.md 转定稿（quality:"standard"/"high"），剩余问题记未决项随片交付。`
+    : head
+}
+
+/** 成功的渲染计数 +1（调用方在回执组装前调用，回执里的 N 含本次）。 */
+export function noteFrameRender(args: object, sessionKey?: string): number {
+  const state = stateOf(keyOf(args, sessionKey))
+  state.framesRendered += 1
+  return state.framesRendered
+}
+
+/** 当前计数（只读，测试与诊断用）。 */
+export function frameRenderCount(args: object, sessionKey?: string): number {
+  return stateOf(keyOf(args, sessionKey)).framesRendered
 }

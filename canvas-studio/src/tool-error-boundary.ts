@@ -120,7 +120,7 @@ export function recordStudioToolFailure(cause: unknown, exec: unknown): unknown 
  * `exec.agent.session.header.cwd` 同属一个 header，框架保证存在；取不到就返回
  * undefined，由预算模块退回 `args.projectId` / 兜底桶。
  */
-function sessionKeyOf(exec: unknown): string | undefined {
+export function sessionKeyOf(exec: unknown): string | undefined {
   const agent = (exec as { agent?: { session?: { header?: { id?: unknown } } } } | null)?.agent
   const id = agent?.session?.header?.id
   return typeof id === 'string' && id !== '' ? id : undefined

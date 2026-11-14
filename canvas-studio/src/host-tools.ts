@@ -33,6 +33,8 @@ import { readAnchorState, segmentDriftNote, writeRenderAnchor } from './render-a
 import { resolveAssetPathIn } from './asset-path.js'
 import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
 import { auditManifestFile, formatManifestAudit } from './manifest-audit.js'
+import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
+import { sessionKeyOf } from './tool-error-boundary.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 // A4/P1-6（2026-11-11 真机复盘）：抽帧 URL → 磁盘绝对路径。回执里只给 `/canvas-studio/assets/…`
@@ -4036,7 +4038,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // P1-4（2026-11-05）：段边界相对 v1 变化 —— 只报告不拒收。重排有时合法（旁白重合成），
         // 拒收会把合法返工挡死；但模型改了 8 次帧表一次都没说，所以这里让它变成可见的事实。
         const segmentDrift = probe || spot ? '' : segmentDriftNote(registry.projectDir(projectId), renderManifest)
+        // RQ-R9/P2-4：渲染次数软计数（只统计不拦截，>12 给转定稿建议）
+        const framesNote = frameCountNote(noteFrameRender(a, sessionKeyOf(exec)))
         const warnings = [
+          framesNote,
           ...validation.warnings,
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),

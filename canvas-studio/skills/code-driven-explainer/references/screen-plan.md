@@ -80,13 +80,15 @@
 
 `assets/screen-plan-example.json`：39s（`autoStages: true` → 工具算出 6 屏 × 6.5s，**spec 里没有任何
 durationSec**）、1 标题屏 + 4 数据屏（各 2 单元）+ 1 收尾屏、1 条 88%×46% 跨屏底板。
-编译后 64 轨 / 1170 帧，ML-16/17 不命中。三张静帧（SSR 直渲，非真机）：
+编译后 126 轨 / 1170 帧（含 62 条段间叠化转场 —— compose 层自动插，屏边界不再硬切），
+体检 **零告警**。静帧（SSR 直渲，非真机）：
 
 | 屏 | 静帧 | 看什么 |
 | --- | --- | --- |
 | s1 标题 | `assets/screen-plan-example-s1.png` | A2 逐字标题 + 底板常驻层已在场 |
 | s3 双单元 | `assets/screen-plan-example-s3.png` | DAT3 三格数据 + B1 数据卡并置，同屏 2 单元 |
 | s6 收尾 | `assets/screen-plan-example-s6.png` | A5 落版 + 底板全程未消失（carry） |
+| 边界叠化 | `docs/archive/2026-11-14-r7-b4-boundary/` | s1→s2 边界帧 185/190/200 + ffmpeg PSNR 对证（190 与两侧都差 ≥ 明显幅度 ⇒ 渐变不是硬切） |
 
 复现：`NODE_OPTIONS= node docs/archive/2026-11-14-r7-b2-stills/still-example.mjs`
 （bundle 入口同目录 `entry-example.tsx`；静帧 = 屏中点帧 97/487/1072）。

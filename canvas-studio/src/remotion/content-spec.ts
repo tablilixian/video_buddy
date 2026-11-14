@@ -30,6 +30,7 @@ import type { CellRect } from './cell-projection.js'
 import { projectBoxToCell } from './cell-projection.js'
 import type { StagePlan } from './stage-plan.js'
 import { StagePlanError, planStages } from './stage-plan.js'
+import { applyStageTransitions } from './stage-transition.js'
 
 /** 一屏内的一个单元（RQ-25）：主视觉 + 文案 + 自己的格位。 */
 export interface SpecUnit {
@@ -499,9 +500,16 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
     })
   }
   const tracks: Record<string, unknown>[] = []
+  // B4：按屏分桶（顺序与 timeline 一一对应），供段间转场配对；bg/carry 是全片轨，不进桶。
+  const screenTracks: Record<string, unknown>[][] = []
   for (const slot of timeline) {
     const section = spec.sections.find((candidate) => candidate.id === slot.id)
-    if (section === undefined) continue
+    if (section === undefined) {
+      screenTracks.push([])
+      continue
+    }
+    const bucket: Record<string, unknown>[] = []
+    screenTracks.push(bucket)
     const units = resolveUnits(section)
     const multi = units.length > 1
     units.forEach((unit, unitIndex) => {
@@ -515,9 +523,11 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
           if (placeholder !== undefined) {
             // autoStages 下 planRecipe 的占位轨仍是等权节拍，必须按屏窗重排；
             // 非 autoStages 推同一个对象引用（逐字段不变是回归纪律）。
-            tracks.push(stagePlan === undefined
+            const placed = stagePlan === undefined
               ? placeholder
-              : { ...placeholder, startFrame: slot.startFrame, durationInFrames: slot.durationInFrames })
+              : { ...placeholder, startFrame: slot.startFrame, durationInFrames: slot.durationInFrames }
+            tracks.push(placed)
+            bucket.push(placed)
           }
         }
         return
@@ -534,7 +544,9 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         assetSrc: (name: string) => slots[name],
         accentColor: unit.accentColor ?? section.accentColor ?? '#4f9cf9',
       })
-      tracks.push(...projectUnitTracks(generated, unit.cell ?? section.cell, multi ? `u${String(unitIndex)}-` : undefined))
+      const projected = projectUnitTracks(generated, unit.cell ?? section.cell, multi ? `u${String(unitIndex)}-` : undefined)
+      tracks.push(...projected)
+      bucket.push(...projected)
     })
   }
   // 背景底轨（与 planRecipe 一致；若卡已出过 base 也保留这层全片底色）。
@@ -554,5 +566,13 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
   // 常驻层压在内容之下、底色之上（轨序即层叠：后画的在上）。
   const carryTracks = buildCarryTracks(spec, timeline)
   if (carryTracks.length > 0) tracks.splice(1, 0, ...carryTracks)
+  // B4（D1 方案②）：段间转场 —— 下一屏内容轨左移 T 帧造叠化窗，边界插既有 transition 轨。
+  // bg / carry 是全片轨不参与；屏数 <2 或空屏（全未注册多单元）该边界自然跳过。
+  const transitions = applyStageTransitions({
+    screens: screenTracks,
+    boundaryFrames: timeline.map((slot) => slot.startFrame),
+    filmEndFrame: totalFrames,
+  })
+  tracks.push(...transitions)
   return { tracks, timeline, assetNeeds: specAssetNeeds(spec), ...(stagePlan === undefined ? {} : { stagePlan }) }
 }

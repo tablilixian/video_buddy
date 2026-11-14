@@ -292,14 +292,23 @@ export function lintMotion(manifest: CompositionManifest, opts?: { groupSubCheck
   }
 
   // ML-02：轨在片尾前结束、硬切（fadeFrames:0）、无 exit、无尾部转场 ⇒ 凭空消失。
+  // 「尾部转场」的一般形态（B4，2026-11-14）：transition 窗口末端贴住**该轨自己的末端**（±2 帧）
+  // 且以它为 from —— 渲染器在窗口内把它 1→0 渐隐，离场不是硬切。原实现只认「贴片尾」的转场
+  // （模板尾部唯一场景）；compose 层段间转场（stage-transition）让中段尾部转场成为常规形态，
+  // 这里按机制本义一般化 —— 不是放宽：窗没贴住轨尾的转场照报。
   const transitionTouchingEnd = new Set<string>()
+  const trackEndById = new Map<string, number>()
+  for (const track of tracks) trackEndById.set(String(track.id), track.startFrame + track.durationInFrames)
   for (const track of transitionTracks) {
     if (track.type !== 'transition') continue
     const end = track.startFrame + track.durationInFrames
     if (end >= metaDuration - 2) {
       transitionTouchingEnd.add(track.fromTrackId)
       transitionTouchingEnd.add(track.toTrackId)
+      continue
     }
+    const fromEnd = trackEndById.get(track.fromTrackId)
+    if (fromEnd !== undefined && end >= fromEnd - 2) transitionTouchingEnd.add(track.fromTrackId)
   }
   for (const track of tracks) {
     if (track.exit !== undefined) continue

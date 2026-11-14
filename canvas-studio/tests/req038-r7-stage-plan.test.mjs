@@ -181,8 +181,9 @@ test('autoStages：未注册卡的占位轨也按屏窗重排（不是等权节�
   const result = planFromSpec(body, 1350)
   const placeholder = result.tracks.find((track) => track.id === 'seg-s3')
   assert.ok(placeholder !== undefined, '未注册卡走占位回落')
-  // 等权节拍会把 s3 放在 386；屏窗吸附后 s3 从 399 起（13.3s×30）—— 占位轨必须跟屏窗
-  assert.equal(placeholder.startFrame, 399)
+  // 等权节拍会把 s3 放在 386；屏窗吸附后 s3 从 399 起（13.3s×30）—— 占位轨必须跟屏窗。
+  // B4 段间转场：屏窗起点上的内容轨整体左移 10 帧造叠化窗（399 → 389）。
+  assert.equal(placeholder.startFrame, 389)
 })
 
 test('autoStages：段数与算出的屏数不一致即拒收', () => {

@@ -148,6 +148,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const CELL_OVERLAP_TOLERANT_PERCENT = 5
 
 /**
+ * 多单元入场的错峰帧数（RQ-R9/P2-14，D6 拍板：不加豁免字段）。
+ *
+ * 为什么：spec 多单元同帧入场是「同帧齐动」告警的源头（复盘 20 条 #14：ML-01/05/07
+ * 家族，真机 176+ 条）；在**产生路径上生成正确默认值**比事后修复 manifest 少一类
+ * 「自动改用户片子」的哲学冲突。错峰 = 后续单元的轨整体延后 k×4 帧——卡内部动画
+ * 相对轨起点，随轨平移，节拍不散。刻意齐动的观感差异仅 3–6 帧（lint 自己的 hint
+ * 就是「错峰 3–6 帧」），误伤样本出现再加声明机制（与 A1 overlap 同节奏）。
+ */
+export const UNIT_ENTRANCE_STAGGER_FRAMES = 4
+
+/**
  * 两格位的相交率（box 中心语义，与 ML-13 的 box 交同口径）：相交面积 / 较小格位面积 × 100。
  */
 export function cellOverlapPercent(a: CellRect, b: CellRect): number {
@@ -608,6 +619,18 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         accentColor: unit.accentColor ?? section.accentColor ?? '#4f9cf9',
       })
       const projected = projectUnitTracks(generated, unit.cell ?? section.cell, multi ? `u${String(unitIndex)}-` : undefined)
+      // P2-14：多单元入场错峰（后续单元入场延后 k×4 帧；卡内部节拍随轨平移不散）。
+      // 末端必须不动（时长同步 −k×4）：末端越过屏边界会脱离段间转场的渐隐覆盖
+      // （B4 的 from 侧扩展只救「死于边界前」的轨），ML-02 会回归。
+      if (multi && unitIndex > 0) {
+        for (const track of projected) {
+          if (typeof track.startFrame === 'number' && typeof track.durationInFrames === 'number'
+            && track.durationInFrames > UNIT_ENTRANCE_STAGGER_FRAMES * unitIndex) {
+            track.startFrame += UNIT_ENTRANCE_STAGGER_FRAMES * unitIndex
+            track.durationInFrames -= UNIT_ENTRANCE_STAGGER_FRAMES * unitIndex
+          }
+        }
+      }
       tracks.push(...projected)
       bucket.push(...projected)
     })

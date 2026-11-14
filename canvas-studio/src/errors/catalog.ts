@@ -248,7 +248,9 @@ const SPECS: CanvasErrorSpec[] = [
     code: 'CS-USER-002',
     module: 'USER',
     severity: 'S2',
-    audience: ['user', 'agent'],
+    // RQ-R8/E3：句柄误用模型按文案自愈（改 @ref / upload_image），用户无从下手
+    // ⇒ agent-only（用户界面隐藏）。2026-11-14 会话挖掘实证该错误纯噪音。
+    audience: ['agent'],
     recoverability: 'guided',
     channel: 'conversation',
     userMessage: '「{value}」是画布节点 id（或本地产物文件名），不是 Drama Backend 的参考文件句柄，不能直接当 filename 传。请改用 @ref[参考图显示名]，或先调 upload_image 取得 ref-*.png 句柄后再传入。',
@@ -337,6 +339,38 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '成片渲染超时（{seconds} 秒内未完成）：{diagnosis}',
     devMessage: 'runRenderJob timeout after {seconds}s: {diagnosis}',
     recoveryHint: '这不是画面复杂度问题。若诊断为「未认领 / 无进度」，属渲染执行器链路故障，请查看应用日志中的 render-job 记录后重试；若为「已在渲染」，再考虑缩短时长或降分辨率。',
+  },
+
+  {
+    // RQ-R8/E3（2026-11-14 会话错误挖掘）：探针/批注配额是**预算提示**不是故障。
+    // 旧实现复用通用 CS-USER-ERR，UI 画成红错 —— 真机一次会话最多冒 4 条吓人卡
+    //（3 探针 + 1 批注），用户完全无从下手（额度是设计，不是坏了）。
+    // uiKind:'config' ⇒ 三态错误卡按「配置提示」分级呈现，不再红灯。
+    code: 'CS-RENDER-PROBE',
+    module: 'RENDER',
+    severity: 'S3',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    uiKind: 'config',
+    userMessage: '{message}',
+    devMessage: 'probe budget gate: {detail}',
+    recoveryHint: '额度是设计不是故障：把剩余问题记成未决项随片交付，转 standard/high 定稿。',
+  },
+
+  {
+    // RQ-R8/E3：参数笔误（不认识的参数名）模型改个名就自愈 —— agent-only
+    //（路由规则：audience 无 user ⇒ 用户界面隐藏）；模型仍从 `Error: …` 拿到全部信息。
+    // 旧通用 CS-USER-ERR 会画成用户红错（真机会话实证：write_note 不认识 text_note）。
+    code: 'CS-TOOL-PARAMS',
+    module: 'TOOL',
+    severity: 'S3',
+    audience: ['agent'],
+    recoverability: 'auto',
+    channel: 'conversation',
+    userMessage: '{message}',
+    devMessage: 'unknown tool params: {detail}',
+    recoveryHint: '按参数表改正参数名重试即可。',
   },
 
   // ── L 故事板门禁（故事板强约束 L1，2026-10-25）────────────────────────────

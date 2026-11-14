@@ -51,14 +51,14 @@ function capture(fn) {
   }
 }
 
-test('探针前 3 次放行，第 4 次抛 CS-USER-ERR 并给出降级出口', () => {
+test('探针前 3 次放行，第 4 次抛 CS-RENDER-PROBE 并给出降级出口', () => {
   for (let i = 1; i <= PROBE_LIMIT; i += 1) {
     assert.doesNotThrow(() => succeed(probe('p1')), `第 ${i} 次应放行`)
   }
   assert.equal(probeUsage('p1'), PROBE_LIMIT)
   const caught = capture(() => guardProbeBudget('render_composition', probe('p1')))
   assert.ok(caught, '第 4 次必须拒收')
-  assert.equal(caught.code, 'CS-USER-ERR')
+  assert.equal(caught.code, 'CS-RENDER-PROBE')
   assert.match(caught.message, /用满 3 次/)
   assert.match(caught.message, /quality:"standard"/, '拒收文案必须指向交付档定稿出口，而不是只说"不行"')
   assert.equal(probeUsage('p1'), PROBE_LIMIT, '被拒的那次不记账（它本来就没产出，也进不了 execute）')
@@ -69,7 +69,7 @@ test('spotFrames 与 probe:true 共用同一个 3 次预算', () => {
   succeed(probe('p1'))
   succeed(spot('p1'))
   const caught = capture(() => guardProbeBudget('render_composition', spot('p1')))
-  assert.equal(caught?.code, 'CS-USER-ERR', '第 4 次 spot 同样被拒')
+  assert.equal(caught?.code, 'CS-RENDER-PROBE', '第 4 次 spot 同样被拒')
   assert.equal(probeUsage('p1'), PROBE_LIMIT)
 })
 
@@ -80,7 +80,7 @@ test('spot 调用不清零计数（旧实现在这里把额度洗掉）', () => 
   assert.equal(hasDelivered('p1'), false, 'spot 不是全片渲染')
   succeed(probe('p1'))
   assert.equal(probeUsage('p1'), 3)
-  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-USER-ERR')
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-RENDER-PROBE')
 })
 
 test('真全片渲染不清零、只开启 1 次成片后批注', () => {
@@ -92,7 +92,7 @@ test('真全片渲染不清零、只开启 1 次成片后批注', () => {
   assert.doesNotThrow(() => succeed(spot('p1')), '成片后第 1 次批注放行')
   assert.equal(annotationUsage('p1'), ANNOTATION_LIMIT)
   const caught = capture(() => guardProbeBudget('render_composition', probe('p1')))
-  assert.equal(caught?.code, 'CS-USER-ERR', '第 2 次批注拒收')
+  assert.equal(caught?.code, 'CS-RENDER-PROBE', '第 2 次批注拒收')
   assert.match(caught.message, /turn\/end/, '文案必须给收口出口')
   assert.match(caught.message, /未决项/)
 })
@@ -103,7 +103,7 @@ test('全片渲染本身不受闸限制，也不能洗掉批注配额', () => {
   }
   succeed(spot('p1'))
   for (let i = 0; i < 3; i += 1) succeed(delivery('p1'))
-  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-USER-ERR',
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-RENDER-PROBE',
     '反复渲全片换不来新的批注额度')
 })
 
@@ -124,7 +124,7 @@ test('校验失败 / 宿主失联不消耗探针额度（只判不收）', () =>
   // 真正产出图的三次仍然全部可用
   for (let i = 0; i < PROBE_LIMIT; i += 1) succeed(spot('p1'))
   assert.equal(probeUsage('p1'), PROBE_LIMIT)
-  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-USER-ERR',
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p1')))?.code, 'CS-RENDER-PROBE',
     '用满之后仍然拒收（闸没有被削弱）')
 })
 
@@ -154,7 +154,7 @@ test('接线：wrapStudioToolDefinition 包装后第 4 次 spot 被拒，且 exe
   assert.equal(entered, PROBE_LIMIT)
   await assert.rejects(
     () => wrapped.execute(spot('p-wire'), {}),
-    (error) => error.code === 'CS-USER-ERR' && /用满 3 次/.test(error.message),
+    (error) => error.code === 'CS-RENDER-PROBE' && /用满 3 次/.test(error.message),
     '守卫必须挂在唯一入口：第 4 次在参数校验阶段就被拒',
   )
   assert.equal(entered, PROBE_LIMIT, '被拒的那次绝不能进 execute（零副作用）')
@@ -199,7 +199,7 @@ test('无 projectId 时按会话隔离：上一条会话的额度不能带进新
   for (let i = 0; i < PROBE_LIMIT; i += 1) succeed(noPid(), 'sess-A')
   succeed({ manifestPath: '/tmp/m.json' }, 'sess-A')
   succeed({ spotFrames: [10], manifestPath: '/tmp/m.json' }, 'sess-A')
-  assert.equal(capture(() => guardProbeBudget('render_composition', noPid(), 'sess-A'))?.code, 'CS-USER-ERR')
+  assert.equal(capture(() => guardProbeBudget('render_composition', noPid(), 'sess-A'))?.code, 'CS-RENDER-PROBE')
   assert.equal(probeUsage('sess-A'), PROBE_LIMIT + 1)
   assert.equal(annotationUsage('sess-A'), ANNOTATION_LIMIT)
 
@@ -229,7 +229,7 @@ test('接线：会话键从 exec.agent.session.header.id 取（删掉即退回�
     }
     await assert.rejects(
       () => wrapped.execute(spot(undefined), execOf(id)),
-      (error) => error.code === 'CS-USER-ERR',
+      (error) => error.code === 'CS-RENDER-PROBE',
       `${id} 的第 ${PROBE_LIMIT + 1} 次必须被拒`,
     )
   }
@@ -267,18 +267,18 @@ test('P1-1 交付档之后只放行 1 次批注，第 2 次拒收且渲草稿不
   assert.equal(annotationUsage('p-v2'), ANNOTATION_LIMIT)
   succeed(draft('p-v2'))
   const caught = capture(() => guardProbeBudget('render_composition', spot('p-v2')))
-  assert.equal(caught?.code, 'CS-USER-ERR')
+  assert.equal(caught?.code, 'CS-RENDER-PROBE')
   assert.match(caught.message, /turn\/end/)
 })
 
 test('P1-1 闸没被削弱：结构探针 3 次用满仍拒，单会话总探针 ≤4', () => {
   for (let i = 0; i < PROBE_LIMIT; i += 1) succeed(spot('p-v2'))
-  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-USER-ERR',
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-RENDER-PROBE',
     '草稿期第 4 次结构探针必须拒')
   succeed(delivery('p-v2'))
   assert.doesNotThrow(() => succeed(spot('p-v2')), '交付后批注仍可用')
   assert.equal(probeUsage('p-v2'), PROBE_LIMIT + ANNOTATION_LIMIT, '单会话最多 3 结构 + 1 批注')
-  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-USER-ERR')
+  assert.equal(capture(() => guardProbeBudget('render_composition', spot('p-v2')))?.code, 'CS-RENDER-PROBE')
 })
 
 test('P1-1 接线：draft→spot 迭代经唯一入口放行，交付档后第 2 次批注被拒', async () => {
@@ -300,7 +300,7 @@ test('P1-1 接线：draft→spot 迭代经唯一入口放行，交付档后第 2
   await wrapped.execute(noPid({ spotFrames: [600] }), {})
   await assert.rejects(
     () => wrapped.execute(noPid({ spotFrames: [609] }), {}),
-    (error) => error.code === 'CS-USER-ERR',
+    (error) => error.code === 'CS-RENDER-PROBE',
     '第 2 次批注必须被唯一入口拒收',
   )
   assert.equal(entered, PROBE_LIMIT + 3,

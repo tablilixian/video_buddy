@@ -148,20 +148,24 @@ export function guardProbeBudget(toolName: string, args: unknown, sessionKey?: s
 
   if (state.delivered) {
     if (state.annotations >= ANNOTATION_LIMIT) {
-      throwError('CS-USER-ERR', {
+      // RQ-R8/E3（2026-11-14）：配额是**预算提示**不是故障 —— 通用 CS-USER-ERR 会让
+      // UI 画成红错（真机会话里一次会话最多冒 4 条吓人卡）。专用码 uiKind:'config'。
+      throwError('CS-RENDER-PROBE', {
         message: `本会话成片后批注已用满 ${ANNOTATION_LIMIT} 次（第 ${state.probes + 1} 次探针被拒收）。`
           + '把剩余问题写成未决项清单随片交付并结束本回合（turn/end），不要再逐帧试错。',
+        detail: `annotation quota exhausted: ${state.annotations}/${String(ANNOTATION_LIMIT)}`,
       })
     }
     return
   }
 
   if (state.probes >= PROBE_LIMIT) {
-    throwError('CS-USER-ERR', {
+    throwError('CS-RENDER-PROBE', {
       message: `本会话结构探针已用满 ${PROBE_LIMIT} 次（第 ${state.probes + 1} 次被拒收）。`
         + '按 verification.md 的硬闸：把剩余问题记成未决项，'
         + '转交付档 `quality:"standard"` / `"high"` 定稿（`quality:"draft"` 只是草稿、不会重置额度），'
         + '交付档之后还有 1 次成片后批注探针——不要继续逐帧试错。',
+      detail: `probe quota exhausted: ${state.probes}/${String(PROBE_LIMIT)}`,
     })
   }
 }

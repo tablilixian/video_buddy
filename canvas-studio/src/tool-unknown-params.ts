@@ -145,5 +145,7 @@ export function assertKnownToolParams(shape: ToolShapeForParams, args: unknown):
     ...(guessed.length > 0 ? [`疑似写错：${guessed.join('；')}`] : []),
     '参数名以这条报错为准 —— **不要为确认字段名去读 canvas-studio/src 下的源码**（那是最后一手，一次 grep 平均烧 30 秒以上）。',
   ].join('\n')
-  throwError('CS-USER-ERR', { message, detail: `unknown params: ${unknown.join(',')}` })
+  // RQ-R8/E3：参数笔误模型改个名就自愈 —— agent-only（路由规则：无 user ⇒ 用户界面隐藏），
+  // 模型仍从 `Error: …` 结果里拿到全部信息。旧通用 CS-USER-ERR 会画成用户红错。
+  throwError('CS-TOOL-PARAMS', { message, detail: `unknown params: ${unknown.join(',')}` })
 }

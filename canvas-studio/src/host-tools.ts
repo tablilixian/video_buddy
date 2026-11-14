@@ -116,7 +116,7 @@ import { lintReceiptLines, writeLintReport } from './lint-report.js'
 // render-diagnostics 同款拆法。不改白名单登记数，只把成块代码搬走。
 import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
-import { runRenderJob, type RenderJobDiagnostics } from './remotion/render-job.js'
+import { runRenderJobWithStuckRetry, type RenderJobDiagnostics } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -3944,7 +3944,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const coverageWarnings = timingSegments !== undefined && !probe
           ? checkElementCoverage(renderManifest, timingSegments, renderManifest.meta.fps).map((issue) => coverageWarningText(issue))
           : []
-        const job = await runRenderJob({
+        // RQ-R8/E2：卡死类失败自动重试 1 次（第二次仍失败才浮出，文案注明）
+        const job = await runRenderJobWithStuckRetry({
           projectId,
           manifest: renderManifest,
           fps: source.meta.fps,

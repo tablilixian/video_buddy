@@ -16,7 +16,7 @@
  * 且比文件式更易测）。新增 CV-xxx。
  */
 import { newAssetId } from '../config.js'
-import { makeCanvasError } from '../error-system.js'
+import { asCanvasError, makeCanvasError } from '../error-system.js'
 import { probeLoudnessLufs, probeMediaInfo } from '../ffmpeg-run.js'
 import { saveLocalAssetBytes } from '../generate.js'
 import { recordTransientAsset } from '../asset-gc.js'
@@ -145,6 +145,8 @@ function renderHostUnavailableReason(now: number): string {
 
 /** `runRenderJob` 结算产物（宿主已落盘并探测真值）。 */
 export interface RenderJobOutcome {
+  /** RQ-R8/E2：「渲染器卡死」自动重试恢复过一次（回执据此给一条免打扰说明）。 */
+  recovered?: boolean
   /** 同源资产 URL（`/canvas-studio/assets/<projectId>/<file>`）。spot-check 单为 `''`（无成片）。 */
   url: string
   /** 落盘文件名（`assetFile`）。spot-check 单为 `''`。 */
@@ -1268,4 +1270,63 @@ export function cancelRenderJob(jobId: string, input: CancelRenderInput = {}): b
     job.reject(makeCanvasError('CS-GEN-207', { detail: input.reason ?? 'render job cancelled by client' }))
   }
   return true
+}
+
+
+// ── RQ-R8/E2（2026-11-14 会话错误挖掘）：渲染器卡死的**有界自动重试** ─────────────
+//
+// 「隐藏窗口 30s 无心跳（渲染器被卡住）」在真机会话里出现 2 次，每次都是一句吓人的
+// 红错 +「请重试」—— 而重试恰恰是唯一修法（上一单用过的窗口已按纪律丢弃，新窗口
+// 从干净状态开始）。既然模型/用户下一步必然重试，host 直接自动做掉：卡死类失败
+// **静默重试 1 次**，第二次仍失败才浮出，并在文案里写明已自动重试过。
+//
+// 为什么只有 1 次：连续两次卡死说明窗口环境有系统性问题（节流 / 资源），无限重试
+// 只会把 30s 的等待变成无底洞；1 次后浮出并保留全部诊断，让下一步回到人。
+
+/** 判定一次渲染失败是否为「渲染器卡死」类（有界自动重试的唯一触发形态）。纯函数。 */
+export function isStuckRenderFailure(cause: unknown): boolean {
+  const err = asCanvasError(cause)
+  if (err === null) return false
+  if (err.code !== 'CS-RENDER-002') return false
+  // watchdog 的 detail 是稳定英文串（`render host heartbeat lost for Ns`），
+  // 中文 message 会随文案调整 —— 认 detail 不认文案。
+  return (err.devMessage ?? '').includes('render host heartbeat lost') || err.message.includes('render host heartbeat lost')
+}
+
+/**
+ * runRenderJob 的卡死自恢复包装：卡死类失败静默重试 1 次，成功则给 `recovered: true`
+ *（回执据此说明，用户无需处理）；仍失败则原错误文案前置「已自动重试 1 次仍失败」。
+ * `runner` 仅供测试注入。
+ */
+export async function runRenderJobWithStuckRetry(
+  options: RunRenderJobOptions,
+  runner: typeof runRenderJob = runRenderJob,
+): Promise<RenderJobOutcome> {
+  let first: unknown
+  try {
+    return await runner(options)
+  } catch (cause) {
+    first = cause
+  }
+  if (!isStuckRenderFailure(first) || options.signal?.aborted === true) throw first
+  logRenderHost('[canvas-studio] 渲染器卡死 → 自动重试 1 次（E2：上一单窗口已按纪律丢弃，新窗口干净开始）')
+  try {
+    const outcome = await runner(options)
+    return {
+      ...outcome,
+      recovered: true,
+      warnings: [...outcome.warnings, 'ℹ️ 本次渲染曾出现「渲染器卡死」，已自动重试恢复 —— 无需处理，属窗口环境瞬时问题。'],
+    }
+  } catch (cause2) {
+    const err = asCanvasError(cause2)
+    if (err !== null) {
+      // 保留原始 params（含工单诊断 job）—— 下游诊断链不因重试而断
+      throw makeCanvasError(err.code, {
+        ...(err.params as Record<string, unknown>),
+        message: `已自动重试 1 次仍失败 —— ${err.message}`,
+        detail: `${String(err.params.detail ?? '')}（auto-retry exhausted）`,
+      })
+    }
+    throw cause2
+  }
 }

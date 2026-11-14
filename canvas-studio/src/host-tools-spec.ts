@@ -31,6 +31,7 @@ import type { ContentSpec } from './remotion/content-spec.js'
 import { planFromSpec, validateContentSpec } from './remotion/content-spec.js'
 import { formatMotionLint, lintMotion } from './remotion/motion-lint.js'
 import { auditTextFit, textFitWarnings } from './remotion/text-fit-audit.js'
+import { fontPresenceWarnings } from './font-precheck.js'
 import { resolveTheme } from './remotion/themes.js'
 
 /** spec 文件上限：与 `render_composition` 的 manifestPath 同口径（8MB）。 */
@@ -167,6 +168,13 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     : ['文字容量预估（估算口径，渲染时以 report.textFit 为准；格位宽度就是字号旋钮）：',
       ...textFitNotes.map((line) => `· ${line}`)]
 
+  // P2-c：字体存在性预检（scaffold 无项目根，同源 URL 无法落盘核对 → 只查本地绝对路径）
+  const fontLines = fontPresenceWarnings((manifest as { global?: unknown }).global as never)
+  const fontNotes = fontLines.length === 0
+    ? []
+    : ['字体预检（只查文件存在性；解析挂死靠渲染重试兜底，见 pitfalls §10）：',
+      ...fontLines.map((line) => `· ${line}`)]
+
   const needs = plan.assetNeeds
   const assetHints = needs.user.length === 0 ? [] : [
     `⚠️ **必须由用户提供的素材**（${String(needs.user.length)} 项；缺了会走降级版式，不会停）：`,
@@ -179,6 +187,7 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     ...rhythmNote,
     ...lintLines,
     ...textFitLines,
+    ...fontNotes,
     ...assetHints,
     `密度自检：本次 ${String(plan.tracks.length)} 轨 / ${String(seconds)}s = ${String(Math.round((plan.tracks.length / seconds) * 100) / 100)} 轨每秒`
       + '（真机 45s 版是 0.53 —— 低于 1.0 通常意味着「一屏一个单元」，回看 spec 的 units）。',

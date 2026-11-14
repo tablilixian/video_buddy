@@ -17,6 +17,7 @@ import { throwError } from './error-system.js'
 import { validateManifest, type CompositionManifest } from './remotion/manifest.js'
 import { formatMotionLint, lintMotion } from './remotion/motion-lint.js'
 import { auditTextFit, textFitWarnings } from './remotion/text-fit-audit.js'
+import { fontPresenceWarnings } from './font-precheck.js'
 
 export interface ManifestAuditResult {
   /** schema 校验通过（errors 为空）。 */
@@ -28,6 +29,8 @@ export interface ManifestAuditResult {
   lintLines: string[]
   /** 文字容量预估告警行（估算口径；无溢出为空）。 */
   textFitLines: string[]
+  /** 字体存在性预检告警行（K5：只查文件存在性；无可查项为空）。 */
+  fontLines: string[]
   /** 概要（诊断用）；解析失败时 null。 */
   trackCount: number | null
   durationInFrames: number | null
@@ -82,12 +85,20 @@ export function auditManifestFile(manifestPath: string): ManifestAuditResult {
     textFitLines = ['（文字容量预估内部错误——不影响 schema 结论）']
   }
 
+  let fontLines: string[] = []
+  try {
+    fontLines = fontPresenceWarnings((manifest as { global?: unknown }).global as never)
+  } catch {
+    fontLines = ['（字体预检内部错误——不影响 schema 结论）']
+  }
+
   return {
     manifestOk: check.ok,
     schemaErrors: check.errors,
     lintCount,
     lintLines,
     textFitLines,
+    fontLines,
     trackCount,
     durationInFrames,
   }
@@ -107,8 +118,12 @@ export function formatManifestAudit(result: ManifestAuditResult, manifestPath: s
     ? []
     : ['· 文字容量预估（估算口径，渲染时以 report.textFit 为准；格位宽度就是字号旋钮）：',
       ...result.textFitLines.map((line) => `  · ${line}`)]
+  const fontSection = result.fontLines.length === 0
+    ? []
+    : ['· 字体预检（只查文件存在性，解析挂死靠渲染重试兜底）：',
+      ...result.fontLines.map((line) => `  · ${line}`)]
   const next = result.manifestOk
     ? '下一步：全绿 → `render_composition({ manifestPath })` 出片。'
     : '下一步：按上面逐条修正后重跑本工具（渲前过闸，别用渲染试错）。'
-  return [`文件：${manifestPath}`, head, ...schemaLines, ...lintSection, ...textFitSection, next].join('\n')
+  return [`文件：${manifestPath}`, head, ...schemaLines, ...lintSection, ...textFitSection, ...fontSection, next].join('\n')
 }

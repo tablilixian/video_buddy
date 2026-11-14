@@ -7,7 +7,7 @@
  * 目录），再调用 Host 的 `generateAsset` —— 外部 API 调用与落盘都在 Host 完成，
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -29,7 +29,9 @@ import { layoutTableToManifestSnippet, loadLayoutFile, normalizeLayoutTable, sav
 import { expandGroups } from './remotion/groups.js'
 // 骨架优先出片（2026-11-05）：真成片落锚点（build/PROGRESS.md + 版本快照）。
 // 核心逻辑在 render-anchor.ts —— 这里只是接线，省掉本文件的行数棘轮压力。
-import { segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
+import { readAnchorState, segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
+import { resolveAssetPathIn } from './asset-path.js'
+import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 // A4/P1-6（2026-11-11 真机复盘）：抽帧 URL → 磁盘绝对路径。回执里只给 `/canvas-studio/assets/…`
@@ -3971,6 +3973,46 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             ...(job.height !== undefined ? { height: job.height } : {}),
             sourceIds: collectManifestSourceIds(renderManifest),
           })
+        // RQ-R8/P1-18（2026-11-14 复盘 #18/#2）：权威交付路径 —— 定稿档（standard/high，
+        // 非 probe/spot）自动落 deliver/final.mp4（覆盖写）+ card.json（规格/版本/未决项/
+        // 时长断言）。draft 不落；复制不改画布节点（落节点逻辑零改动）。写盘失败不阻断
+        // 渲染（同锚点纪律），失败原因进回执。
+        let delivery: ReturnType<typeof writeDeliverable> | null = null
+        if (isDeliverableRender(job.quality, probe === true, spot)) {
+          try {
+            const anchor = readAnchorState(registry.projectDir(projectId))
+            const project = await registry.getProject(projectId)
+            const target = typeof project?.plan?.targetDuration === 'number' ? project.plan.targetDuration : null
+            delivery = writeDeliverable({
+              projectDir: registry.projectDir(projectId),
+              sourceFile: resolveAssetPathIn(registry.assetsDir(projectId), job.assetFile),
+              url: job.url,
+              assetFile: job.assetFile,
+              nodeId: composedNode?.id ?? null,
+              durationSec: job.duration,
+              ...(job.width !== undefined ? { width: job.width } : {}),
+              ...(job.height !== undefined ? { height: job.height } : {}),
+              fps: source.meta.fps,
+              // isDeliverableRender 已保证此处 quality ∈ {standard, high}（TS 无法跨函数收窄）
+              quality: job.quality as 'standard' | 'high',
+              manifestHash: createHash('sha256').update(JSON.stringify(renderManifest)).digest('hex').slice(0, 16),
+              anchorVersion: anchor.versions.at(-1)?.version ?? null,
+              targetDurationSec: target,
+              openIssues: anchor.openIssues ?? null,
+              now: Date.now(),
+            })
+          } catch (cause) {
+            delivery = {
+              written: false,
+              finalPath: '',
+              cardPath: '',
+              deliveredWithGaps: false,
+              durationMismatch: false,
+              deltaSec: null,
+              note: `权威交付前置读取失败（成片不受影响）：${cause instanceof Error ? cause.message : String(cause)}`,
+            }
+          }
+        }
         // 5) 质量护栏：probe 真值核对（步骤 2）+ 幻灯片风险评分（§9.2，仅提示不阻断）
         //    评分对象用 `renderManifest`（真正被渲染的那份）—— 校正改过时长，拿校正前的
         //    `source` 打分与成片不是同一份数据。
@@ -4006,6 +4048,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(segmentDrift !== '' ? [segmentDrift] : []),
           ...coverageWarnings,
           ...job.warnings,
+          ...deliveryReceiptLines(delivery),
         ]
         // F-05：探针渲染跳过体检 —— `validateManifest` 末尾会把体检文案并进 warnings，
         // 只跳过 `lintMotion()` 不够，这里要一并滤掉（否则探针照样刷一屏告警）。

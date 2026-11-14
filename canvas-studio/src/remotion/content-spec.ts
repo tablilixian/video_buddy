@@ -28,6 +28,8 @@ import { planRecipe } from './recipes.js'
 import type { Recipe, RecipeSegment } from './recipes.js'
 import type { CellRect } from './cell-projection.js'
 import { projectBoxToCell } from './cell-projection.js'
+import type { StagePlan } from './stage-plan.js'
+import { StagePlanError, planStages } from './stage-plan.js'
 
 /** 一屏内的一个单元（RQ-25）：主视觉 + 文案 + 自己的格位。 */
 export interface SpecUnit {
@@ -65,6 +67,18 @@ export interface ContentSpec {
     fps?: number
     /** 总时长（秒；与 sections 的时长/权重共同定帧）。 */
     durationSec?: number
+    /**
+     * B1（RQ-N2）：屏数与节奏交给 `planStages()` 算 —— 屏数 = clamp(round(时长/6.5), 2, 40)，
+     * 单屏 4–10s，屏边界向 TTS 句起点（`stageBoundarySec`）±0.6s 吸附。
+     * **显式 true 才启用**；缺省/ false = 旧行为逐字段不变（回归纪律）。
+     * 启用后 sections 只管内容（每段不许带 durationSec/weight），且段数必须等于算出的屏数。
+     */
+    autoStages?: boolean
+    /**
+     * TTS 句起点（秒，严格升序；来自 tts_narration 回执 `audio.voiceOver[].startSec` 换算）。
+     * 仅 `autoStages: true` 时参与屏边界吸附；只写本字段不开 autoStages 会被警告「不生效」。
+     */
+    stageBoundarySec?: number[]
   }
   /** 段序列（每段 = 一屏；一屏可含 1–4 个单元）。 */
   sections: Array<{
@@ -160,6 +174,9 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
     if (meta.durationSec !== undefined && (typeof meta.durationSec !== 'number' || meta.durationSec <= 0 || meta.durationSec > 3600)) {
       errors.push('spec.meta.durationSec 必须是 (0, 3600] 的数值（秒）')
     }
+    if (meta.autoStages !== undefined && typeof meta.autoStages !== 'boolean') {
+      errors.push('spec.meta.autoStages 必须是布尔值')
+    }
   }
   const sections = spec.sections
   if (!Array.isArray(sections) || sections.length === 0) {
@@ -219,6 +236,53 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
         }
       }
     })
+  }
+  // B1（RQ-N2）：autoStages —— 屏数与节奏由 planStages 算，sections 只管内容。
+  // 对账失败即拒收（两种意图打架：模型数了一遍屏，工具算了一遍屏，必须只留一个）。
+  if (isRecord(meta) && meta.autoStages === true) {
+    const durationSec = meta.durationSec
+    if (typeof durationSec !== 'number' || durationSec <= 0) {
+      errors.push('spec.meta.autoStages 开启时必须给 meta.durationSec —— 屏数 = round(时长 / 6.5)，没有总时长就无解')
+    } else {
+      if (Array.isArray(sections)) {
+        sections.forEach((section, index) => {
+          if (isRecord(section) && (section.durationSec !== undefined || section.weight !== undefined)) {
+            errors.push(`spec.sections[${index}] 在 autoStages 下不能带 durationSec/weight —— 节奏归 planStages（单屏 4–10s）；要自己控节奏就关掉 autoStages`)
+          }
+        })
+      }
+      const boundaries = meta.stageBoundarySec
+      if (boundaries !== undefined && Array.isArray(boundaries)) {
+        boundaries.forEach((value, index) => {
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > durationSec) {
+            errors.push(`spec.meta.stageBoundarySec[${index}] 必须是 [0, ${String(durationSec)}] 内的秒数，收到 ${String(value)}`)
+          } else if (index > 0 && (value as number) <= (boundaries[index - 1] as number)) {
+            errors.push(`spec.meta.stageBoundarySec 必须严格升序（TTS 句起点），[${String(index - 1)}] ≥ [${String(index)}]`)
+          }
+        })
+      }
+      if (Array.isArray(sections) && sections.length > 0) {
+        try {
+          const fps = typeof meta.fps === 'number' && meta.fps >= 1 ? meta.fps : 30
+          const stagePlan = planStages({
+            totalSeconds: durationSec,
+            fps,
+            ...(Array.isArray(boundaries) ? { boundaries: boundaries.map((value) => Math.round((value as number) * fps)) } : {}),
+          })
+          if (stagePlan.stages.length !== sections.length) {
+            errors.push(
+              `autoStages 算出 ${String(stagePlan.stages.length)} 屏（round(${String(durationSec)}/6.5)，${stagePlan.meta.clamped ? '触到屏数上限' : '未触上限'}），但 sections 写了 ${String(sections.length)} 段 —— `
+                + `把 sections 调成 ${String(stagePlan.stages.length)} 段，或关掉 autoStages 自己控节奏`,
+            )
+          }
+        } catch (cause) {
+          // planStages 抛错（如时长不足单屏下限）→ 转成校验错误回给模型，不是吞掉。
+          errors.push(`autoStages 算不出屏表：${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+      }
+    }
+  } else if (isRecord(meta) && meta.stageBoundarySec !== undefined) {
+    warnings.push('spec.meta.stageBoundarySec 写了但没开 autoStages —— 本字段只在 autoStages: true 时参与屏边界吸附，当前不生效')
   }
   const captions = spec.captions
   if (captions !== undefined) {
@@ -404,11 +468,38 @@ function buildCarryTracks(spec: ContentSpec, timeline: RecipePlan['timeline']): 
  * spec → 配方计划（确定性）。卡已注册的段走生成器（RQ-10 接线）；
  * 未注册的段回落 planRecipe 的占位轨。返回里带素材需求清单（RQ-21）。
  */
-export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan & { assetNeeds: ReturnType<typeof specAssetNeeds> } {
+export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan & { assetNeeds: ReturnType<typeof specAssetNeeds>; stagePlan?: StagePlan } {
   const recipe = toRecipe(spec)
   const plan = planRecipe({ title: spec.meta.title, totalFrames, recipe })
+  // B1（RQ-N2）：autoStages —— planStages 的屏窗替换 planRecipe 的等权切分。
+  // 只在显式 true 时走这条分支；false/缺省连这行计算都不碰（旧 spec 逐字段不变是回归纪律）。
+  let timeline = plan.timeline
+  let stagePlan: StagePlan | undefined
+  if (spec.meta.autoStages === true) {
+    const fps = spec.meta.fps === undefined || spec.meta.fps < 1 ? 30 : spec.meta.fps
+    stagePlan = planStages({
+      totalSeconds: totalFrames / fps,
+      fps,
+      ...(Array.isArray(spec.meta.stageBoundarySec)
+        ? { boundaries: spec.meta.stageBoundarySec.map((value) => Math.round(value * fps)) }
+        : {}),
+    })
+    if (stagePlan.stages.length !== spec.sections.length) {
+      throw new StagePlanError(`planFromSpec: autoStages 算出 ${String(stagePlan.stages.length)} 屏但 sections 有 ${String(spec.sections.length)} 段 —— 先过 validateContentSpec（会拦住这种 spec）`)
+    }
+    timeline = stagePlan.stages.map((stage, index) => {
+      const section = spec.sections[index] as ContentSpec['sections'][number]
+      return {
+        id: section.id,
+        label: section.label ?? section.id,
+        card: section.card ?? '—',
+        startFrame: stage.startFrame,
+        durationInFrames: stage.durationInFrames,
+      }
+    })
+  }
   const tracks: Record<string, unknown>[] = []
-  for (const slot of plan.timeline) {
+  for (const slot of timeline) {
     const section = spec.sections.find((candidate) => candidate.id === slot.id)
     if (section === undefined) continue
     const units = resolveUnits(section)
@@ -421,7 +512,13 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         // 避免「3 个单元里 1 个没注册」产出 3 张占位卡叠在同一个位置。
         if (!multi) {
           const placeholder = plan.tracks.find((track) => track.id === `seg-${slot.id}`)
-          if (placeholder !== undefined) tracks.push(placeholder)
+          if (placeholder !== undefined) {
+            // autoStages 下 planRecipe 的占位轨仍是等权节拍，必须按屏窗重排；
+            // 非 autoStages 推同一个对象引用（逐字段不变是回归纪律）。
+            tracks.push(stagePlan === undefined
+              ? placeholder
+              : { ...placeholder, startFrame: slot.startFrame, durationInFrames: slot.durationInFrames })
+          }
         }
         return
       }
@@ -455,7 +552,7 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
     })
   }
   // 常驻层压在内容之下、底色之上（轨序即层叠：后画的在上）。
-  const carryTracks = buildCarryTracks(spec, plan.timeline)
+  const carryTracks = buildCarryTracks(spec, timeline)
   if (carryTracks.length > 0) tracks.splice(1, 0, ...carryTracks)
-  return { tracks, timeline: plan.timeline, assetNeeds: specAssetNeeds(spec) }
+  return { tracks, timeline, assetNeeds: specAssetNeeds(spec), ...(stagePlan === undefined ? {} : { stagePlan }) }
 }

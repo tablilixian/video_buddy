@@ -138,6 +138,17 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     }),
   ]
 
+  // B1（RQ-N2）：autoStages 时把工具替模型做的节奏决定原文带出 —— 看不见的决定等于没做。
+  const rhythmNote: string[] = []
+  if (plan.stagePlan !== undefined) {
+    const sp = plan.stagePlan
+    const lengths = sp.stages.map((stage) => Math.round((stage.durationInFrames / fps) * 10) / 10)
+    rhythmNote.push(
+      `节奏：planStages 算出 ${String(sp.stages.length)} 屏（目标 ${String(sp.meta.target)}${sp.meta.clamped ? '，触到屏数上限' : ''}），屏长 ${String(Math.min(...lengths))}–${String(Math.max(...lengths))}s`
+        + (Object.keys(sp.meta.absorbedBy).length > 0 ? `；短屏已合并：${JSON.stringify(sp.meta.absorbedBy)}` : ''),
+    )
+  }
+
   const needs = plan.assetNeeds
   const assetHints = needs.user.length === 0 ? [] : [
     `⚠️ **必须由用户提供的素材**（${String(needs.user.length)} 项；缺了会走降级版式，不会停）：`,
@@ -147,6 +158,7 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
   const hints = [
     ...(check.warnings.length === 0 ? [] : ['⚠️ spec 警告（不阻断）：', ...check.warnings.map((warning) => `· ${warning}`)]),
     ...screenTable,
+    ...rhythmNote,
     ...assetHints,
     `密度自检：本次 ${String(plan.tracks.length)} 轨 / ${String(seconds)}s = ${String(Math.round((plan.tracks.length / seconds) * 100) / 100)} 轨每秒`
       + '（真机 45s 版是 0.53 —— 低于 1.0 通常意味着「一屏一个单元」，回看 spec 的 units）。',

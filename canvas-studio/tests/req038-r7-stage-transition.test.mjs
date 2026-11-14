@@ -141,6 +141,6 @@ test('39s 六屏样例：65 条转场、lint 0 条（真机样例验收线）', 
   const { plan, manifest } = composed(spec)
   const transitions = plan.tracks.filter((track) => track.type === 'transition')
   // 5 边界 × 13 配对 - 3 条晚偏移 to 轨（δ≥T 不参与边界切变，由卡内部入场节拍管）
-  assert.equal(transitions.length, 62, '64 → 126 轨')
+  assert.equal(transitions.length, 62, '65 内容轨 + 62 转场 = 127 轨')
   assert.equal(lintMotion(manifest).length, 0, '整份 manifest 体检零告警')
 })

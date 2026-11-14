@@ -95,13 +95,19 @@ export class StagePlanError extends Error {
   }
 }
 
-/** 由内部边界数组推出各屏窗（cuts 长度 = 屏数 - 1；0 与 totalFrames 隐含）。 */
+/** 由内部边界数组推出各屏窗（cuts 长度 = 屏数 - 1；0 与 totalFrames 隐含）。
+ * cuts 必须严格递增（吸附的下界约束 / 等分间距 / 拆分递增三条路径都保证）；
+ * 一旦出现零宽段说明不变量被破坏 —— 显式抛错，不静默 clamp 成 1 帧糊弄过去（铁律 5）。 */
 function stagesFromCuts(cuts: readonly number[], totalFrames: number): StageSlot[] {
   const stages: StageSlot[] = []
   let cursor = 0
   for (let i = 0; i <= cuts.length; i++) {
     const end = i < cuts.length ? (cuts[i] as number) : totalFrames
-    stages.push({ index: i, startFrame: cursor, durationInFrames: Math.max(1, end - cursor) })
+    const span = end - cursor
+    if (span <= 0) {
+      throw new StagePlanError(`planStages: 内部边界不变量被破坏（cuts[${String(i - 1)}]=${String(end)} ≤ 前一刀 ${String(cursor)}）—— 这是开发期 bug，请报告`)
+    }
+    stages.push({ index: i, startFrame: cursor, durationInFrames: span })
     cursor = end
   }
   return stages
@@ -230,7 +236,8 @@ export function planStages(input: PlanStagesInput): StagePlan {
       if (parts <= 1) break
       const inserted: number[] = []
       for (let j = 1; j < parts; j++) inserted.push(stage.startFrame + Math.round((j * stage.durationInFrames) / parts))
-      origins[longIndex] = [origins[longIndex]![0] as number]
+      // 尾段 origins 置空：拆分不产生「吸收」，首段保留身份；?? longIndex 防 prior-split 尾段的空数组
+      origins[longIndex] = [(origins[longIndex] as number[])[0] ?? longIndex]
       for (let j = 1; j < parts; j++) origins.splice(longIndex + j, 0, [])
       cuts.splice(longIndex, 0, ...inserted)
       continue

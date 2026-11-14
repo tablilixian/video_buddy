@@ -42,12 +42,6 @@ type ScreenTracks = readonly Record<string, unknown>[]
 
 const numeric = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
 
-function trackEnd(track: Record<string, unknown>): number {
-  const start = numeric(track.startFrame) ?? 0
-  const duration = numeric(track.durationInFrames) ?? 0
-  return start + duration
-}
-
 export interface ApplyStageTransitionsInput {
   /**
    * 按屏序排列的轨清单（每屏 = 卡 / 单元投影出的**内容轨**，不含全片 bg 与 carry）。
@@ -89,10 +83,13 @@ export function applyStageTransitions(input: ApplyStageTransitionsInput): Record
     if (windowStart < 0) continue
     if (prev.length === 0 || cur.length === 0) continue
     // from 侧右延到边界帧：内部轨末端带偏移（chart 提前 6 帧收等），不延就死在叠化窗之前。
+    // 残缺轨（缺 startFrame/durationInFrames）跳过不改写 —— trackEnd 会把它们当 0 算出假 gap。
     for (const track of prev) {
-      const end = trackEnd(track)
-      const gap = boundary - end
-      if (gap > 0) track.durationInFrames = (numeric(track.durationInFrames) ?? 0) + gap
+      const start = numeric(track.startFrame)
+      const duration = numeric(track.durationInFrames)
+      if (start === undefined || duration === undefined) continue
+      const gap = boundary - (start + duration)
+      if (gap > 0) track.durationInFrames = duration + gap
     }
     // to 侧候选：内部偏移 δ < T 的轨（左移后起点越过边界帧，与 from 侧有真实重叠）。
     const toCandidates = cur.filter((track) => (numeric(track.startFrame) ?? 0) - boundary < t)
@@ -125,9 +122,11 @@ export function applyStageTransitions(input: ApplyStageTransitionsInput): Record
   if (filmEnd !== undefined && screens.length > 0) {
     const last = screens[screens.length - 1] as ScreenTracks
     for (const track of last) {
-      const end = trackEnd(track)
-      const gap = filmEnd - end
-      if (gap > 0) track.durationInFrames = (numeric(track.durationInFrames) ?? 0) + gap
+      const start = numeric(track.startFrame)
+      const duration = numeric(track.durationInFrames)
+      if (start === undefined || duration === undefined) continue
+      const gap = filmEnd - (start + duration)
+      if (gap > 0) track.durationInFrames = duration + gap
     }
   }
   return transitions

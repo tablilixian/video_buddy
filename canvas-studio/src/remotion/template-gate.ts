@@ -33,11 +33,8 @@
  * 一律不通过的模板，调用方走自由编排，并**显式告知**用户（`决策` §5.3）。
  */
 import { requiredCapacity, type SlotContract } from './slot-contract.js'
-import { TARGET_STAGE_SEC } from './stage-plan.js'
+import { MAX_STAGES, TARGET_STAGE_SEC } from './stage-plan.js'
 import type { TemplateMeta } from './template-compile.js'
-
-/** 估屏数提示的屏数上限（与 stage-plan 的 MAX_STAGES 同值；这里只提示，不引整模块）。 */
-const MAX_STAGES_HINT = 40
 
 /**
  * 信息充足度的缺省阈值（可配置：真实内容分布校准后可能调整）。
@@ -211,7 +208,7 @@ export function gateTemplate(
   const stageHint = totalSeconds === undefined
     ? undefined
     : (() => {
-      const screens = Math.min(MAX_STAGES_HINT, Math.max(2, Math.round(totalSeconds / TARGET_STAGE_SEC)))
+      const screens = Math.min(MAX_STAGES, Math.max(2, Math.round(totalSeconds / TARGET_STAGE_SEC)))
       const own = meta.fps > 0 ? Math.round((meta.durationInFrames / meta.fps) * 10) / 10 : 0
       return `整片 ${String(totalSeconds)}s ≈ ${String(screens)} 屏（6.5s/屏节奏，上限 40）；${label}固有 ${String(own)}s，长片里最多占 1 屏（其余屏用卡 + 格位拼）`
     })()

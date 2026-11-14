@@ -45,6 +45,7 @@ import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './too
 // 骨架优先出片（2026-11-05）：里程碑时钟 —— 「故事板落地后 20 分钟内必须有一条成片」
 // 的可见性来源。每次 canvas 工具返回都会带一行 T+ / 剩余分钟 / 当前最佳版本。
 import { normalizeWorkflow } from './contracts/project.js'
+import { setSpecGateAutoResolver } from './tool-error-boundary.js'
 import { formatMilestoneClock, readAnchorState } from './render-anchor.js'
 // P2-1（2026-11-05）：max-tokens 兜底 —— 宿主观察落 build/NEXT.md + 下一轮一次性提醒。
 import { budgetGuardLine, renderBudgetNote, writeBudgetNote } from './budget-note.js'
@@ -468,6 +469,15 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     })()
   })
   ctx.effect(() => {
+    // RQ-R8/E1：放手跑判定器注入 —— 顺序闸（write_storyboard / render_composition 的
+    // intent 缺项）在 auto 模式下自动登记默认意图卡放行；confirm 模式维持拒收（用户核对
+    // 是本意）。首页态 / 非项目 cwd 时 resolveProjectId 会抛 → fail-safe 回拒收路径。
+    setSpecGateAutoResolver(async (exec) => {
+      const cwd = (exec as { agent?: { session?: { header?: { cwd?: unknown } } } } | null)?.agent?.session?.header?.cwd
+      if (typeof cwd !== 'string' || cwd === '') return false
+      const project = await registry.getProject(await resolveProjectId(registry, cwd))
+      return normalizeWorkflow(project?.workflow).mode === 'auto'
+    })
     const disposers = createStudioTools(registry, () => ctx.webServer.port, cfg, library)
       .map((definition) => wrapStudioToolDefinition(definition))
       .map((definition) => ctx.tools.register(definition))

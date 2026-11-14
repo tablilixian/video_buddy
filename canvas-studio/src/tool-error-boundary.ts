@@ -135,22 +135,50 @@ function sessionKeyOf(exec: unknown): string | undefined {
  *   手写 manifest 由 `meta.generatedBy` 标记的观察期 warning 兜底观测。
  * 其余工具不设闸。
  */
-function guardSpecGate(toolName: string, sessionKey?: string): void {
-  if (toolName !== 'write_storyboard' && toolName !== 'render_composition') return
-  const gate = specGateSnapshot(sessionKey)
+/**
+ * RQ-R8/E1：放手跑（auto）判定器，由宿主在装配期注入（闭包 registry —— 边界层不依赖它）。
+ * null = 未注入（fail-safe 回拒收路径，闸行为与改动前一致）。
+ */
+let specGateAutoResolver: ((exec: unknown) => Promise<boolean>) | null = null
+
+export function setSpecGateAutoResolver(fn: (exec: unknown) => Promise<boolean>): void {
+  specGateAutoResolver = fn
+}
+
+async function isAutoMode(exec: unknown): Promise<boolean> {
+  if (specGateAutoResolver === null) return false
+  try {
+    return await specGateAutoResolver(exec)
+  } catch {
+    return false
+  }
+}
+
+export async function guardSpecGate(toolName: string, sessionKey?: string, exec?: unknown): Promise<string | null> {
+  if (toolName !== 'write_storyboard' && toolName !== 'render_composition') return null
+  let gate = specGateSnapshot(sessionKey)
   if (toolName === 'write_storyboard' && !gate.intentCardSeen) {
+    if (await isAutoMode(exec)) {
+      noteIntentCard(sessionKey)
+      return '放手跑：意图卡按默认值自动确认（流程门自动放行，未打断用户）。'
+    }
     throwError('CS-USER-ERR', {
       message: '先调 `confirm_intent_card` 核对本次制作的意图与假设（放手跑下不弹卡、不等待，直接返回按默认值组装的卡），再 `write_storyboard`。',
     })
   }
   if (toolName === 'render_composition' && !gate.renderAllowed) {
+    if (gate.missing === 'intent' && await isAutoMode(exec)) {
+      noteIntentCard(sessionKey)
+      gate = specGateSnapshot(sessionKey)
+      if (gate.renderAllowed) return '放手跑：意图卡按默认值自动确认（流程门自动放行）。'
+    }
     throwError('CS-USER-ERR', {
       message: gate.missing === 'intent'
         ? '先调 `confirm_intent_card` 核对意图（放手跑下不弹卡不等待），再 `write_storyboard` → `scaffold_manifest` → 渲染。'
-        : '先 `scaffold_manifest` 出骨架（M1：落地后 20 分钟内首片），把内容表填进 `build/manifest-spec.json` 跑 builder 生成 `build/manifest.json`，再渲染。**不要手写 manifest**——会绕过 builder 字段契约（四季片复盘 P-06）。'
-          + '若你只是想把**已经存在的现成产物**（上一轮合成好的 mp4 / 手写脚本产出的文件）挂到画布上给用户看，**不要**再走 manifest 这条路：用 `attach_canvas_asset`（本地路径 → 画布节点），它经画布唯一写口落盘；更不要手改 `canvas.json` 绕过合并保护。',
+        : '先 `scaffold_manifest` 出骨架（M1：落地后 20 分钟内首片），把内容表填进 `build/manifest-spec.json` 跑 builder 生成 `build/manifest.json`，再渲染。**不要手写 manifest**——会绕过 builder 字段契约（四季片复盘 P-06）。若你只是想把**已经存在的现成产物**（上一轮合成好的 mp4 / 手写脚本产出的文件）挂到画布上给用户看，**不要**再走 manifest 这条路：用 `attach_canvas_asset`（本地路径 → 画布节点），它经画布唯一写口落盘；更不要手改 `canvas.json` 绕过合并保护。',
     })
   }
+  return null
 }
 
 /** 成功返回后置位（顺序闸：见一次成功即置位、永不清零）。 */
@@ -198,7 +226,7 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       // 批 2-1.2 / 2.1：spec 编排闸 —— write_storyboard 前须见过意图卡（auto 下零成本）；
       // render_composition 前须走过 scaffold（storyboard 已落地时）。会话 19 实证：
       // 无闸时模型手搓 spec 68 步零产出。删掉本行即失去守卫（反向变异靶）。
-      guardSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec))
+      const gateNote = await guardSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec), exec)
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)
@@ -208,7 +236,8 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       const result = await original.call(source, args, exec)
       commitProbeBudget(typeof source.name === 'string' ? source.name : '', args, sessionKeyOf(exec))
       commitSpecGate(typeof source.name === 'string' ? source.name : '', sessionKeyOf(exec))
-      return result
+      // E1：auto 模式下闸自动代办时，结果尾部带一行透明说明（看不见的决定等于没做）
+      return gateNote === null ? result : appendClockLine(result as ToolExecutionSuccess, `ℹ️ ${gateNote}`)
     } catch (cause) {
       throw recordStudioToolFailure(cause, exec)
     }

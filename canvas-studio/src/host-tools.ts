@@ -8,7 +8,7 @@
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -34,6 +34,11 @@ import { resolveAssetPathIn } from './asset-path.js'
 import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
 import { auditManifestFile, formatManifestAudit } from './manifest-audit.js'
 import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
+import { planShotRender, getDirtySegments, segmentManifest, storeSegment, shotCacheDir } from './shot-cache.js'
+import { boundariesFromSpec, resolveShotBoundaries } from './shot-slice.js'
+import { concatShots } from './shot-concat.js'
+import { probeMediaInfo } from './ffmpeg-run.js'
+import { saveLocalAssetBytes } from './generate.js'
 import { sessionKeyOf } from './tool-error-boundary.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
@@ -121,7 +126,7 @@ import { lintReceiptLines, writeLintReport } from './lint-report.js'
 // render-diagnostics 同款拆法。不改白名单登记数，只把成块代码搬走。
 import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
-import { runRenderJobWithStuckRetry, type RenderJobDiagnostics } from './remotion/render-job.js'
+import { runRenderJobWithStuckRetry, type RenderJobDiagnostics, type RenderJobOutcome, type RenderJobReport } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -3949,8 +3954,100 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const coverageWarnings = timingSegments !== undefined && !probe
           ? checkElementCoverage(renderManifest, timingSegments, renderManifest.meta.fps).map((issue) => coverageWarningText(issue))
           : []
-        // RQ-R8/E2：卡死类失败自动重试 1 次（第二次仍失败才浮出，文案注明）
-        const job = await runRenderJobWithStuckRetry({
+        // ── RQ-038 R11-C5：分镜渲染决策与执行 ──────────────────────────────
+        // spec.json（模型 write 落盘）派生边界 → planShotRender 决策 → 脏段逐段渲
+        // （frameRange + muteAudio + E2 重试包装）→ ffmpeg 拼接 → 合成 outcome。
+        // 任何分镜环节失败 ⇒ 回退整片渲染（回执带原因，不静默——铁律 4）。
+        let shotOutcome: RenderJobOutcome | null = null // 合成时 report 为 undefined（cast），下游 spread 安全
+        const shotReceipt: string[] = []
+        if (!probe && !spot) {
+          try {
+            const projectDir = registry.projectDir(projectId)
+            let specBoundaries: number[] | null = null
+            try {
+              const specPath = join(projectDir, 'build', 'spec.json')
+              if (existsSync(specPath)) {
+                const specJson = JSON.parse(readFileSync(specPath, 'utf8')) as { meta?: { fps?: unknown } }
+                const fps = typeof specJson.meta?.fps === 'number' && specJson.meta.fps >= 1 ? specJson.meta.fps : 30
+                specBoundaries = boundariesFromSpec(specJson, renderManifest.meta.durationInFrames, fps)
+              }
+            } catch { /* spec 读取/解析失败 = 无 spec 边界（回退 transition 末端） */ }
+            const plan = planShotRender(renderManifest, {
+              specBoundaries,
+              quality: quality ?? 'standard',
+              projectDir,
+              allowShots: !probe && !spot && renderManifest.audio === undefined,
+            })
+            if (plan.mode === 'shots') {
+              const assetsDir = registry.assetsDir(projectId)
+              const cacheDir = plan.cacheDir as string
+              const { dirty, reused } = getDirtySegments(plan.segments as never, quality ?? 'standard', cacheDir)
+              const renderedByIndex = new Map<number, string>()
+              for (const seg of dirty) {
+                const segOutcome = await runRenderJobWithStuckRetry({
+                  projectId,
+                  manifest: segmentManifest(renderManifest, seg),
+                  fps: source.meta.fps,
+                  signal: exec.signal,
+                  quality: quality ?? 'standard',
+                  realDurations: pre.realDurations,
+                })
+                const segAbsPath = resolveAssetPathIn(assetsDir, segOutcome.assetFile)
+                renderedByIndex.set(seg.index, segAbsPath)
+                storeSegment(seg, quality ?? 'standard', cacheDir, segAbsPath)
+              }
+              // 段序文件清单：复用缓存 mp4 + 新渲段产物
+              const orderedFiles = (plan.segments as never[] as { index: number }[]).map((seg) => {
+                const hit = reused.find((r) => r.segment.index === seg.index)
+                if (hit !== undefined) return hit.entry.videoPath
+                const file = renderedByIndex.get(seg.index)
+                if (file === undefined) throw new Error(`shot-render: 段 ${String(seg.index)} 既未命中缓存也无渲染产物`)
+                return file
+              })
+              const mergedTmp = join(shotCacheDir(projectDir), `merged-${String(Date.now().toString(36))}.mp4`)
+              await concatShots({ segmentFiles: orderedFiles, outputPath: mergedTmp, signal: exec.signal })
+              const mergedBytes = readFileSync(mergedTmp)
+              const saved = await saveLocalAssetBytes(registry, projectId, `remotion-shot-merged-${String(Date.now().toString(36))}.mp4`, mergedBytes)
+              const info = await probeMediaInfo(resolveAssetPathIn(assetsDir, saved.assetFile))
+              shotOutcome = {
+                url: saved.url,
+                assetFile: saved.assetFile,
+                duration: info.duration,
+                ...(info.width !== undefined ? { width: info.width } : {}),
+                ...(info.height !== undefined ? { height: info.height } : {}),
+                warnings: [],
+                quality: quality ?? 'standard',
+                frames: [],
+                // 合成诊断（分镜拼接产物没有单次渲染的工单史——字段按 RenderJobDiagnostics 最小集填充）
+                job: {
+                  id: `shot-${String(Date.now().toString(36))}`,
+                  path: 'client',
+                  claimedAt: Date.now(),
+                  firstFrameAt: null,
+                  settled: 'ok',
+                  takeover: false,
+                  waitedMs: 0,
+                  maxProgress: 1,
+                },
+                // RQ-038 R11：分镜拼接产物没有单次渲染的完整报告——report 由既有
+                // lint 链路在整片 manifest 上独立计算（下方 lintIssues），此处 cast
+                // 合成（下游 4219 行 spread 空对象 = 无字段泄漏）。
+                report: undefined as unknown as RenderJobReport,
+              }
+              const boundaryLabel = resolveShotBoundaries(renderManifest, specBoundaries).source === 'spec' ? 'spec' : resolveShotBoundaries(renderManifest, specBoundaries).source === 'transition' ? 'transition 末端' : '单段回退'
+              shotReceipt.push(
+                `🧩 分镜渲染：${String((plan.segments as unknown[]).length)} 段（${String(reused.length)} 复用 / ${String(dirty.length)} 重渲，边界来源 ${boundaryLabel}）`,
+              )
+              rmSync(mergedTmp, { force: true })
+            } else if (plan.reason !== undefined) {
+              shotReceipt.push(`ℹ️ 分镜渲染未启用：${plan.reason}`)
+            }
+          } catch (cause) {
+            shotReceipt.push(`⚠️ 分镜渲染失败，已回退整片渲染：${cause instanceof Error ? cause.message : String(cause)}`)
+          }
+        }
+
+        const job = shotOutcome ?? (await runRenderJobWithStuckRetry({
           projectId,
           manifest: renderManifest,
           fps: source.meta.fps,
@@ -3962,7 +4059,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(timingSegments !== undefined ? { timingSegments } : {}),
           realDurations: pre.realDurations,
           sampleFrames: probe || spot ? [] : pickSampleFrames(renderManifest),
-        })
+          }))
         // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针 / spot-check 不落。
         const composedNode = probe || spot
           ? null
@@ -4042,6 +4139,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const framesNote = frameCountNote(noteFrameRender(a, sessionKeyOf(exec)))
         const warnings = [
           framesNote,
+          ...shotReceipt,
           ...validation.warnings,
           ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),

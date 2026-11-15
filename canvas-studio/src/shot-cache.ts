@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompositionManifest } from './remotion/manifest.js'
-import type { ShotSegment } from './shot-slice.js'
+import { resolveShotBoundaries, sliceByShots, type ShotSegment } from './shot-slice.js'
 
 export interface ShotCacheEntry {
   /** 段 hash（缓存文件名主体）。 */
@@ -142,4 +142,47 @@ export function segmentManifest(manifest: CompositionManifest, segment: ShotSegm
   const out = { ...(manifest as unknown as Record<string, unknown>), tracks: segment.tracks }
   delete (out as Record<string, unknown>).audio // D3：段视频无声渲，音频整轨后配（Phase 1.5）
   return out as unknown as CompositionManifest
+}
+
+
+// ── RQ-038 R11-C5 · **分镜渲染决策**（planShotRender，纯函数）────────────────
+//
+// 渲染入口（render_composition）在整片渲染之前问一句「这单能不能按分镜走」：
+// - **能**：返回段清单 + hash + 缓存目录（入口据此渲染脏段 → 拼接）；
+// - **不能**：mode 'whole' + 原因（回退整片路径——行为与今天逐字段一致）。
+//
+// 回退条件（D3/D5 拍板 + fail-safe）：probe/spot 单、manifest 有 audio 段、
+// 无可用边界（<2 段）、无项目目录。
+
+export interface ShotRenderPlan {
+  mode: 'shots' | 'whole'
+  /** mode 'whole' 时的回退原因（进回执，不静默）。 */
+  reason?: string
+  segments?: ShotSegment[]
+  /** 段 hash（与 segments 同序；缓存键 + 拼接清单的主体）。 */
+  hashes?: string[]
+  cacheDir?: string
+}
+
+export interface PlanShotRenderOptions {
+  /** spec.json 派生的边界（帧）；派生失败传 null。 */
+  specBoundaries: number[] | null
+  quality: string
+  projectDir: string | null
+  /** 入口条件：非 probe/spot 且 manifest 无 audio 段。 */
+  allowShots: boolean
+}
+
+export function planShotRender(
+  manifest: CompositionManifest,
+  opts: PlanShotRenderOptions,
+): ShotRenderPlan {
+  if (!opts.allowShots) return { mode: 'whole', reason: 'probe/spot 单或 manifest 含音频段（音频整轨后配 = Phase 1.5）' }
+  if (opts.projectDir === null) return { mode: 'whole', reason: '无项目目录（首页态）' }
+  const { cuts, source } = resolveShotBoundaries(manifest, opts.specBoundaries)
+  if (cuts.length === 0) return { mode: 'whole', reason: `无可用边界（来源 ${source}）` }
+  // cuts ≥ 1 ⇒ 段数 ≥ 2（sanitizeCuts 保证严格升序）——无需再判段数
+  const { segments } = sliceByShots(manifest, cuts)
+  const cacheDir = shotCacheDir(opts.projectDir)
+  return { mode: 'shots', segments, hashes: segmentHashes(segments, opts.quality), cacheDir }
 }

@@ -4001,7 +4001,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 const hit = reused.find((r) => r.segment.index === seg.index)
                 if (hit !== undefined) return hit.entry.videoPath
                 const file = renderedByIndex.get(seg.index)
-                if (file === undefined) throw new Error(`shot-render: 段 ${String(seg.index)} 既未命中缓存也无渲染产物`)
+                if (file === undefined) throwError('CS-SHOT-004', { index: seg.index })
                 return file
               })
               const mergedTmp = join(shotCacheDir(projectDir), `merged-${String(Date.now().toString(36))}.mp4`)

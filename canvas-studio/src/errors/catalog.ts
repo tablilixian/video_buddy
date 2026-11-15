@@ -1076,6 +1076,59 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'skill path escaped the skills root: {detail}',
     recoveryHint: '请重新选择原始文件夹后再导入，不要手工改写包内层级。',
   },
+
+  // ── REQ-038 · R11 分镜渲染（SHOT，段缓存 / 拼接，2026-11-15）────────────────
+  {
+    // 段拼接器的调用契约：C5 只在段数 ≥2 时才进拼接分支。空清单触发即接线 bug——
+    // 受众不带 user（用户无从处置），也不能 auto（生产静默重试只会掩盖接线问题）。
+    code: 'CS-SHOT-001',
+    module: 'SHOT',
+    severity: 'S2',
+    audience: ['agent', 'developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: 'shot-concat: segmentFiles 为空——没有可拼接的段',
+    devMessage: 'concatShots called with empty segment list',
+    recoveryHint: '触发即 host-tools 分镜装配接线 bug：确认 planShotRender 已保证 mode=shots 时段数 ≥2。',
+  },
+  {
+    code: 'CS-SHOT-002',
+    module: 'SHOT',
+    severity: 'S2',
+    audience: ['agent', 'developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: 'shot-concat: 单段不需要拼接（调用方应直接使用该段产物）',
+    devMessage: 'concatShots called with a single segment',
+    recoveryHint: '触发即 host-tools 分镜装配接线 bug：单段应直接落正式资产，不进 concatShots。',
+  },
+  {
+    // 拼接是交付路径的必要环节，失败不能静默降级（与缓存/锚点的「辅助设施」不同）。
+    // stderr 尾部可能含绝对路径 → 诊断正文由抛出点组装进 {message}（CS-RENDER-002
+    // 同款拼法），catalog 字面量保持无路径（脱敏闸只查模板本身）。
+    code: 'CS-SHOT-003',
+    module: 'SHOT',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '{message}',
+    devMessage: 'shot-concat: ffmpeg concat failed: {detail}',
+    recoveryHint: '拼接是机械步骤（concat demuxer + -c copy），直接重试通常可过；连续失败先查磁盘空间与分段产物完整性。',
+  },
+  {
+    // 分镜装配的不变量：plan.segments 的每一段必须「缓存命中 / 新渲产物」二者有其一。
+    // 触发即 C5 增量装配接线 bug（脏段渲染成功却没进 renderedByIndex，或复用清单错位）。
+    code: 'CS-SHOT-004',
+    module: 'SHOT',
+    severity: 'S2',
+    audience: ['agent', 'developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: '分镜渲染装配不完整：有分段既未命中缓存也没有新渲染产物',
+    devMessage: 'shot-render: segment {index} has neither cache hit nor fresh render output',
+    recoveryHint: '触发即增量装配接线 bug：检查 getDirtySegments 的 dirty/reused 是否与 plan.segments 序对齐。',
+  },
 ]
 
 for (const spec of SPECS) {

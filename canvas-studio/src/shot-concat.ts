@@ -14,12 +14,13 @@
  *   的编码参数一致（同一 manifest、同一质量档、同一渲染器），copy 拼接零损失；
  * - 段清单文件写入临时文件（concat demuxer 要求 file 指令），绝对路径 + 单引号转义；
  * - 失败**抛错**（拼接是交付路径的必要环节，静默降级 = 交付残片——与缓存/锚点的
- *   「辅助设施」不同，这里不能 fail-soft）。
+ *   「辅助设施」不同，这里不能 fail-soft；错误码 CS-SHOT-001~003）。
  */
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveFfmpegPath, runFfmpeg, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
+import { throwError } from './error-system.js'
 
 export interface ShotConcatInput {
   /** 按段序排列的段视频绝对路径（缓存命中 + 新渲混合，序 = 段序）。 */
@@ -35,11 +36,11 @@ export interface ShotConcatInput {
  */
 export async function concatShots(input: ShotConcatInput): Promise<string> {
   if (input.segmentFiles.length === 0) {
-    throw new Error('shot-concat: segmentFiles 为空——没有可拼接的段')
+    throwError('CS-SHOT-001')
   }
   if (input.segmentFiles.length === 1) {
     // 单段无需拼接：调用方不应走到这里，但守一下（copy 语义由调用方处理）
-    throw new Error('shot-concat: 单段不需要拼接（调用方应直接使用该段产物）')
+    throwError('CS-SHOT-002')
   }
   const ffmpegPath = resolveFfmpegPath()
   // concat demuxer 的 file 指令要求单引号转义（路径含空格/中文——真机项目名就是中文）
@@ -64,7 +65,12 @@ export async function concatShots(input: ShotConcatInput): Promise<string> {
     input.signal,
   )
   if (result.code !== 0) {
-    throw new Error(`shot-concat: ffmpeg 拼接失败（exit ${String(result.code)}）：${result.stderr.slice(-400)}`)
+    // 诊断正文由抛出点组装进 {message}（CS-RENDER-002 同款拼法）；stderr 尾部可能含
+    // 绝对路径，走运行时参数而非 catalog 字面量（脱敏闸只查模板本身）。
+    throwError('CS-SHOT-003', {
+      message: `shot-concat: ffmpeg 拼接失败（exit ${String(result.code)}）：${result.stderr.slice(-400)}`,
+      detail: result.stderr.slice(-400),
+    })
   }
   return input.outputPath
 }

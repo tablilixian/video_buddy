@@ -141,6 +141,8 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
       quality: renderOptions.quality,
       realDurations: renderOptions.realDurations,
       sampleFrames: renderOptions.sampleFrames,
+      ...(job.frameRange === undefined ? {} : { frameRange: job.frameRange }),
+      ...(job.muteAudio === undefined ? {} : { muteAudio: job.muteAudio }),
       onProgress: renderOptions.onProgress,
     })
   })

@@ -1124,6 +1124,10 @@ export interface PendingStudioRenderJob {
    * 执行器据此走 `renderSpotFramesOnWeb`（renderStillOnWeb 单帧渲染）。
    */
   spotFrames?: number[]
+  /** R11-C3：段渲染帧窗（含首含尾；缺省 undefined = 整片渲染）。 */
+  frameRange?: [number, number]
+  /** R11-C3：无声渲染（段视频不编码音轨，音频整轨后配）。 */
+  muteAudio?: boolean
   /**
    * 本单的绝对截止时刻（宿主时钟毫秒）。
    *

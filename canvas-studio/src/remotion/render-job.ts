@@ -201,6 +201,14 @@ export interface RunRenderJobOptions {
    * `report.timingCheck`、漂移进 warnings。spot 单无成片，自然跳过。
    */
   timingSegments?: readonly TeardownSegment[]
+  /**
+   * R11-C3（分镜渲染 Phase 1）：只渲这个**帧窗**（含首含尾）。段渲染的透传通道——
+   * client 侧 renderMediaOnWeb 原生支持（帧号绝对，输出 mp4 只含段内帧）。缺省不传
+   * = 整片渲染，行为与今天逐字段一致。
+   */
+  frameRange?: [number, number]
+  /** R11-C3：无声渲染（D3）—— 段视频不编码音轨，音频整轨后配（Phase 1.5）。 */
+  muteAudio?: boolean
   /** O-06：等隐藏窗口自报就绪的上限（缺省 `RENDER_HOST_WARMUP_MS` = 8s）。只影响冷启首单。 */
   hostWarmupMs?: number
   /** O-06：心跳判失联阈值（缺省 `RENDER_HOST_STALE_MS`）。测试注入短值。 */
@@ -255,6 +263,10 @@ interface ActiveRenderJob {
   spotFrames: number[]
   /** Q2 时序闸：调用方的拆解段数组（空数组 = 未启用）。 */
   timingSegments: readonly TeardownSegment[]
+  /** R11-C3：段渲染帧窗（缺省 undefined = 整片）。 */
+  frameRange?: [number, number]
+  /** R11-C3：无声渲染标记（缺省 false）。 */
+  muteAudio?: boolean
   /** 三期 W6-1：已回写的抽帧。 */
   samples: RenderSampleResult[]
   /** O-06：这张单归谁渲（建单时定）。 */
@@ -350,6 +362,8 @@ export function claimRenderJobFor(
       realDurations: job.realDurations,
       sampleFrames: job.sampleFrames,
       spotFrames: job.spotFrames,
+      ...(job.frameRange === undefined ? {} : { frameRange: job.frameRange }),
+      ...(job.muteAudio === undefined ? {} : { muteAudio: job.muteAudio }),
       deadlineAt: job.deadlineAt,
     }
   }
@@ -368,6 +382,8 @@ export function claimRenderJobFor(
         realDurations: takeover.realDurations,
         sampleFrames: takeover.sampleFrames,
         spotFrames: takeover.spotFrames,
+        ...(takeover.frameRange === undefined ? {} : { frameRange: takeover.frameRange }),
+        ...(takeover.muteAudio === undefined ? {} : { muteAudio: takeover.muteAudio }),
         deadlineAt: takeover.deadlineAt,
       }
     }
@@ -914,6 +930,8 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       sampleFrames: options.sampleFrames ?? pickSampleFrames(manifest),
       spotFrames,
       timingSegments: options.timingSegments ?? [],
+      ...(options.frameRange === undefined ? {} : { frameRange: options.frameRange }),
+      ...(options.muteAudio === undefined ? {} : { muteAudio: options.muteAudio }),
       samples: [],
       executor,
       ...(fallbackReason !== undefined ? { fallbackReason } : {}),

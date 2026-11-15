@@ -184,6 +184,8 @@ export interface RenderManifestOnWebOptions {
   sampleFrames?: readonly number[] | undefined
   /** 三期 W6-1：只要单帧、不要编码成片时使用（`renderStillOnWeb` 兜底路径）。 */
   frameRange?: FrameRange | undefined
+  /** R11-C3：无声渲染（audioCodec null，段视频不编码音轨）。 */
+  muteAudio?: boolean | undefined
 }
 
 export interface RenderedManifest {
@@ -307,7 +309,8 @@ export async function renderManifestOnWeb(
     inputProps: { manifest: probedManifest },
     container: 'mp4',
     videoCodec: 'h264',
-    audioCodec: 'aac',
+    // R11-C3：muteAudio ⇒ 不编码音轨（段视频无声，音频整轨后配）
+    audioCodec: options.muteAudio === true ? null : 'aac',
     outputTarget: 'arraybuffer',
     licenseKey: options.licenseKey ?? DEFAULT_REMOTION_LICENSE_KEY,
     // ── 三期 W5-3：质量档（`standard` 与今天的默认值完全一致） ──

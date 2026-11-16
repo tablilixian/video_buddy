@@ -16,7 +16,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { renderSpecGeometry, OUTPUT } from '../scripts/gen-spec-geometry.mjs'
+import { renderSpecGeometry, projectedBox, OUTPUT } from '../scripts/gen-spec-geometry.mjs'
 import { planTextFit } from '../lib/remotion/text-fit-plan.js'
 
 const body = () => readFileSync(OUTPUT, 'utf8')
@@ -45,9 +45,12 @@ test('硬编码期望值：四个算例的字号 / 行数 / 盒高（改设计�
   assert.equal(title30.fontPx, 123, 'cell.h 30（盒 173px）实测字号变了')
   assert.equal(title30.heightLimited, true, '30 也不够满号 —— 文档里不许再写「提到 30 就满号」')
 
-  const bullets = SIZING('bullets', ['量化基金：规则先写死', '按信号执行', '散户：临场决定', '看心情执行'], { x: 50, y: 62, w: 100, h: 25.76 }, vertical.width, vertical.height)
+  // box 必须与生成器**同源**（真跑 planFromSpec 的投影），不能手写 —— P0-2（bullets 容器
+  // 改按 box.w 算）之后，手写 w:100 与真投影 w:64% 的字号会差出一档（79 vs 60）。
+  const bulletsBox = projectedBox('A4', '-bullets', { x: 50, y: 62, w: 100, h: 56 })
+  const bullets = SIZING('bullets', ['量化基金：规则先写死', '按信号执行', '散户：临场决定', '看心情执行'], bulletsBox, vertical.width, vertical.height)
   assert.equal(bullets.lines.length, 4, '四条要点必须还是四行（内容不许丢）')
-  assert.equal(bullets.fontPx, 79, '竖屏 bullets（盒 495px）实测字号变了')
+  assert.equal(bullets.fontPx, 60, '竖屏 bullets（盒 495px）实测字号变了')
 
   const flat = SIZING('title', '量化基金 散户', { x: 50, y: 46, w: 76, h: 9 }, 1920, 1088)
   assert.equal(flat.fontPx, 85, '1080p title 应是满号（85）')

@@ -73,7 +73,7 @@ function cardInnerRatio(cardId, suffix) {
 }
 
 /** 卡在给定 cell 下，某条轨的实际投影 box（画布百分比）—— 渲染侧用的就是这个值。 */
-function projectedBox(cardId, suffix, cell) {
+export function projectedBox(cardId, suffix, cell) {
   const spec = {
     meta: { title: 'geo', width: 1080, height: 1920, fps: 30, durationSec: 6 },
     sections: [{ id: 's1', label: '甲', card: cardId, copy: '示例', cell }],

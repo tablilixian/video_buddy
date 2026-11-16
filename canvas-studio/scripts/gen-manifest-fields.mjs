@@ -80,7 +80,7 @@ function renderMember(member, source) {
 }
 
 /** 扫一个源文件，产出它的全部字段小节（interface / 字符串字面量 union / type literal）。 */
-function sectionsOfOneFile(sourcePath) {
+export function sectionsOfOneFile(sourcePath) {
   const text = readFileSync(sourcePath, 'utf8')
   const source = ts.createSourceFile(sourcePath, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS)
   const sections = []

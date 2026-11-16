@@ -79,14 +79,19 @@ registerCard({
   generate: (ctx) => {
     const rows = ctx.copy.split(/[;;\n]/).map((line) => line.trim()).filter(Boolean).slice(0, 5)
       .map((pair) => { const sep = pair.lastIndexOf(':') >= 0 ? pair.lastIndexOf(':') : pair.lastIndexOf(':'); return { k: pair.slice(0, sep).trim(), v: pair.slice(sep + 1).trim() } })
+    // P0-3（REQ-038 R11 二轮，2026-11-16）：浮卡不再压柱图。
+    // 旧 box {x:22,y:30,w:34,h:26} 与 chart（y 30–82%）相交 39.7%（抽帧可见「数据卡压在柱顶」）。
+    // 新 box 落在 title（y≤15）与 chart（y≥30）之间的空档 y 16.5–29.5，两头各留 0.5%。
+    // `text` 只吃 label 第一段：旧实现与 -title 轨同写整段 `ctx.label` ⇒ 同屏打两遍。
+    const summaryLabel = ((ctx.label ?? '').split('|')[0] ?? '').trim()
     return [
       { id: `${ctx.segmentId}-bg`, type: 'shape', shape: 'rect', color: '#101828', box: { x: 50, y: 50, w: 100, h: 100 }, startFrame: ctx.startFrame, durationInFrames: ctx.durationInFrames, fadeFrames: 0 },
       { id: `${ctx.segmentId}-title`, type: 'textCard', variant: 'subtitle', text: ctx.label, box: { x: 50, y: 12, w: 40, h: 6 }, background: 'transparent', color: '#8fa3c4', startFrame: ctx.startFrame, durationInFrames: ctx.durationInFrames, fadeFrames: 0 },
       { id: `${ctx.segmentId}-chart`, type: 'chart', variant: 'bars', labels: rows.map((row) => row.k), values: rows.map((row, i) => Number(row.v.replace(/[^\d.-]/g, '')) || i + 1),
         color: ctx.accentColor, box: { x: 50, y: 56, w: 76, h: 52 }, startFrame: ctx.startFrame + 6, durationInFrames: Math.max(12, ctx.durationInFrames - 12), fadeFrames: 0 },
-      { id: `${ctx.segmentId}-summary`, type: 'textCard', variant: 'dataCard', text: ctx.label,
+      { id: `${ctx.segmentId}-summary`, type: 'textCard', variant: 'dataCard', text: summaryLabel.length > 0 ? summaryLabel : ctx.label,
         data: rows.slice(0, 2).map((row) => ({ k: row.k, v: row.v })), accentColor: ctx.accentColor, countUp: true,
-        box: { x: 22, y: 30, w: 34, h: 26 }, startFrame: ctx.startFrame + 10, durationInFrames: Math.max(12, ctx.durationInFrames - 20), fadeFrames: 0 },
+        box: { x: 50, y: 23, w: 40, h: 13 }, startFrame: ctx.startFrame + 10, durationInFrames: Math.max(12, ctx.durationInFrames - 20), fadeFrames: 0 },
     ]
   },
 })

@@ -88,7 +88,7 @@ function assetCell(assets) {
 }
 
 /** mock ctx：素材槽位一律给同源 URL（走主路径，不是降级版式）。 */
-function mockCtx(card, copy, label) {
+export function mockCtx(card, copy, label) {
   const slots = Object.fromEntries(card.assets.map((decl) => [decl.slot, '/canvas-studio/assets/demo/shot.png']))
   return {
     segmentId: 'p',
@@ -106,7 +106,7 @@ function mockCtx(card, copy, label) {
   }
 }
 
-const safeGenerate = (card, copy, label) => {
+export const safeGenerate = (card, copy, label) => {
   try {
     return card.generate(mockCtx(card, copy, label))
   } catch {
@@ -130,7 +130,7 @@ const safeGenerate = (card, copy, label) => {
  * 3. 段的「完整性」判定要按**整段原文**匹配：`甲甲：11` 原样出现说明值没被单独
  *    取用（只是整行当一句）；拆开才说明是键值语法。
  */
-function probeSlotUsage(card, slot) {
+export function probeSlotUsage(card, slot) {
   const isCopy = slot === 'copy'
   const other = isCopy ? '丁丁' : '甲甲'
   /** 每项：{ shape, probe, heads, separatedBy } —— heads 是「出现几个就算几段」的哨兵。 */

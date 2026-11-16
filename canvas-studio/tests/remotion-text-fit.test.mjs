@@ -120,7 +120,10 @@ test('0B-1 ★等价性：subtitle（含 box）与旧 fitOrKeep 逐项相同', (
       const plan = planTextFit({ variant: 'subtitle', text, ...(box === undefined ? {} : { box }), ...CANVAS })
       const label = `${JSON.stringify(text).slice(0, 24)} @ ${JSON.stringify(box)}`
       assert.equal(plan.renderText, legacy.text, `渲染文本必须逐字相同：${label}`)
-      assert.equal(plan.fontPx, legacy.fontSize, `字号必须相同：${label}`)
+      // P0-1（REQ-038 R11 二轮）：plan 层字号取整是有意契约（缩号 ×0.94 / 兜底 ×0.55
+      // 会留 46.75000000000001 这种浮点尾巴，污染回执与警告文案）。折行点 / 溢出判据
+      // 仍必须与旧实现逐字相同 —— 只有对外字号这一位变了。
+      assert.equal(plan.fontPx, Math.round(legacy.fontSize), `字号必须相同（允许 P0-1 的取整）：${label}`)
       assert.equal(plan.overflow, legacy.overflow, `溢出判据必须相同：${label}`)
     }
   }
@@ -135,7 +138,8 @@ test('0B-1 ★等价性：无 box 的 title 与旧 fitOrKeep 逐项相同', () =
     })
     const plan = planTextFit({ variant: 'title', text, ...CANVAS })
     assert.equal(plan.renderText, legacy.text, `渲染文本：${JSON.stringify(text).slice(0, 24)}`)
-    assert.equal(plan.fontPx, legacy.fontSize, `字号：${JSON.stringify(text).slice(0, 24)}`)
+    // P0-1 取整契约（见上一条测试的注释）
+    assert.equal(plan.fontPx, Math.round(legacy.fontSize), `字号（允许 P0-1 的取整）：${JSON.stringify(text).slice(0, 24)}`)
     assert.equal(plan.overflow, legacy.overflow)
   }
 })

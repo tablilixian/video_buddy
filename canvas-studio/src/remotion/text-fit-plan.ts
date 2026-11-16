@@ -280,9 +280,16 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
     // 且折行按 900 算、**没扣 42px 圆点**（18 点 + 24 右距）⇒ 估算比实际宽 5%。
     // 容器上限与圆点占位都跟字号一起缩放（都是同一套「按 1080 高设计」的 px 常量）；
     // 外层 `min(..., canvasW × 0.9)` 仍是画布硬约束，不会因为放大而溢出画面。
+    // P0-2（REQ-038 R11 二轮，2026-11-16）：旧式 `min(上限, max(下限, canvasW×0.9))`
+    // **完全没看 box**（title 的 0B-4 同款缺陷）⇒ 窄盒里按画布宽折行，
+    // 渲染被盒子的 `overflow:hidden` 两侧裁字（竖屏 A4 实测两侧各裁 140px、首字被吃；
+    // 16:9 盒宽 1228 > 上限 900 所以一直没暴露）。修法与 title 对齐：盒宽优先，画布约束兜底。
+    const boxWidthPx = box === undefined ? undefined : (box.w / 100) * canvasW
     const containerWidthPx = Math.min(
       fontPxOf(BULLETS_CONTAINER_MAX_PX),
-      Math.max(fontPxOf(300), canvasW * 0.9),
+      boxWidthPx !== undefined && Number.isFinite(boxWidthPx) && boxWidthPx > 0
+        ? Math.max(fontPxOf(300), boxWidthPx)
+        : Math.max(fontPxOf(300), canvasW * 0.9),
     )
     const boxHeightPx = heightPxOf(box, canvasH)
     return {
@@ -381,7 +388,13 @@ export function planTextFit(input: TextFitPlanInput): TextFitPlan {
   const overflow = fit.lines.length > budget.maxLines
   // 「没缩号」= 字号没降且没溢出 ⇒ 原样交给浏览器（它才知道真正的折行点）。
   const shrunk = budget.autoShrink && !(fit.fontPx >= base && !overflow)
-  const fontPx = budget.autoShrink ? fit.fontPx : base
+  // 未取整原值只给 `atMinFont` 判定用 —— 取整会让「正好压在下限」误判成「高于下限」。
+  const rawFontPx = budget.autoShrink ? fit.fontPx : base
+  // P0-1（REQ-038 R11 二轮，2026-11-16）：对外字号取整。缩号循环 `× 0.94` + 兜底
+  // `minFont = base × 0.55` 都会留下 `46.75000000000001` 这种浮点尾巴（真机实测），
+  // 而渲染回执的 `textFit` schema 曾按 integer 校验 ⇒ 整条回执被拒（§3.1 三次同类事故）。
+  // schema 层面仍声明 `number`（见 host-tools.ts），两层各自治不同的病。
+  const fontPx = Math.round(rawFontPx)
   return {
     variant: input.variant,
     renderText: shrunk ? fit.lines.join('\n') : raw,
@@ -390,7 +403,7 @@ export function planTextFit(input: TextFitPlanInput): TextFitPlan {
     maxLines: budget.maxLines,
     lines: fit.lines,
     overflow,
-    atMinFont: overflow && budget.autoShrink && fontPx <= minFont + 1e-6,
+    atMinFont: overflow && budget.autoShrink && rawFontPx <= minFont + 1e-6,
     maxWidthPx: budget.maxWidthPx,
     containerWidthPx: budget.containerWidthPx,
     // 高度是**降号的起因之一**（另一因是行数）：只报后者会让人以为是文案太长。

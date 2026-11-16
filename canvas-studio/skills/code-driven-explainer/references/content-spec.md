@@ -2,6 +2,9 @@
 
 > **一句话**：拿到 brief 后，你写的是这份 **spec（JSON 填空）**，不是 manifest 轨。
 > spec → `planFromSpec`（产品侧确定性函数）→ manifest。**同 spec ⇒ 同 manifest**（逐字段）。
+>
+> **全字段清单认 `spec-fields.generated.md`**（机器生成，含 SpecUnit 的每个合法键）——
+> 本文件只讲怎么填、怎么想；**别再 grep 源码确认「SpecUnit 认哪些键」**。
 
 ## 为什么不许直接写轨
 

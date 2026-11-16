@@ -250,6 +250,9 @@ const resultSchema = {
         loudnessLufs: { type: 'number' as const, description: '成片综合响度（LUFS，BS.1770）。无声片缺省。复刻场景用它和参考片对齐观感（差 3dB 以上听感明显不同）' },
         // 0B（CV-461）：文字容量体检。`additionalProperties:false` ⇒ 漏声明 = 字段被静默剥掉
         // （CV-146 教训），所以必须在这里显式登记。
+        // P0-1（REQ-038 R11 二轮，2026-11-16）：R11 给 TextFitReportEntry 加的
+        // `heightLimited`（必填）/ `boxHeightPx` 没登记到这里 ⇒ 竖屏回执被整条拒收
+        // （CV-146 → RQ-19 后第三次同类事故）。守卫见 tests/tool-output-schema-drift.test.mjs。
         textFit: {
           type: 'array' as const,
           items: {
@@ -258,13 +261,17 @@ const resultSchema = {
             properties: {
               id: { type: 'string' as const, description: '轨 id' },
               variant: { type: 'string' as const, description: '排版形态：subtitle / title / bullets / dataCard / caption' },
-              fontPx: { type: 'integer' as const, description: '实际采用的字号（px）' },
-              baseFontPx: { type: 'integer' as const, description: '基准字号（px）：未缩号时的值' },
+              // `number` 不是 `integer`：缩号触底时字号来自 `base × 0.55`，理论上可出小数
+              // （plan 层已取整，契约上不指望它恒为整型 —— 像素字号是渲染值不是计数）。
+              fontPx: { type: 'number' as const, description: '实际采用的字号（px）' },
+              baseFontPx: { type: 'number' as const, description: '基准字号（px）：未缩号时的值' },
               maxLines: { type: 'integer' as const, description: '该轨允许的最大行数' },
               lines: { type: 'array' as const, items: { type: 'string' as const }, description: '渲前实测的折行结果（诊断：算法认为断在哪）' },
               overflow: { type: 'boolean' as const, description: '超出行数上限 ⇒ **成片会被 overflow:hidden 裁掉**；true 时 warnings 里必有可执行建议' },
               atMinFont: { type: 'boolean' as const, description: '已缩到字号下限（base×0.55）仍溢出 ⇒ 最严重档' },
               maxWidthPx: { type: 'integer' as const, description: '折行可用宽（px）——判断「是不是 box 太窄」看它' },
+              heightLimited: { type: 'boolean' as const, description: '盒高压低了字号/行数上限（R11）；true 且不溢出 = 字被压小了但没裁。竖屏 + 格位投影是主要来源' },
+              boxHeightPx: { type: 'integer' as const, description: '盒高（px）。无 box 时缺省' },
             },
           },
           description: '文字容量体检（渲前在浏览器里按真实字形实测，逐条文字轨一条）。文字放不下时这里给实测值，warnings 给可执行建议（改短到 N 字 / 加大 box）。**overflow=true 的轨道必须处理或如实告知用户「这段字会被裁」**',
@@ -4746,10 +4753,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '画幅 / 字号 / 版式不满意**都改 spec 重跑本工具** —— 不要在这一步去读或改宿主源码、不要另写生成器、'
         + '不要手搓 manifest 绕过版式（真机有过 100 分钟零出片，全耗在这条路上，而那份 manifest 当时已合法可渲）。'
         + '回执里「会被裁掉」= 必须改；「盒高只有 Npx」= 字被压小了，加高该单元的 cell.h 即可。'
-        + '**卡号只查 `card-catalog.generated.md`、能力边界只查 `spec-capability.generated.md`**：'
-        + '别用 bash 去 `grep src/remotion/**` 枚举卡或确认「能不能表达」——那两份是机器生成的权威清单，源码是实现不是规格。'
-        + '表达不了时的唯一合法路径是三级降级（加单元 → carry → write_note 记一句后继续出片），'
-        + '**不是**手搓 manifest / 后处理注入（真机 45 分钟就耗在「找不到合法出口」上）。'
+        + '**卡号只查 `card-catalog.generated.md`、copy 怎么写查 `card-rules.generated.md`、能力边界只查 `spec-capability.generated.md`**：'
+        + '别用 bash 去 `grep src/remotion/**` 枚举卡、确认「能不能表达」或查「copy 怎么拆」——那三份是机器生成的权威清单，源码是实现不是规格。'
+        + '表达不了或渲染坏了的唯一合法路径是四级降级：'
+        + '**第 0 档（渲染坏了：抽帧见内容缺失 / 被裁 / 遮挡）= 2 分钟内换 rules 表「同义卡」列的同义卡，不读渲染器不追根因**；'
+        + '① 加单元 → ② carry → ③ write_note 记一句后继续出片，'
+        + '**不是**手搓 manifest / 后处理注入 / 读源码改渲染（真机 45 分钟耗在「找不到合法出口」、13.9 分钟耗在「A4 裁字诊断」上）。'
         + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, description: '片名（写进 meta.title 与片头卡文案）。**传 templateId 时可省**（模板自带文案骨架）' },

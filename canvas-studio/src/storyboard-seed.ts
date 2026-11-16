@@ -19,6 +19,10 @@
  * 3. **镜号一次铸造、永不重排**（§7.6）：按 scene×shot 遍历序铸全局号 1..N；
  *    后续结构修订新增取 `max+1`、删除留空号。素材组 / 产物命名（`分镜 N · 关键帧`、
  *    `分镜 N · 素材`）全钉在镜号上，重编 = 全线孤儿。
+ *    **备份拍不铸号**（R11-B3）：`shot.backup` 是「同一镜的第二条拍法」，不占银幕时间
+ *    （`storyboard-render.ts` 的片长只累加非 backup），落成卡会凭空多出 6.67s × N 的
+ *    声明时长，与片长自相矛盾（真机会话 3 段片落了 6 张卡 = 40s 声明 / 20s 成片）。
+ *    它们仍留在故事板文件里，要保留就取消 `backup` 标记后重新落地。
  *
  * ## 纯函数，不碰盘
  *
@@ -35,6 +39,14 @@ export interface StoryboardSeedPlan {
   readonly assets: readonly StudioAsset[]
   /** 本次铸出的镜号范围（1 基，含），供返回文案与后续 delta re-seed 对照。 */
   readonly shotNumbers: readonly number[]
+  /**
+   * R11-B3：被跳过的备份拍条数（`shot.backup === true`）。
+   *
+   * 跳过而不是折叠进卡：备份拍的 `visual` 往往与主镜几乎同字（真机会话里唯一能区分
+   * 的「备份：」前缀是模型自己写在 `visual` 里的，不是系统标注），折叠只会把卡面撑长。
+   * 它在本轮不是银幕内容，回执说清「跳过了几条、怎么保留」比塞进卡里更有用。
+   */
+  readonly skippedBackups: number
 }
 
 /** seed 选项。 */
@@ -173,8 +185,15 @@ export function planSeedFromStoryboard(
   // ── 行 5：分镜卡 ×N（镜号按 scene×shot 遍历序一次铸造） ──
   const shotNumbers: number[] = []
   let mirror = 0
+  let skippedBackups = 0
   for (const scene of sections['04_storyboard'].scenes) {
     for (const shot of scene.shots) {
+      // R11-B3：备份拍落卡 = 凭空多一份银幕时长。铸号也要一起跳过，否则镜号会
+      // 与卡面不符（镜号同时是素材组 / 产物命名的锚）。
+      if (shot.backup) {
+        skippedBackups += 1
+        continue
+      }
       mirror += 1
       shotNumbers.push(mirror)
       const position = grid(mirror - 1, 4, 0, 280, 300, 200)
@@ -269,5 +288,5 @@ export function planSeedFromStoryboard(
     })
   }
 
-  return { nodes, assets, shotNumbers }
+  return { nodes, assets, shotNumbers, skippedBackups }
 }

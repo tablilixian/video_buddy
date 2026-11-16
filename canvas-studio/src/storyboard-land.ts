@@ -87,6 +87,19 @@ export interface LandResult {
   readonly resumed: boolean
 }
 
+/**
+ * R11-B3：备份拍跳过说明。
+ *
+ * 静默跳过是更坏的选择 —— 用户会在画布上「找不到第 4 张卡」，然后怀疑落地失败。
+ * 这句话同时给出「为什么」和「怎么保留」，所以不需要额外审批门。
+ */
+function backupNote(skipped: number): string[] {
+  return skipped === 0
+    ? []
+    : [`已跳过 ${String(skipped)} 条备份拍：备份拍不占银幕时间（片长只累加非 backup），因此不落分镜卡。`
+      + '要保留就取消 storyboard 里的 `backup` 标记后重新落地。']
+}
+
 /** 投影计划：把（活副本或快照）投成待落画布的节点/资产，并接上「创意」节点的血缘。 */
 function seedPlan(
   document: StoryboardDocument,
@@ -250,7 +263,7 @@ async function landFirstTime(
     nodes: plan.nodes.length,
     assets: plan.assets.length,
     version: landedLabel,
-    warnings,
+    warnings: [...warnings, ...backupNote(plan.skippedBackups)],
     resumed: false,
   }
 }
@@ -295,8 +308,9 @@ async function resumeLanding(
     nodes: plan.nodes.length,
     assets: plan.assets.length,
     version: landed.sourceVersion,
-    // 续做不重跑 `validateForSeed`（料是首落时已过闸的那一份），故无 warnings。
-    warnings: [],
+    // 续做不重跑 `validateForSeed`（料是首落时已过闸的那一份）—— 但备份拍跳过是
+    // 投影事实，不是校验结论，续做同样要说（否则「续做后再看画布」会以为丢卡）。
+    warnings: backupNote(plan.skippedBackups),
     resumed: true,
   }
 }

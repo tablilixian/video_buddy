@@ -125,6 +125,10 @@ const HANDLE_PARAMS: readonly string[] = [
   // A1（2026-11-11）：模板配乐位 —— 合法值只能来自音乐生成工具的产物 URL，与
   // imageUrl / videoUrl 同属「素材地址」（模型会写 `bgm.mp3` / `待生成` 这类占位）。
   'bgmUrl',
+  // R11-B3（2026-11-16）：patch_spec_section 的画布节点句柄 —— 与 nodeId 同类：
+  // 合法值只能来自画布上真实存在的分镜卡（模型会写 `shot-1` / `card_2`）。
+  // 填错的代价不是「改错一处」而是「改错一屏」，所以这里按句柄从严。
+  'shotNodeId',
 ]
 
 /**
@@ -347,6 +351,20 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   family: '过滤词（science / product / report 等体裁名），查不到即返回「没有该体裁」清单，无破坏性',
   requirements: '对象容器（contentChars / itemCount / assetCount / durationSeconds / stageSeconds / totalSeconds 六个数值），逐字段由 readRequirement 收口，非法值当没给',
   minInfoRatio: '数值（信息充足度阈值 0–1），≤0 或非有限值视为「用缺省 0.35」',
+  // —— R11-B3（2026-11-16）patch_spec_section ——
+  // `segmentId` 是 spec 内部的段 id（`s1` / `open`）：合法值天然极短，通用尺子
+  // （「整篇只是占位词」）会误伤 `s1`；它也不是「别处产出的对象」（spec 就在手边的
+  // 文件里），所以不进 HANDLE_PARAMS。填错由 applySpecPatch 拒收并列出真实 id。
+  segmentId: '枚举（spec.sections[].id），不存在即由 applySpecPatch 拒收并列出当前全部段 id',
+  // 文案类三个：内容本身就是任意散文，占位词与真文案无法区分（用户也可能真想写
+  // 一句「占位」）。它们的真风险是「units 型屏改错字段」这类**结构**问题，
+  // 由 applySpecPatch 按形态拒收（比通用占位尺子精确得多）。
+  copy: '自由文本（屏上文案）：内容即散文，占位词与真文案不可区分；结构风险由 applySpecPatch 按屏形态拒收',
+  label: '自由文本（眉标标签）：同 copy，短标签本来就可能是一个词',
+  unitCopy: '自由文本（单元文案）：同 copy',
+  unitIndex: '数值（单元下标，0 基整数），越界由 applySpecPatch 点名现有单元数',
+  unitCard: '枚举（卡编号如 A4 / B1），未注册由 validateContentSpec 警告并走占位回落，无脏数据贯穿',
+  dataSource: '自由文本（数据集名 + 可复核 URL / observed / inline）：内容即来源描述，占位词与真来源不可区分；填错只影响告警质量，不进画面',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

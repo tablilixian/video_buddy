@@ -33,6 +33,7 @@ import { formatMotionLint, lintMotion } from './remotion/motion-lint.js'
 import { auditTextFit, textFitWarnings } from './remotion/text-fit-audit.js'
 import { fontPresenceWarnings } from './font-precheck.js'
 import { resolveTheme } from './remotion/themes.js'
+import { auditSpecDensity } from './remotion/density-audit.js'
 
 /** spec 文件上限：与 `render_composition` 的 manifestPath 同口径（8MB）。 */
 const MAX_SPEC_BYTES = 8 * 1024 * 1024
@@ -46,8 +47,15 @@ export interface SpecScaffoldInput {
   projectDir?: string
 }
 
-export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
-  const raw = input.specPath.trim()
+/**
+ * 读 + 校验一份 spec 文件 —— **唯一读取入口**。
+ *
+ * scaffold 与 `patch_spec_section` 共用这一条：拒收文案只有一份，改一次就不会出现
+ * 「scaffold 说 8MB、patch 说 12MB」这种两套事实。校验失败**零副作用**（不落盘、
+ * 不建目录、不生成轨道）。
+ */
+export function readContentSpecFile(specPath: string): ContentSpec {
+  const raw = specPath.trim()
   if (raw === '') throwError('CS-USER-ERR', { message: 'specPath 不能为空' })
   if (!raw.startsWith(sep)) {
     throwError('CS-USER-ERR', {
@@ -84,7 +92,14 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
       detail: 'content spec invalid',
     })
   }
-  const spec = parsed as ContentSpec
+  return parsed as ContentSpec
+}
+
+export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
+  const spec = readContentSpecFile(input.specPath)
+  // readContentSpecFile 已判过 ok；这里再取一次是为了拿到 warnings（校验的同一份实现，
+  // 不另写一套「只取警告」的旁路 —— 两套判据迟早会漂）。
+  const check = validateContentSpec(spec)
 
   const fps = typeof spec.meta.fps === 'number' && spec.meta.fps > 0 ? spec.meta.fps : 30
   const declared = spec.meta.durationSec
@@ -177,6 +192,12 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     : ['字体预检（只查文件存在性；解析挂死靠渲染重试兜底，见 pitfalls §10）：',
       ...fontLines.map((line) => `· ${line}`)]
 
+  // B5（O-8）：内容密度体检 —— 不阻断，但每片都说一句（此前「一屏一句话」永远不会被指出）。
+  const density = auditSpecDensity(spec, total, fps)
+  const densityLines = density.warnings.length === 0
+    ? [`内容密度：${String(density.charsPerSec)} 字/秒 · 屏均 ${String(density.pointsPerScreen)} 个信息点（${String(density.screens)} 屏）—— 够读。`]
+    : ['⚠️ 内容密度体检（不阻断渲染，改不改由内容决定）：', ...density.warnings.map((warning) => `· ${warning}`)]
+
   const needs = plan.assetNeeds
   const assetHints = needs.user.length === 0 ? [] : [
     `⚠️ **必须由用户提供的素材**（${String(needs.user.length)} 项；缺了会走降级版式，不会停）：`,
@@ -187,6 +208,7 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
     ...(check.warnings.length === 0 ? [] : ['⚠️ spec 警告（不阻断）：', ...check.warnings.map((warning) => `· ${warning}`)]),
     ...screenTable,
     ...rhythmNote,
+    ...densityLines,
     ...lintLines,
     ...textFitLines,
     ...fontNotes,

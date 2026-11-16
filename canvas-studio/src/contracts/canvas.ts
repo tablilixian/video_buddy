@@ -216,6 +216,21 @@ export interface StudioCanvasNode {
    *    所以 `writeCanvas` 的 client-author 保护必须把它捞回来（否则用户一拖画布就丢）。
    */
   sbRef?: string
+  /**
+   * R11-B3：**段指针**（`spec:s2`）—— 这张分镜卡对应 spec 的哪一屏。
+   *
+   * `sbRef` 指回故事板（`04:S1/shots/S1-Sh1`），本字段指回**内容规格**（`spec.sections[]`）。
+   * 两者不是同一条链：故事板是「怎么拍」，spec 是「屏上放什么」，片长与产物只认 spec。
+   * 用户「对着这张卡说话」时要能唯一落到一段 spec 上，否则改一句就整片重写 ——
+   * 这正是 R11 要消除的代价。
+   *
+   * 三条纪律（与 `sbRef` 同款）：
+   * 1. **纯增量** —— 没对位成功的卡没有本字段，旧画布与旧工具调用逐字段不变。
+   * 2. **Host 专属** —— 只由 `bindSegmentRefs`（scaffold 后对位）写入，客户端只转达。
+   * 3. **可缺失可陈旧** —— 段 id 改了（spec 重写换 id）则本指针失效；`patch_spec_section`
+   *    找不到段时会明说「指针已过期，重新 scaffold 对齐」，绝不猜一个段去改。
+   */
+  segmentRef?: string
   /** The operation that produced this node (edge color/label source). */
   operationType?: StudioCanvasOperationType
   /**

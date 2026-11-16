@@ -50,7 +50,7 @@ import { templateChannelEnabled } from '../lib/template-channel.js'
 // 2026-11-12 模板通道临时下线：关闭态该工具不注册 ⇒ 基线 51；开关打开自动回到 52。
 const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
 // RQ-R9/P1-10（2026-11-14）：+validate_manifest（离线体检，复盘 #10）—— 53 / 关模板 52
-const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 53 : 52
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 54 : 53
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -97,6 +97,8 @@ const EXPECTED_TOOL_NAMES = [
   // REQ-036 C1（2026-11-03）：视频页链接 → 参考视频落盘（抖音/B站/YouTube 白名单）。
   'download_video',
   // CV-445 S3（2026-11-05，rea-video A4）：生成单元规划（拆解表 → 最少调用次数的单元计划）。
+  // R11-B3（2026-11-16）：段级原子改（spec 一屏一个字段 + 整份复校 + 重编）。
+  'patch_spec_section',
   'plan_generation_units',
   // CV-445 S4（2026-11-05，rea-video A6）：原片｜复刻并排对比片（验收产物）。
   'make_compare',

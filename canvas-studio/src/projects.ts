@@ -518,11 +518,15 @@ export class ProjectRegistry {
           // 副本感知不到，用户一拖画布就会把它冲掉，回写通道随之静默断链。
           const keepFilename = prior.filename !== undefined && prior.filename !== node.filename
           const keepSbRef = prior.sbRef !== undefined && prior.sbRef !== node.sbRef
-          if (!keepFilename && !keepSbRef) return node
+          // R11-B3：`segmentRef` 同款 —— 客户端不认识 spec 段表，拖一下画布就会冲掉
+          // 「这张卡是哪一段」的唯一线索，段级 patch 随即退化成「整份 spec 重写」。
+          const keepSegmentRef = prior.segmentRef !== undefined && prior.segmentRef !== node.segmentRef
+          if (!keepFilename && !keepSbRef && !keepSegmentRef) return node
           return {
             ...node,
             ...(keepFilename ? { filename: prior.filename } : {}),
             ...(keepSbRef ? { sbRef: prior.sbRef } : {}),
+            ...(keepSegmentRef ? { segmentRef: prior.segmentRef } : {}),
           }
         })
     // Host writes omit `view`; keep whatever view the last client save left.

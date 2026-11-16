@@ -55,6 +55,21 @@ export interface CardRenderContext {
   readonly assetSrc: (slot: string) => string | undefined
   /** 强调色（主题接线；缺省产品蓝）。 */
   readonly accentColor: string
+  /**
+   * B5（O-9 / P2-9）：多单元屏的单元下标（0 基）与总数；单单元屏 = 0 / 1。
+   *
+   * 一屏多单元时**只有首个单元**出屏级底板与眉标（`planFromSpec` 按轨 id 后缀统一裁），
+   * 否则一屏会有两层 `#0d1322` 底板叠在一起、两个「01 / 03 · 段名」眉标叠在同一位置
+   * ——真机会话的 s2 就是这样：明明只有一句话，画面重复两遍。
+   */
+  readonly unitIndex?: number
+  readonly unitCount?: number
+  /**
+   * B5（O-10）：数据来源（数据集 + 可复核入口 / `observed` / `inline`）。
+   * 带数值的卡（B1 数据卡 / A4 要点）把它写进数据轨的 `dataSource` —— 编译与渲染两侧
+   * 都会对「数值型事实缺 dataSource」报警，此前 spec 无处填，告警只能常驻。
+   */
+  readonly dataSource?: string
 }
 
 export type CardTrackGenerator = (ctx: CardRenderContext) => Record<string, unknown>[]
@@ -170,14 +185,21 @@ function accentLine(ctx: CardRenderContext, box: { x: number; y: number; w: numb
   }
 }
 
-/** 段编号角标（左下小字，呼应 eyebrow）。 */
+/**
+ * 段色刻度（左下短横）。
+ *
+ * B5（O-9）：它此前是 `text: ctx.copy` —— 把**整行标题文案**在左下角又放了一遍
+ * （s1 底部 y=92 重复标题 13 字）。摘要重复不只是难看：它让「一屏只有一句话」的
+ * 密度问题在画面上翻倍显形，也让人误以为角标是第二处信息。现在只留一根 accent
+ * 短横作视觉刻度，文字信息全部交给眉标与主标题。
+ */
 function cornerMark(ctx: CardRenderContext): Record<string, unknown> {
   return {
     id: tid(ctx, 'corner'),
-    type: 'textCard',
-    variant: 'subtitle',
-    text: ctx.copy,
-    box: { x: 50, y: 92, w: 70, h: 5 },
+    type: 'shape',
+    shape: 'rect',
+    color: ctx.accentColor,
+    box: { x: 50, y: 92, w: 5.5, h: 0.35 },
     startFrame: ctx.startFrame + 10,
     durationInFrames: Math.max(6, ctx.durationInFrames - 20),
     fadeFrames: 6,
@@ -295,6 +317,8 @@ registerCard({
       variant: 'bullets',
       text: ctx.copy.split(/[；;\n]/).map((line) => line.trim()).filter((line) => line.length > 0).slice(0, 6),
       anim: 'wordStagger',
+      // B5（O-10）：要点里常带数值，来源同样要能落轨。
+      ...(ctx.dataSource === undefined ? {} : { dataSource: ctx.dataSource }),
       box: { x: 44, y: 52, w: 64, h: 46 },
       startFrame: ctx.startFrame + 6,
       durationInFrames: Math.max(12, ctx.durationInFrames - 12),
@@ -334,6 +358,8 @@ registerCard({
         }),
       accentColor: ctx.accentColor,
       countUp: true,
+      // B5（O-10）：数据来源直通数据轨；没填就不写（渲染侧照旧告警，不假装有来源）。
+      ...(ctx.dataSource === undefined ? {} : { dataSource: ctx.dataSource }),
       box: { x: 50, y: 54, w: 52, h: 56 },
       startFrame: ctx.startFrame + 6,
       durationInFrames: Math.max(12, ctx.durationInFrames - 12),

@@ -8,6 +8,11 @@
  * ③ **零波及** —— 单卡 section（无 units）不动；timeline 不动；
  * ④ **与 B4 共存** —— autoStages + 转场 + 错峰三者叠加时关系可复算。
  *
+ * 2026-11-16（R11-B5 / P2-9）更新：多单元屏的**屏级 chrome**（底板/眉标/点阵/光晕/暗角）
+ * 改为「整屏一份、只由首个单元出且不投影进格位」。所以断言从「两个单元的 base 都在」
+ * 改成「两个单元的**内容轨**都在 + 只有一块整屏底板」—— 原断言正好是把双底板钉死的
+ * 那条，必须跟着产品行为一起改，否则测试在保护一个已知缺陷。
+ *
  * 直连 Host tsc 编译产物。定向跑：node --test tests/req038-r9-stagger.test.mjs
  */
 import { test } from 'node:test'
@@ -16,13 +21,14 @@ import { readFileSync } from 'node:fs'
 import { UNIT_ENTRANCE_STAGGER_FRAMES, planFromSpec } from '../lib/remotion/content-spec.js'
 import { lintMotion } from '../lib/remotion/motion-lint.js'
 
+/** 同卡双单元：内容轨同型（`-bullets`）才能一对一比较错峰（chrome 已不再是每单元一份）。 */
 function twoUnitSpec() {
   return {
     meta: { title: '错峰', durationSec: 12, fps: 30 },
     sections: [
       { id: 's1', copy: '一屏两单元', units: [
-        { card: 'DAT2', copy: '1.2 亿', cell: { x: 28, y: 50, w: 42, h: 44 } },
-        { card: 'A4', copy: '三条产品线全部转正', cell: { x: 74, y: 50, w: 40, h: 44 }, overlap: true },
+        { card: 'A4', copy: '一；二；三', cell: { x: 28, y: 50, w: 42, h: 44 } },
+        { card: 'A4', copy: '四；五；六', cell: { x: 74, y: 50, w: 40, h: 44 } },
       ] },
     ],
   }
@@ -30,13 +36,22 @@ function twoUnitSpec() {
 
 test('错峰：后续单元轨入场 +4 帧、末端不动（时长同步减）', () => {
   const plan = planFromSpec(twoUnitSpec(), 360)
-  const u0 = plan.tracks.find((track) => track.id === 'u0-s1-u0-bg')
-  const u1 = plan.tracks.find((track) => track.id === 'u1-s1-u1-base')
-  assert.ok(u0 !== undefined && u1 !== undefined, '两个单元的基底轨必须都在')
+  const u0 = plan.tracks.find((track) => track.id === 'u0-s1-u0-bullets')
+  const u1 = plan.tracks.find((track) => track.id === 'u1-s1-u1-bullets')
+  assert.ok(u0 !== undefined && u1 !== undefined, '两个单元的内容轨必须都在')
   const d0 = u0.startFrame + u0.durationInFrames
   const d1 = u1.startFrame + u1.durationInFrames
   assert.equal(u1.startFrame - u0.startFrame, UNIT_ENTRANCE_STAGGER_FRAMES, `错峰应恰好 ${String(UNIT_ENTRANCE_STAGGER_FRAMES)} 帧`)
   assert.equal(d1, d0, '末端必须不动（脱离转场覆盖 = ML-02 回归）')
+})
+
+test('P2-9：多单元共用一块整屏底板与一个眉标（不是每单元一份）', () => {
+  const plan = planFromSpec(twoUnitSpec(), 360)
+  const bases = plan.tracks.filter((track) => String(track.id).endsWith('-base'))
+  const eyebrows = plan.tracks.filter((track) => String(track.id).endsWith('-eyebrow'))
+  assert.equal(bases.length, 1, '一屏只应有一块底板（双底板是 P2-9 的原始缺陷）')
+  assert.equal(eyebrows.length, 1, '一屏只应有一个眉标')
+  assert.deepEqual(bases[0]?.box, { x: 50, y: 50, w: 100, h: 100 }, '底板必须仍是整屏 —— 裁掉不投影会让另一半漏底')
 })
 
 test('单卡 section（无 units）零波及：timeline 与卡轨起点都不动', () => {
@@ -63,21 +78,24 @@ test('与 B4 共存：autoStages + 转场 + 错峰三者关系可复算', () => 
     meta: { title: '共存', durationSec: 13, fps: 30, autoStages: true },
     sections: [
       { id: 's1', copy: '甲', units: [
-        { card: 'DAT2', copy: '1.2 亿', cell: { x: 28, y: 50, w: 42, h: 44 } },
-        { card: 'A4', copy: '要点', cell: { x: 74, y: 50, w: 40, h: 44 }, overlap: true },
+        { card: 'A4', copy: '一；二', cell: { x: 28, y: 50, w: 42, h: 44 } },
+        { card: 'A4', copy: '三；四', cell: { x: 74, y: 50, w: 40, h: 44 } },
       ] },
       { id: 's2', copy: '乙', units: [
-        { card: 'DAT2', copy: '2.4 亿', cell: { x: 28, y: 50, w: 42, h: 44 } },
-        { card: 'A4', copy: '要点二', cell: { x: 74, y: 50, w: 40, h: 44 }, overlap: true },
+        { card: 'A4', copy: '五；六', cell: { x: 28, y: 50, w: 42, h: 44 } },
+        { card: 'A4', copy: '七；八', cell: { x: 74, y: 50, w: 40, h: 44 } },
       ] },
     ],
   }
   const plan = planFromSpec(spec, 390)  // 13s × 30fps —— 必须与 meta.durationSec 一致
   const s2Start = plan.timeline[1].startFrame
-  const u1s2 = plan.tracks.find((track) => track.id === 'u1-s2-u1-base')
-  assert.ok(u1s2 !== undefined)
-  // B4：to 侧整体左移 10 帧；P2-14：unit1 再 +4 → s2Start - 10 + 4
-  assert.equal(u1s2.startFrame, s2Start - 10 + UNIT_ENTRANCE_STAGGER_FRAMES)
+  const u0s2 = plan.tracks.find((track) => track.id === 'u0-s2-u0-bullets')
+  const u1s2 = plan.tracks.find((track) => track.id === 'u1-s2-u1-bullets')
+  assert.ok(u0s2 !== undefined && u1s2 !== undefined)
+  // B4：to 侧整体左移 10 帧 ⇒ 185；A4 的 bullets 在段起点 +6 入场（卡内部节拍，随轨平移）。
+  assert.equal(u0s2.startFrame, s2Start - 10 + 6)
+  // P2-14：unit1 再 +4 —— 与 B4 的屏移互不干扰（两个常数各管一件事）。
+  assert.equal(u1s2.startFrame - u0s2.startFrame, UNIT_ENTRANCE_STAGGER_FRAMES)
 })
 
 test('lint 回归：错峰修正后样例整片体检仍为 0（末端不动纪律的回归守卫）', () => {

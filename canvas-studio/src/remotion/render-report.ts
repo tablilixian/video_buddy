@@ -87,6 +87,25 @@ export interface RecipeDensityReport {
 }
 
 /**
+ * B5（O-10）· `meta.generatedBy` 是否是**合法来源标记**。
+ *
+ * 存在理由：渲染侧那条「缺 generatedBy = 手写绕过 builder」的观察期告警只认
+ * `manifest-builder` —— 而 spec 产物写的是 `spec:content-spec`、模板是
+ * `manifest-builder`（template-compile）、配方是 `manifest-builder`。于是**每一片走
+ * spec 通道的成片都会永久带一条假告警**。假告警的代价不是噪声，是让真告警被学会忽略。
+ *
+ * 判定口径与 `deriveRecipeDensity` 的「配方覆盖率」刻意不同：
+ * - 这里问「它有没有走正路」（builder 或三种声明式来源都算）；
+ * - 那里问「它是不是配方生成的」（手写 builder 不算配方）。
+ * 两个问题的答案本来就不同，混用一个函数会让其中一边失真。
+ */
+export function isMarkedGeneratedBy(generatedBy: string | undefined): boolean {
+  const value = (generatedBy ?? '').trim()
+  if (value === '') return false
+  return value === 'manifest-builder' || /^(recipe:|spec:|template:)/.test(value)
+}
+
+/**
  * RQ-19 · 从 manifest 推导配方密度（确定性；`manifestBytes` 缺省时按序列化体积算）。
  * `meta.generatedBy` 是配方来源标记（scaffold_manifest / planFromSpec 写入约定）。
  */

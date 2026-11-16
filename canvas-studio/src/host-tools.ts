@@ -56,7 +56,11 @@ import { defineTemplateTools } from './host-tools-template.js'
 import { scaffoldFromTemplate } from './template-scaffold.js'
 // R7（REQ-038 · RQ-27）· 起点 D：内容规格（屏表）。逻辑在 host-tools-spec.ts ——
 // 这里只接线，避免又给本文件的函数长度闸加压。
-import { scaffoldFromSpec } from './host-tools-spec.js'
+import { readContentSpecFile, scaffoldFromSpec } from './host-tools-spec.js'
+import type { SpecPatchSet } from './host-tools-spec-patch.js'
+import { patchSpecSection, resolveSegmentIdFromNode } from './host-tools-spec-patch.js'
+import type { SegmentBrief } from './segment-binding.js'
+import { applySegmentBindings, planSegmentBindings } from './segment-binding.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
@@ -2175,6 +2179,46 @@ export interface StudioRuntimeConfig {
   autoSave: () => boolean
   /** 自动保存间隔（秒）。 */
   autoSaveInterval: () => number
+}
+
+/**
+ * B3（O-1）· 把「屏 ↔ 分镜卡」的对位写回画布（`segmentRef` + 卡面 `【段】` 行）。
+ *
+ * 为什么落在 scaffold 这一步：分镜卡是落地时落的，spec 是**之后**才写的 —— 两条数据
+ * 在时间上不同源，唯一的交汇点就是「spec 编译成 manifest」的那一刻。在这里对位，
+ * 用户随后对某张卡说「这段改一句」才有确定的目标。
+ *
+ * 三条纪律：
+ * 1. **不阻断** —— 写画布失败只回一行警告（spec 已落盘，manifest 已可渲）；
+ * 2. **不自作聪明** —— 数量不等就不对位（错一位就会改错屏），理由随回执带出；
+ * 3. **幂等** —— 段行替换不追加，重跑 scaffold 不会让卡面无限变长。
+ */
+async function bindSegmentsToCanvas(
+  registry: ProjectRegistry,
+  projectId: string,
+  sections: readonly SegmentBrief[],
+): Promise<string[]> {
+  try {
+    const canvas = await registry.readCanvas(projectId)
+    const cards = canvas.nodes
+      .filter((node) => isShotCard(node))
+      .map((node) => ({ id: node.id, title: node.title ?? node.id, createdAt: node.createdAt }))
+    const plan = planSegmentBindings(sections, cards)
+    if (plan.bindings.length === 0) {
+      return [`段指针未写入：${plan.reason ?? '无对位结果（按段改请直接给 segmentId）'}`]
+    }
+    const applied = applySegmentBindings(canvas.nodes, plan.bindings)
+    if (applied.changed > 0) {
+      await registry.writeCanvas(projectId, applied.nodes, undefined, canvas.assets, { author: 'host' })
+    }
+    const pairs = plan.bindings.map((binding) => `${binding.segmentId}→「${binding.nodeTitle}」`).join('，')
+    return [
+      `段指针已写入 ${String(plan.bindings.length)} 张分镜卡（${applied.changed === 0 ? '内容未变' : `更新 ${String(applied.changed)} 张`}）：${pairs}`
+        + ' —— 之后可以直接对某张卡说「这段改一句」，只会动它对应的那一屏。',
+    ]
+  } catch (cause) {
+    return [`⚠️ 段指针未写入（画布读写失败，不影响已生成的 manifest）：${cause instanceof Error ? cause.message : String(cause)}`]
+  }
 }
 
 /**
@@ -4397,6 +4441,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             const landed = await landStoryboard(registry, projectId)
             autoLandText = `✅ **已自动落地**（auto 模式）：${String(landed.shots)} 张分镜卡 / ${String(landed.nodes)} 个节点 / ${String(landed.assets)} 个资产（版本 ${landed.version}）`
               + `${landed.resumed ? '，本次为续做补全' : ''}。画布已可开工，直接进入产出阶段（此后不能再整体重写故事板）。`
+              // R11-B3：备份拍跳过的说明必须进回执 —— 否则用户「找不到第 4 张卡」时会以为落地失败。
+              + (landed.warnings.length === 0 ? '' : `\n${landed.warnings.map((line) => `· ${line}`).join('\n')}`)
           } catch (cause) {
             autoLandText = `⚠️ 故事板已保存，但**自动落地失败**：${cause instanceof Error ? cause.message : String(cause)}`
               + '\n画布未变更。请让用户在画布顶条「拍摄定稿」点「确认落地」重试；**不要**反复调用本工具重试（重写不改落地结果）。'
@@ -4817,14 +4863,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 + '（同一份事实只留一个来源，否则「spec 说 45s、参数说 60s」无法裁决）。',
             })
           }
-          const specProjectDir = writeToRaw === ''
-            ? undefined
-            : registry.projectDir(await resolveProjectId(registry, exec.agent?.session.header.cwd))
-          return scaffoldFromSpec({
+          const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+          const specProjectDir = writeToRaw === '' ? undefined : registry.projectDir(projectId)
+          const scaffolded = scaffoldFromSpec({
             specPath,
             ...(writeToRaw === '' ? {} : { writeTo: writeToRaw }),
             ...(specProjectDir === undefined ? {} : { projectDir: specProjectDir }),
           })
+          // B3（O-1）：spec 编译完成后立刻把「屏 ↔ 分镜卡」的对位写回画布 ——
+          // 这是两条平行数据唯一的交汇点（分镜卡落地在前，spec 写在后面）。
+          // 只在真的写进项目时做：dry（无 writeTo）不碰画布。
+          if (specProjectDir === undefined) return scaffolded
+          const specForBinding = readContentSpecFile(specPath)
+          const bindingLines = await bindSegmentsToCanvas(registry, projectId, specForBinding.sections)
+          return { text: [scaffolded.text, ...bindingLines].join('\n') }
         }
         const title = typeof a.title === 'string' ? a.title.trim() : ''
         if (title.length === 0) throwError('CS-USER-ERR', { message: 'title 不能为空' })
@@ -5346,6 +5398,108 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               : '要更小的框：收紧 threshold（dark 调低 / bright 调高），或用 region 限定目标附近。',
           ].join('\n'),
         }
+      },
+    }),
+    defineTool({
+      // R11-B3（O-1）· 段级原子改。为什么是宿主工具而不是「让模型重写 spec」：
+      // 重写一份 spec 的代价不只是 token —— 段表可能整体漂移（缓存全废）、正文之外的
+      // 字段可能被顺手改掉（真机会话里 −60 被写成 −64 就是这么来的）。
+      name: 'patch_spec_section',
+      description:
+        '**段级原子改**：只改 spec 某一屏里的**一个**字段（文案 / 标签 / 单元文案 / 单元卡 / 数据来源），'
+        + '整份复校后写回 spec，可选立刻重编 manifest。'
+        + '存在的理由：R11 的判据是「改一段的代价 = 1 段渲染 + 1 次确认」—— '
+        + '整份 spec 重写会让段表与缓存整体失效，直接改 manifest 又会在下次重编时被覆盖（排版是 spec 的产物）。'
+        + '**一次只改一处**：多字段补丁的 diff 无法一眼核对「范围有没有跑出去」，而范围不误解正是这个功能的承诺。'
+        + '**units 型屏改 `copy` 会被拒收**（那一屏没有屏级文案槽，`copy` 不上屏 —— 改了看不到效果），'
+        + '请用 `unitIndex` + `unitCopy` 指定要改的单元（拒收回执会把各单元文案列出来）。'
+        + '定位方式二选一：`segmentId`（spec 段 id，scaffold 回执的屏表里有）或 `shotNodeId`'
+        + '（画布分镜卡节点 id，靠卡上 `segmentRef` 找段 —— 卡没有指针时会明确告诉你原因，绝不猜一个段去改）。'
+        + '**建议传 `writeTo`**：改完直接重编到 build/manifest.json，下一步就能出片。'
+        + '回执给出唯一一行 diff + 影响面（下一次只有这一段重渲），以及重编后的屏表与体检。',
+      parameters: {
+        specPath: { type: 'string' as const, description: 'spec JSON 的绝对路径（与 scaffold_manifest 的 specPath 是同一份）' },
+        segmentId: { type: 'string' as const, description: '要改的段 id（spec.sections[].id）；与 shotNodeId 二选一' },
+        shotNodeId: { type: 'string' as const, description: '画布分镜卡节点 id（用户说「这张卡 / 这一段」且你知道卡 id 时用它）；与 segmentId 二选一' },
+        copy: { type: 'string' as const, description: '改屏级文案（仅**单单元**屏；units 型屏会被拒收并列出各单元文案）' },
+        label: { type: 'string' as const, description: '改屏级标签（眉标用）' },
+        unitIndex: { type: 'number' as const, description: '单元下标（0 基）；unitCopy / unitCard 必带' },
+        unitCopy: { type: 'string' as const, description: '改某个单元的文案（units 型屏的**实际上屏**字段）' },
+        unitCard: { type: 'string' as const, description: '换某个单元的卡编号（如 B1 → A4）：改版式不改文案' },
+        dataSource: {
+          type: 'string' as const,
+          description: '该屏数据来源（数据集 + 可复核 URL，或 `observed` / `inline`）；'
+            + '编译期透传到数据轨的 dataSource，消掉「数值型事实缺来源」这条一直填不上的告警',
+        },
+        writeTo: { type: 'string' as const, description: '改完重编的 manifest 落盘路径（建议 build/manifest.json，相对项目根）；缺省只改 spec 不重编' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: 'diff 一行 + 影响面 +（若重编）屏表与体检' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as {
+          specPath?: unknown; segmentId?: unknown; shotNodeId?: unknown
+          copy?: unknown; label?: unknown; unitIndex?: unknown; unitCopy?: unknown; unitCard?: unknown
+          dataSource?: unknown; writeTo?: unknown
+        }
+        const specPath = typeof a.specPath === 'string' ? a.specPath.trim() : ''
+        if (specPath === '') throwError('CS-USER-ERR', { message: 'specPath 不能为空' })
+        const segmentIdArg = typeof a.segmentId === 'string' ? a.segmentId.trim() : ''
+        const shotNodeId = typeof a.shotNodeId === 'string' ? a.shotNodeId.trim() : ''
+        if (segmentIdArg !== '' && shotNodeId !== '') {
+          throwError('CS-USER-ERR', {
+            message: 'segmentId 与 shotNodeId 二选一 —— 两个都给等于两个目标来源，'
+              + '一旦它们指向不同的段，「改哪一屏」就无解。',
+          })
+        }
+        if (segmentIdArg === '' && shotNodeId === '') {
+          throwError('CS-USER-ERR', {
+            message: '必须给 segmentId 或 shotNodeId —— 段级改的前提是**唯一确定的目标段**。'
+              + '不知道段 id 就先跑 scaffold_manifest 看屏表，或用画布上的分镜卡节点 id。',
+          })
+        }
+        const writeTo = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        let segmentId = segmentIdArg
+        let via: { nodeId: string; nodeTitle: string } | undefined
+        if (segmentId === '') {
+          // 先读 spec 拿段表（同时过一遍校验）：节点指针是否有效，只能对着当前 spec 判。
+          const spec = readContentSpecFile(specPath)
+          const canvas = await registry.readCanvas(projectId)
+          const node = canvas.nodes.find((candidate) => candidate.id === shotNodeId)
+          if (node === undefined) {
+            throwError('CS-USER-ERR', {
+              message: `画布上没有节点 ${shotNodeId} —— 节点 id 抄错，或这张卡已被删除。`
+                + '先核对画布上的卡片 id，不要换一个「看起来像」的 id 重试。',
+            })
+          }
+          const resolved = resolveSegmentIdFromNode(node, spec.sections.map((section) => section.id))
+          if ('reason' in resolved) throwError('CS-USER-ERR', { message: resolved.reason })
+          segmentId = resolved.segmentId
+          via = { nodeId: node.id, nodeTitle: node.title ?? node.id }
+        }
+        const set: SpecPatchSet = {
+          ...(typeof a.copy === 'string' ? { copy: a.copy } : {}),
+          ...(typeof a.label === 'string' ? { label: a.label } : {}),
+          ...(typeof a.unitIndex === 'number' ? { unitIndex: a.unitIndex } : {}),
+          ...(typeof a.unitCopy === 'string' ? { unitCopy: a.unitCopy } : {}),
+          ...(typeof a.unitCard === 'string' ? { unitCard: a.unitCard } : {}),
+          ...(typeof a.dataSource === 'string' ? { dataSource: a.dataSource } : {}),
+        }
+        return patchSpecSection({
+          specPath,
+          segmentId,
+          set,
+          ...(writeTo === '' ? {} : { writeTo, projectDir: registry.projectDir(projectId) }),
+          ...(via === undefined ? {} : { via }),
+        })
       },
     }),
   ]

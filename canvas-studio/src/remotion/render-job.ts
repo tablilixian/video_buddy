@@ -119,6 +119,7 @@ export interface PendingRenderJob {
 // render-diagnostics / render-budget 同款拆法），此处 re-export 保持既有导入路径不变。
 export type { RenderJobReport } from './render-report.js'
 import type { RenderJobReport } from './render-report.js'
+import { isMarkedGeneratedBy } from './render-report.js'
 import { deriveRecipeDensity } from './render-report.js'
 
 /**
@@ -1163,7 +1164,9 @@ export async function commitRenderJob(
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
   // 批 2-1.2（四季片 P-06 观察期，拍板②A）：缺 builder 生成标记 = 手写 manifest 绕过字段
   // 契约与 builder 白名单（真机：模型外挂 finalize.mjs 改写产物）→ 引导走正路。
-  if (job.manifest.meta.generatedBy !== 'manifest-builder') {
+  // B5（O-10）：白名单补齐 `spec:` / `recipe:` / `template:` —— 此前只认 `manifest-builder`，
+  // spec 通道的每一片都白带一条假告警。
+  if (!isMarkedGeneratedBy(job.manifest.meta.generatedBy)) {
     warnings.push('manifest 缺 generatedBy 标记（非 builder 产物）——手写会绕过 builder 契约与字段校验；请改走 scaffold_manifest + build/manifest-spec.json。')
   }
 

@@ -45,6 +45,15 @@ export interface SpecUnit {
   /** 该单元的主文案（卡生成器的 copy 槽位）。 */
   copy: string
   label?: string
+  /**
+   * B5（O-10）：数据来源（数据集 + 可复核入口，如 `NASA GISTEMP v4, https://…`；
+   * 自测值写 `observed`，占位演示写 `inline`）。
+   *
+   * 此前 spec 没有这个字段，而编译/渲染两侧都会对「数据卡含数值型事实」报
+   * 「缺 dataSource」—— 模型看得到告警、却**无处填**，于是告警永久常驻、被学会忽略。
+   * 现在它编译期透传到该单元数据轨的 `dataSource`。
+   */
+  dataSource?: string
   /** 该单元独占的格位；缺省 = 该屏的 `sections[].cell`，再缺省 = 全屏。 */
   cell?: CellRect
   assetSlots?: Record<string, string>
@@ -82,6 +91,15 @@ export interface ContentSpec {
      */
     autoStages?: boolean
     /**
+     * B5（O-8）：autoStages 的**目标屏长**（秒）；缺省 6.5（`TARGET_STAGE_SEC`）。
+     *
+     * 存在的理由：屏数 = round(时长 / 目标屏长)，与信息量无关 —— 20s 知识型片默认
+     * 3 屏 × 6.7s，实测只有 40 字（2 字/秒）。想更密就写 4（20s → 5 屏），
+     * 但**必须与 sections 段数同时改**：两处都是「屏数」的事实来源，改一处只会得到
+     * 一条「屏数与段数不符」的拒收（错误信息会直接把该改成几段算给你）。
+     */
+    targetStageSec?: number
+    /**
      * TTS 句起点（秒，严格升序；来自 tts_narration 回执 `audio.voiceOver[].startSec` 换算）。
      * 仅 `autoStages: true` 时参与屏边界吸附；只写本字段不开 autoStages 会被警告「不生效」。
      */
@@ -111,6 +129,11 @@ export interface ContentSpec {
     assetSlots?: Record<string, string>
     /** 强调色覆盖（缺省统一 #4f9cf9）。 */
     accentColor?: string
+    /**
+     * B5（O-10）：该屏的数据来源（units 型屏的每个单元可各自覆盖）。
+     * 透传到数据轨 `dataSource`；不填则保留既有告警（诚实：没来源就是没来源）。
+     */
+    dataSource?: string
     /**
      * 该屏的缺省格位（RQ-25）。给了 `units` 而未逐个给 `cell` 时，所有单元共享它；
      * 两者都缺省 = 全屏（与今天行为逐字段一致）。
@@ -210,6 +233,21 @@ function checkCell(value: unknown, at: string, errors: string[]): void {
   }
 }
 
+/**
+ * 试算「换个目标屏长会得到几屏」。
+ *
+ * 只用于错误信息里的建议（`targetStageSec: 4 ⇒ 5 屏`）—— 模型自己算不准这一步：
+ * 要复刻 clamp 与可行带（`planStages` 的屏数还要按单屏 4–10s 夹一次），算错就是又一轮
+ * 「改 → 再拒收」。算不出来就返回 null（建议不是承诺）。
+ */
+function tryStageCount(totalSeconds: number, fps: number, targetStageSec: number): number | null {
+  try {
+    return planStages({ totalSeconds, fps, targetStageSec }).stages.length
+  } catch {
+    return null
+  }
+}
+
 /** spec → 校验结论（只报 schema 事实：必填 / 取值域 / 卡可解析性；不猜意图）。 */
 export function validateContentSpec(spec: unknown): ContentSpecValidation {
   const errors: string[] = []
@@ -228,6 +266,14 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
     }
     if (meta.autoStages !== undefined && typeof meta.autoStages !== 'boolean') {
       errors.push('spec.meta.autoStages 必须是布尔值')
+    }
+    if (meta.targetStageSec !== undefined) {
+      const value = meta.targetStageSec
+      // 下限 4 与 MIN_STAGE_SEC 同源：比单屏下限更短的目标值只会被 planStages 反向夹回，
+      // 写它等于让「我写的 3s」和「算出来的 6.5s」各说一套 —— 直接拒收更诚实。
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 4 || value > 20) {
+        errors.push('spec.meta.targetStageSec 必须是 4–20 的秒数（屏长的目标值；缺省 6.5。想更密写 4，想更慢写 8–10）')
+      }
     }
   }
   const sections = spec.sections
@@ -354,15 +400,27 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
       if (Array.isArray(sections) && sections.length > 0) {
         try {
           const fps = typeof meta.fps === 'number' && meta.fps >= 1 ? meta.fps : 30
+          const target = typeof meta.targetStageSec === 'number' ? meta.targetStageSec : undefined
           const stagePlan = planStages({
             totalSeconds: durationSec,
             fps,
+            ...(target === undefined ? {} : { targetStageSec: target }),
             ...(Array.isArray(boundaries) ? { boundaries: boundaries.map((value) => Math.round((value as number) * fps)) } : {}),
           })
           if (stagePlan.stages.length !== sections.length) {
+            // B5（O-8）：把「换屏长会算出几段」直接算给模型 —— 这一步它自己算不准
+            // （要复刻 clamp / 可行带），而算错一次就是一轮「改 → 再拒收」的循环。
+            // 没写 targetStageSec 时建议更密的 4s；已经写了就说明「回到缺省会得几段」。
+            const other = target === undefined ? 4 : 6.5
+            const otherCount = tryStageCount(durationSec, fps, other)
+            const hint = otherCount === null || otherCount === stagePlan.stages.length
+              ? ''
+              : (target === undefined
+                ? `。想更密可写 meta.targetStageSec: 4 ⇒ ${String(otherCount)} 屏（sections 也要同步改成 ${String(otherCount)} 段）`
+                : `。反过来，去掉 meta.targetStageSec（回到 6.5s/屏）⇒ ${String(otherCount)} 屏`)
             errors.push(
-              `autoStages 算出 ${String(stagePlan.stages.length)} 屏（round(${String(durationSec)}/6.5)，${stagePlan.meta.clamped ? '触到屏数上限' : '未触上限'}），但 sections 写了 ${String(sections.length)} 段 —— `
-                + `把 sections 调成 ${String(stagePlan.stages.length)} 段，或关掉 autoStages 自己控节奏`,
+              `autoStages 算出 ${String(stagePlan.stages.length)} 屏（round(${String(durationSec)}/${String(target ?? 6.5)})${stagePlan.meta.clamped ? '，触到屏数上限' : ''}），但 sections 写了 ${String(sections.length)} 段 —— `
+                + `把 sections 调成 ${String(stagePlan.stages.length)} 段，或关掉 autoStages 自己控节奏${hint}`,
             )
           }
         } catch (cause) {
@@ -494,8 +552,44 @@ function resolveUnits(section: ContentSpec['sections'][number]): SpecUnit[] {
     ...(section.label === undefined ? {} : { label: section.label }),
     ...(section.assetSlots === undefined ? {} : { assetSlots: section.assetSlots }),
     ...(section.accentColor === undefined ? {} : { accentColor: section.accentColor }),
+    ...(section.dataSource === undefined ? {} : { dataSource: section.dataSource }),
   }]
 }
+
+/**
+ * 屏级 chrome 的轨 id 后缀：底板 / 眉标 / 点阵 / 光晕 / 暗角。
+ *
+ * 这些是「一屏一份」的装饰，不是「一个单元一份」。多单元屏若每个单元各出一层，
+ * 画面就变成两层 `#0d1322` 底板 + 两个叠在同一位置的眉标 + 两层点阵（更亮）+ 两层
+ * 暗角（更黑）—— 真机会话的 s2 正是如此：明明只有一句话，画面重复两遍（P2-9）。
+ *
+ * 用 id 后缀判定而不是让卡生成器返回 null：`tid()`（`${segmentId}-${part}`）本来就是
+ * 卡与宿主的共享约定，规则收在这一处比改 7 张卡 + 每个调用点 filter 更不容易漏。
+ */
+const SCREEN_CHROME_SUFFIXES = ['-base', '-eyebrow', '-dots', '-glow', '-vignette'] as const
+
+/** 这条轨是不是屏级 chrome（底板 / 眉标 / 装饰）。 */
+export function isScreenChrome(track: Record<string, unknown>): boolean {
+  const id = typeof track.id === 'string' ? track.id : ''
+  return SCREEN_CHROME_SUFFIXES.some((suffix) => id.endsWith(suffix))
+}
+
+/**
+ * B5（O-9 / P2-9）：一屏多单元时，只让**首个单元**出屏级 chrome。
+ *
+ * `unitIndex === 0` 时原样返回（浅拷贝，调用方随后会原地平移 startFrame，不能改到
+ * 卡生成器返回的原对象）。裁掉的只有 chrome，单元自己的内容轨（文案/图表/素材）全留。
+ */
+export function dropRepeatedUnitChrome(
+  tracks: readonly Record<string, unknown>[],
+  unitIndex: number,
+): Record<string, unknown>[] {
+  if (unitIndex === 0) return tracks.map((track) => ({ ...track }))
+  return tracks
+    .filter((track) => !isScreenChrome(track))
+    .map((track) => ({ ...track }))
+}
+
 
 /**
  * 把一组单元轨投影进格位（RQ-25）。
@@ -615,6 +709,9 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
     stagePlan = planStages({
       totalSeconds: totalFrames / fps,
       fps,
+      // B5（O-8）：目标屏长可显式指定（知识型 4s/屏）。与 validateContentSpec 的试算
+      // 必须同参数，否则「校验说 5 屏、这里算出 3 屏」—— 同一个 spec 两个答案。
+      ...(spec.meta.targetStageSec === undefined ? {} : { targetStageSec: spec.meta.targetStageSec }),
       ...(Array.isArray(spec.meta.stageBoundarySec)
         ? { boundaries: spec.meta.stageBoundarySec.map((value) => Math.round(value * fps)) }
         : {}),
@@ -677,8 +774,24 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         sectionCount: spec.sections.length,
         assetSrc: (name: string) => slots[name],
         accentColor: unit.accentColor ?? section.accentColor ?? '#4f9cf9',
+        // B5（O-9 / P2-9）：多单元屏共用一块底板与一个眉标（后续单元的屏级 chrome 被裁）。
+        unitIndex,
+        unitCount: units.length,
+        // B5（O-10）：单元级 dataSource 优先，其次屏级（单元能各自标来源）。
+        ...((unit.dataSource ?? section.dataSource) === undefined
+          ? {}
+          : { dataSource: (unit.dataSource ?? section.dataSource) as string }),
       })
-      const projected = projectUnitTracks(generated, unit.cell ?? section.cell, multi ? `u${String(unitIndex)}-` : undefined)
+      const pruned = dropRepeatedUnitChrome(generated, unitIndex)
+      const cellOfUnit = unit.cell ?? section.cell
+      // B5（O-9 / P2-9）：多单元屏的屏级 chrome 是**整屏**的东西，不能投影进单元格位 ——
+      // 否则首个单元的底板只盖住它自己那半屏，另一半漏出全片底色（双底板难看，漏底更糟）。
+      // 单单元屏没有格位投影，这段与旧行为逐字段一致（chrome 照常走投影那条路）。
+      const liftChrome = multi && unitIndex === 0 && cellOfUnit !== undefined
+      const chromeTracks = liftChrome ? pruned.filter((track) => isScreenChrome(track)) : []
+      const contentTracks = liftChrome ? pruned.filter((track) => !isScreenChrome(track)) : pruned
+      const projected = projectUnitTracks(contentTracks, cellOfUnit, multi ? `u${String(unitIndex)}-` : undefined)
+      if (chromeTracks.length > 0) projected.unshift(...chromeTracks)
       // P2-14：多单元入场错峰（后续单元入场延后 k×4 帧；卡内部节拍随轨平移不散）。
       // 末端必须不动（时长同步 −k×4）：末端越过屏边界会脱离段间转场的渐隐覆盖
       // （B4 的 from 侧扩展只救「死于边界前」的轨），ML-02 会回归。

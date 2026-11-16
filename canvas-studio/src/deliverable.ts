@@ -24,6 +24,7 @@
  */
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { SegmentPointer } from './segment-artifacts.js'
 
 /** 交付时长断言容忍（秒）：|actual − target| 超过即标 durationMismatch。D4 拍板 ±1s。 */
 export const DELIVER_DURATION_TOLERANCE_SEC = 1
@@ -52,6 +53,14 @@ export interface DeliverableInput {
   targetDurationSec: number | null
   /** PROGRESS「已知未决」段原文（null/空 = 模型没填）。 */
   openIssues: string | null
+  /**
+   * R11-B2：分镜路由的段产物指针（`deliver/segments/<id>.mp4`）。
+   *
+   * 为什么要进卡：用户「改一段」的前提是知道「哪一段是哪个文件」。只在回执里说一次
+   * 等于一次性信息 —— 压缩丢上下文后，磁盘上的 card.json 才是唯一可回读的答案。
+   * 整片路径（未走分镜）缺省，卡的形状与今天逐字段一致。
+   */
+  segments?: SegmentPointer[]
   now: number
 }
 
@@ -81,6 +90,11 @@ export interface DeliveryCard {
     durationMismatch: boolean
   }
   pointers: { url: string; assetFile: string; nodeId: string | null }
+  /**
+   * R11-B2：段产物清单（分镜路由才有）。`file` 是**相对项目根**的路径 ——
+   * 卡要能跟着项目搬，绝对路径一搬就废。
+   */
+  segments?: SegmentPointer[]
 }
 
 /** 一次交付的落盘（覆盖写）。失败返回 written:false + note，**不抛**（渲染不陪葬）。 */
@@ -118,6 +132,7 @@ export function writeDeliverable(input: DeliverableInput): DeliverableResult {
         durationMismatch,
       },
       pointers: { url: input.url, assetFile: input.assetFile, nodeId: input.nodeId },
+      ...(input.segments === undefined || input.segments.length === 0 ? {} : { segments: input.segments }),
     }
     writeFileSync(cardPath, JSON.stringify(card, null, 2), 'utf8')
     return { written: true, finalPath, cardPath, deliveredWithGaps, durationMismatch, deltaSec }

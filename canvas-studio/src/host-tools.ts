@@ -8,7 +8,7 @@
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -34,8 +34,12 @@ import { resolveAssetPathIn } from './asset-path.js'
 import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
 import { auditManifestFile, formatManifestAudit } from './manifest-audit.js'
 import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
-import { planShotRender, getDirtySegments, clearStaleEntries, segmentRenderOptions, storeSegment, shotCacheDir } from './shot-cache.js'
-import { boundariesFromSpec, resolveShotBoundaries } from './shot-slice.js'
+// R11-B2：分镜渲染编排整体搬进 shot-render.ts（宿主服务注入 + 可测装配）；
+// 段级抽帧在 shot-frames.ts（宿主 ffmpeg，失败只记一行不影响出片）。
+import { segmentRenderOptions } from './shot-cache.js'
+import { readProjectSpec, runShotRender } from './shot-render.js'
+import { sampleSegmentFrame } from './shot-frames.js'
+import type { SegmentPointer } from './segment-artifacts.js'
 import { concatShots } from './shot-concat.js'
 import { probeMediaInfo } from './ffmpeg-run.js'
 import { saveLocalAssetBytes } from './generate.js'
@@ -126,7 +130,7 @@ import { lintReceiptLines, writeLintReport } from './lint-report.js'
 // render-diagnostics 同款拆法。不改白名单登记数，只把成块代码搬走。
 import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
-import { runRenderJobWithStuckRetry, type RenderJobDiagnostics, type RenderJobOutcome, type RenderJobReport } from './remotion/render-job.js'
+import { runRenderJobWithStuckRetry, type RenderJobDiagnostics, type RenderJobOutcome } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
 import { withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -3954,110 +3958,46 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const coverageWarnings = timingSegments !== undefined && !probe
           ? checkElementCoverage(renderManifest, timingSegments, renderManifest.meta.fps).map((issue) => coverageWarningText(issue))
           : []
-        // ── RQ-038 R11-C5：分镜渲染决策与执行 ──────────────────────────────
-        // spec.json（模型 write 落盘）派生边界 → planShotRender 决策 → 脏段逐段渲
-        // （frameRange + muteAudio + E2 重试包装）→ ffmpeg 拼接 → 合成 outcome。
-        // 任何分镜环节失败 ⇒ 回退整片渲染（回执带原因，不静默——铁律 4）。
-        let shotOutcome: RenderJobOutcome | null = null // 合成时 report 为 undefined（cast），下游 spread 安全
+        // ── RQ-038 R11：分镜渲染（决策 + 脏段渲 + 段产物 + 拼接）───────────────
+        // 逻辑全在 shot-render.ts：宿主服务以注入方式传入（渲染 / 存盘 / 探测 / 拼接 /
+        // 抽帧），因此那 100 行装配逻辑可以被假渲染器驱动的集成测试覆盖 —— P0 就
+        // 出在这段「纯装配」上，纯函数测试挡不住。这里只接宿主实现与**回退**：
+        // 任何失败都落回整片渲染，回执带原因（铁律 4，不静默）。
+        let shotOutcome: RenderJobOutcome | null = null
         const shotReceipt: string[] = []
+        let shotPointers: SegmentPointer[] = []
         if (!probe && !spot) {
           try {
             const projectDir = registry.projectDir(projectId)
-            let specBoundaries: number[] | null = null
-            try {
-              const specPath = join(projectDir, 'build', 'spec.json')
-              if (existsSync(specPath)) {
-                const specJson = JSON.parse(readFileSync(specPath, 'utf8')) as { meta?: { fps?: unknown } }
-                const fps = typeof specJson.meta?.fps === 'number' && specJson.meta.fps >= 1 ? specJson.meta.fps : 30
-                specBoundaries = boundariesFromSpec(specJson, renderManifest.meta.durationInFrames, fps)
-              }
-            } catch { /* spec 读取/解析失败 = 无 spec 边界（回退 transition 末端） */ }
-            const plan = planShotRender(renderManifest, {
-              specBoundaries,
-              quality: quality ?? 'standard',
+            const assetsDir = registry.assetsDir(projectId)
+            const shot = await runShotRender(renderManifest, {
               projectDir,
-              allowShots: !probe && !spot && renderManifest.audio === undefined,
+              assetsDir,
+              quality: quality ?? 'standard',
+              signal: exec.signal,
+              renderSegment: (segment) => runRenderJobWithStuckRetry({
+                projectId,
+                signal: exec.signal,
+                ...segmentRenderOptions(renderManifest, segment, quality ?? 'standard', pre.realDurations),
+              }),
+              resolveAsset: (assetFile) => resolveAssetPathIn(assetsDir, assetFile),
+              saveMerged: (bytes, name) => saveLocalAssetBytes(registry, projectId, name, bytes),
+              probeMedia: (absPath) => probeMediaInfo(absPath),
+              concat: (args) => concatShots({ ...args, segmentFiles: [...args.segmentFiles] }),
+              // B2：段级抽帧补上此前恒空的 frames[]（模型不再自己抽 1080p PNG）。
+              sampleFrame: (args) => sampleSegmentFrame({
+                registry,
+                projectId,
+                fps: renderManifest.meta.fps,
+                signal: exec.signal,
+                artifact: args.artifact,
+                file: args.file,
+              }),
+              loadSpec: () => readProjectSpec(projectDir),
             })
-            if (plan.mode === 'shots') {
-              const assetsDir = registry.assetsDir(projectId)
-              const cacheDir = plan.cacheDir as string
-              // P1-2：全局态指纹由 planShotRender 算一次、三方（决策 hash / 缓存比对 /
-              // 落缓存）共用同一个值——改 meta.look / global.fonts 等全局输入时全段脏。
-              const shotGlobals = plan.globals as string
-              const { dirty, reused } = getDirtySegments(plan.segments as never, quality ?? 'standard', cacheDir, shotGlobals)
-              // P0 配套孤儿回收：hash 失配的旧条目（含 P0 期间写入的「整片长错误段」，
-              // 体积可观）由 clearStaleEntries 按本次合法集合清理；hashes 异常缺失时
-              // 跳过清理（绝不能拿空集合当合法集——那会清光整个缓存目录）。
-              if (Array.isArray(plan.hashes) && plan.hashes.length > 0) {
-                const orphans = clearStaleEntries(cacheDir, new Set(plan.hashes as string[]))
-                if (orphans > 0) shotReceipt.push(`🧹 段缓存回收 ${String(orphans)} 条过期条目`)
-              }
-              const renderedByIndex = new Map<number, string>()
-              for (const seg of dirty) {
-                // P0 修复：工单参数由 segmentRenderOptions 唯一构造——frameRange
-                // （闭区间 [start, end-1]）与 muteAudio 此前漏传，每段按整片时长渲染
-                // （commit c277a960a8 声称传了、代码没传），拼接产物 = N × 整片时长。
-                const segOutcome = await runRenderJobWithStuckRetry({
-                  projectId,
-                  signal: exec.signal,
-                  ...segmentRenderOptions(renderManifest, seg, quality ?? 'standard', pre.realDurations),
-                })
-                const segAbsPath = resolveAssetPathIn(assetsDir, segOutcome.assetFile)
-                renderedByIndex.set(seg.index, segAbsPath)
-                storeSegment(seg, quality ?? 'standard', cacheDir, segAbsPath, shotGlobals)
-              }
-              // 段序文件清单：复用缓存 mp4 + 新渲段产物
-              const orderedFiles = (plan.segments as never[] as { index: number }[]).map((seg) => {
-                const hit = reused.find((r) => r.segment.index === seg.index)
-                if (hit !== undefined) return hit.entry.videoPath
-                const file = renderedByIndex.get(seg.index)
-                if (file === undefined) throwError('CS-SHOT-004', { index: seg.index })
-                return file
-              })
-              const mergedTmp = join(shotCacheDir(projectDir), `merged-${String(Date.now().toString(36))}.mp4`)
-              await concatShots({ segmentFiles: orderedFiles, outputPath: mergedTmp, signal: exec.signal })
-              const mergedBytes = readFileSync(mergedTmp)
-              const saved = await saveLocalAssetBytes(registry, projectId, `remotion-shot-merged-${String(Date.now().toString(36))}.mp4`, mergedBytes)
-              const info = await probeMediaInfo(resolveAssetPathIn(assetsDir, saved.assetFile))
-              shotOutcome = {
-                url: saved.url,
-                assetFile: saved.assetFile,
-                duration: info.duration,
-                ...(info.width !== undefined ? { width: info.width } : {}),
-                ...(info.height !== undefined ? { height: info.height } : {}),
-                warnings: [],
-                quality: quality ?? 'standard',
-                frames: [],
-                // 合成诊断（分镜拼接产物没有单次渲染的工单史——字段按 RenderJobDiagnostics 最小集填充）
-                job: {
-                  id: `shot-${String(Date.now().toString(36))}`,
-                  path: 'client',
-                  claimedAt: Date.now(),
-                  firstFrameAt: null,
-                  settled: 'ok',
-                  takeover: false,
-                  waitedMs: 0,
-                  maxProgress: 1,
-                },
-                // RQ-038 R11：分镜拼接产物没有单次渲染的完整报告——report 由既有
-                // lint 链路在整片 manifest 上独立计算（下方 lintIssues），此处 cast
-                // 合成（下游 4219 行 spread 空对象 = 无字段泄漏）。
-                report: undefined as unknown as RenderJobReport,
-              }
-              // R11 · O-2：段表是首选来源，文案要如实区分（模型靠这句判断「段窗是否可信」）。
-              const boundary = resolveShotBoundaries(renderManifest, specBoundaries)
-              const boundaryLabel = boundary.source === 'segments'
-                ? '段表'
-                : boundary.source === 'spec'
-                  ? 'spec'
-                  : boundary.source === 'transition' ? 'transition 末端' : '单段回退'
-              shotReceipt.push(
-                `🧩 分镜渲染：${String((plan.segments as unknown[]).length)} 段（${String(reused.length)} 复用 / ${String(dirty.length)} 重渲，边界来源 ${boundaryLabel}）`,
-              )
-              rmSync(mergedTmp, { force: true })
-            } else if (plan.reason !== undefined) {
-              shotReceipt.push(`ℹ️ 分镜渲染未启用：${plan.reason}`)
-            }
+            shotOutcome = shot.outcome
+            shotPointers = shot.segments
+            shotReceipt.push(...shot.receipt)
           } catch (cause) {
             shotReceipt.push(`⚠️ 分镜渲染失败，已回退整片渲染：${cause instanceof Error ? cause.message : String(cause)}`)
           }
@@ -4115,6 +4055,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               anchorVersion: anchor.versions.at(-1)?.version ?? null,
               targetDurationSec: target,
               openIssues: anchor.openIssues ?? null,
+              // R11-B2：段产物清单进卡 —— 压缩丢上下文后，磁盘上的卡才是「哪一段是哪个
+              // 文件」的唯一答案（只在回执里说一次等于一次性信息）。
+              ...(shotPointers.length > 0 ? { segments: shotPointers } : {}),
               now: Date.now(),
             })
           } catch (cause) {

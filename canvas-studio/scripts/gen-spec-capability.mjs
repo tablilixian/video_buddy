@@ -322,6 +322,6 @@ if (invokedDirectly) {
     console.log('gen-spec-capability: 一致 ✓')
   } else {
     writeFileSync(OUTPUT, generated, 'utf8')
-    console.log(`gen-spec-capability: 已写入 ${OUTPUT}（${generated.length} 字节）`)
+    console.log(`gen-spec-capability: 已写入 ${OUTPUT}（${Buffer.byteLength(generated)} 字节）`)
   }
 }

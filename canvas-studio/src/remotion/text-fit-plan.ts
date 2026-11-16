@@ -27,6 +27,21 @@
  *
  * 溢出**不做拒收**：`title` 就是要 3 行可能是作者故意的（真实项目里 `hook-title` =
  * `["四季","是因为离太阳远近吗？"]` 就是有意两行）。硬失败会误杀有意设计。
+ *
+ * ## 2026-11-16（R11 真机）· 盒高也必须进预算，不能只看宽度
+ *
+ * 真机事故：9:16 竖屏 + spec 格位投影后，标题轨 box 是 `{w:76, h:7.2}`（= cell `h:24`
+ * 乘 A1 卡内 title 的 30%）。旧实现**只用盒子宽度**定字号，于是 1080×1920 上算出
+ * 84 × 1.778 = 149px、行高 1.15 ⇒ 每行 171px，而盒高只有 7.2% × 1920 = 138px ⇒
+ * 一行都放不下，被层的 `overflow:hidden` 一刀裁掉。宽度那边怎么缩号都救不了纵向。
+ *
+ * 修法与 `subtitle-fit.ts` 的既有做法对齐（那也是一次真机裁字事故的产物）：
+ * **带 box 时同时按盒高压基准字号与行数上限** ——
+ * `baseFontPx = min(变体基准, 盒高 / 行高)` 保证「至少一行放得下」，
+ * `maxLines = min(变体上限, 盒高 / (字号 × 行高))` 保证「放得下的行数才允许」。
+ *
+ * 回归纪律：盒高够用时两个 min 都不生效 ⇒ **1080p 标准版式逐像素不变**；
+ * 只有在原本就会裁字的盒子上才改变结果（裁 → 不裁）。
  */
 import { DATA_CARD_PADDING_X, dataCardDesignHeight, dataCardMetrics } from './data-card-metrics.js'
 import type { TextCardTrack } from './manifest.js'
@@ -53,6 +68,16 @@ export const TITLE_MIN_WIDTH_PX = 120
 export const BULLETS_BASE_FONT_PX = 48
 /** `bullets` 行数上限。 */
 export const BULLETS_MAX_LINES = 6
+/** `bullets` 行高（与 `TextCard.tsx` 的容器逐项对齐 —— 改这里就是改预算）。 */
+export const BULLETS_LINE_HEIGHT = 1.35
+/**
+ * `bullets` 条目之间的实际间距（px）—— `TextCard.tsx` 里每个条目 `margin: 18px 0`，
+ * 相邻垂直外边距**折叠**成 18px（不是 36）。
+ *
+ * 这个值**不随画布缩放**（组件写的是字面 18px），所以高度预算必须按字面 px 扣；
+ * 按比例扣会在矮盒子里低估溢出（真机模板 `three-cards` 的 bullets 盒只有 194px）。
+ */
+export const BULLETS_ROW_GAP_PX = 18
 /** `bullets` 容器宽上限（px）—— 老实现是**写死** 900。 */
 export const BULLETS_CONTAINER_MAX_PX = 900
 /** `bullets` 单行圆点占用（18px 点 + 24px 右距 = 42px）。文字可用宽必须扣掉它。 */
@@ -99,6 +124,16 @@ export interface TextFitPlan {
   maxWidthPx: number
   /** 外层 DOM 容器宽（px）—— `bullets` 需要（它比文字可用宽多 42px 圆点）。 */
   containerWidthPx: number
+  /**
+   * 盒高是否参与并压低了预算（R11，2026-11-16）。
+   *
+   * `true` = 变体基准字号 / 行数上限被**盒高**削过（不是宽度削的）。典型来源：
+   * 竖屏 + 格位投影（box.h 只有个位数百分比）、多单元并置的矮格位。
+   * 诊断用：它解释「为什么字比基准小」，并驱动 `textFitHeightLimitWarning`。
+   */
+  heightLimited: boolean
+  /** 盒高（px）；没有 box 时为 `undefined`。 */
+  boxHeightPx?: number | undefined
 }
 
 export interface TextFitPlanInput {
@@ -136,6 +171,12 @@ interface FitBudget {
   containerWidthPx: number
   /** 是否允许自动缩字号。`dataCard` / `caption` 有显式字号，不缩。 */
   autoShrink: boolean
+  /** 盒高预算（px）—— 有 box 的 `title` / `bullets` 才给（R11）。 */
+  maxHeightPx?: number | undefined
+  /** 每条之间的固定间距（px，不随画布缩放）—— `bullets` 专用（组件写死 18px）。 */
+  rowGapPx?: number | undefined
+  /** 盒高（px，只用于上报）。 */
+  boxHeightPx?: number | undefined
 }
 
 /**
@@ -186,6 +227,15 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
    * - `dataCard` —— 由容器宽驱动（`dataCardMetrics` 的 `scale`），本身会随画布收放。
    */
   const fontPxOf = (designPx: number): number => scaleDesignPx(designPx, canvasH)
+  /** 盒高（px）；没有 box / 盒高非法时 `undefined`（= 高度不参与预算）。 */
+  const heightPxOf = (
+    box_: TextFitPlanInput['box'],
+    canvasH_: number,
+  ): number | undefined => {
+    if (box_ === undefined) return undefined
+    const px = (box_.h / 100) * canvasH_
+    return Number.isFinite(px) && px > 0 ? px : undefined
+  }
 
   if (variant === 'subtitle') {
     // 预算口径在 `subtitle-fit.ts`（带 box 按盒子算，不带 box 走老参数）。
@@ -201,6 +251,7 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       lineHeight: SUBTITLE_LINE_HEIGHT,
       containerWidthPx: budget.maxWidthPx + budget.padX * 2,
       autoShrink: true,
+      // 字幕的高度约束在 `subtitleFitBudget` 里（P10b 已修），不再叠一层。
     }
   }
 
@@ -211,6 +262,7 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
     const maxWidthPx = boxWidthPx !== undefined && Number.isFinite(boxWidthPx) && boxWidthPx > 0
       ? Math.max(TITLE_MIN_WIDTH_PX, boxWidthPx)
       : Math.max(240, canvasW * 0.9)
+    const boxHeightPx = heightPxOf(box, canvasH)
     return {
       maxWidthPx,
       baseFontPx: fontPxOf(TITLE_BASE_FONT_PX),
@@ -218,6 +270,8 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       lineHeight: TITLE_LINE_HEIGHT,
       containerWidthPx: maxWidthPx,
       autoShrink: true,
+      // R11（2026-11-16）：盒高进缩号循环 —— 行间距为 0（title 是连续段落）。
+      ...(boxHeightPx === undefined ? {} : { maxHeightPx: boxHeightPx, rowGapPx: 0, boxHeightPx }),
     }
   }
 
@@ -230,13 +284,16 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       fontPxOf(BULLETS_CONTAINER_MAX_PX),
       Math.max(fontPxOf(300), canvasW * 0.9),
     )
+    const boxHeightPx = heightPxOf(box, canvasH)
     return {
       maxWidthPx: Math.max(80, containerWidthPx - fontPxOf(BULLET_DOT_ALLOWANCE_PX)),
       baseFontPx: fontPxOf(BULLETS_BASE_FONT_PX),
       maxLines: BULLETS_MAX_LINES,
-      lineHeight: 1.35,
+      lineHeight: BULLETS_LINE_HEIGHT,
       containerWidthPx,
       autoShrink: true,
+      // 每条之间 18px（组件 `margin: 18px 0` 相邻折叠后的实际间距）。
+      ...(boxHeightPx === undefined ? {} : { maxHeightPx: boxHeightPx, rowGapPx: BULLETS_ROW_GAP_PX, boxHeightPx }),
     }
   }
 
@@ -270,6 +327,7 @@ function resolveBudget(input: TextFitPlanInput): FitBudget {
       lineHeight: DATA_CARD_TITLE_LINE_HEIGHT / DATA_CARD_TITLE_FONT_PX,
       containerWidthPx: metric.outerWidth,
       autoShrink: false,
+      // 数据卡的盒高已由 `dataCardMetrics` 整体等比缩放承担，不再叠一层盒高预算。
     }
   }
 
@@ -311,6 +369,9 @@ export function planTextFit(input: TextFitPlanInput): TextFitPlan {
     lineHeight: budget.lineHeight,
     // 不缩号的 variant 把下限钉在基准字号上 ⇒ 策略的缩号循环一次都不跑。
     ...(budget.autoShrink ? {} : { minFontPx: base }),
+    // R11（2026-11-16）：盒高进**同一个**缩号循环 —— 内容不许丢，只许字变小。
+    ...(budget.maxHeightPx === undefined ? {} : { maxHeightPx: budget.maxHeightPx }),
+    ...(budget.rowGapPx === undefined ? {} : { rowGapPx: budget.rowGapPx }),
     ...(input.measure === undefined ? {} : { measure: input.measure }),
     ...(input.family === undefined ? {} : { family: input.family }),
     ...(input.weight === undefined ? {} : { weight: input.weight }),
@@ -332,6 +393,9 @@ export function planTextFit(input: TextFitPlanInput): TextFitPlan {
     atMinFont: overflow && budget.autoShrink && fontPx <= minFont + 1e-6,
     maxWidthPx: budget.maxWidthPx,
     containerWidthPx: budget.containerWidthPx,
+    // 高度是**降号的起因之一**（另一因是行数）：只报后者会让人以为是文案太长。
+    heightLimited: fit.shrankForHeight === true,
+    ...(budget.boxHeightPx === undefined ? {} : { boxHeightPx: Math.round(budget.boxHeightPx) }),
   }
 }
 
@@ -352,16 +416,32 @@ function labelOf(id: string): string {
 }
 
 /**
+ * 文案里的像素值（整数）。
+ *
+ * `fitTextPolicy` 的缩号是 `× 0.94` 循环，会留下 `46.75000000000001` 这种浮点尾巴；
+ * 直接拼进回执会让人以为字号真有那么多位小数（真机回执里已经出现过）。
+ */
+function pxText(value: number): string {
+  return `${Math.round(value)}px`
+}
+
+/**
  * 溢出警告文案（**必须可执行**：给「改短到 N 字」或「加大 box」两条出路）。
  *
  * 两档（任务包 §2 决策 3）：缩到下限仍溢出 = 严重；还能再缩 = 提示。
  */
 export function textFitOverflowWarning(
   id: string,
-  plan: Pick<TextFitPlan, 'variant' | 'fontPx' | 'baseFontPx' | 'maxLines' | 'lines' | 'atMinFont' | 'maxWidthPx'>,
+  plan: Pick<TextFitPlan, 'variant' | 'fontPx' | 'baseFontPx' | 'maxLines' | 'lines' | 'atMinFont' | 'maxWidthPx'>
+    & Partial<Pick<TextFitPlan, 'heightLimited' | 'boxHeightPx'>>,
 ): string {
   const over = plan.lines.length - plan.maxLines
   const chars = suggestedMaxChars(plan)
+  // R11：盒高也参与预算时，把「盒子有多高」写进结论 —— 只说「加大该轨 box」，
+  // 作者会去加宽（宽度那边已经缩到底了，加宽没用），这是真机事故里的同一个误判。
+  const heightNote = plan.heightLimited === true && plan.boxHeightPx !== undefined
+    ? `（盒高只有 ${plan.boxHeightPx}px，已按盒高压过字号与行数上限）`
+    : ''
   if (plan.variant === 'caption') {
     return `${labelOf(id)}字幕折成 ${plan.lines.length} 行（软上限 ${plan.maxLines} 行）——不会裁字，但会顶到画面下沿；建议拆句到 ${chars} 字以内。`
   }
@@ -371,11 +451,28 @@ export function textFitOverflowWarning(
       + `请把标题压到 ${chars} 字以内，或加大该轨 box 的高度。`
   }
   if (plan.atMinFont) {
-    return `${labelOf(id)}文字已缩到字号下限 ${plan.fontPx}px（基准 ${plan.baseFontPx}px）仍超出 ${plan.maxLines} 行上限，`
-      + `成片会裁掉多出的 ${over} 行 —— 请把文案压到 ${chars} 字以内，或加大该轨 box（当前可用宽 ${Math.round(plan.maxWidthPx)}px）。`
+    return `${labelOf(id)}文字已缩到字号下限 ${pxText(plan.fontPx)}（基准 ${pxText(plan.baseFontPx)}）仍超出 ${plan.maxLines} 行上限，`
+      + `成片会裁掉多出的 ${over} 行${heightNote} —— 请把文案压到 ${chars} 字以内，或加大该轨 box（当前可用宽 ${Math.round(plan.maxWidthPx)}px）。`
   }
-  return `${labelOf(id)}文字放不下：缩到 ${plan.fontPx}px（基准 ${plan.baseFontPx}px）后仍是 ${plan.lines.length} 行 > ${plan.maxLines} 行上限，`
-    + `成片会裁掉多出的 ${over} 行 —— 请把文案压到 ${chars} 字以内，或加大该轨 box（当前可用宽 ${Math.round(plan.maxWidthPx)}px）。`
+  return `${labelOf(id)}文字放不下：缩到 ${pxText(plan.fontPx)}（基准 ${pxText(plan.baseFontPx)}）后仍是 ${plan.lines.length} 行 > ${plan.maxLines} 行上限，`
+    + `成片会裁掉多出的 ${over} 行${heightNote} —— 请把文案压到 ${chars} 字以内，或加大该轨 box（当前可用宽 ${Math.round(plan.maxWidthPx)}px）。`
+}
+
+/**
+ * 盒高压低预算的提示文案（R11，2026-11-16）。
+ *
+ * 与溢出警告分开：这里**不裁字**，只是「字比基准小 / 行数被砍」。它值得上报，因为
+ * 作者写的是「大标题」，成片却是被压小的标题 —— 不说清楚就会被当成「渲染坏了」。
+ * 出路两条：加高 box，或换一屏只放这一个单元（格位投影的 h 会跟着变大）。
+ */
+export function textFitHeightLimitWarning(
+  id: string,
+  plan: Pick<TextFitPlan, 'variant' | 'fontPx' | 'maxLines' | 'boxHeightPx'>,
+): string {
+  const box = plan.boxHeightPx === undefined ? '未知' : `${plan.boxHeightPx}px`
+  return `${labelOf(id)}盒高只有 ${box}（只够 ${plan.maxLines} 行），字号因此被压到 ${pxText(plan.fontPx)} —— `
+    + '竖屏 / 多单元并置时格位投影会把 box 压扁；要保持字号请加高该单元的 box'
+    + '（写 spec 时就是调大该单元的 `cell.h`；或减少同屏单元数）。'
 }
 
 /**
@@ -400,8 +497,10 @@ export function textCardCapacityWarnings(input: {
 }): string[] {
   try {
     const plan = planTextFit(input)
-    if (!plan.overflow) return []
-    return [textFitOverflowWarning(input.id ?? '', plan)]
+    if (plan.overflow) return [textFitOverflowWarning(input.id ?? '', plan)]
+    // R11：不裁字但被盒高压过 ⇒ 也要说一句（作者以为字会更大）。
+    if (plan.heightLimited) return [textFitHeightLimitWarning(input.id ?? '', plan)]
+    return []
   } catch {
     // 静态合同是「锦上添花」：算不出来就当没有，绝不因为它让校验崩掉。
     return []

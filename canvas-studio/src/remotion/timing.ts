@@ -1134,6 +1134,22 @@ export interface TextFitOptions {
    * 与 `letterSpacingPx` 同时给时相加（em 是主口径，px 追加；调用层已做互斥告警）。
    */
   letterSpacingEm?: number | undefined
+  /**
+   * R11（2026-11-16）：**可用高度**（px）。给了它就多一条降号理由 ——
+   * 行数没超 `maxLines`、但「行数 × 行高 + 行间距」超出盒高时继续缩字号。
+   *
+   * 为什么放在这里而不是调用方自己再写一层：高度和宽度是**同一个字号**的两个约束，
+   * 分两处循环会得到「宽度说 46px、高度说 30px」这种两套结论（成片必然错一个）。
+   * 不传 = 老调用逐像素不变。
+   */
+  maxHeightPx?: number | undefined
+  /**
+   * R11：每条之间的**固定**间距（px，不随字号/画布缩放）。
+   *
+   * `bullets` 的组件把 `margin: 18px 0` 写死成字面 px，行与行之间实际是 18px
+   * （相邻垂直外边距折叠），所以按 18 算，不是 36。
+   */
+  rowGapPx?: number | undefined
 }
 
 /**
@@ -1153,6 +1169,8 @@ export interface TextFitResult {
   overflow: boolean
   /** 估算所需总高度（像素），供调用方判断是否压到别的内容。 */
   estimatedHeightPx: number
+  /** 降号是否由**盒高**触发（R11：诊断「字为什么变小」）。 */
+  shrankForHeight?: boolean
 }
 
 /** 单个码点的宽度系数（相对字号）：CJK / 全角按 1，ASCII 按 0.55，空白按 0.3。 */
@@ -1219,17 +1237,28 @@ export function fitTextPolicy(text: string, options: TextFitOptions): TextFitRes
   const base = Math.max(1, options.baseFontPx)
   const minFont = Math.max(1, Math.min(base, options.minFontPx ?? base * 0.55))
   const lineHeight = options.lineHeight ?? 1.35
+  const maxHeightPx = options.maxHeightPx
+  const rowGapPx = Math.max(0, options.rowGapPx ?? 0)
+  /** n 行在字号 f 下的总高（行间距只在行与行之间，首尾不计）。 */
+  const heightOf = (n: number, f: number): number =>
+    n * f * lineHeight + Math.max(0, n - 1) * rowGapPx
+  const fitsHeight = (n: number, f: number): boolean =>
+    maxHeightPx === undefined || heightOf(n, f) <= maxHeightPx
   let fontPx = Math.floor(base)
   let lines = wrapByWidth(text, maxWidthPx, fontPx, options)
-  while (lines.length > options.maxLines && fontPx > minFont) {
+  let shrankForHeight = false
+  while ((lines.length > options.maxLines || !fitsHeight(lines.length, fontPx)) && fontPx > minFont) {
+    if (!fitsHeight(lines.length, fontPx)) shrankForHeight = true
     fontPx = Math.max(minFont, Math.floor(fontPx * 0.94))
     lines = wrapByWidth(text, maxWidthPx, fontPx, options)
   }
   return {
     fontPx,
     lines,
-    overflow: lines.length > options.maxLines,
-    estimatedHeightPx: Math.round(lines.length * fontPx * lineHeight),
+    // 高度也参与判溢出：缩到下限仍比盒子高 ⇒ 同样会被 `overflow:hidden` 裁掉。
+    overflow: lines.length > options.maxLines || !fitsHeight(lines.length, fontPx),
+    estimatedHeightPx: Math.round(heightOf(lines.length, fontPx)),
+    ...(shrankForHeight ? { shrankForHeight: true } : {}),
   }
 }
 

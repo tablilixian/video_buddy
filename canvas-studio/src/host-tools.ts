@@ -4742,6 +4742,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '**强烈建议传 `writeTo`**（相对项目根或绝对路径，须在项目内）：直接把骨架落盘到 build/manifest.json，'
         + '返回路径 + 轨数 + 字节数，只回显前 40 行 —— 省掉「60KB JSON 回显 + 模型抄一遍写盘」这一步，而那正是抄错括号与截断的主要来源。'
         + '落了盘就用 `render_composition({ manifestPath })` 出片，别再内联整份。'
+        + '**落了盘之后的下一条命令必须是 `render_composition`（draft）**：先看到动起来的效果，再决定改哪里。'
+        + '画幅 / 字号 / 版式不满意**都改 spec 重跑本工具** —— 不要在这一步去读或改宿主源码、不要另写生成器、'
+        + '不要手搓 manifest 绕过版式（真机有过 100 分钟零出片，全耗在这条路上，而那份 manifest 当时已合法可渲）。'
+        + '回执里「会被裁掉」= 必须改；「盒高只有 Npx」= 字被压小了，加高该单元的 cell.h 即可。'
         + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, description: '片名（写进 meta.title 与片头卡文案）。**传 templateId 时可省**（模板自带文案骨架）' },

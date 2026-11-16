@@ -15,7 +15,7 @@ import type { CaptionTrack, CompositionManifest, TextCardTrack } from './manifes
 import { fontFamilyStack, resolveFonts } from './fonts.js'
 import { flattenTracksDeep } from './group-children.js'
 import { createCanvasMeasurer } from './text-measure.js'
-import { planTextFit, textFitOverflowWarning, textFitSizingText, type TextFitVariant } from './text-fit-plan.js'
+import { planTextFit, textFitHeightLimitWarning, textFitOverflowWarning, textFitSizingText, type TextFitVariant } from './text-fit-plan.js'
 
 /** 一条文字轨的体检结论（**进 `report.textFit`**，字段名与 `TextFitPlan` 同名同义）。 */
 export interface TextFitReportEntry {
@@ -31,6 +31,15 @@ export interface TextFitReportEntry {
   atMinFont: boolean
   /** 折行可用宽（px）—— 判断「是不是盒太窄」时用。 */
   maxWidthPx: number
+  /**
+   * 盒高是否压低了字号 / 行数上限（R11，2026-11-16）。
+   *
+   * `true` 且不溢出 = 字被压小了但没裁（`textFitHeightLimitWarning` 的判据）；
+   * 竖屏 + 格位投影是它的主要来源。
+   */
+  heightLimited: boolean
+  /** 盒高（px）；无 box 时缺省。 */
+  boxHeightPx?: number
 }
 
 /** 一次渲染最多上报多少条（防病态 manifest 把报告撑爆）。 */
@@ -41,6 +50,8 @@ export const MAX_TEXT_FIT_LINES = 24
 export const MAX_TEXT_FIT_LINE_CHARS = 240
 /** warnings 里最多逐条列几条（其余折成计数）。 */
 export const MAX_TEXT_FIT_WARNINGS = 5
+/** 「被盒高压小」这类提示最多逐条列几条（同上；它比溢出常见得多，单独限流）。 */
+export const MAX_TEXT_FIT_HEIGHT_WARNINGS = 2
 
 /** 文字轨判定：`textCard`（五个 variant）+ `caption`（词级字幕）。其余类型一律不进。 */
 function isTextTrack(track: CompositionManifest['tracks'][number]): track is TextCardTrack | CaptionTrack {
@@ -118,6 +129,8 @@ export function auditTextFit(
         overflow: plan.overflow,
         atMinFont: plan.atMinFont,
         maxWidthPx: Math.round(plan.maxWidthPx),
+        heightLimited: plan.heightLimited,
+        ...(plan.boxHeightPx === undefined ? {} : { boxHeightPx: plan.boxHeightPx }),
       })
     } catch {
       // 单轨算不出来不该毁掉整份体检（也绝不阻塞渲染）。
@@ -145,12 +158,24 @@ function positiveOr(...values: (number | undefined)[]): number {
  * 上下文预算，完整清单在 `report.textFit`）。不溢出的轨不出任何噪音。
  */
 export function textFitWarnings(entries: readonly TextFitReportEntry[]): string[] {
+  const warnings: string[] = []
   const overflowing = entries.filter((entry) => entry.overflow)
-  if (overflowing.length === 0) return []
-  const shown = overflowing.slice(0, MAX_TEXT_FIT_WARNINGS)
-  const warnings = shown.map((entry) => textFitOverflowWarning(entry.id, entry))
-  const rest = overflowing.length - shown.length
-  if (rest > 0) warnings.push(`另有 ${rest} 条文字轨也会被裁（完整清单见 report.textFit）。`)
+  if (overflowing.length > 0) {
+    const shown = overflowing.slice(0, MAX_TEXT_FIT_WARNINGS)
+    for (const entry of shown) warnings.push(textFitOverflowWarning(entry.id, entry))
+    const rest = overflowing.length - shown.length
+    if (rest > 0) warnings.push(`另有 ${rest} 条文字轨也会被裁（完整清单见 report.textFit）。`)
+  }
+  // R11（2026-11-16）：**不裁字但被盒高压小**的也要说一句 —— 竖屏 + 格位投影下
+  // 这是常态（box.h 只有个位数百分比），不说清楚会被当成「渲染坏了」。
+  // 单独限流：这类通常一次出现一屏好几条，逐条列会把回执吃掉。
+  const compressed = entries.filter((entry) => entry.heightLimited && !entry.overflow)
+  if (compressed.length > 0) {
+    const shown = compressed.slice(0, MAX_TEXT_FIT_HEIGHT_WARNINGS)
+    for (const entry of shown) warnings.push(textFitHeightLimitWarning(entry.id, entry))
+    const rest = compressed.length - shown.length
+    if (rest > 0) warnings.push(`另有 ${rest} 条文字轨为避免裁字被压小了字号（完整清单见 report.textFit）。`)
+  }
   return warnings
 }
 
@@ -175,6 +200,7 @@ export function sanitizeTextFitEntries(raw: unknown): TextFitReportEntry[] | und
     const lines = asLines(record.lines)
     if (variant === undefined || fontPx === undefined || baseFontPx === undefined
       || maxLines === undefined || maxWidthPx === undefined || lines === undefined) continue
+    const boxHeightPx = asFinite(record.boxHeightPx)
     out.push({
       id,
       variant,
@@ -185,6 +211,8 @@ export function sanitizeTextFitEntries(raw: unknown): TextFitReportEntry[] | und
       overflow: record.overflow === true,
       atMinFont: record.atMinFont === true,
       maxWidthPx,
+      heightLimited: record.heightLimited === true,
+      ...(boxHeightPx === undefined ? {} : { boxHeightPx }),
     })
   }
   return out

@@ -129,7 +129,8 @@ export const FILE_WHITELIST = {
   // +2 净行，5125 → 5127 显式登记。
   // R11-B2（2026-11-16）：分镜渲染编排整体搬到 `shot-render.ts`（注入式，可做装配测试），
   // render handler 里 105 行 → 44 行 ⇒ 5412 → 5355（**首次下降**，不是新增）。
-  'src/host-tools.ts': 5355,
+  // R11-B4：probe 返帧注释（+5）+ 时序回核透传（+2）⇒ 5355 → 5362。
+  'src/host-tools.ts': 5362,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，

@@ -3994,6 +3994,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 file: args.file,
               }),
               loadSpec: () => readProjectSpec(projectDir),
+              // B4：Q2 时序回核接进分镜路径 —— 此前绕过 commitRenderJob，
+              // 用户传了拆解表也永远没有 report.timingCheck（界面像回核过，其实没有）。
+              ...(timingSegments === undefined ? {} : { timingSegments }),
             })
             shotOutcome = shot.outcome
             shotPointers = shot.segments
@@ -4014,7 +4017,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(spot ? { spotFrames: withStructuralSpotFrames(renderManifest, a.spotFrames as number[]) } : {}),
           ...(timingSegments !== undefined ? { timingSegments } : {}),
           realDurations: pre.realDurations,
-          sampleFrames: probe || spot ? [] : pickSampleFrames(renderManifest),
+          // R11-B4：probe 也返抽帧。批注预算的铁律是「额度只在对图片有产出时扣」，
+          // 而 probe 此前恒传空数组 ⇒ 扣掉唯一一次批注额度却一张图都不给（真机会话
+          // 6f8ba13c：step41 probe 吃满额度、step43 想看画面直接被拒，之后 4 次盲改）。
+          // spot 仍走空数组：它的画面由 spotFrames 静帧通道返回，再抽样是重复。
+          sampleFrames: spot ? [] : pickSampleFrames(renderManifest),
           }))
         // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针 / spot-check 不落。
         const composedNode = probe || spot

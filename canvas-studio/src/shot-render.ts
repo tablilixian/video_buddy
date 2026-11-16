@@ -52,6 +52,15 @@ import {
   type SegmentPointer,
 } from './segment-artifacts.js'
 import { throwError } from './error-system.js'
+import type { TeardownSegment } from './teardown-verify.js'
+import { verifyTeardown } from './teardown-verify.js'
+import {
+  TIMING_CHECK_SAMPLE_FPS,
+  TIMING_CHECK_TOLERANCE_SEC,
+  summarizeTimingCheck,
+  timingCheckWarnings,
+  type TimingCheckSummary,
+} from './timing-segments.js'
 import './errors/catalog.js'
 
 /** 宿主服务注入（全部由 `host-tools.ts` 提供真实实现，测试提供假实现）。 */
@@ -79,6 +88,14 @@ export interface ShotRenderDeps {
   loadSpec?: () => unknown
   /** 是否发布段产物到 `deliver/segments`（缺省：非 draft 即发布）。 */
   publishSegments?: boolean
+  /**
+   * Q2 时序闸的拆解段（`render_composition` 的 `timingSegments` 入参）。
+   * 给了 ≥2 段就跑回核 —— 分镜路径此前绕过 `commitRenderJob`，`report.timingCheck`
+   * 永远缺席：用户传了拆解表、界面显示「已回核」，实际一次都没比。
+   */
+  timingSegments?: readonly TeardownSegment[]
+  /** 时序回核实现（缺省 {@link verifyShotTiming}；测试注入假实现）。 */
+  verifyTiming?: (args: { videoPath: string; segments: readonly TeardownSegment[] }) => Promise<TimingVerifyResult>
   /** 时钟注入（报告耗时与临时文件名；缺省 `Date.now`）。 */
   now?: () => number
 }
@@ -100,6 +117,34 @@ export function readProjectSpec(projectDir: string): unknown {
   } catch {
     return null
   }
+}
+
+/** Q2 时序回核结论（进 `report.timingCheck` + warnings）。 */
+export interface TimingVerifyResult {
+  summary: TimingCheckSummary
+  warnings: string[]
+}
+
+/**
+ * 分镜路径的时序回核 —— 与整片路径**同一个算法、同一组常量**（`verifyTeardown` +
+ * 4fps 采样 + ±0.45s 容差）。
+ *
+ * 为什么单独抽出来：整片路径在 `commitRenderJob` 里顺手做，而分镜路径合成 outcome
+ * 时绕过了它 ⇒ 用户传了拆解表，`report.timingCheck` 永远缺席，浮点漂移没人报。
+ * 抽成独立函数既让分镜路径能复用，也让测试可以注入假实现（真实实现要 ffmpeg）。
+ */
+export async function verifyShotTiming(args: {
+  videoPath: string
+  segments: readonly TeardownSegment[]
+}): Promise<TimingVerifyResult> {
+  const verified = await verifyTeardown({
+    videoPath: args.videoPath,
+    segments: args.segments,
+    sampleFps: TIMING_CHECK_SAMPLE_FPS,
+    toleranceSec: TIMING_CHECK_TOLERANCE_SEC,
+  })
+  const summary = summarizeTimingCheck(verified)
+  return { summary, warnings: timingCheckWarnings(summary) }
 }
 
 /**
@@ -161,6 +206,7 @@ function shotReport(input: {
   sampledFrames: number
   width?: number
   height?: number
+  timingCheck?: TimingCheckSummary
 }): RenderJobReport {
   const width = input.width ?? input.manifest.meta.width
   const height = input.height ?? input.manifest.meta.height
@@ -184,6 +230,7 @@ function shotReport(input: {
     width,
     height,
     sampledFrames: input.sampledFrames,
+    ...(input.timingCheck === undefined ? {} : { timingCheck: input.timingCheck }),
   }
 }
 
@@ -297,6 +344,24 @@ export async function runShotRender(
       if (published.note !== undefined) receipt.push(`⚠️ 段产物未完整落地：${published.note}`)
     }
 
+    // Q2 时序闸：拆解表 ≥2 段才回核（单段没有边界可比）。失败只降级为一行提示，
+    // 绝不吞掉已经渲出来的成片。
+    let timingCheck: TimingCheckSummary | undefined
+    if ((deps.timingSegments?.length ?? 0) >= 2) {
+      try {
+        const verified = await (deps.verifyTiming ?? verifyShotTiming)({
+          videoPath: deps.resolveAsset(saved.assetFile),
+          segments: deps.timingSegments as readonly TeardownSegment[],
+        })
+        timingCheck = verified.summary
+        for (const warning of verified.warnings) {
+          if (!segmentWarnings.includes(warning)) segmentWarnings.push(warning)
+        }
+      } catch (cause) {
+        receipt.push(`⚠️ [时序回核] 未执行：${cause instanceof Error ? cause.message : String(cause)}`)
+      }
+    }
+
     outcome = {
       url: saved.url,
       assetFile: saved.assetFile,
@@ -327,6 +392,7 @@ export async function runShotRender(
         sampledFrames: frames.length,
         ...(info.width === undefined ? {} : { width: info.width }),
         ...(info.height === undefined ? {} : { height: info.height }),
+        ...(timingCheck === undefined ? {} : { timingCheck }),
       }),
     }
   } finally {

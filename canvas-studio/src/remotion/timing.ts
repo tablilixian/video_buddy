@@ -1555,6 +1555,7 @@ export {
   RENDER_TIMEOUT_MIN_MS,
   RENDER_TIMEOUT_PER_FRAME_MS,
   RENDER_TIMEOUT_QUALITY_FACTOR,
+  plannedFrameCount,
   renderTimeoutMs,
   timeoutExtensionMs,
 } from './render-budget.js'

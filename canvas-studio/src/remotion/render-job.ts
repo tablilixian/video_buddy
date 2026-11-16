@@ -52,7 +52,7 @@ import {
   resetRenderHostAfterFailure,
   toggleHostWindowThrottling,
 } from '../render-host/dispatch.js'
-import { pickSampleFrames, RENDER_TIMEOUT_EXTEND_MIN_MS, renderTimeoutMs, timeoutExtensionMs } from './timing.js'
+import { pickSampleFrames, plannedFrameCount, RENDER_TIMEOUT_EXTEND_MIN_MS, renderTimeoutMs, timeoutExtensionMs } from './timing.js'
 
 /**
  * 工单超时**下限**（毫秒）。
@@ -879,7 +879,13 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
   // 二期 1b（D-04）：超时按片长自适应；REQ-034 O-06 改按帧数；CV-447 加分档系数。
   const jobQuality = options.quality ?? manifest.meta.quality ?? 'standard'
   const timeoutMs = options.timeoutMs ?? renderTimeoutMs(
-    spotFrames.length > 0 ? spotFrames.length : manifest.meta.durationInFrames,
+    // R11-B4：分母是**本单要渲的帧数**，不是片长 —— 段 manifest 保留整片 600 帧，
+    // 用片长算会让每段拿整片预算（3 段 612s vs 整片 204s），真卡死时白等。
+    plannedFrameCount({
+      durationInFrames: manifest.meta.durationInFrames,
+      spotFrames,
+      frameRange: options.frameRange,
+    }),
     jobQuality,
   )
   const { signal } = options

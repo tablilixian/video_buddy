@@ -92,8 +92,15 @@ export interface ContentSpec {
     id: string
     /** 卡编号或卡名（'A2' / 'A2 标题逐字'）；缺省 = 占位段（回落路径）。 */
     card?: string
-    /** 主文案（卡生成器的 copy 槽位；B1 用 `k:v; k:v` 行内格式）。 */
-    copy: string
+    /**
+     * 主文案（卡生成器的 copy 槽位；B1 用 `k:v; k:v` 行内格式）。
+     *
+     * **`units` 型段可缺省**：一屏多单元时没有「屏级文案槽」，文案在各单元里。
+     * 旧口径强制非空 ⇒ 真机会话 6f8ba13c 里模型为了过校验，把两个单元的文案拼成
+     * 一句塞进 `copy`，顺手把 `-60°C` 写成 `-64°C` —— 一个纯格式校验，污染了成片里
+     * 唯一的数值。缺省时配方切分用各单元文案拼合（只作时长权重参考，不上屏）。
+     */
+    copy?: string
     /** 段时长（秒，显式）；与 weight 二选一，都给时长优先。 */
     durationSec?: number
     /** 时长权重（无显式时长时按权重归一）。 */
@@ -235,7 +242,14 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
         return
       }
       if (!isNonEmptyString(section.id)) errors.push(`${at}.id 必须是非空字符串`)
-      if (!isNonEmptyString(section.copy)) errors.push(`${at}.copy 必须是非空字符串（卡生成器的 copy 槽位）`)
+      // R11-B4：units 型段允许缺省 copy（那一屏没有屏级文案槽）。缺省≠乱填：
+      // 给了非字符串仍然拒收，避免「反正能过」把对象/数字塞进文案槽。
+      const multiUnit = Array.isArray(section.units) && section.units.length > 0
+      if (section.copy === undefined || section.copy === '') {
+        if (!multiUnit) errors.push(`${at}.copy 必须是非空字符串（卡生成器的 copy 槽位）`)
+      } else if (!isNonEmptyString(section.copy)) {
+        errors.push(`${at}.copy 必须是字符串（卡生成器的 copy 槽位）`)
+      }
       if (section.durationSec !== undefined && (typeof section.durationSec !== 'number' || section.durationSec <= 0)) {
         errors.push(`${at}.durationSec 必须是正数（秒）`)
       }
@@ -457,7 +471,9 @@ function toRecipe(spec: ContentSpec): Recipe {
     card: section.card ?? '—',
     // durationSec 显式时换算成权重近似（fps 无关：权重只用于相对切分）；都缺省给 1。
     weight: section.durationSec ?? section.weight ?? 1,
-    copy: section.copy,
+    // units 型段缺省 copy：拼合各单元文案只用于「这屏有多长/多满」的相对切分，
+    // 不参与上屏（上屏文案来自 `resolveUnits`）。
+    copy: section.copy ?? (section.units ?? []).map((unit) => unit.copy).join('；'),
   }))
   return {
     id: 'content-spec',
@@ -474,7 +490,7 @@ function resolveUnits(section: ContentSpec['sections'][number]): SpecUnit[] {
   if (Array.isArray(section.units) && section.units.length > 0) return section.units
   return [{
     card: section.card ?? '',
-    copy: section.copy,
+    copy: section.copy ?? '',
     ...(section.label === undefined ? {} : { label: section.label }),
     ...(section.assetSlots === undefined ? {} : { assetSlots: section.assetSlots }),
     ...(section.accentColor === undefined ? {} : { accentColor: section.accentColor }),

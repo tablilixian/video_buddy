@@ -213,3 +213,60 @@ test('无从切片（无段表 / 无 spec / 无转场 ⇒ 单段）⇒ outcome �
   assert.match(result.receipt.join('\n'), /分镜渲染未启用/)
   assert.deepEqual(result.segments, [])
 })
+
+// ── B4（2026-11-16）· Q2 时序回核接进分镜路径 ────────────────────────────────
+//
+// 此前分镜路径合成 outcome 时绕过 `commitRenderJob`，`verifyTeardown` 不跑 ⇒ 用户
+// 传了 `timingSegments`，`report.timingCheck` 永远缺席（界面看起来像回核过，其实一次
+// 都没比）。反向变异：把 `deps.timingSegments` 的判断删掉 ⇒ 前两个用例红。
+
+const TIMING = [
+  { label: '开场', startSec: 0, endSec: 6.3 },
+  { label: '数据', startSec: 6.3, endSec: 13 },
+  { label: '收尾', startSec: 13, endSec: 20 },
+]
+
+function timingVerify(summary, warnings = []) {
+  return async () => ({ summary, warnings })
+}
+
+test('传了拆解表 ⇒ report 带 timingCheck，漂移进 warnings', async () => {
+  const project = makeProject()
+  const summary = { toleranceSec: 0.45, boundaries: [{ label: '数据', tableSec: 6.3, status: 'ok', measuredSec: 6.4, deltaSec: 0.1 }] }
+  const { deps: d } = deps(project, {
+    timingSegments: TIMING,
+    verifyTiming: timingVerify(summary, ['[时序回核] 1 处边界漂移']),
+  })
+  const result = await runShotRender(manifest(), d)
+  assert.deepEqual(result.outcome.report.timingCheck, summary, 'Q2 结论必须进报告（否则「回核过」是假的）')
+  assert.ok(result.outcome.warnings.includes('[时序回核] 1 处边界漂移'), '漂移必须进 warnings')
+})
+
+test('拆解表 <2 段 ⇒ 不回核（单段没有边界可比），report 无该字段', async () => {
+  const project = makeProject()
+  let called = 0
+  const { deps: d } = deps(project, {
+    timingSegments: [{ label: '全片', startSec: 0, endSec: 20 }],
+    verifyTiming: async () => {
+      called += 1
+      return { summary: { toleranceSec: 0.45, boundaries: [] }, warnings: [] }
+    },
+  })
+  const result = await runShotRender(manifest(), d)
+  assert.equal(called, 0, '单段拆解表不该触发回核')
+  assert.equal(result.outcome.report.timingCheck, undefined)
+})
+
+test('回核实现抛错 ⇒ 成片照常返回，只记一行（回核不吞成果）', async () => {
+  const project = makeProject()
+  const { deps: d } = deps(project, {
+    timingSegments: TIMING,
+    verifyTiming: async () => {
+      throw new Error('ffmpeg 采样失败')
+    },
+  })
+  const result = await runShotRender(manifest(), d)
+  assert.ok(result.outcome !== null)
+  assert.ok(result.outcome.url.length > 0)
+  assert.match(result.receipt.join('\n'), /\[时序回核\] 未执行/)
+})

@@ -48,6 +48,33 @@ export function renderTimeoutMs(durationInFrames: number, quality: RenderQuality
 }
 
 /**
+ * 本单**实际要渲的帧数**（超时预算的分母）。
+ *
+ * 为什么需要它：`renderTimeoutMs` 按帧数算预算，但调用方原来恒传
+ * `manifest.meta.durationInFrames` —— 分镜渲染的段 manifest **刻意保留整片片长**
+ * （段窗之外的轨也要能算帧号），于是每段拿着 600 帧的预算去渲 200 帧：
+ * 3 段合计 612s，而整片只要 204s。一个真卡死的段白等 204s（`render-budget.ts`
+ * 头注释里「把最坏等待压到 1.5 分钟」的承诺当场失效）。
+ *
+ * 优先级：spot 目标帧数（只渲静帧）> `frameRange` 帧窗跨度 > 片长帧数。
+ * 闭区间口径与 `segmentRenderOptions` 一致（`[start, end]` 含首含尾 ⇒ `end-start+1`）。
+ */
+export function plannedFrameCount(input: {
+  durationInFrames: number
+  spotFrames?: readonly number[] | undefined
+  frameRange?: readonly [number, number] | undefined
+}): number {
+  const spot = input.spotFrames?.length ?? 0
+  if (spot > 0) return spot
+  const range = input.frameRange
+  if (range !== undefined) {
+    const span = Math.round(range[1]) - Math.round(range[0]) + 1
+    if (Number.isFinite(span) && span > 0) return span
+  }
+  return Number.isFinite(input.durationInFrames) ? Math.max(0, Math.round(input.durationInFrames)) : 0
+}
+
+/**
  * CV-449（P0-C）：总预算到期但进度仍在推进时，续期量的余量系数。
  *
  * 已渲比例算出的「每帧成本」只对**已渲的那部分**成立；后续段落可能才出现重轨

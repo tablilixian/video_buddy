@@ -467,10 +467,10 @@ export function textFitOverflowWarning(
  */
 export function textFitHeightLimitWarning(
   id: string,
-  plan: Pick<TextFitPlan, 'variant' | 'fontPx' | 'maxLines' | 'boxHeightPx'>,
+  plan: Pick<TextFitPlan, 'variant' | 'fontPx' | 'baseFontPx' | 'boxHeightPx'>,
 ): string {
   const box = plan.boxHeightPx === undefined ? '未知' : `${plan.boxHeightPx}px`
-  return `${labelOf(id)}盒高只有 ${box}（只够 ${plan.maxLines} 行），字号因此被压到 ${pxText(plan.fontPx)} —— `
+  return `${labelOf(id)}盒高只有 ${box}：字号从 ${pxText(plan.baseFontPx)} 压到 ${pxText(plan.fontPx)} 才放得下 —— `
     + '竖屏 / 多单元并置时格位投影会把 box 压扁；要保持字号请加高该单元的 box'
     + '（写 spec 时就是调大该单元的 `cell.h`；或减少同屏单元数）。'
 }

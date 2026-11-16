@@ -175,9 +175,10 @@ test('R11-盒高：提示文案不出现浮点尾巴（真机回执里出现过 
   const note = textFitHeightLimitWarning('t', {
     variant: 'title',
     fontPx: 46.75000000000001,
-    maxLines: 1,
+    baseFontPx: 84,
     boxHeightPx: 76,
   })
   assert.match(note, /47px/, '像素值必须取整后再拼进回执')
   assert.doesNotMatch(note, /46\.75/)
+  assert.doesNotMatch(note, /只够 \d+ 行/, '「只够 N 行」会与 maxLines（变体上限）混淆，不许这么写')
 })

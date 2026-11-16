@@ -32,6 +32,7 @@ import type { StagePlan } from './stage-plan.js'
 import { StagePlanError, planStages } from './stage-plan.js'
 import { applyStageTransitions } from './stage-transition.js'
 import type { ManifestSegment } from './manifest.js'
+import { TEXT_VARIANTS } from './manifest.js'
 
 /** 一屏内的一个单元（RQ-25）：主视觉 + 文案 + 自己的格位。 */
 export interface SpecUnit {
@@ -62,17 +63,42 @@ export interface SpecUnit {
   highlights?: Array<{ text: string; color: string }>
 }
 
-/** 跨屏常驻层（RQ-26）：一条非全屏底板，从 fromSection 首帧铺到 toSection 末帧。 */
+/**
+ * 跨屏常驻层（RQ-26）：一条非全屏底板，从 fromSection 首帧铺到 toSection 末帧。
+ *
+ * S-5（2026-11-16）：**带 `text` 时出文字轨**（`textCard`，`fadeFrames` 恒 0），
+ * 不带则维持"形状底板"。这条能力补的是小红书图文卡的标准骨架：左上角固定小字、
+ * 右上角分组标签、全片统一框线 —— 它们跨屏不变，用 `units`（卡，自带入场与 chrome）
+ * 承载会带进不需要的动效，用常驻层才是语义正解。
+ *
+ * 为什么不是「让用户多给几个 units」：真机那份设计稿是 5 个视觉元素，`units`
+ * 上限 4，而且每屏会多出 4 次卡的入场动效 —— 用户要的是"一直在那"，不是"每屏重新进"。
+ */
 export interface SpecCarry {
   id: string
   box: CellRect
   color: string
-  /** 圆角（px）；缺省 0。 */
+  /** 圆角（px）；缺省 0。**仅在无 `text` 时生效**（文字层没有底色可圆角）。 */
   radius?: number
   /** 覆盖起点屏 id；缺省 = 第一屏。 */
   fromSection?: string
   /** 覆盖终点屏 id；缺省 = 最后一屏。 */
   toSection?: string
+  /**
+   * 常驻文字（S-5）：给了它就直接出 `textCard` 轨，不再画形状。
+   *
+   * 用途就是"全片同一句"：左上角固定文案、分组标签。逐屏不同的文字**不要**用它 ——
+   * 那是 `units` 的活（常驻层按定义跨屏不变）。
+   */
+  text?: string
+  /** 文字 variant；缺省 `subtitle`。取值同 `textCard.variant`。 */
+  variant?: 'subtitle' | 'dataCard' | 'title' | 'bullets' | 'timecode'
+  /** 文字色；缺省白。`color` 仍写作底板色 / 描边色，两者分工与 `textCard` 一致。 */
+  textColor?: string
+  /** 文字底板色（`subtitle` 才有意义）；缺省透明。 */
+  background?: string
+  /** 字距（em）；缺省 0。分组的全大写标签常用 0.08~0.12。 */
+  letterSpacingEm?: number
 }
 
 /** 内容规格（schema 正本；字段语义见各注释）。 */
@@ -536,6 +562,27 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
         if (from !== undefined && to !== undefined && from > to) {
           errors.push(`${at} 的 fromSection 在 toSection 之后 —— 常驻层的时间窗是空的`)
         }
+        // S-5：带 text 的常驻层出文字轨 —— 字段白名单必须在这里拦死，
+        // 否则一个拼错的 variant 会一路走到渲染层才「什么都没显示」。
+        if (item.text !== undefined) {
+          if (!isNonEmptyString(item.text)) {
+            errors.push(`${at}.text 必须是非空字符串（要空着就别写这个字段，写了空串会得到一条看不见的轨）`)
+          }
+          if (item.variant !== undefined && (typeof item.variant !== 'string' || !TEXT_VARIANTS.has(item.variant))) {
+            errors.push(`${at}.variant 非法（${String(item.variant)}）—— 白名单：${[...TEXT_VARIANTS].join(' / ')}`)
+          }
+          if (item.textColor !== undefined && !isNonEmptyString(item.textColor)) {
+            errors.push(`${at}.textColor 必须是非空字符串（文字色；底板色请用 color）`)
+          }
+          if (item.letterSpacingEm !== undefined && (typeof item.letterSpacingEm !== 'number' || !Number.isFinite(item.letterSpacingEm))) {
+            errors.push(`${at}.letterSpacingEm 必须是有限数值（em）`)
+          }
+          if (item.radius !== undefined) {
+            warnings.push(`${at} 同时有 text 与 radius —— radius 只作用于形状底板，文字层没有底色可圆角（已忽略）`)
+          }
+        } else if (item.variant !== undefined || item.textColor !== undefined || item.letterSpacingEm !== undefined) {
+          warnings.push(`${at} 写了 variant / textColor 却没有 text —— 这些字段只在文字常驻层生效（已忽略）`)
+        }
       })
     }
   }
@@ -681,6 +728,28 @@ function buildCarryTracks(spec: ContentSpec, timeline: RecipePlan['timeline']): 
   for (const item of carries) {
     const from = item.fromSection === undefined ? first : (byId.get(item.fromSection) ?? first)
     const to = item.toSection === undefined ? last : (byId.get(item.toSection) ?? last)
+    const window = {
+      startFrame: from.startFrame,
+      // 常驻层不做入场：每进一屏闪一次就不叫常驻了。
+      fadeFrames: 0,
+      durationInFrames: Math.max(1, to.startFrame + to.durationInFrames - from.startFrame),
+    }
+    // S-5：有 text ⇒ 文字层。字段全部走 `textCard` 既有的白名单，
+    // 没有新增轨型 —— 这是「接到现有管线」，不是造新管线。
+    if (item.text !== undefined && item.text !== '') {
+      out.push({
+        id: item.id,
+        type: 'textCard',
+        variant: item.variant ?? 'subtitle',
+        text: item.text,
+        box: { x: item.box.x, y: item.box.y, w: item.box.w, h: item.box.h },
+        color: item.textColor ?? item.color,
+        ...(item.background === undefined ? {} : { background: item.background }),
+        ...(item.letterSpacingEm === undefined ? {} : { letterSpacingEm: item.letterSpacingEm }),
+        ...window,
+      })
+      continue
+    }
     out.push({
       id: item.id,
       type: 'shape',
@@ -688,10 +757,7 @@ function buildCarryTracks(spec: ContentSpec, timeline: RecipePlan['timeline']): 
       color: item.color,
       box: { x: item.box.x, y: item.box.y, w: item.box.w, h: item.box.h },
       ...(item.radius === undefined ? {} : { radius: item.radius }),
-      startFrame: from.startFrame,
-      durationInFrames: Math.max(1, to.startFrame + to.durationInFrames - from.startFrame),
-      // 常驻层不做入场：每进一屏闪一次就不叫常驻了。
-      fadeFrames: 0,
+      ...window,
     })
   }
   return out

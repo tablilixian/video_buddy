@@ -1155,7 +1155,7 @@ export interface ManifestValidation {
 // RQ-22（REQ-038）：聚合型原语 5 种（TRACK_TYPES 与 union 同步扩容）。
 const TRACK_TYPES = new Set(['video', 'image', 'textCard', 'shape', 'transition', 'audioViz', 'chart', 'caption', 'callout', 'group',
   'logoWall', 'assetGrid', 'chipRow', 'codePanel', 'ticker'])
-const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets', 'timecode'])
+export const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets', 'timecode'])
 const SHAPES = new Set([
   'rect', 'circle', 'line', 'gradient',
   // 二期 A1 / A3

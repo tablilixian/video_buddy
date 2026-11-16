@@ -41,7 +41,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 1. **取真值**：`list_shots` 读每个视频片段的**真实时长**（素材轨时长的唯一合法来源）；`list_references` 取角色 / 风格资产卡与图片。有旁白时以 `tts_voiceover` 结果里的真值时长为准。
 2. **组装 `CompositionManifest`**：**先 `scaffold_manifest({ title, durationSeconds })` 拿骨架**（已含顶层 `id`、`meta`、片头片尾与时长自洽），再往 `tracks` 里加你的轨。**先挑卡再动手，不要从空 tracks 发明镜头**：整片结构用 `scaffold_manifest` 的
 `recipe` 套片型配方（explainer-cards / product-walkthrough / story-arc，自带段序列、时间轴与素材需求）；
-单镜头动效从 `references/shot-cards.md` 挑卡填参。
+单镜头动效从 `references/shot-cards.md` 挑卡填参（**注意：那份文件有 17 个编号不是卡号，卡号只认 `references/card-catalog.generated.md`**）。
 **整片模板要先查**：`list_templates({ requirements })` —— **恰好 1 个** ✅ 适配就直接
 `scaffold_manifest({ templateId, slots })` 出整片（版式 / 时序 / 音效 / 装饰构件都已固化），跳到第 4 步；
 **0 个** ⇒ 按上面的 `recipe` 自由编排；**≥2 个** ⇒ **列给用户挑，不许自选**。槽位超限只删字、不缩字号；
@@ -83,7 +83,8 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
 - **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；四种结构模板（陈述/对比/时间线/原理拆解）与卡片形态 → `references/explainer-patterns.md`。
-- **屏表与格位（≥45s 多屏片先读）**：屏数与节奏交给 `meta.autoStages` 让工具算（自己写 durationSec 数屏 = 真机 45s 离散 3.7× 的根因）；一屏 1–4 个单元各占 `cell`，跨屏底板走 `carry` → `references/screen-plan.md`。
+- **屏表与格位（≥45s 多屏片先读）**：屏数与节奏交给 `meta.autoStages` 让工具算（自己写 durationSec 数屏 = 真机 45s 离散 3.7× 的根因）；一屏 1–4 个单元各占 `cell`，跨屏底板 / 固定文字走 `carry` → `references/screen-plan.md`。
+- **格位能放多少字（写 `cell` 前必查）**：`cell → 盒高 → 字号 → 行数` 的换算与四档画幅实测值见 `references/spec-geometry.generated.md`（机器生成）。竖屏 `title` 单元 `cell.h:24` 只会得到 115px（满号 149px 需要 `cell.h≈60`）——**别为满号撑格位，控制字数**。
 - **动效五要素**：动笔前按 beat / 主次 / 帧预算 / 进出场 / 禁用项过一遍 → `references/motion-brief.md`。
 - **动感范式（默认开）**：按 `references/motion-patterns.md` 的范式与决策表给画面加运动。
 - **上游体裁壳（必读）**：点名本 skill **仍须先加载**壳定向 → `references/format-directors.md`。
@@ -110,6 +111,10 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **禁止用 bash 读 `src/remotion/**` 推契约**：真机两次会话复读 60–304 次（会话 19 单次 60 次）。字段认 `references/manifest-fields.generated.md`，**合法值 / 合法键 / 默认常量 / 行为语义认 `references/component-contract.generated.md`**，组合认 `references/manifest-contract.md`；均由源码机器生成。生成物没覆盖到的：**先在回复里点名缺口（引用条目名）再读源码，并把缺口写进交付未决项**——这是读源码的唯一合法前置。
   - **「没覆盖到」包括组件内部几何**：绘图区内缩（如 chart 的 `CHART_PLOT` 左9/右8/上7/下12）、`overflow: hidden` 裁切、描边外径 vs viewBox 余量、布局预算——这些合同只记字段不记几何，**按「字段合法 ≠ 画面完整」对待**（2026-11-13 真机教训：gauge 环几何三个陷阱零文档，字段全合法照样裁切）。
   - **盲猜硬上限**：同一视觉 / 几何问题渲染试错 **≥3 次仍未收敛 ⇒ 禁止继续盲猜**，必须走上面的点名缺口 + 读源码路径。盲猜的实测代价：gauge 裁切一案 6 个校准 manifest / 24 渲染 / 40 分钟，而读源码 2 个 grep 就定位。
+- **能力发现只看两份生成文档（禁读源码枚举）**：**有哪些卡**认 `references/card-catalog.generated.md`（58 张，卡号 / 卡名 / 素材需求 / 主体 box / copy·label 用法，机器生成）；**能不能表达**认 `references/spec-capability.generated.md`（能 / 不能 + 不可表达清单 + 降级路径，结论全部由探测得出）。这两份之外**没有第三种「卡号」坐标系** —— `subtitle` / `chartBars` / `wipeLeft` 是 manifest 参数，写进 `section.card` 会被拒收。
+  - **禁幻影搜索**：文档说「没有」就是没有，再 `grep` 三遍也不会出现。真机两次会话共 **184 次 bash** 里约 32 次就是在找「我是不是漏了个字段」（最后一条是 `grep -rn "chrome" src/`）。若怀疑文档过期 ⇒ 在回复里说一句「疑似文档漂移：<点名哪条>」，**然后继续出片**，别停下。
+- **决策预算（硬指标，防「信息够了也不敢决策」）**：每屏选卡最多查 **2 次**；本轮除本文提到的必读分册外，额外读分册**≤2 份**。**到预算就必须落笔**：先 `write_storyboard` → 再 spec → 再 `render(draft)`。真机第二轮 53 分钟零落盘的机制就是「每步都重新推一遍全案」（推理 45 万字符 / 输出 13.4 万 token），而它当时的信息早就够了。
+- **表达不了时的三级降级（唯一合法路径）**：① **加单元**（`units` 上限 4，「用户说 2 个」通常是下限）→ ② **用 `carry`**（跨屏不变的东西放常驻层）→ ③ 仍不行就 `write_note` 记一句「这条做不到：<原因>，替代方案：<方案>」，**然后继续出片**。第 ③ 级是**明确允许**的：把缺口记下来继续出，比停在红线前推演 45 分钟有用 —— 一个只有禁止、没有出口的规则系统会让人原地不动。细则见 `references/spec-capability.generated.md` §4。
 - **禁止在推理里手排整片帧号**：帧窗由 builder / 脚本算，改一处只改内容表里那一条。
 - **禁止未出 M1 就做美化**（出图 / 量像素 / 调色 / 读源码）：先让用户看到一条能播的。
 - **一句一条字幕卡**：字数与展示时长匹配，不把长段落塞进一张卡。**卡的首尾必须相接**——`durationInFrames` 是屏上时长，每句延伸到下一句 `startFrame`（末句到总帧），句间不留空白帧；字幕卡由组件层硬切，别指望淡入淡出 → `references/subtitle-timing.md`。

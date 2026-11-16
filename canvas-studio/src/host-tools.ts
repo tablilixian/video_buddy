@@ -4746,6 +4746,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '画幅 / 字号 / 版式不满意**都改 spec 重跑本工具** —— 不要在这一步去读或改宿主源码、不要另写生成器、'
         + '不要手搓 manifest 绕过版式（真机有过 100 分钟零出片，全耗在这条路上，而那份 manifest 当时已合法可渲）。'
         + '回执里「会被裁掉」= 必须改；「盒高只有 Npx」= 字被压小了，加高该单元的 cell.h 即可。'
+        + '**卡号只查 `card-catalog.generated.md`、能力边界只查 `spec-capability.generated.md`**：'
+        + '别用 bash 去 `grep src/remotion/**` 枚举卡或确认「能不能表达」——那两份是机器生成的权威清单，源码是实现不是规格。'
+        + '表达不了时的唯一合法路径是三级降级（加单元 → carry → write_note 记一句后继续出片），'
+        + '**不是**手搓 manifest / 后处理注入（真机 45 分钟就耗在「找不到合法出口」上）。'
         + '不传 `writeTo` 则只产出 JSON：不落盘、不渲染、不动画布。',
       parameters: {
         title: { type: 'string' as const, description: '片名（写进 meta.title 与片头卡文案）。**传 templateId 时可省**（模板自带文案骨架）' },

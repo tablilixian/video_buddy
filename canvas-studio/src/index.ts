@@ -468,6 +468,77 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
       }
     })()
   })
+  // CV-467：run 结算桥 —— turn/start 与 turn/end 落 `lastRun`（左栏六态徽标的
+  // 唯一数据落点，判据见 src/project-status.ts 头注）。一个 session 一个项目一个
+  // turn：turn/start 落 running，turn/end 按 reason 词表结算（词表来自上游
+  // session-format v0 校验：completed / blocked / max-tokens / interrupted /
+  // aborted / error，插件态走 default）。
+  //
+  // 「completed」**不等于「完成」**：闲聊一轮也是 completed。判 productive 用
+  // `updatedAt >= startedAt`（CV-264③：updatedAt 只由真修改写入 —— writeCanvas
+  // 生成结算 / updateWorkflow 等；setLastRun 刻意不刷 updatedAt，见 projects.ts）。
+  // 零修改的 completed 与 aborted/interrupted/blocked 一律落 stopped（空闲）——
+  // 把闲聊轮次落成 done 会让徽标谎报「刚刚完成」。
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'turn/start' && event.type !== 'turn/end') return
+    const cwd = session.header.cwd
+    if (event.type === 'turn/start') {
+      void (async () => {
+        try {
+          const projectId = await resolveProjectId(registry, cwd)
+          await registry.setLastRun(projectId, { status: 'running', startedAt: Date.now() })
+        } catch {
+          // 首页态 / 非项目 cwd（resolveProjectId 抛）属正常路径，静默 —— 徽标
+          // 结算绝不影响回合本身。
+        }
+      })()
+      return
+    }
+    // turn/end：reason 在窄化作用域里先取成 const（闭包内不依赖事件的判别窄化）。
+    const reason = event.data.reason
+    void (async () => {
+      try {
+        const projectId = await resolveProjectId(registry, cwd)
+        const kind = reason.kind
+        const record = await registry.getProject(projectId)
+        const startedAt = record?.lastRun?.status === 'running' && typeof record.lastRun.startedAt === 'number'
+          ? record.lastRun.startedAt
+          : undefined
+        const modifiedAt = record === null ? Number.NaN : Date.parse(record.updatedAt)
+        const productive = startedAt !== undefined && Number.isFinite(modifiedAt) && modifiedAt >= startedAt
+        const endedAt = Date.now()
+        const timestamps = {
+          ...(startedAt !== undefined ? { startedAt } : {}),
+          endedAt,
+        }
+        if (kind === 'error') {
+          const detail = reason.error.message.trim().length > 0
+            ? reason.error.message.trim().slice(0, 200)
+            : '回合异常结束'
+          await registry.setLastRun(projectId, { status: 'failed', ...timestamps, reason: detail })
+          return
+        }
+        if (kind === 'max-tokens') {
+          await registry.setLastRun(projectId, {
+            status: 'failed',
+            ...timestamps,
+            reason: '输出长度预算用尽（max-tokens）',
+          })
+          return
+        }
+        if (kind === 'completed' && productive) {
+          await registry.setLastRun(projectId, { status: 'done', ...timestamps })
+          return
+        }
+        // completed 但零修改（纯聊天轮次）与 aborted / interrupted / blocked /
+        // forked / 其他态：回合中止或没有可展示的产出 → 空闲。
+        await registry.setLastRun(projectId, { status: 'stopped', ...timestamps })
+      } catch {
+        // 首页态 / 非项目 cwd（resolveProjectId 抛）属正常路径，静默 —— 徽标
+        // 结算绝不影响回合本身。
+      }
+    })()
+  })
   ctx.effect(() => {
     // RQ-R8/E1：放手跑判定器注入 —— 顺序闸（write_storyboard / render_composition 的
     // intent 缺项）在 auto 模式下自动登记默认意图卡放行；confirm 模式维持拒收（用户核对

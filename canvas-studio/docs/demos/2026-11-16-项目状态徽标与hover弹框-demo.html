@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目列表状态展示 · 效果演示</title>
+<style>
+  :root {
+    --bg: #0b0b0e;
+    --panel: #121216;
+    --row: #17171c;
+    --row-hover: #1f1f26;
+    --row-wait: #1c1810;
+    --border: #26262e;
+    --text: #ececf0;
+    --muted: #8b8b96;
+    --muted-dim: #5f5f6a;
+    --accent: #7c6cf5;
+
+    --c-running: #6c8cff;
+    --c-waiting: #f0a63a;
+    --c-justdone: #3ecf8e;
+    --c-done: #3ecf8e;
+    --c-failed: #f2555a;
+    --c-idle: #6b6b76;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ============ 左栏：项目列表（模拟真实侧栏） ============ */
+  .sidebar {
+    width: 340px;
+    min-width: 340px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 16px 8px;
+  }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, #4b3fd4, #7c6cf5);
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .brand .name { font-weight: 600; font-size: 15px; }
+  .brand .sub { font-size: 11px; color: var(--muted); }
+
+  .new-btn {
+    margin: 10px 16px;
+    padding: 9px;
+    text-align: center;
+    border: 1px dashed #34343e;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .new-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  /* 段头：项目 + 计数摘要（纯数字 + 图标，无文字，便于 i18n） */
+  .sec-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 6px;
+  }
+  .sec-title { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+  .sec-summary { font-size: 11.5px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .sec-summary .stat { display: inline-flex; align-items: center; gap: 4px; transition: color .3s; }
+  .sec-summary .stat svg { width: 11px; height: 11px; }
+  .sec-summary .n-wait { color: var(--c-waiting); }
+  .sec-summary .n-run  { color: var(--c-running); }
+  .sec-summary .n-fail { color: var(--c-failed); }
+  .sec-summary.flash { animation: sumFlash .9s ease; }
+  @keyframes sumFlash {
+    0%   { filter: brightness(2.4); transform: scale(1.08); }
+    100% { filter: brightness(1);   transform: scale(1); }
+  }
+
+  .list { padding: 4px 10px 20px; display: flex; flex-direction: column; gap: 4px; }
+
+  /* ============ 项目行 ============ */
+  .row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 11px;
+    background: var(--row);
+    border: 1px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    position: relative;
+    transition: background .15s, border-color .15s;
+  }
+  .row:hover { background: var(--row-hover); }
+
+  /* 等待决策：琥珀色左标 + 微底色（参考 Claude Code 的置顶高亮） */
+  .row[data-state="waiting"] {
+    background: var(--row-wait);
+    border-color: rgba(240, 166, 58, .28);
+  }
+  .row[data-state="waiting"]::before {
+    content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
+    width: 3px; border-radius: 3px; background: var(--c-waiting);
+  }
+  .row[data-state="failed"] { border-color: rgba(242, 85, 90, .25); }
+
+  .thumb {
+    width: 34px; height: 34px; min-width: 34px;
+    border-radius: 9px;
+    background: #26262e;
+    display: grid; place-items: center;
+    font-size: 14px; font-weight: 600; color: #c9c9d4;
+  }
+
+  .body { flex: 1; min-width: 0; }
+  .title {
+    font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta {
+    font-size: 11.5px; color: var(--muted); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ============ 状态徽标：只有图标 + 时间，无文字（i18n 友好） ============ */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge .ic { width: 11px; height: 11px; display: inline-flex; }
+  .badge .ic svg { width: 11px; height: 11px; display: block; }
+
+  /* 状态点：running 呼吸环 */
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+  .badge.running  { background: rgba(108,140,255,.14); color: var(--c-running); }
+  .badge.running .dot { background: var(--c-running); animation: breathe 1.5s ease-out infinite; }
+  @keyframes breathe {
+    0%   { box-shadow: 0 0 0 0 rgba(108,140,255,.55); }
+    70%  { box-shadow: 0 0 0 6px rgba(108,140,255,0); }
+    100% { box-shadow: 0 0 0 0 rgba(108,140,255,0); }
+  }
+
+  .badge.waiting   { background: rgba(240,166,58,.15); color: var(--c-waiting); }
+  .badge.waiting .dot { background: var(--c-waiting); animation: blink 1.1s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .badge.just-done { background: rgba(62,207,142,.16); color: var(--c-justdone); animation: popIn .35s cubic-bezier(.2,1.4,.5,1); }
+  .badge.done      { background: rgba(62,207,142,.08); color: #5a9d80; }
+  .badge.failed    { background: rgba(242,85,90,.14);  color: var(--c-failed); }
+  .badge.idle      { background: rgba(107,107,118,.16); color: var(--c-idle); }
+  @keyframes popIn { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* ============ hover 详情弹框 ============ */
+  .tip {
+    position: fixed;
+    z-index: 60;
+    min-width: 268px;
+    max-width: 320px;
+    background: #1c1c22;
+    border: 1px solid #2e2e38;
+    border-radius: 14px;
+    padding: 15px 17px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    pointer-events: none; /* 纯展示：鼠标挪开即消失，不拦截 */
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .14s ease, transform .14s ease;
+  }
+  .tip.show { opacity: 1; transform: translateY(0); }
+
+  .tip .t-title {
+    font-size: 14px; font-weight: 650; line-height: 1.4;
+    margin-bottom: 12px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .tip .t-state {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500;
+    padding: 3px 9px; border-radius: 999px;
+    margin-bottom: 12px;
+  }
+  .tip .t-state.running  { background: rgba(108,140,255,.14); color: var(--c-running); }
+  .tip .t-state.waiting  { background: rgba(240,166,58,.15); color: var(--c-waiting); }
+  .tip .t-state.just-done{ background: rgba(62,207,142,.16); color: var(--c-justdone); }
+  .tip .t-state.done     { background: rgba(62,207,142,.08); color: #5a9d80; }
+  .tip .t-state.failed   { background: rgba(242,85,90,.14); color: var(--c-failed); }
+  .tip .t-state.idle     { background: rgba(107,107,118,.16); color: var(--c-idle); }
+  .tip .t-state .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .tip .t-state.running .dot { animation: blink 1.1s ease-in-out infinite; }
+
+  .tip .t-row {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12.5px; color: #9a9aa6;
+    padding: 5px 0;
+  }
+  .tip .t-row svg { width: 14px; height: 14px; flex-shrink: 0; opacity: .75; }
+  .tip .t-row .v { color: #d6d6de; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tip .t-row .v.mono { font-variant-numeric: tabular-nums; }
+
+  /* 等待/执行中的进度细节 */
+  .tip .t-progress {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid #2a2a33;
+    font-size: 12px; color: #9a9aa6;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tip .t-bar { flex: 1; height: 4px; background: #2a2a33; border-radius: 4px; overflow: hidden; }
+  .tip .t-bar i { display: block; height: 100%; border-radius: 4px; transition: width .5s; }
+  .tip .t-progress .pct { font-variant-numeric: tabular-nums; color: #d6d6de; }
+
+  /* ============ 右栏：说明与控制 ============ */
+  .main {
+    flex: 1; overflow-y: auto; padding: 36px 44px;
+    display: flex; flex-direction: column; gap: 26px;
+  }
+  .main h1 { font-size: 20px; font-weight: 650; }
+  .main h1 span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 10px; }
+  .lead { color: var(--muted); font-size: 13.5px; max-width: 720px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .card h2 { font-size: 13px; color: var(--muted); letter-spacing: .05em; margin-bottom: 14px; font-weight: 600; }
+
+  /* 状态图例表 */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  th { text-align: left; color: var(--muted-dim); font-weight: 500; font-size: 11.5px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 8px; border-bottom: 1px solid rgba(38,38,46,.55); vertical-align: top; word-break: break-word; }
+  tr:last-child td { border-bottom: none; }
+  td.k { white-space: normal; }
+  col.c1 { width: 28%; }
+  col.c2 { width: 24%; }
+  td.k code { word-break: keep-all; }
+  code { background: #1e1e25; padding: 1px 6px; border-radius: 5px; font-size: 12px; color: #b9b9c7; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* 控制按钮 */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; }
+  button {
+    font: inherit; font-size: 13px;
+    padding: 9px 15px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #1a1a21;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .1s;
+  }
+  button:hover { border-color: #3d3d4a; background: #21212a; }
+  button:active { transform: scale(.97); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #8a7bf7; }
+  .hint { font-size: 12px; color: var(--muted-dim); margin-top: 10px; }
+
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .note b { color: var(--text); font-weight: 600; }
+
+  @media (max-width: 900px) { .notes { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ================= 左栏：项目列表 ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">🎬</div>
+      <div>
+        <div class="name">VideoBuddy</div>
+        <div class="sub">创意工厂 · 效果演示</div>
+      </div>
+    </div>
+    <div class="new-btn">＋ 创作</div>
+
+    <div class="sec-head">
+      <span class="sec-title">项目</span>
+      <span class="sec-summary" id="summary"></span>
+    </div>
+
+    <div class="list" id="list"></div>
+  </aside>
+
+  <!-- ================= 右栏：说明与控制 ================= -->
+  <main class="main">
+    <div>
+      <h1>项目列表状态展示<span>hover 行看弹框 · 点按钮触发光变</span></h1>
+      <p class="lead" style="margin-top:8px">
+        徽标<strong style="color:var(--text)">只含图标 + 时间</strong>，不含任何文字 —— 状态文案全部收进 hover 弹框，为国际化留出空间。
+        弹框在鼠标移入行时出现、移开即消失（纯展示，不拦截鼠标）。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>演示控制 · 点击触发光变</h2>
+      <div class="controls">
+        <button class="primary" id="btnFinish">✓ 把「执行中」跑完 → 刚刚完成</button>
+        <button id="btnFail">✗ 让「执行中」失败</button>
+        <button id="btnAsk">! 有一个项目要问你 → 等待决策</button>
+        <button id="btnRetry">↻ 让「失败」重跑 → 执行中</button>
+        <button id="btnSort">⇅ 切换排序：按状态 / 按时间</button>
+        <button id="btnReset">↺ 重置</button>
+      </div>
+      <div class="hint">
+        「刚刚完成」是瞬态：约 12 秒后自动回落为「已完成」（真实产品建议 5–10 分钟）。计数摘要变化时会闪一下。
+        把鼠标放到左栏任意一行上，会浮出详情弹框。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>状态定义 · 徽标只用图标，文案在弹框里</h2>
+      <table>
+        <colgroup><col class="c1" /><col class="c2" /><col /></colgroup>
+        <thead>
+          <tr><th>徽标</th><th>触发时机</th><th>视觉与行为</th></tr>
+        </thead>
+        <tbody id="legend"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>设计要点（来源）</h2>
+      <div class="notes">
+        <div class="note"><b>图标即状态</b>：徽标只保留「图形 + 时间」两个语义单元。图形（呼吸点/勾/叹号/暂停）跨语言可读，时间是数字 —— 两者都不需要翻译，文案挪进 tooltip。</div>
+        <div class="note"><b>等待置顶</b>：Claude Code 把 Needs input 排在 Working 之前、永远最上 —— 列表的第一职责是「哪里需要我」，不是「哪里在跑」。</div>
+        <div class="note"><b>动画 = 执行中</b>：所有 harness 对 running 都用动态元素（呼吸环/转圈），静态图标无法和已完成区分。</div>
+        <div class="note"><b>hover 弹框</b>：参考你截图的会话详情卡 —— 标题 + 状态 + 环境/目录/分支/更新时间。行内保持极简，详情按需浮现，移开即走。</div>
+        <div class="note"><b>刚刚完成是瞬态</b>：完成 + 短时间窗内高亮，配合系统通知，超时回落 —— 避免用户错过「刚出炉的结果」。</div>
+        <div class="note"><b>双层状态</b>：参考 Cursor —— 项目状态由最近一次会话 run 推导（CREATING/RUNNING/WAITING/FINISHED/ERROR…），项目本身不发明状态。</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- hover 详情弹框（单例，跟随鼠标所在行） -->
+<div class="tip" id="tip" aria-hidden="true"></div>
+
+<script>
+"use strict";
+
+/* ================= 状态模型 ================= */
+const ORDER = ["waiting", "running", "failed", "just-done", "done", "idle"];
+
+/* label 仅供弹框与图例使用；徽标本身不渲染任何文字 */
+const STATES = {
+  running:  { label: "执行中",   cls: "running",  kind: "dot",   icon: null },
+  waiting:  { label: "待你决策", cls: "waiting",  kind: "dot",   icon: null },
+  "just-done": { label: "刚刚完成", cls: "just-done", kind: "icon", icon: "check" },
+  done:     { label: "已完成",   cls: "done",     kind: "icon",  icon: "check" },
+  failed:   { label: "失败",     cls: "failed",   kind: "icon",  icon: "bang" },
+  idle:     { label: "空闲",     cls: "idle",     kind: "icon",  icon: "pause" },
+};
+
+const ICONS = {
+  check: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.4 4.8 9 10 3.4"/></svg>',
+  bang:  '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 2.2v4.2"/><circle cx="6" cy="9" r=".4" fill="currentColor" stroke="none"/></svg>',
+  pause: '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="2.6" width="2" height="6.8" rx=".8"/><rect x="7" y="2.6" width="2" height="6.8" rx=".8"/></svg>',
+};
+
+/* 弹框里用到的行图标（14px） */
+const ROW_ICONS = {
+  monitor: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="11" height="7.5" rx="1.2"/><path d="M5 12h4M7 10v2"/></svg>',
+  folder:  '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4.2c0-.8.6-1.4 1.4-1.4h2.4l1.3 1.5h4.5c.8 0 1.4.6 1.4 1.4v4.7c0 .8-.6 1.4-1.4 1.4H2.9c-.8 0-1.4-.6-1.4-1.4V4.2z"/></svg>',
+  branch:  '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.2" r="1.5"/><circle cx="4" cy="10.8" r="1.5"/><circle cx="10" cy="5.6" r="1.5"/><path d="M4 4.7v4.6M5.5 3.6c2.4.4 3.2 1.2 3.2 2"/></svg>',
+  clock:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.6" width="10.4" height="9.6" rx="1.4"/><path d="M1.8 5.6h10.4M4.6 1.6v2M9.4 1.6v2"/></svg>',
+  tag:     '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.2 1.8H3a1.2 1.2 0 0 0-1.2 1.2v4.2c0 .3.1.6.4.8l4.6 4.6a1.2 1.2 0 0 0 1.7 0l3.8-3.8a1.2 1.2 0 0 0 0-1.7L7.5 2.2a1.2 1.2 0 0 0-.3-.4z"/><circle cx="4.6" cy="4.6" r=".7" fill="currentColor" stroke="none"/></svg>',
+  play:    '<svg viewBox="0 0 14 14" fill="currentColor"><path d="M4.5 3.2v7.6c0 .6.7 1 1.2.7l5.8-3.8a.85.85 0 0 0 0-1.4L5.7 2.5c-.5-.3-1.2 0-1.2.7z"/></svg>',
+};
+
+const JUST_DONE_MS = 12000; // 演示用；真实产品 5–10 分钟
+
+/* ================= 初始数据 ================= */
+const INITIAL = [
+  { id: "p1", thumb: "帮", title: "帮我做一支竖屏科普短片，复刻小红书财经科普 2",
+    kind: "剧本", aspect: "16:9", dur: "15s", state: "running",
+    ts: Date.now() - 11 * 60e3, startedAt: Date.now() - 70e3,
+    env: "本地电脑", folder: "video_buddy", branch: "dev", progress: 42 },
+  { id: "p2", thumb: "帮", title: "帮我做一支竖屏科普短片，复刻小红书财经科普",
+    kind: "镜头", aspect: "16:9", dur: "15s", state: "waiting",
+    ts: Date.now() - 12 * 60e3, waitSince: Date.now() - 95e3,
+    env: "本地电脑", folder: "video_buddy", branch: "dev",
+    question: "先做 A 版开场还是 B 版开场？" },
+  { id: "p3", thumb: "深", title: "深夜食堂探店 vlog · 第一集",
+    kind: "分镜", aspect: "9:16", dur: "30s", state: "failed",
+    ts: Date.now() - 40 * 60e3, failReason: "渲染超时（exit 124）",
+    env: "本地电脑", folder: "video_buddy", branch: "feat/vlog" },
+  { id: "p4", thumb: "创", title: "创意 A/B 测试：三版开场对比",
+    kind: "剧本", aspect: "16:9", dur: "20s", state: "just-done",
+    ts: Date.now() - 30e3, doneAt: Date.now(),
+    env: "本地电脑", folder: "video_buddy", branch: "dev" },
+  { id: "p5", thumb: "用", title: "用屏表（screen-plan）生成 6 屏结构",
+    kind: "镜头", aspect: "16:9", dur: "15s", state: "done",
+    ts: Date.now() - 2 * 3600e3,
+    env: "本地电脑", folder: "video_buddy", branch: "main" },
+  { id: "p6", thumb: "宠", title: "宠物科普：猫咪为什么喜欢踩奶",
+    kind: "剧本", aspect: "16:9", dur: "15s", state: "idle",
+    ts: Date.now() - 26 * 3600e3,
+    env: "本地电脑", folder: "video_buddy", branch: "main" },
+];
+
+let projects = INITIAL.map(p => ({ ...p }));
+let sortByState = true;
+
+/* ================= 工具 ================= */
+function relTime(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "刚刚";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + " 分钟前";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + " 小时前";
+  return Math.floor(h / 24) + " 天前";
+}
+
+function absTime(ts) {
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "/" + p(d.getMonth() + 1) + "/" + p(d.getDate()) +
+    " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+
+function dur(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  if (m >= 60) return Math.floor(m / 60) + "h" + (m % 60) + "m";
+  return m + "m" + String(s % 60).padStart(2, "0") + "s";
+}
+
+function clock(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return String(m).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+}
+
+/* 徽标：只有图标（或呼吸点）+ 时间，零文字 */
+function badgeHTML(p) {
+  const st = STATES[p.state];
+  let glyph = st.kind === "dot" ? '<i class="dot"></i>' : '<span class="ic">' + ICONS[st.icon] + "</span>";
+
+  let time = "";
+  if (p.state === "running") time = clock(Date.now() - p.startedAt);
+  else if (p.state === "waiting") time = dur(Date.now() - p.waitSince);
+  else time = relTime(p.ts);
+
+  return '<span class="badge ' + st.cls + '">' + glyph + time + "</span>";
+}
+
+/* ================= 渲染 ================= */
+const listEl = document.getElementById("list");
+const summaryEl = document.getElementById("summary");
+const tipEl = document.getElementById("tip");
+let prevSummary = "";
+
+function render() {
+  const sorted = [...projects].sort((a, b) => {
+    if (sortByState) {
+      const d = ORDER.indexOf(a.state) - ORDER.indexOf(b.state);
+      if (d !== 0) return d;
+    }
+    return b.ts - a.ts;
+  });
+
+  listEl.innerHTML = sorted.map(p => {
+    const st = STATES[p.state];
+    let sub = p.kind + " · " + p.aspect + " · " + p.dur;
+    if (p.state === "waiting") sub += " · " + p.question;
+    else if (p.state === "failed") sub += " · " + p.failReason;
+    else sub += " · " + relTime(p.ts);
+
+    return '<div class="row" data-id="' + p.id + '" data-state="' + p.state + '">' +
+      '<div class="thumb">' + p.thumb + "</div>" +
+      '<div class="body">' +
+        '<div class="title">' + p.title + "</div>" +
+        '<div class="meta">' + sub + "</div>" +
+      "</div>" +
+      badgeHTML(p) +
+    "</div>";
+  }).join("");
+
+  renderSummary();
+}
+
+function renderSummary() {
+  const n = s => projects.filter(p => p.state === s).length;
+  const stat = (cls, icon, count) =>
+    '<span class="stat ' + cls + '">' + icon + "<b>" + count + "</b></span>";
+
+  const parts = [];
+  if (n("waiting")) parts.push(stat("n-wait", ICONS.bang, n("waiting")));
+  if (n("running")) parts.push(stat("n-run", '<svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.5" fill="currentColor"/></svg>', n("running")));
+  if (n("failed"))  parts.push(stat("n-fail", ICONS.bang, n("failed")));
+  const html = parts.length ? parts.join("") : '<span class="stat"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 6.4 4.8 9 10 3.4"/></svg></span>';
+
+  if (html !== prevSummary) {
+    summaryEl.innerHTML = html;
+    summaryEl.classList.remove("flash");
+    void summaryEl.offsetWidth;
+    summaryEl.classList.add("flash");
+    prevSummary = html;
+  }
+}
+
+/* ================= hover 详情弹框 ================= */
+function tipHTML(p) {
+  const st = STATES[p.state];
+  let rows = "";
+  rows += '<div class="t-row">' + ROW_ICONS.monitor + '<span class="v">' + p.env + "</span></div>";
+  rows += '<div class="t-row">' + ROW_ICONS.folder + '<span class="v">' + p.folder + "</span></div>";
+  rows += '<div class="t-row">' + ROW_ICONS.branch + '<span class="v">' + p.branch + "</span></div>";
+  rows += '<div class="t-row">' + ROW_ICONS.clock + '<span class="v mono">更新于 ' + absTime(p.ts) + "</span></div>";
+  rows += '<div class="t-row">' + ROW_ICONS.tag + '<span class="v">' + p.kind + " · " + p.aspect + " · " + p.dur + "</span></div>";
+
+  let progress = "";
+  if (p.state === "running") {
+    progress = '<div class="t-progress"><span>' + clock(Date.now() - p.startedAt) + '</span>' +
+      '<span class="t-bar"><i style="width:' + p.progress + '%;background:var(--c-running)"></i></span>' +
+      '<span class="pct">' + p.progress + "%</span></div>";
+  } else if (p.state === "waiting") {
+    progress = '<div class="t-progress"><span>已等待 ' + dur(Date.now() - p.waitSince) + "</span>" +
+      '<span class="t-bar"><i style="width:100%;background:var(--c-waiting)"></i></span></div>' +
+      '<div class="t-progress" style="border:0;padding-top:4px;margin-top:0">「' + p.question + "」</div>";
+  } else if (p.state === "failed") {
+    progress = '<div class="t-progress">' + p.failReason + "</div>";
+  } else if (p.state === "just-done" || p.state === "done") {
+    progress = '<div class="t-progress">' + ROW_ICONS.play + "成片已就绪 · " + relTime(p.ts) + "</div>";
+  }
+
+  return '<div class="t-title">' + p.title + "</div>" +
+    '<span class="t-state ' + st.cls + '"><i class="dot"></i>' + st.label +
+      (p.state === "running" ? " · " + clock(Date.now() - p.startedAt) : "") +
+      (p.state === "waiting" ? " · " + dur(Date.now() - p.waitSince) : "") +
+    "</span>" + rows + progress;
+}
+
+function showTip(row) {
+  const p = projects.find(x => x.id === row.dataset.id);
+  if (!p) return;
+  tipEl.innerHTML = tipHTML(p);
+
+  const r = row.getBoundingClientRect();
+  tipEl.classList.add("show");
+  tipEl.setAttribute("aria-hidden", "false");
+
+  const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  // 默认贴行右侧；放不下则翻到左侧；垂直方向夹在视口内
+  let left = r.right + 10;
+  if (left + tw > window.innerWidth - 12) left = r.left - tw - 10;
+  if (left < 12) left = 12;
+  let top = r.top;
+  if (top + th > window.innerHeight - 12) top = window.innerHeight - th - 12;
+  if (top < 12) top = 12;
+  tipEl.style.left = left + "px";
+  tipEl.style.top = top + "px";
+}
+
+function hideTip() {
+  tipEl.classList.remove("show");
+  tipEl.setAttribute("aria-hidden", "true");
+}
+
+listEl.addEventListener("mouseover", e => {
+  const row = e.target.closest(".row");
+  if (row) showTip(row);
+});
+listEl.addEventListener("mouseout", e => {
+  const row = e.target.closest(".row");
+  if (row && !row.contains(e.relatedTarget)) hideTip();
+});
+listEl.addEventListener("mouseleave", hideTip);
+
+/* ================= 图例表 ================= */
+document.getElementById("legend").innerHTML = [
+  ["running", "agent 正在生成/跑工具", "蓝色呼吸点 + 计时（mm:ss）；弹框显示进度条与百分比"],
+  ["waiting", "权限确认 / 向你提问 / 决策点", "琥珀呼吸点 + 已等待时长 + 行左侧琥珀标，永远置顶；弹框里带问题原文"],
+  ["just-done", "完成后的短时间窗（≤5–10 分钟）", "绿勾弹入 + 相对时间，超时自动回落为已完成"],
+  ["done", "任务成功结束（终态）", "淡绿勾 + 相对时间，视觉退后，不抢注意力"],
+  ["failed", "出错结束（终态）", "红叹号 + 相对时间；失败原因放副行与弹框"],
+  ["idle", "被停止 / 无事可做", "灰色暂停图标，完全不打扰"],
+].map(r => {
+  const st = STATES[r[0]];
+  const glyph = st.kind === "dot" ? '<i class="dot" style="background:currentColor"></i>' : '<span class="ic">' + ICONS[st.icon] + "</span>";
+  const sampleTime = r[0] === "running" ? "01:10" : r[0] === "waiting" ? "1m35s" : r[0] === "just-done" ? "刚刚" : "2 小时前";
+  return "<tr>" +
+    '<td class="k"><span class="badge ' + st.cls + '">' + glyph + sampleTime + "</span> " +
+      '<code>' + r[0] + "</code><br/>" +
+      '<span style="color:var(--muted-dim);font-size:11.5px">文案「' + st.label + "」仅出现在弹框</span></td>" +
+    "<td>" + r[1] + "</td>" +
+    "<td class='desc'>" + r[2] + "</td></tr>";
+}).join("");
+
+/* ================= 状态流转 ================= */
+function transition(id, patch) {
+  const p = projects.find(x => x.id === id);
+  if (!p) return;
+  Object.assign(p, patch);
+  p.ts = Date.now();
+  hideTip();
+  render();
+}
+
+document.getElementById("btnFinish").onclick = () => {
+  const p = projects.find(x => x.state === "running");
+  if (p) transition(p.id, { state: "just-done", doneAt: Date.now() });
+};
+
+document.getElementById("btnFail").onclick = () => {
+  const p = projects.find(x => x.state === "running");
+  if (p) transition(p.id, { state: "failed", failReason: "模型请求超时（retry 3/3）" });
+};
+
+document.getElementById("btnAsk").onclick = () => {
+  const p = projects.find(x => x.state === "done" || x.state === "idle" || x.state === "failed");
+  if (p) transition(p.id, { state: "waiting", waitSince: Date.now(), question: "先做 A 版开场还是 B 版开场？" });
+};
+
+document.getElementById("btnRetry").onclick = () => {
+  const p = projects.find(x => x.state === "failed");
+  if (p) transition(p.id, { state: "running", startedAt: Date.now(), progress: 8 });
+};
+
+document.getElementById("btnSort").onclick = e => {
+  sortByState = !sortByState;
+  e.target.textContent = "⇅ 切换排序：" + (sortByState ? "按时间" : "按状态");
+  render();
+};
+
+document.getElementById("btnReset").onclick = () => {
+  projects = INITIAL.map(p => ({ ...p }));
+  sortByState = true;
+  document.getElementById("btnSort").textContent = "⇅ 切换排序：按时间";
+  prevSummary = "";
+  hideTip();
+  render();
+};
+
+/* ================= 心跳：计时 + 瞬态回落 + 进度推进 ================= */
+setInterval(() => {
+  for (const p of projects) {
+    if (p.state === "just-done" && Date.now() - p.doneAt >= JUST_DONE_MS) p.state = "done";
+    if (p.state === "running" && p.progress < 96) p.progress = Math.min(96, p.progress + 1);
+  }
+  render();
+}, 1000);
+
+render();
+</script>
+</body>
+</html>

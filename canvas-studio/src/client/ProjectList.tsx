@@ -1,10 +1,24 @@
 import { askConfirm } from './confirm.js'
-import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
+import { Component, Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { coverInitial, coverToneClass } from '../project-cover.js'
-import { projectRowMeta } from '../project-row.js'
+import { planSummaryOf, projectRowMeta } from '../project-row.js'
 import { resolveVisibleSections } from '../project-sections.js'
+import {
+  absoluteTimeOf,
+  badgeTimeOf,
+  countActiveStatuses,
+  formatClock,
+  PROJECT_STATUS_LABELS,
+  projectStatusOf,
+  statusDetailOf,
+  type ProjectStatus,
+  type ProjectStatusState,
+  type SessionActivity,
+} from '../project-status.js'
+import { workflowStateStageLabel } from '../workflow-stage.js'
 import { ProjectRowMenu } from './ProjectRowMenu.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
@@ -104,6 +118,13 @@ export interface ProjectListProps {
   effectTest: EffectTestRunState | null
   /** 启动一轮效果测试（apply 世界串行编排）。 */
   onRunEffectTests(round: string, cases: readonly string[]): void
+  /**
+   * CV-467：各项目工作流的 store 投影（比列表记录里的 workflow 更鲜 —— 点选问题
+   * 落盘后由 refreshWorkflow 先行同步）。waiting 判据用它覆盖记录值。
+   */
+  workflows: Readonly<Record<string, StudioWorkflow>>
+  /** CV-467：当前会话运行活动（running 只对 activity.projectId 命中的项目生效）。 */
+  sessionActivity: SessionActivity | null
 }
 
 /* DD-08 / R3：原本这里的 createdLabel（把 createdAt 格式化成绝对日期）已被
@@ -123,6 +144,7 @@ function ProjectListInner(props: ProjectListProps) {
     onRefresh, onNewInGroup, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
     onDismissError,
     effectTest, onRunEffectTests,
+    workflows, sessionActivity,
   } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
   const groups = [...(Array.isArray(rawGroups) ? rawGroups : [])].sort((a, b) => a.order - b.order)
@@ -215,9 +237,62 @@ function ProjectListInner(props: ProjectListProps) {
   // 「59 分钟前」与「1 小时前」并存（两次调用跨过了边界），看起来像数据不一致。
   const now = new Date()
 
+  // ── CV-467：六态徽标 + hover 详情弹框 ──────────────────────────────────
+  // workflow 取值：store.workflows 比列表记录更鲜（点选问题落盘后 refreshWorkflow
+  // 先行同步进来，列表要等 refreshProjects 才有）——徽标与覆盖层必须说同一套话，
+  // 所以 store 有就用 store 的，否则退回记录自带值（两处都是权威同步的产物）。
+  const workflowOf = (project: StudioProject): StudioWorkflow | undefined => workflows[project.id] ?? project.workflow
+  const statusOf = (project: StudioProject): ProjectStatus => {
+    const workflow = workflowOf(project)
+    return projectStatusOf(workflow === undefined ? project : { ...project, workflow }, now, sessionActivity)
+  }
+  // 段头计数（图标 + 数字，零文字）与徽标共用同一份推导 —— 计数说「1 执行中」
+  // 而列表里找不着 running 行，比不写计数更糟。
+  const effectiveProjects = projects.map(project => {
+    const workflow = workflowOf(project)
+    return workflow === undefined ? project : { ...project, workflow }
+  })
+  const counts = countActiveStatuses(effectiveProjects, now, sessionActivity)
+  const hasLive = counts.waiting > 0 || counts.running > 0
+  // 计时器：running/waiting 的徽标时间是 mm:ss（每秒跳动），存在 live 行时才启动
+  // 秒级重渲染；行数归零即清（纯终态列表回到 React 默认的「状态变化才渲染」）。
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!hasLive) return
+    const timer = setInterval(() => { setTick(tick => tick + 1) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [hasLive])
+  // hover / focus 详情弹框：单例 + 打开那一刻量 anchor 冻结进 state（照 kebab 菜单
+  // 的 anchor 模式 —— 行会随列表滚动移动，弹框是 fixed 定位，没法用 CSS 跟着走）。
+  const [hoverProjectId, setHoverProjectId] = useState<string | null>(null)
+  const [hoverAnchor, setHoverAnchor] = useState<{ left: number; right: number; top: number; bottom: number } | null>(null)
+  const closeHover = (): void => {
+    setHoverProjectId(null)
+    setHoverAnchor(null)
+  }
+  const openHover = (projectId: string, row: Element): void => {
+    const rect = row.getBoundingClientRect()
+    setHoverAnchor({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })
+    setHoverProjectId(projectId)
+  }
+  // 列表滚动 / 窗口缩放会让冻结的坐标失效 —— 直接关掉（与 kebab 菜单同一决策：
+  // 移开鼠标本来就会关弹框，滚动的瞬间弹框跟着行跑反而更怪）。
+  useEffect(() => {
+    if (hoverProjectId === null) return
+    const close = (): void => { closeHover() }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hoverProjectId])
+
   // DD-08 / R2+R3：单条项目卡 —— 封面（首字色块）+ 名称 + 副行，行内动作收进 kebab。
   // 副行三段（阶段 / 规格 / 时间）由 src/project-row.ts 组装，任一段为空即不渲染，
   // 因此分隔号必须与段同生共死（写在文本节点里会留下悬空的「·」）。
+  // CV-467：行尾新增状态徽标列（图标 + 时间，零文字）+ hover/focus 详情弹框触发。
   const renderRows = (items: readonly StudioProject[]): ReactNode => items.map(project => {
     const meta = projectRowMeta(project, now)
     const segments: ReactNode[] = [
@@ -225,10 +300,18 @@ function ProjectListInner(props: ProjectListProps) {
     ]
     if (meta.plan !== null) segments.push(<span className="csProjectSubText" key="plan">{meta.plan}</span>)
     if (meta.time !== null) segments.push(<span className="csProjectSubText" key="time">{meta.time}</span>)
+    const status = statusOf(project)
+    const badgeTime = badgeTimeOf(status, now)
+    const waiting = status.state === 'waiting'
+    const itemClass = [
+      'csProjectItem',
+      project.id === selectedProjectId ? 'csProjectItemActive' : '',
+      waiting ? 'csProjectItemWaiting' : '',
+    ].filter(entry => entry !== '').join(' ')
     return (
       <div
         key={project.id}
-        className={project.id === selectedProjectId ? 'csProjectItem csProjectItemActive' : 'csProjectItem'}
+        className={itemClass}
         onClick={() => onOpen(project)}
         // CR-053：项目行键盘可达（div onClick 对键盘用户不可 Tab/回车打开）。
         role="button"
@@ -239,6 +322,11 @@ function ProjectListInner(props: ProjectListProps) {
             onOpen(project)
           }
         }}
+        // CV-467：hover/focus 同源显示详情弹框（键盘用户 Tab 进行同样看得到详情）。
+        onMouseEnter={(event) => { openHover(project.id, event.currentTarget) }}
+        onMouseLeave={closeHover}
+        onFocus={(event) => { openHover(project.id, event.currentTarget) }}
+        onBlur={closeHover}
       >
         <span className={`csProjectCover ${coverToneClass(project.id)}`} aria-hidden="true">
           {coverInitial(project.name)}
@@ -254,6 +342,10 @@ function ProjectListInner(props: ProjectListProps) {
             ))}
           </span>
         </span>
+        {/* 状态徽标：图标 + 时间，零文字（用户拍板硬约束 —— 为国际化留空间，
+            状态文案全在 hover 弹框里）。等待行有专属高亮，图标呼吸动画只在
+            waiting/running 两态出现（终态一律静止）。 */}
+        <ProjectStatusBadge status={status} badgeTime={badgeTime} />
         <span className="csProjectRowActions">
           <button
             type="button"
@@ -288,6 +380,27 @@ function ProjectListInner(props: ProjectListProps) {
           新建分组入口上移段头。段头放本组件内：「＋」要开的是这里的表单状态。 */}
       <header className="csProjectsHeader">
         <span className="csProjectsHeaderTitle">项目</span>
+        {/* CV-467：段头计数摘要（图标 + 数字，零文字，demo §2.3）。只有 > 0 的态才
+            出现；key 绑计数内容 —— 内容一变整块重挂，CSS 的 flash 动画随之重放。 */}
+        {(counts.waiting > 0 || counts.running > 0 || counts.failed > 0) && (
+          <span className="csProjectsHeaderCounts" key={`${counts.waiting}-${counts.running}-${counts.failed}`}>
+            {counts.waiting > 0 && (
+              <span className="csStatusCount csStatusCountWaiting" title={`${counts.waiting} 个项目等你决策`}>
+                <i className="csStatusCountDot" aria-hidden="true" />{counts.waiting}
+              </span>
+            )}
+            {counts.running > 0 && (
+              <span className="csStatusCount csStatusCountRunning" title={`${counts.running} 个项目执行中`}>
+                <i className="csStatusCountDot" aria-hidden="true" />{counts.running}
+              </span>
+            )}
+            {counts.failed > 0 && (
+              <span className="csStatusCount csStatusCountFailed" title={`${counts.failed} 个项目失败`}>
+                <i className="csStatusCountDot" aria-hidden="true" />{counts.failed}
+              </span>
+            )}
+          </span>
+        )}
         <span className="csProjectsHeaderActions">
           <button
             type="button"
@@ -436,6 +549,23 @@ function ProjectListInner(props: ProjectListProps) {
           />
         )
       })()}
+
+      {/* CV-467：hover / focus 详情弹框。与 kebab 菜单同一套单例 + anchor 冻结 +
+          portal 到 body 的模式（fixed 逃得出行内 overflow 裁剪、逃不出祖先层叠
+          上下文，portal 到根层叠上下文才压得过中栏 —— 见 ProjectRowMenu 头注）。
+          项目被删掉后这一帧自然收敛为 null。 */}
+      {hoverProjectId !== null && hoverAnchor !== null && (() => {
+        const hoverProject = effectiveProjects.find(candidate => candidate.id === hoverProjectId)
+        if (hoverProject === undefined) return null
+        return (
+          <ProjectStatusPopover
+            project={hoverProject}
+            status={statusOf(hoverProject)}
+            now={now}
+            anchor={hoverAnchor}
+          />
+        )
+      })()}
     </div>
   )
 
@@ -538,8 +668,171 @@ function ProjectListInner(props: ProjectListProps) {
   }
 }
 
-interface ProjectListErrorBoundaryState {
-  crashed: boolean
+/* ── CV-467：六态徽标 ──────────────────────────────────────────────────────
+   图形语言（视觉基准 demo，已与用户确认两轮）：呼吸点 = running（蓝）/ waiting（琥珀，
+   行左侧另有琥珀标 + 微底色，永远置顶）；叹号 = failed；弹入绿勾 = just-done；
+   淡绿勾 = done；暂停 = idle。**零文字**：状态文案全在弹框，图标 + 时间跨语言可读。 */
+
+/** 六态的图标（14×14 SVG；颜色由 CSS 按 state class 提供，不在 JSX 里写字面量色）。 */
+function statusIcon(state: ProjectStatusState): ReactNode {
+  if (state === 'running' || state === 'waiting') {
+    return <i className="csStatusDot" aria-hidden="true" />
+  }
+  if (state === 'failed') {
+    return (
+      <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="5.6" fill="currentColor" />
+        <rect x="6.3" y="3.6" width="1.4" height="4.6" rx="0.7" fill="var(--cs-status-on-icon)" />
+        <circle cx="7" cy="10.2" r="0.85" fill="var(--cs-status-on-icon)" />
+      </svg>
+    )
+  }
+  if (state === 'just-done' || state === 'done') {
+    return (
+      <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path
+          d="M2.8 7.4 5.6 10.2 11.2 4.2"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    )
+  }
+  // idle：暂停双竖条。
+  return (
+    <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <rect x="4.2" y="3.8" width="2" height="6.4" rx="1" fill="currentColor" />
+      <rect x="7.8" y="3.8" width="2" height="6.4" rx="1" fill="currentColor" />
+    </svg>
+  )
+}
+
+/** 徽标列（图标 + 时间）。时间可为空（推不出起点时不渲染，不留占位）。 */
+function ProjectStatusBadge(props: { status: ProjectStatus; badgeTime: string | null }): ReactNode {
+  const { status, badgeTime } = props
+  return (
+    <span className={`csProjectBadge csProjectBadge-${status.state}`} aria-hidden="true">
+      {statusIcon(status.state)}
+      {badgeTime !== null && <span className="csProjectBadgeTime">{badgeTime}</span>}
+    </span>
+  )
+}
+
+/* ── CV-467：hover / focus 详情弹框 ────────────────────────────────────────
+   纯展示（pointer-events: none，不拦截鼠标 —— 移开行即消失，从不是可交互目标）。
+   内容 = 标题 + 状态胶囊 + 五行环境信息（阶段 / 模式 / 目录 / 更新于 / 规格）+
+   状态专属块（进度条 / 问题原文 / 失败原因 / 成片就绪行）—— 2026-11-16 用户拍板
+   五行全要、running 用不确定进度条（wire 上没有真实进度百分比，不显示假数字）。 */
+
+/** 弹框与行的间距（px）。 */
+const POPOVER_GAP = 10
+/** 视口边缘留白（px）。 */
+const POPOVER_PAD = 12
+/** 首帧高度估算（真实高度 paint 前实测修正，照 ProjectRowMenu 的做法）。 */
+const POPOVER_HEIGHT_GUESS = 260
+
+function ProjectStatusPopover(props: {
+  project: StudioProject
+  status: ProjectStatus
+  now: Date
+  anchor: { left: number; right: number; top: number; bottom: number }
+}): ReactNode {
+  const { project, status, now, anchor } = props
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number }>(() => ({
+    left: anchor.right + POPOVER_GAP,
+    top: anchor.top,
+  }))
+  // paint 前定位：默认贴行右侧；放不下翻左侧；两个方向都放不下时视口夹紧
+  // （算法照 demo 的 showTip，垂直方向额外夹紧）。
+  useLayoutEffect(() => {
+    const element = popoverRef.current
+    if (element === null) return
+    const rect = element.getBoundingClientRect()
+    const height = rect.height === 0 ? POPOVER_HEIGHT_GUESS : rect.height
+    let left = anchor.right + POPOVER_GAP
+    if (left + rect.width > window.innerWidth - POPOVER_PAD) {
+      left = anchor.left - rect.width - POPOVER_GAP
+    }
+    if (left < POPOVER_PAD) left = POPOVER_PAD
+    let top = anchor.top
+    if (top + height > window.innerHeight - POPOVER_PAD) top = window.innerHeight - height - POPOVER_PAD
+    if (top < POPOVER_PAD) top = POPOVER_PAD
+    setPos({ left, top })
+  }, [anchor.left, anchor.right, anchor.top])
+
+  const badgeTime = badgeTimeOf(status, now)
+  const detail = statusDetailOf(status, project, now)
+  const updatedAt = absoluteTimeOf(project.updatedAt, now)
+  const plan = planSummaryOf(project.plan)
+  const mode = project.workflow?.mode === 'auto' ? '放手跑' : '逐步确认'
+  const rows: { className: string; label: string; value: string }[] = [
+    { className: 'stage', label: '阶段', value: workflowStateStageLabel(project.workflow?.state) },
+    { className: 'mode', label: '模式', value: mode },
+    { className: 'dir', label: '目录', value: project.dir },
+    ...(updatedAt !== null ? [{ className: 'time', label: '更新于', value: updatedAt }] : []),
+    ...(plan !== null ? [{ className: 'plan', label: '规格', value: plan }] : []),
+  ]
+  const pillTime = badgeTime !== null && (status.state === 'running' || status.state === 'waiting')
+    ? ` · ${badgeTime}`
+    : ''
+  return createPortal(
+    <div
+      ref={popoverRef}
+      className={`csStatusPopover csStatusPopover-${status.state}`}
+      role="status"
+      aria-label={`${project.name}：${PROJECT_STATUS_LABELS[status.state]}`}
+      style={{ left: pos.left, top: pos.top }}
+    >
+      <span className="csStatusPopoverTitle">{project.name}</span>
+      <span className="csStatusPill">
+        <i className="csStatusDot" aria-hidden="true" />
+        {PROJECT_STATUS_LABELS[status.state]}
+        {pillTime}
+      </span>
+      <span className="csStatusPopoverRows">
+        {rows.map(row => (
+          <span className={`csStatusRow csStatusRow-${row.className}`} key={row.className}>
+            <span className="csStatusRowLabel">{row.label}</span>
+            <span className="csStatusRowValue" title={row.value}>{row.value}</span>
+          </span>
+        ))}
+      </span>
+      {/* 状态专属块：running 出不确定进度条（流动条纹表达「在跑」，不显示假百分比）；
+          waiting 出已等待时长 + 满宽琥珀条 + 问题原文；failed 出失败原因；
+          done / just-done 出成片就绪行。 */}
+      {status.state === 'running' && (
+        <span className="csStatusDetail">
+          <span className="csStatusLiveBar" aria-hidden="true"><i /></span>
+          <span className="csStatusDetailText">已运行 {badgeTime ?? formatClock(0)}</span>
+        </span>
+      )}
+      {status.state === 'waiting' && (
+        <span className="csStatusDetail csStatusDetailQuestion">
+          <span className="csStatusDetailText">{detail === null ? '等待你的选择' : detail.text}</span>
+        </span>
+      )}
+      {status.state === 'failed' && detail !== null && (
+        <span className="csStatusDetail csStatusDetailReason">
+          <span className="csStatusDetailText">{detail.text}</span>
+        </span>
+      )}
+      {(status.state === 'done' || status.state === 'just-done') && detail !== null && (
+        <span className="csStatusDetail csStatusDetailReady">
+          <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+            <path d="M3.4 1.8v8.4l6.4-4.2z" />
+          </svg>
+          <span className="csStatusDetailText">{detail.text}</span>
+        </span>
+      )}
+    </div>,
+    document.body,
+  )
+}
+
+interface ProjectListErrorBoundaryState {  crashed: boolean
   crashError: Error | null
 }
 

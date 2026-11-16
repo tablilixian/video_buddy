@@ -610,6 +610,9 @@ export function StudioFrame(props: StudioFrameProps) {
   const slateView = deriveProjectContextView(slateProject, workflow, nodes)
   // 一键效果测试：编排进度（ProjectList 展示）。
   const effectTest = useStudio(store => store.effectTest)
+  // CV-467：六态徽标的数据面 —— 各项目工作流（waiting 判据）+ 会话活动（running 判据）。
+  const workflows = useStudio(store => store.workflows)
+  const sessionActivity = useStudio(store => store.sessionActivity)
   // CV-220：生成队列全景。store 里存的是**投影**（{ active, waiting } | null），
   // 只在真有等待时非 null；文案由 queue-view.ts 单点生成（本文件不做判定）。
   const generationQueue = useStudio(store => store.generationQueue)
@@ -2527,6 +2530,8 @@ export function StudioFrame(props: StudioFrameProps) {
                 onDismissError={() => { actions.dismissError() }}
                 effectTest={effectTest}
                 onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
+                workflows={workflows}
+                sessionActivity={sessionActivity}
               />
             </div>
             {/* CV-358：余额卡接真实数据源（`/v1/credits/balance`）。形态按拍板：

@@ -332,6 +332,13 @@ export interface ProjectStoreState {
    * `null` = 空闲 / 未知 —— 只有**真有等待**时才是非 null（见 queue-view.ts）。
    */
   generationQueue: GenerationQueueState | null
+  /**
+   * CV-467：当前会话的运行活动（内存态不持久化）。左栏六态徽标的 running 信号源
+   * —— 判据 = 当前会话的 `running` 标志（ISessions 投影，与 test-driver 的回合
+   * 空闲判据同源字段），只对 `projectId` 命中的项目生效（用户拍板：running 只对
+   * 当前打开的项目显示）。null = 无绑定项目 / 未观测。
+   */
+  sessionActivity: { projectId: string; running: boolean; since: number } | null
   /** Undo/redo snapshot history (global, entries carry their project). */
   history: HistoryEntry[]
   historyIndex: number
@@ -401,6 +408,8 @@ export type ProjectStoreActions = {
    * 本动作不参与判定（避免判据在 store 里多长出一份）。
    */
   setGenerationQueue: (draft: ProjectStoreState, state: GenerationQueueState | null) => void
+  /** CV-467：写入会话运行活动（左栏徽标的 running 信号源；projectId=null 即清空）。 */
+  setSessionActivity: (draft: ProjectStoreState, projectId: string | null, running: boolean) => void
   /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
   addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void
   /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -657,6 +666,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       effectTest: null,
       autoTest: null,
       generationQueue: null,
+      sessionActivity: null,
       history: [],
       historyIndex: -1,
       clipboard: [],
@@ -711,6 +721,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.hasConversation = {}
         draft.mediaUploads = {}
         draft.pendingRemovedIds = {}
+        // CV-467：旧根 projectId 的会话活动一并作废（同projectId 索引态同纪律）。
+        draft.sessionActivity = null
         // 全局编辑态：撤销栈条目自带 projectId，跨库保留只会串味。
         draft.effectTest = null
         draft.autoTest = null
@@ -787,6 +799,21 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.hasConversation = { ...draft.hasConversation, [projectId]: has }
       },
       setGenerationQueue: (draft, state) => { draft.generationQueue = state },
+      /**
+       * CV-467：写入会话运行活动（订阅回调调用）。**同态短路** —— 会话订阅在回合在飞
+       * 期间会频繁触发，不短路就会每拍重置 `since`，徽标的 mm:ss 计时永远跳不动。
+       * running 翻转 / 换项目时才落新快照，`since` = 进入该运行态的时刻。
+       */
+      setSessionActivity: (draft, projectId, running) => {
+        const prev = draft.sessionActivity
+        if (projectId === null) {
+          if (prev === null) return
+          draft.sessionActivity = null
+          return
+        }
+        if (prev !== null && prev.projectId === projectId && prev.running === running) return
+        draft.sessionActivity = { projectId, running, since: Date.now() }
+      },
       patchEffectTest: (draft, patch) => {
         draft.effectTest = { ...(draft.effectTest ?? {
           running: false, round: '', queue: [], currentIndex: -1, currentLabel: null,

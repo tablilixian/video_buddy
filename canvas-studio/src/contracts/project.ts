@@ -222,6 +222,53 @@ export function suggestShotCount(targetDuration: number | undefined): number | u
   return Math.max(1, Math.round(targetDuration / SUGGESTED_SHOT_SECONDS))
 }
 
+/**
+ * CV-467：项目最近一次 run（turn 级）的结算事实。
+ *
+ * Host 在 `turn/start` 落 `running`、`turn/end` 按 reason 词表结算（error/max-tokens →
+ * failed；completed 且期间有真修改 → done；被停止 / 纯聊天轮次 → stopped）。客户端
+ * 的六态徽标由它 + pendingQuestion + 会话活动推导（判据见 src/project-status.ts，
+ * 唯一实现）。`just-done` 瞬态不落盘 —— 客户端按 endedAt + 窗口常量现推。
+ *
+ * `stopped` 是词表映射的产物（aborted/interrupted/blocked/disposed 及「completed 但
+ * 零修改」都归它）：被停止的回合既不是失败也不是完成，把它落成 done 会让弹框谎报
+ * 「成片已就绪」，落成 failed 会吓人；idle 态需要一个明确的「最近活动被中止」信号。
+ */
+export type StudioLastRunStatus = 'running' | 'done' | 'failed' | 'stopped'
+
+/** 项目最近一次 run 的结算事实（CV-467；老记录无此字段即从未跑过，零迁移）。 */
+export interface StudioProjectLastRun {
+  status: StudioLastRunStatus
+  /** 回合开始时刻（epoch ms）；turn/start 写入。 */
+  startedAt?: number
+  /** 回合结束时刻（epoch ms）；turn/end 写入（running 态没有它）。 */
+  endedAt?: number
+  /** 失败原因（status = 'failed' 时可带）；展示用，不进任何 prompt。 */
+  reason?: string
+}
+
+/**
+ * CV-467：宽松解析未知值为合法的 lastRun；整体非法返回 undefined（读路径照
+ * `normalizePlan` 的口径不信任上游）。字段级非法只丢该字段，不牵连 status。
+ */
+export function normalizeLastRun(value: unknown): StudioProjectLastRun | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const status = record.status
+  if (status !== 'running' && status !== 'done' && status !== 'failed' && status !== 'stopped') return undefined
+  const lastRun: StudioProjectLastRun = { status }
+  for (const key of ['startedAt', 'endedAt'] as const) {
+    const at = record[key]
+    if (typeof at === 'number' && Number.isFinite(at) && at > 0) lastRun[key] = at
+  }
+  const reason = record.reason
+  if (typeof reason === 'string' && reason.trim() !== '') {
+    // 展示用文本按弹框一行的量级截断（防错误日志整段灌进 registry）。
+    lastRun.reason = reason.trim().slice(0, 200)
+  }
+  return lastRun
+}
+
 /** One Canvas Studio project record. */
 export interface StudioProject {
   /** Stable project id (Host-minted UUID). */
@@ -250,6 +297,11 @@ export interface StudioProject {
    * 未锁定，按既有流程（澄清提问 + 全局设置兜底）处理，零迁移。
    */
   plan?: StudioProjectPlan
+  /**
+   * CV-467：最近一次 run（turn 级）的结算事实。老记录无此字段即从未跑过；
+   * 读路径经 `normalizeLastRun` 宽松解析，脏值按「没有」处理。
+   */
+  lastRun?: StudioProjectLastRun
 }
 
 /** CV-091：用户自定义项目分组（左侧栏可折叠分组的一等公民，独立于 projects.json）。 */

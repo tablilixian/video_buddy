@@ -1291,8 +1291,24 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     }
   }
 
-  // ── REQ-005 v1.3（变体 A）：首页 draft 落点 ────────────────────────────────
-  // 首页 = projectId === null，宿主卡的发送/附件都要落到一个真实 workspace/会话
+  // CV-467：会话运行活动 → 左栏六态徽标的 running 信号。判据 = 当前会话的
+  // `running` 标志（ISessions 投影；test-driver 的回合判据同源字段），项目归属
+  // 用 resolveActiveProjectId（画布跟随对话，同一口径）。running → idle 翻转时
+  // **静默**刷一次项目列表：turn/end 刚落盘的 lastRun（done/failed/stopped）随
+  // GET /projects 回来，just-done / failed 徽标立刻亮起 —— 事件驱动，不轮询。
+  let lastActivityRunning = false
+  const syncSessionActivity = (): void => {
+    const projectId = resolveActiveProjectId()
+    const sessions = sessionSvc.list.getSnapshot()
+    if (sessions.phase === 'pending') return
+    const current = projectId === null ? undefined : currentSessionOf(sessions)
+    const running = current?.running === true
+    storeInstance.actions.setSessionActivity(projectId, running)
+    if (lastActivityRunning && !running) void refreshProjects({ quiet: true })
+    lastActivityRunning = running
+  }
+
+  // ── REQ-005 v1.3（变体 A）：首页 draft 落点 ────────────────────────────────  // 首页 = projectId === null，宿主卡的发送/附件都要落到一个真实 workspace/会话
   // （无会话时 composer 是 inert 的「选择工作区」占位，sendSession 根本不会触发）。
   // 落点 = Host 端 draft 目录（projects/.draft-<yyyyMM>，不在 registry）绑定的
   // workspace + blank 会话：宿主卡呈活跃 hero，插件侧仍是 lobby 态。用户发送的
@@ -1359,9 +1375,12 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
    * 重拉项目注册表进 store（含效果测试半成品清扫）。原在 inject 闭包内，v1.3
    * 起 lobby 认领拦截分支（apply 顶层的 DivertConversation wrapper）也用它，
    * 词法上必须可见，提升到顶层；inject 回调与认领分支共用同一份。
+   *
+   * CV-467：`options.quiet` —— 后台刷新（会话 running→idle 翻转时拉新 lastRun）
+   * 不落 `loading` 相：列表闪一次骨架会读成「项目丢了」，徽标更新必须是无感的。
    */
-  const refreshProjects = async (): Promise<void> => {
-    storeInstance.actions.setPhase('loading')
+  const refreshProjects = async (options: { quiet?: boolean } = {}): Promise<void> => {
+    if (options.quiet !== true) storeInstance.actions.setPhase('loading')
     try {
       let projects = await listStudioProjects()
       // 效果测试半成品清扫（2026-09-02）：自动化测试中途退出会留下「有注册
@@ -2292,6 +2311,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(() => {
       syncActiveProject()
       syncHasConversation()
+      syncSessionActivity()
       alignStartupSession()
       // 变体 A：无项目选中时保证 draft 落点（守卫内部自判，幂等）。
       maybeDraftLanding()
@@ -2302,6 +2322,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     const unsubscribeSessions = sessionSvc.list.subscribe(() => {
       syncActiveProject()
       syncHasConversation()
+      syncSessionActivity()
       alignStartupSession()
       maybeDraftLanding()
     })

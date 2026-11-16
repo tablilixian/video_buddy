@@ -12,8 +12,8 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { sharedWriteQueue } from './keyed-queue.js'
 import { quarantineFile } from './file-quarantine.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
-import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
+import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectLastRun, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
+import { normalizeLastRun, normalizePlan, normalizeWorkflow } from './contracts/project.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -1218,6 +1218,30 @@ export class ProjectRegistry {
       updatedAt: nowIso(),
     }
     projects[index] = next
+    await this.commitRegistry(projects)
+  }
+
+  /**
+   * CV-467：写入项目最近一次 run 的结算事实（Host turn/start 与 turn/end 落点）。
+   *
+   * 刻意**不刷 `updatedAt`** —— updatedAt 是「最后修改」的排序燃料（CV-264③ 只认
+   * 真修改），run 的开始/结束不是项目内容修改；徽标时间读 lastRun 自己的时间戳。
+   * 判「本回合是否真产出」恰恰依赖这一点：turn/end 用 `updatedAt >= startedAt`
+   * 判 productive，若本方法顺手刷 updatedAt 就永远判真。
+   *
+   * registry 无记录（draft 目录绑的会话）时静默跳过 —— 徽标状态不是业务状态，
+   * 绝不把回合结算拖进错误面（与 touchUpdatedAt 同款立场）。入参先过
+   * `normalizeLastRun` 收口（持久化边界统一归一，脏值当场丢）。
+   */
+  async setLastRun(projectId: string, lastRun: StudioProjectLastRun): Promise<void> {
+    const projects = [...await this.list()]
+    const index = projects.findIndex((entry) => entry.id === projectId)
+    if (index === -1) return
+    const normalized = normalizeLastRun(lastRun)
+    if (normalized === undefined) return
+    const current = projects[index]!
+    const { lastRun: _dropped, ...rest } = current
+    projects[index] = { ...rest, lastRun: normalized }
     await this.commitRegistry(projects)
   }
 

@@ -1,4 +1,5 @@
 import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
+import { isWaitingProject } from './project-status.js'
 
 /**
  * CV-181 / E-2：左栏分区分桶的唯一实现。
@@ -20,9 +21,9 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
  * 宁可让用户在一个显眼的地方看到它，也不要静默吞掉。
  *
  * 顺序约定：`groups` 的先后由调用方决定（store 已按 `order` 升序给出），
- * 本函数**原样保持**、不给分组二次排序；桶内项目按 `updatedAt` 倒序
- *（CV-264③ 定稿，见 `byUpdatedAtDesc`）。两条顺序规则都收在这个函数里 ——
- * 排序口径仍然只有一处。
+ * 本函数**原样保持**、不给分组二次排序；桶内项目按「CV-467 waiting 置顶 + 其余
+ * 按 `updatedAt` 倒序」（见 {@link byStatusThenUpdatedDesc}）。两条顺序规则都收
+ * 在这个函数里 —— 排序口径仍然只有一处。
  */
 export interface ProjectSection {
   readonly key: string
@@ -64,7 +65,26 @@ const byUpdatedAtDesc = (left: StudioProject, right: StudioProject): number => {
   return rightAt - leftAt
 }
 
-/** 把项目分成「未分组桶 + 各分组段」，悬空 groupId 回落未分组；每桶内按改动时间倒序。 */
+/**
+ * CV-467：桶内排序 = **waiting 置顶 + 其余 updatedAt 倒序**（用户拍板 2026-11-16）。
+ *
+ * demo 的六态全量权重排序（waiting > running > failed > …）**没有**采纳：全量重排
+ * 会把 REQ-005 已验收的「按最后修改倒序」（CV-264③ 定稿口径）整个推翻，徽标自己
+ * 已经把六态说清楚了，顺序再跟着状态抖动反而让「我最近在做的项目」从指缝里溜走。
+ * 只有 waiting 例外 —— 「在等你决策」的项目不置顶就等于不存在（列表长的时候它
+ * 沉在中段，用户不点进去永远不知道有个问题在等），这正是徽标要回答的第 2 个问题。
+ *
+ * waiting 判据复用 `isWaitingProject`（project-status.ts 的唯一实现），不在这里
+ * 重写一份 `pendingQuestion != null` —— 判据分叉迟早漂移。
+ */
+const byStatusThenUpdatedDesc = (left: StudioProject, right: StudioProject): number => {
+  const leftWaiting = isWaitingProject(left)
+  const rightWaiting = isWaitingProject(right)
+  if (leftWaiting !== rightWaiting) return leftWaiting ? -1 : 1
+  return byUpdatedAtDesc(left, right)
+}
+
+/** 把项目分成「未分组桶 + 各分组段」，悬空 groupId 回落未分组；每桶内 waiting 置顶、其余按改动时间倒序。 */
 export function resolveVisibleSections(
   projects: readonly StudioProject[],
   groups: readonly StudioProjectGroup[],
@@ -88,13 +108,13 @@ export function resolveVisibleSections(
 
   return {
     // 排序口径收口在这里（分桶的同一处）：分组顺序仍由 groups 决定、不重排，
-    // 只有**桶内**的项目按 updatedAt 倒序。
-    ungrouped: ungrouped.sort(byUpdatedAtDesc),
+    // 只有**桶内**的项目按 waiting 置顶 + updatedAt 倒序（CV-467）。
+    ungrouped: ungrouped.sort(byStatusThenUpdatedDesc),
     sections: groups.map(group => ({
       key: group.id,
       title: group.name,
       groupId: group.id,
-      items: (buckets.get(group.id) ?? []).sort(byUpdatedAtDesc),
+      items: (buckets.get(group.id) ?? []).sort(byStatusThenUpdatedDesc),
     })),
   }
 }

@@ -29,6 +29,9 @@ const STUDIO_STYLES = `
   --cs-z-storyboard: 90;
   --cs-z-fullpage: 200;
   --cs-z-toast: 210;
+  /* CV-467：徽标实心图标（failed 叹号）内部镂空色的语义位 —— 反白填充随主题
+     走「近壳底色」，明暗两轨都不需要单独一版图标。 */
+  --cs-status-on-icon: var(--dsw-alias-bg-layer-1, #1c1c22);
 }
 
 .csFrame {
@@ -1733,6 +1736,268 @@ const STUDIO_STYLES = `
 .csProjectSubText {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── CV-467：项目行六态徽标 + waiting 行高亮 + 段头计数 + hover 详情弹框 ──
+   视觉与交互基准：docs/demos/2026-11-16-项目状态徽标与hover弹框-demo.html（已与
+   用户确认两轮）。两条硬约束落进 CSS：徽标零文字（图标 + 时间）；弹框纯展示。
+   状态色全部走 color-mix 混既有令牌（accent/ok/warn + label 系），不新造色令牌
+   —— 四套品牌预设与明暗两轨自动跟随。 */
+
+/* 徽标列：行尾固定宽，时间用等宽数字防跳动（mm:ss 每秒刷新，比例字体会抖）。 */
+.csProjectBadge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 30px;
+  justify-content: flex-end;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--cs-fs-xs, 11px);
+}
+
+.csProjectBadge svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.csProjectBadgeTime {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* 六态着色：running 蓝（accent）、waiting 琥珀（warn）、failed 红（error 混出）、
+   done/just-done 绿（ok）、idle 灰（label-tertiary，视觉退后不打扰）。 */
+.csProjectBadge-running { color: var(--cs-accent, #6c5ce7); }
+.csProjectBadge-waiting { color: var(--cs-warn, #d9962b); }
+.csProjectBadge-failed { color: color-mix(in srgb, var(--cs-warn, #f2555a) 55%, #f2555a); }
+.csProjectBadge-just-done { color: var(--cs-ok, #4ade80); }
+.csProjectBadge-done { color: color-mix(in srgb, var(--cs-ok, #4ade80) 55%, var(--dsw-alias-label-tertiary)); }
+
+/* 呼吸点：running/waiting 两态的实时指示（行进语义 —— 回合正在推进；1.2s 呼吸，
+   demo 同款节奏）；终态静止。命名归 DD-03 三语义（csAdvance*）。 */
+.csStatusDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.csProjectBadge-running .csStatusDot,
+.csProjectBadge-waiting .csStatusDot {
+  animation: csAdvanceBreath 1.2s ease-in-out infinite;
+}
+
+@keyframes csAdvanceBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csProjectBadge-running .csStatusDot,
+  .csProjectBadge-waiting .csStatusDot {
+    animation: none;
+  }
+}
+
+/* waiting 行高亮：左侧琥珀标 + 微底色（demo §2.1「永远置顶」的行级视觉）。
+   底色与选中态（accent-soft）区分开，两态叠加时底色后者胜（选择优先于等待）。 */
+.csProjectItemWaiting {
+  border-left-color: var(--cs-warn, #d9962b);
+  background: color-mix(in srgb, var(--cs-warn, #d9962b) 8%, transparent);
+}
+
+.csProjectItemWaiting:hover {
+  background: color-mix(in srgb, var(--cs-warn, #d9962b) 14%, transparent);
+}
+
+/* 段头计数摘要：图标（色点）+ 数字，零文字。变化时 flash 一下（key 重挂触发）；
+   显影语义（计数作为新信息出现），命名归 DD-03 三语义（csDevelop*）。 */
+.csProjectsHeaderCounts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  margin-left: auto;
+  animation: csDevelopFlash 0.7s ease-out;
+}
+
+@keyframes csDevelopFlash {
+  0% { opacity: 0.15; }
+  100% { opacity: 1; }
+}
+
+.csStatusCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--cs-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.csStatusCountDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.csStatusCountWaiting { color: var(--cs-warn, #d9962b); }
+.csStatusCountRunning { color: var(--cs-accent, #6c5ce7); }
+.csStatusCountFailed { color: color-mix(in srgb, var(--cs-warn, #f2555a) 55%, #f2555a); }
+
+/* hover / focus 详情弹框：portal 到 body 的 fixed 单例（与 kebab 菜单同一套定位
+   模式）。pointer-events: none —— 纯展示，鼠标事件全部穿透给下层，移开行即消失。 */
+.csStatusPopover {
+  position: fixed;
+  z-index: var(--cs-z-modal, 70);
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-3, 12px);
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-bg-layer-1, #1c1c22);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.csStatusPopoverTitle {
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态胶囊：色点 + 文案 + （running/waiting 时的）计时。 */
+.csStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--cs-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.csStatusPopover-running .csStatusPill { background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 14%, transparent); color: var(--cs-accent, #6c5ce7); }
+.csStatusPopover-waiting .csStatusPill { background: color-mix(in srgb, var(--cs-warn, #d9962b) 15%, transparent); color: var(--cs-warn, #d9962b); }
+.csStatusPopover-failed .csStatusPill { background: color-mix(in srgb, var(--cs-warn, #f2555a) 14%, transparent); color: color-mix(in srgb, var(--cs-warn, #f2555a) 55%, #f2555a); }
+.csStatusPopover-just-done .csStatusPill { background: color-mix(in srgb, var(--cs-ok, #4ade80) 16%, transparent); color: var(--cs-ok, #4ade80); }
+.csStatusPopover-done .csStatusPill { background: color-mix(in srgb, var(--cs-ok, #4ade80) 8%, transparent); color: color-mix(in srgb, var(--cs-ok, #4ade80) 60%, var(--dsw-alias-label-primary)); }
+.csStatusPopover-idle .csStatusPill { background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1)); color: var(--dsw-alias-label-secondary); }
+
+.csStatusPopover-running .csStatusDot,
+.csStatusPopover-waiting .csStatusDot {
+  animation: csAdvanceBreath 1.2s ease-in-out infinite;
+}
+
+/* 五行环境信息：标签灰、值亮，值超宽省略号（目录路径最长）。 */
+.csStatusPopoverRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--cs-space-1, 4px);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+}
+
+.csStatusRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cs-space-2, 8px);
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.4;
+}
+
+.csStatusRowLabel {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csStatusRowValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csStatusRow-dir .csStatusRowValue {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* 状态专属块。 */
+.csStatusDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.45;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csStatusDetailText {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.csStatusDetailQuestion { color: var(--cs-warn, #d9962b); }
+.csStatusDetailReason { color: color-mix(in srgb, var(--cs-warn, #f2555a) 55%, #f2555a); }
+
+.csStatusDetailReady {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  color: var(--cs-ok, #4ade80);
+}
+
+.csStatusDetailReady svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
+/* running 的不确定进度条：流动条纹表达「在跑」（wire 上没有真实进度百分比，
+   2026-11-16 用户拍板：不显示假数字）。条纹用 repeating-linear-gradient 平移。 */
+.csStatusLiveBar {
+  height: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+
+.csStatusLiveBar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--cs-accent, #6c5ce7) 70%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  animation: csAdvanceSlide 1s linear infinite;
+}
+
+@keyframes csAdvanceSlide {
+  from { background-position-x: 0; }
+  to { background-position-x: 17px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csStatusLiveBar i {
+    animation: none;
+  }
 }
 
 /* DD-08 / R2：kebab 入口（取代常驻 × 与行内原生 select）。

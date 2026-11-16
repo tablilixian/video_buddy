@@ -70,6 +70,13 @@ export interface CardRenderContext {
    * 都会对「数值型事实缺 dataSource」报警，此前 spec 无处填，告警只能常驻。
    */
   readonly dataSource?: string
+  /**
+   * R11（2026-11-16）：**分段着色**（`textCard.highlights` 的 spec 入口）。
+   *
+   * 参考片的大标题里两个关键词各一色（「继续」橙 /「回来」青），此前只能整句一色。
+   * 卡把它原样写进标题轨的 `highlights`；不支持的卡（没有标题槽的）忽略即可。
+   */
+  readonly highlights?: readonly { readonly text: string; readonly color: string }[]
 }
 
 export type CardTrackGenerator = (ctx: CardRenderContext) => Record<string, unknown>[]
@@ -273,6 +280,8 @@ function titleCardTracks(ctx: CardRenderContext, anim: 'maskReveal' | 'typewrite
       box: { x: 50, y: 46, w: 76, h: 30 },
       plate: 'none',
       letterSpacingEm: -0.022,
+      // R11：分段着色（spec 的 `highlights` 原样落到标题轨）。
+      ...(ctx.highlights === undefined ? {} : { highlights: ctx.highlights }),
       startFrame: ctx.startFrame + 6,
       durationInFrames: Math.max(12, dur - 12),
       fadeFrames: 0,
@@ -334,6 +343,75 @@ registerCard({
   title: '收尾落版',
   assets: [],
   generate: (ctx) => titleCardTracks(ctx, undefined, true),
+})
+
+/**
+ * A6 · **结论条**（R11，2026-11-16）。
+ *
+ * 参考片（小红书财经科普）每屏底部都有一条**黑底圆角条 + 白字单句** —— 它不是卡片，
+ * 是「这一屏到底说了什么」的一句话总结，独立于主卡存在。此前没有对应原语：
+ * `A4` 是卡内逐条 bullets（多条并列），`A2` 是整屏大标题（抢占主视觉），两者都替代不了。
+ *
+ * 两个槽位各司其职：`label` = 上方标题（可空，空了就只剩那条结论，适合并进多单元屏的
+ * 下半格）；`copy` = 条上的那句话。字号交给 `subtitle` 的宽度预算（不按盒高，按 `maxWidthPx`），
+ * 所以换画幅不会突然放大或缩小 —— 这也是这里不用 `title` 变体的原因（`title` 按盒高推，竖屏会撑爆）。
+ */
+registerCard({
+  id: 'A6',
+  title: '结论条',
+  assets: [],
+  generate: (ctx) => {
+    const hasTitle = ctx.label.trim() !== ''
+    const barTop = hasTitle ? 62 : 58
+    const tracks: Record<string, unknown>[] = [
+      sectionBase(ctx),
+      decorDots(ctx),
+      decorGlow(ctx),
+      eyebrow(ctx),
+    ]
+    if (hasTitle) {
+      tracks.push({
+        id: tid(ctx, 'kicker'),
+        type: 'textCard',
+        variant: 'title',
+        text: ctx.label,
+        box: { x: 50, y: 40, w: 74, h: 22 },
+        plate: 'none',
+        letterSpacingEm: -0.022,
+        ...(ctx.highlights === undefined ? {} : { highlights: ctx.highlights }),
+        startFrame: ctx.startFrame + 6,
+        durationInFrames: Math.max(12, ctx.durationInFrames - 12),
+        fadeFrames: 0,
+      })
+    }
+    tracks.push(
+      // 底板：深色玻璃 + 大圆角。`radius` 是 px（契约），跨画幅不会跟着盒高变 ——
+      // 取 48 是「横屏接近药丸、竖屏仍是圆角矩形」的折中，不是精确药丸。
+      {
+        id: tid(ctx, 'bar'),
+        type: 'shape',
+        shape: 'rect',
+        color: 'rgba(6,8,12,0.88)',
+        radius: 48,
+        box: { x: 50, y: barTop, w: 76, h: 10 },
+        startFrame: ctx.startFrame + 8,
+        durationInFrames: Math.max(10, ctx.durationInFrames - 16),
+        fadeFrames: 6,
+      },
+      {
+        id: tid(ctx, 'verdict'),
+        type: 'textCard',
+        variant: 'subtitle',
+        text: ctx.copy,
+        box: { x: 50, y: barTop, w: 70, h: 10 },
+        startFrame: ctx.startFrame + 12,
+        durationInFrames: Math.max(10, ctx.durationInFrames - 20),
+        fadeFrames: 0,
+      },
+      decorVignette(ctx),
+    )
+    return tracks
+  },
 })
 
 registerCard({

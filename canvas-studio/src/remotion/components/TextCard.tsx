@@ -10,6 +10,7 @@ import type { TextAnimOptions, TextCardTrack } from '../manifest.js'
 import { colorShiftAt, splitTextUnits, textUnitProgress } from '../timing.js'
 import { timecodeStringAt } from '../timecode.js'
 import { planTextFit, textFitSizingText, type TextFitPlan } from '../text-fit-plan.js'
+import { splitByHighlights } from '../text-highlights.js'
 import { createCanvasMeasurer } from '../text-measure.js'
 import { useFontFamilyStack } from './font-context.js'
 
@@ -31,7 +32,14 @@ const AnimatedText: React.FC<{
   text: string
   preset: NonNullable<TextCardTrack['anim']>
   options: TextAnimOptions | undefined
-}> = ({ text, preset, options }) => {
+  /**
+   * R11 分段着色：本段在**整句**里的起始 unit 序号。
+   *
+   * 分色把一句话切成几个 `<AnimatedText>`，如果每段都从 0 算进度，第二段会与第一段
+   * 同时开始打字（真机观感：整句在跳）。偏移量让各段接着上一段的节奏出场。
+   */
+  unitOffset?: number
+}> = ({ text, preset, options, unitOffset = 0 }) => {
   const frame = useCurrentFrame()
   const units = useMemo(() => splitTextUnits(text, preset), [text, preset])
   const duration = preset === 'typewriter' ? 6 : 12
@@ -40,7 +48,7 @@ const AnimatedText: React.FC<{
       {units.map((unit, index) => {
         if (unit.length === 0) return null
         if (/^\s+$/u.test(unit)) return <span key={`space-${index}`}>{unit}</span>
-        const progress = textUnitProgress(index, frame, {
+        const progress = textUnitProgress(index + unitOffset, frame, {
           preset,
           ...(options?.wordDelayFrames !== undefined ? { wordDelayFrames: options.wordDelayFrames } : {}),
           unitDurationInFrames: duration,
@@ -157,6 +165,34 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
     return <AnimatedText text={value} preset={track.anim} options={track.animOptions} />
   }
 
+  /**
+   * R11（2026-11-16）：**带分段着色**的文本渲染。
+   *
+   * 没有 `highlights` / 一项都没命中 / 文本是数组 ⇒ 直接 `animated(value)`，
+   * **DOM 与老路径逐字符一致**（这是「旧 manifest 逐像素不变」的落点，别在这里加包装 span）。
+   *
+   * 有高亮时按段包 `<span style={{color}}>`，并用 `unitOffset` 让后续段接着整句的
+   * 逐字节奏出场（否则每段都从第 0 帧开始打，整句看起来在抖）。
+   */
+  const rich = (value: string): React.ReactNode => {
+    const segments = splitByHighlights(value, track.highlights)
+    if (segments.length <= 1 && segments[0]?.color === undefined) return animated(value)
+    const anim = track.anim
+    let offset = 0
+    const parts = segments.map((segment, index) => {
+      const inner = anim === undefined
+        ? segment.text
+        : <AnimatedText text={segment.text} preset={anim} options={track.animOptions} unitOffset={offset} />
+      if (anim !== undefined) offset += splitTextUnits(segment.text, anim).length
+      return (
+        <span key={`seg-${String(index)}`} style={segment.color === undefined ? undefined : { color: segment.color }}>
+          {inner}
+        </span>
+      )
+    })
+    return <>{parts}</>
+  }
+
   // S1-B：`timecode` 变体 —— HUD 帧级时间码 `HH:MM:SS:FF`。
   // 取值是**纯帧函数**（timecode.ts，禁真实时钟 ⇒ 同一 manifest 渲两次逐字节相同）；
   // `text` 是可选的静态标签（原片 HUD 的 `REC` / 相机名），`accentColor` 染标签。
@@ -253,7 +289,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             ...textFx,
           }}
         >
-          {animated(plan.renderText)}
+          {rich(plan.renderText)}
         </div>
       </AbsoluteFill>
     )

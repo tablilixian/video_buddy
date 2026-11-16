@@ -640,6 +640,30 @@ export interface TextCardTrack extends BaseTrack {
    * = 声明「非外部事实」，同样豁免 —— 给练习片一个不编造出处的诚实出口。
    */
   dataSource?: string
+  /**
+   * R11（2026-11-16）：**分段着色** —— 把 `text` 里出现的某个子串染成指定颜色。
+   *
+   * 参考片（小红书财经科普）的大标题里，两个关键词各是一种颜色（「继续」橙 /
+   * 「回来」青，「还是」保持白）。此前只能用整句 `accentColor` 或 `color`，
+   * 遇到这种「同一句里两色」就只能放弃 —— 而那正是这类片最强的视觉记忆点。
+   *
+   * 口径（都是为了让模型不容易写错）：
+   * - **不改 `text`**：`text` 仍是唯一文案来源，这里只是「上色说明」，两者不会打架；
+   * - 命中规则 = `text.indexOf(h.text)` **第一处**（不区分大小写不做，不做正则）；
+   *   同一子串出现多次时只有第一处变色 —— 这是刻意取舍，写清比「猜意图」更可靠；
+   * - 互不重叠：后声明的高亮不得与已占用的字符区间相交（校验期 warn，渲染取先声明的）；
+   * - 只在 `text` 为**字符串**时生效；`string[]`（bullets 每行一条）走不进分段渲染，
+   *   写了只收 warning（要逐行变色请拆成多条轨）。
+   */
+  highlights?: TextHighlight[]
+}
+
+/** R11 · 分段着色的一项（`text` 是 `textCard.text` 的子串）。 */
+export interface TextHighlight {
+  /** 要高亮的子串（非空；必须在 `text` 里出现，否则只 warn 不阻断）。 */
+  text: string
+  /** 高亮色（CSS 颜色串）。 */
+  color: string
 }
 
 export interface ShapeTrack extends BaseTrack {
@@ -699,14 +723,21 @@ export interface ShapeTrack extends BaseTrack {
    */
   radius?: number
   /**
-   * RQ-04（REQ-038）：`rect` / `circle` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
+   * RQ-04（REQ-038）：`rect` / `circle` / `line` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
    * 命中环）。描边宽用 `strokeWidthPx` —— **刻意不复用** `shape:'path'` 的 `strokeWidth`
    *（百分比单位）：同名字段双单位必然误用（仓内先例：`fx` 刻意避开 `effect` 撞名）。
+   *
+   * `line` 上缺省回落 `color`（R11-DAT6）：老调用方只写 color，语义不该因为新增描边能力而断掉。
    */
   stroke?: string
-  /** RQ-04（REQ-038）：`rect` / `circle` 描边宽（px，缺省 2）。见 `stroke` 注释。 */
+  /** RQ-04（REQ-038）：`rect` / `circle` / `line` 描边宽（px，缺省 2）。见 `stroke` 注释。 */
   strokeWidthPx?: number
-  /** RQ-04（REQ-038）：虚线 `[dash, gap]`（px，`stroke-dasharray`）。缺省实线。 */
+  /**
+   * RQ-04（REQ-038）：虚线 `[dash, gap]`（px，`stroke-dasharray`）。缺省实线。
+   *
+   * R11-DAT6 扩到 `line`：参考均值线 / 基线的水平虚线此前没有原语（老 line 是 4px
+   * 实心 div，dash 无处可落），图卡只能画实线或干脆不画。
+   */
   dash?: [number, number]
   /**
    * RQ-06（REQ-038）：`shape:'gradient'` 的渐变类型。缺省 `'linear'` = 老 div 实现
@@ -1225,7 +1256,7 @@ export const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
   image: new Set(['src', 'fit', 'caption', 'sourceRect', 'hasAlpha', 'clip', 'camera']),
   // RQ-03/RQ-07（REQ-038）：color / plate 实现真实读取（TextCard.tsx）。
   // RQ-02（REQ-038 批 3）：letterSpacing / letterSpacingEm —— 度量与渲染同源。
-  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'background', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor', 'color', 'plate', 'background', 'letterSpacing', 'letterSpacingEm', 'anim', 'animOptions', 'countUp', 'dataSource', 'highlights']),
   // REQ-038 批 2：radius/stroke/strokeWidthPx/dash（RQ-04）与 gradientType/gradientCenter/
   // gradientRadius/gradientTo（RQ-06）实现真实读取（Shape.tsx SVG 新路径）。
   // REQ-038 批 3：strength（RQ-09 轨级暗角）。
@@ -2041,6 +2072,45 @@ export function validateManifest(
         if (letterSpacing !== undefined && letterSpacingEm !== undefined) {
           warnings.push(`${at} 同时给了 letterSpacing 与 letterSpacingEm —— em 优先，px 被忽略`)
         }
+        // R11：分段着色 —— 子串必须真的在 text 里。「写了但画面没变」是最难查的一类，
+        // 所以找不到时明确告知，而不是静默放过。
+        const highlights = track.highlights
+        if (highlights !== undefined) {
+          if (!Array.isArray(highlights) || highlights.length === 0) {
+            errors.push(`${at}.highlights 必须是非空数组（如 [{ text: '继续', color: '#F5A623' }]）`)
+          } else if (highlights.length > 6) {
+            errors.push(`${at}.highlights 最多 6 项（一屏标题挂 6 个以上高亮 = 没有重点）`)
+          } else if (typeof text !== 'string') {
+            warnings.push(`${at}.highlights 只在 text 为字符串时生效（当前是数组）—— 要逐行变色请拆成多条轨`)
+          } else {
+            const taken: Array<[number, number]> = []
+            for (const [index, entry] of highlights.entries()) {
+              if (!isRecord(entry)) {
+                errors.push(`${at}.highlights[${String(index)}] 必须是 { text, color } 对象`)
+                continue
+              }
+              if (!isNonEmptyString(entry.text)) {
+                errors.push(`${at}.highlights[${String(index)}].text 必须是非空字符串`)
+                continue
+              }
+              if (!isNonEmptyString(entry.color)) {
+                errors.push(`${at}.highlights[${String(index)}].color 必须是非空字符串（CSS 颜色）`)
+                continue
+              }
+              const start = text.indexOf(entry.text)
+              if (start < 0) {
+                warnings.push(`${at}.highlights[${String(index)}] 的「${entry.text}」在 text 里找不到 —— 这一段不会变色`)
+                continue
+              }
+              const end = start + entry.text.length
+              if (taken.some(([from, to]) => start < to && end > from)) {
+                warnings.push(`${at}.highlights[${String(index)}] 与前面某项的区间重叠 —— 先声明的优先，这一项被跳过`)
+                continue
+              }
+              taken.push([start, end])
+            }
+          }
+        }
         if (track.animOptions !== undefined) {
           if (!isRecord(track.animOptions)) {
             errors.push(`${at}.animOptions 必须是对象`)
@@ -2146,9 +2216,13 @@ export function validateManifest(
             warnings.push(`${at} 的 dotRadius/dotSpacing 只在 shape:'dotGrid' 上生效（已忽略）`)
           }
           // RQ-04（REQ-038）：rect/circle SVG 新路径字段 —— 校验 + 冗余告知。
-          if (track.shape === 'rect' || track.shape === 'circle') {
+          // R11-DAT6：`line` 也吃 stroke / strokeWidthPx / dash（参考均值虚线），
+          // 只有 radius 对线没有意义（明确告知，不静默）。
+          if (track.shape === 'rect' || track.shape === 'circle' || track.shape === 'line') {
             const radius = track.radius
-            if (radius !== undefined && (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 0)) {
+            if (radius !== undefined && track.shape === 'line') {
+              warnings.push(`${at} 是 shape:'line'，radius 只在 rect 上生效（已忽略）`)
+            } else if (radius !== undefined && (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 0)) {
               errors.push(`${at}.radius 必须是 >= 0 的有限数（px，rect 圆角；药丸 = 盒高一半）`)
             }
             if (track.stroke !== undefined && !isNonEmptyString(track.stroke)) {
@@ -2162,7 +2236,8 @@ export function validateManifest(
             if (dash !== undefined) {
               if (!Array.isArray(dash) || dash.length !== 2 || dash.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v <= 0)) {
                 errors.push(`${at}.dash 必须是 [dash, gap] 两个正数（px，stroke-dasharray）`)
-              } else if (track.stroke === undefined) {
+              } else if (track.stroke === undefined && track.shape !== 'line') {
+                // line 的 stroke 缺省回落 color（老调用方只写 color），不算漏写。
                 warnings.push(`${at} 写了 dash 但没写 stroke —— 虚线只在声明描边色时画出`)
               }
             }
@@ -2211,9 +2286,10 @@ export function validateManifest(
               warnings.push(`${at} 的 gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:'gradient' 上生效（已忽略）`)
             }
           } else {
-            // 其他形状（line）写了新字段：不阻断，只告知不生效。
+            // 其他形状（triangle / star / polygon / arrow）写了新字段：不阻断，只告知不生效。
+            // `line` 不在这里 —— 它已进上面的 rect/circle/line 分支（R11：参考均值虚线）。
             if (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined) {
-              warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle' 上生效（已忽略）`)
+              warnings.push(`${at} 的 radius/stroke/dash 只在 shape:'rect'/'circle'/'line' 上生效（已忽略）`)
             }
             if (track.gradientType !== undefined || track.gradientCenter !== undefined || track.gradientRadius !== undefined || track.gradientTo !== undefined) {
               warnings.push(`${at} 的 gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:'gradient' 上生效（已忽略）`)

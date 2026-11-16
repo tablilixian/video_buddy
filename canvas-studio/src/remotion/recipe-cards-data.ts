@@ -3,6 +3,7 @@
  * 手法参考、表达重写;逐卡翻译对照见 shotcraft-catalog.md)。
  */
 import { registerCard } from './recipe-cards.js'
+import { chartPlotFor, chartPointOnCanvas, chartValueY } from './chart-layout.js'
 
 // ── DAT1 · gauge-readout(三联表盘扫针)──
 // 上游节拍:点火 12/16/20f 错峰;去程 12f 甩满 270°(outCubic);回落 13f 过头 8°;
@@ -150,5 +151,108 @@ registerCard({
         box: { x: 50, y: 48, w: 100, h: 74 }, startFrame: ctx.startFrame, durationInFrames: ctx.durationInFrames, fadeFrames: 0 },
       { id: `${ctx.segmentId}-cap`, type: 'textCard', variant: 'subtitle', text: ctx.copy, startFrame: ctx.startFrame + 10, durationInFrames: Math.max(10, ctx.durationInFrames - 16), fadeFrames: 0 },
     ]
+  },
+})
+
+// ── DAT6 · trend-line-with-callouts(折线 + 峰谷标注 + 均值虚线)──
+// R11（2026-11-16）：参考片（小红书财经科普）每屏主体都是「一条曲线 + 峰谷标注 +
+// 长期均值虚线」。`chart variant:'line'` 与 `callout` 两个原语早就在，缺的是把它们
+// 接起来的那一张卡 —— 于是 spec 通道只能出柱状（DAT3），这类画面整条通道做不出来。
+//
+// copy = `标签:数值; 标签:数值; …`（与 DAT3 同格式，复用已有的写法习惯，不引入第二套）
+// label = `标题 | 高点文案 | 低点文案`（后两段可缺省，缺省「高点」「低点」）——
+//   用 `|` 分隔而不是新开字段：`label` 本来就是「这一屏怎么称呼」的槽位，
+//   峰谷文案属于同一件事（怎么称呼图上那两个点）。
+registerCard({
+  id: 'DAT6',
+  title: '折线 + 峰谷标注',
+  assets: [],
+  generate: (ctx) => {
+    const rows = ctx.copy.split(/[；;\n]/).map((line) => line.trim()).filter(Boolean).slice(0, 12)
+      .map((pair) => {
+        const sep = pair.lastIndexOf(':') >= 0 ? pair.lastIndexOf(':') : pair.lastIndexOf('：')
+        return sep > 0
+          ? { k: pair.slice(0, sep).trim(), v: Number(pair.slice(sep + 1).replace(/[^\d.-]/g, '')) }
+          : { k: pair, v: Number.NaN }
+      })
+      .filter((row) => Number.isFinite(row.v))
+    // 少于 3 点画不出趋势（两点只有一条直线，标不出峰谷）—— 退化成占位文案而不是硬画。
+    const [rawTitle, rawHigh, rawLow] = ctx.label.split('|').map((part) => part.trim())
+    const chartBox = { x: 50, y: 57, w: 82, h: 50 }
+    const start = ctx.startFrame + 6
+    const dur = Math.max(12, ctx.durationInFrames - 12)
+    const base: Record<string, unknown>[] = [
+      { id: `${ctx.segmentId}-bg`, type: 'shape', shape: 'rect', color: '#0B0D10',
+        box: { x: 50, y: 50, w: 100, h: 100 }, startFrame: ctx.startFrame, durationInFrames: ctx.durationInFrames, fadeFrames: 0 },
+      { id: `${ctx.segmentId}-title`, type: 'textCard', variant: 'subtitle', text: rawTitle ?? ctx.label,
+        color: '#8fa3c4', box: { x: 50, y: 13, w: 60, h: 6 }, startFrame: ctx.startFrame, durationInFrames: ctx.durationInFrames, fadeFrames: 0 },
+    ]
+    if (rows.length < 3) {
+      return [...base, {
+        id: `${ctx.segmentId}-fallback`, type: 'textCard', variant: 'title', text: rawTitle ?? ctx.label,
+        box: { x: 50, y: 52, w: 76, h: 26 }, startFrame: start, durationInFrames: dur, fadeFrames: 0,
+      }]
+    }
+    const values = rows.map((row) => row.v)
+    // 与 Chart.tsx 的 axisMax 同一口算（Math.max(...values,0) * 1.08）—— 差一点引线就指偏。
+    const axisMax = Math.max(...values, 0) * 1.08
+    const peak = Math.max(...values)
+    const trough = Math.min(...values)
+    const peakIndex = values.indexOf(peak)
+    const troughIndex = values.indexOf(trough)
+    const mean = values.reduce((acc, v) => acc + v, 0) / values.length
+
+    const tracks: Record<string, unknown>[] = [
+      ...base,
+      {
+        id: `${ctx.segmentId}-chart`, type: 'chart', variant: 'line',
+        labels: rows.map((row) => row.k), values,
+        color: ctx.accentColor, box: chartBox,
+        startFrame: start, durationInFrames: dur, fadeFrames: 0,
+        ...(ctx.dataSource === undefined ? {} : { dataSource: ctx.dataSource }),
+      },
+    ]
+
+    // 长期均值虚线：从绘图区左沿拉到右沿，右侧留一个「均值」小字。
+    // 只在峰谷确实分开时画（全平的序列，「均值线」和曲线重合，画了等于没画）。
+    if (peak > trough) {
+      const plot = chartPlotFor(false)
+      const meanY = chartValueY(mean / axisMax, chartBox, false)
+      const insetX = (chartBox.w * plot.left) / 100
+      const insetRight = (chartBox.w * plot.right) / 100
+      tracks.push(
+        { id: `${ctx.segmentId}-mean-line`, type: 'shape', shape: 'line',
+          color: 'rgba(214,245,227,0.42)', stroke: 'rgba(214,245,227,0.42)', strokeWidthPx: 2,
+          dash: [8, 7],
+          box: { x: chartBox.x - insetX / 2 + insetRight / 2, y: meanY, w: chartBox.w - insetX - insetRight, h: 0.3 },
+          startFrame: start + 10, durationInFrames: Math.max(10, dur - 10), fadeFrames: 0 },
+        { id: `${ctx.segmentId}-mean-label`, type: 'textCard', variant: 'subtitle', text: '均值',
+          color: 'rgba(214,245,227,0.72)', box: { x: chartBox.x + chartBox.w / 2 - insetRight / 2, y: meanY - 2.6, w: 12, h: 4 },
+          startFrame: start + 10, durationInFrames: Math.max(10, dur - 10), fadeFrames: 0 },
+      )
+    }
+
+    // 峰谷标注：callout 的 anchor 是**画布百分比**，必须走 chartPointOnCanvas
+    //（绘图区内百分比 → 盒子 → 画布，差一段就是引线指着空白处）。
+    const peakPoint = chartPointOnCanvas(peakIndex, values.length, peak / axisMax, chartBox, false)
+    const troughPoint = chartPointOnCanvas(troughIndex, values.length, trough / axisMax, chartBox, false)
+    if (peak > trough) {
+      // 标签盒必须给（callout 契约要求），且**夹在画布内**：峰谷点可能在最左/最右、
+      // 或贴近上下沿，标签按点直放会半个飘出画。—— 高点上浮、低点下沉，避免压住曲线。
+      const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
+      tracks.push(
+        { id: `${ctx.segmentId}-peak`, type: 'callout', anchor: peakPoint,
+          text: `${rawHigh ?? '高点'} ${String(Math.round(peak * 100) / 100)}`,
+          line: 'elbow', color: ctx.accentColor,
+          box: { x: clamp(peakPoint.x, 16, 84), y: clamp(peakPoint.y - 7, 12, 84), w: 26, h: 7 },
+          startFrame: start + 14, durationInFrames: Math.max(10, dur - 14), fadeFrames: 0 },
+        { id: `${ctx.segmentId}-trough`, type: 'callout', anchor: troughPoint,
+          text: `${rawLow ?? '低点'} ${String(Math.round(trough * 100) / 100)}`,
+          line: 'elbow', color: ctx.accentColor,
+          box: { x: clamp(troughPoint.x, 16, 84), y: clamp(troughPoint.y + 7, 16, 88), w: 26, h: 7 },
+          startFrame: start + 18, durationInFrames: Math.max(10, dur - 18), fadeFrames: 0 },
+      )
+    }
+    return tracks
   },
 })

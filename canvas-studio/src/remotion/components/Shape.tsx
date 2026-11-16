@@ -168,11 +168,14 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   // 触发条件（缺省即旧行为）：
   // - rect/circle 声明 radius / stroke / dash 任一 ⇒ SVG 像素坐标新路径
   //  （老 div 实现不支持描边/虚线/圆角；不动老实现 ⇒ 未声明这些字段的 manifest 逐像素不变）；
+  // - line 声明 stroke / dash 任一 ⇒ 同上（R11-DAT6：参考均值的水平虚线此前无原语 ——
+  //  老 line 是 4px 实心 div，dash 完全无处可落；只认这两个字段，未声明的 line 仍是老 div）；
   // - gradient 声明 gradientType:'radial' ⇒ SVG radialGradient
   //  （CSS radial-gradient 被 web-renderer 4.0.535 忽略，#16 实证；dotGrid 同一结论）。
   // 坐标空间 = **真实像素**（box 百分比 × 画布尺寸），不用 0-100 viewBox：
   // radius / strokeWidthPx / dash 都是 px 口径，经 preserveAspectRatio 拉伸会变形。
-  const svgEnhanced = (track.shape === 'rect' || track.shape === 'circle')
+  const svgEnhanced = (track.shape === 'rect' || track.shape === 'circle'
+    || (track.shape === 'line' && (track.stroke !== undefined || track.dash !== undefined)))
     && (track.radius !== undefined || track.stroke !== undefined || track.dash !== undefined)
   const svgRadial = track.shape === 'gradient' && track.gradientType === 'radial'
   if (svgEnhanced || svgRadial) {
@@ -201,6 +204,21 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
           </defs>
           <rect x={0} y={0} width={boxW} height={boxH} fill={`url(#${gradientId})`} />
         </>
+      )
+    } else if (track.shape === 'line') {
+      // R11-DAT6：水平线的描边/虚线版（参考均值线）。线落在 box 垂直中心 ——
+      // 与老 div 实现（height:4 + 中心对齐）同一条基准线，只是换成可描边、可虚线的 SVG。
+      // `stroke` 缺省回落到 `color`：老调用方只写 color，语义不该因此断掉。
+      inner = (
+        <line
+          x1={0}
+          y1={boxH / 2}
+          x2={boxW}
+          y2={boxH / 2}
+          stroke={track.stroke ?? color}
+          strokeWidth={sw}
+          {...(dash !== undefined ? { strokeDasharray: `${dash[0]} ${dash[1]}` } : {})}
+        />
       )
     } else if (track.shape === 'circle') {
       // 与老 circle 视觉口径对齐：直径 = box.w%（老实现 height:0 + paddingBottom:w%）。

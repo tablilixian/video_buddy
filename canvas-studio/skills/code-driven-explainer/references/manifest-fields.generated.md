@@ -229,6 +229,13 @@
 - `animOptions`?: TextAnimOptions — 三期 W4-2：文本动效参数。
 - `countUp`?: boolean — P2'（2026-11-03）：`dataCard` 专用 —— 数位滚动。`data[].v` 是「纯数字 ± 前后缀」
 - `dataSource`?: string — B-4（CV-440，P-01/P-17）：数值型事实的溯源声明 —— 触发口径收窄（见
+- `highlights`?: TextHighlight[] — R11（2026-11-16）：**分段着色** —— 把 `text` 里出现的某个子串染成指定颜色。
+
+## TextHighlight
+> R11 · 分段着色的一项（`text` 是 `textCard.text` 的子串）。
+
+- `text`: string — 要高亮的子串（非空；必须在 `text` 里出现，否则只 warn 不阻断）。
+- `color`: string — 高亮色（CSS 颜色串）。
 
 ## ShapeTrack (extends BaseTrack)
 
@@ -242,8 +249,8 @@
 - `dotRadius`?: number — `shape:'dotGrid'`：点半径（px，缺省 2）。颜色取本轨 `color`。
 - `pivot`?: { x?: number; y?: number } — 旋转 / 缩放轴心（P1，2026-11-03）：相对形状自身盒的百分比，CSS
 - `radius`?: number — RQ-04（REQ-038）：`rect` 圆角（px；药丸 = 高度一半）。缺省 0 = 直角（老行为）。
-- `stroke`?: string — RQ-04（REQ-038）：`rect` / `circle` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
-- `strokeWidthPx`?: number — RQ-04（REQ-038）：`rect` / `circle` 描边宽（px，缺省 2）。见 `stroke` 注释。
+- `stroke`?: string — RQ-04（REQ-038）：`rect` / `circle` / `line` 的描边色（`'transparent'` 填充 + 描边 = 空心框 /
+- `strokeWidthPx`?: number — RQ-04（REQ-038）：`rect` / `circle` / `line` 描边宽（px，缺省 2）。见 `stroke` 注释。
 - `dash`?: [number, number] — RQ-04（REQ-038）：虚线 `[dash, gap]`（px，`stroke-dasharray`）。缺省实线。
 - `gradientType`?: 'linear' | 'radial' — RQ-06（REQ-038）：`shape:'gradient'` 的渐变类型。缺省 `'linear'` = 老 div 实现
 - `gradientCenter`?: { x?: number; y?: number } — RQ-06：radial 圆心（box 百分比，缺省 `{x:50, y:50}` = 盒中心）。

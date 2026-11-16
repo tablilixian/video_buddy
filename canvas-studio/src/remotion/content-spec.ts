@@ -58,6 +58,8 @@ export interface SpecUnit {
   cell?: CellRect
   assetSlots?: Record<string, string>
   accentColor?: string
+  /** R11：单元级分段着色（覆盖屏级；语义同 `sections[].highlights`）。 */
+  highlights?: Array<{ text: string; color: string }>
 }
 
 /** 跨屏常驻层（RQ-26）：一条非全屏底板，从 fromSection 首帧铺到 toSection 末帧。 */
@@ -134,6 +136,15 @@ export interface ContentSpec {
      * 透传到数据轨 `dataSource`；不填则保留既有告警（诚实：没来源就是没来源）。
      */
     dataSource?: string
+    /**
+     * R11（2026-11-16）：**分段着色** —— 把 `copy` 里出现的子串染成指定颜色。
+     *
+     * 参照实物（小红书财经科普）：大标题「继续，还是回来」里「继续」橙、「回来」青，
+     * 中间「还是」保持白。这是这类片最强的视觉记忆点，而此前 spec 只能整句一个
+     * `accentColor`。语义与 `textCard.highlights` 完全一致（`indexOf` 第一处、
+     * 互不重叠、找不到就 warn），spec 只负责把它送到卡。
+     */
+    highlights?: Array<{ text: string; color: string }>
     /**
      * 该屏的缺省格位（RQ-25）。给了 `units` 而未逐个给 `cell` 时，所有单元共享它；
      * 两者都缺省 = 全屏（与今天行为逐字段一致）。
@@ -234,6 +245,34 @@ function checkCell(value: unknown, at: string, errors: string[]): void {
 }
 
 /**
+ * R11：`highlights` 的**形态**校验（spec 侧）。
+ *
+ * 只验「像不像一份着色说明」，不验子串是否真的在 copy 里 —— 那一层在
+ * `validateManifest`（编译后 textCard 轨上）做，因为 copy 可能还要经
+ * `patch_spec_section` 改一轮，此刻判「找不到」会误伤。
+ */
+function checkHighlights(value: unknown, at: string, errors: string[]): void {
+  if (value === undefined) return
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.push(`${at} 必须是非空数组（如 [{ "text": "继续", "color": "#F5A623" }]）`)
+    return
+  }
+  if (value.length > 6) {
+    errors.push(`${at} 最多 6 项（当前 ${String(value.length)}）—— 一屏标题挂 6 个以上高亮 = 没有重点`)
+    return
+  }
+  value.forEach((entry, index) => {
+    const entryAt = `${at}[${String(index)}]`
+    if (!isRecord(entry)) {
+      errors.push(`${entryAt} 必须是对象（{ text, color }）`)
+      return
+    }
+    if (!isNonEmptyString(entry.text)) errors.push(`${entryAt}.text 必须是非空字符串（要高亮的那段原文）`)
+    if (!isNonEmptyString(entry.color)) errors.push(`${entryAt}.color 必须是非空字符串（CSS 颜色，如 #F5A623）`)
+  })
+}
+
+/**
  * 试算「换个目标屏长会得到几屏」。
  *
  * 只用于错误信息里的建议（`targetStageSec: 4 ⇒ 5 屏`）—— 模型自己算不准这一步：
@@ -305,6 +344,12 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
       if (section.card !== undefined && isNonEmptyString(section.card) && lookupCardId(section.card) === null) {
         warnings.push(`${at}.card "${section.card}" 未注册 —— 该段将走占位回落（RQ-10 回落路径）`)
       }
+      // R11：分段着色 —— 形态校验收在 spec 侧（manifest 侧还会再校一次子串命中）。
+      // 只验形态不验命中：命中要求 copy 已定稿，而 copy 在 patch_spec_section 里还会改。
+      checkHighlights(section.highlights, `${at}.highlights`, errors)
+      if (section.highlights !== undefined && !isNonEmptyString(section.copy) && section.units === undefined) {
+        warnings.push(`${at} 写了 highlights 但没有屏级 copy —— 高亮要落在具体文本上（units 型屏请写在各单元里）`)
+      }
       // RQ-25：格位与多单元。两者都是可选字段，缺省即旧行为（这是回归纪律）。
       if (section.card !== undefined && section.units !== undefined) {
         errors.push(`${at} 的 card 与 units 互斥 —— 单单元写 card，多单元写 units（两个都给会让「谁是主视觉」无解）`)
@@ -328,6 +373,7 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
             }
             if (!isNonEmptyString(unit.copy)) errors.push(`${unitAt}.copy 必须是非空字符串`)
             if (unit.cell !== undefined) checkCell(unit.cell, `${unitAt}.cell`, errors)
+            checkHighlights(unit.highlights, `${unitAt}.highlights`, errors)
             if (unit.overlap !== undefined && typeof unit.overlap !== 'boolean') {
               errors.push(`${unitAt}.overlap 必须是布尔值（刻意叠层声明：true = 本格位允许与同屏其他单元相交）`)
             }
@@ -553,6 +599,7 @@ function resolveUnits(section: ContentSpec['sections'][number]): SpecUnit[] {
     ...(section.assetSlots === undefined ? {} : { assetSlots: section.assetSlots }),
     ...(section.accentColor === undefined ? {} : { accentColor: section.accentColor }),
     ...(section.dataSource === undefined ? {} : { dataSource: section.dataSource }),
+    ...(section.highlights === undefined ? {} : { highlights: section.highlights }),
   }]
 }
 
@@ -781,6 +828,10 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         ...((unit.dataSource ?? section.dataSource) === undefined
           ? {}
           : { dataSource: (unit.dataSource ?? section.dataSource) as string }),
+        // R11：分段着色同样单元优先（一屏两单元时，各自的标题各配各的高亮）。
+        ...((unit.highlights ?? section.highlights) === undefined
+          ? {}
+          : { highlights: (unit.highlights ?? section.highlights) as Array<{ text: string; color: string }> }),
       })
       const pruned = dropRepeatedUnitChrome(generated, unitIndex)
       const cellOfUnit = unit.cell ?? section.cell

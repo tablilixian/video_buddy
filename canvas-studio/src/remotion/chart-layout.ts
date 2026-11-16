@@ -121,3 +121,49 @@ export function pickLabelIndices(pointCount: number, labelEvery?: number, maxLab
   }
   return Array.from({ length: n }, (_, i) => i)
 }
+
+/**
+ * 折线点在**画布百分比**上的位置（R11-DAT6）。
+ *
+ * 坐标链有三段，任何一段错位都是「引线指着空白处」：
+ * ① `chartPointXPercent` 给的是**绘图区内**百分比；
+ * ② 折线 svg 铺在绘图区里（`inset: plot.top/right/bottom/left`），不是整块盒；
+ * ③ `callout.anchor` 要的是**画布**百分比。
+ *
+ * y 与 `Chart.tsx` 的 `cy = 100 - (v / axisMax) * 100` 同口径（`ratio` 就是 `v / axisMax`）——
+ * 折线**没有**扣 plot 的 top/bottom 内边距，这里照抄，不另立一套更"正确"的算法，
+ * 否则圆点和引线会差出几个百分点。
+ *
+ * @param ratio - `value / axisMax`（0–1；`axisMax` 见 `Chart.tsx` 的 `Math.max(...values,0)*1.08`）。
+ */
+export function chartPointOnCanvas(
+  index: number,
+  pointCount: number,
+  ratio: number,
+  chartBox: { x: number; y: number; w: number; h: number },
+  hasTitle = false,
+): { x: number; y: number } {
+  const plot = chartPlotFor(hasTitle)
+  const plotW = (chartBox.w * (100 - plot.left - plot.right)) / 100
+  const plotH = (chartBox.h * (100 - plot.top - plot.bottom)) / 100
+  const left = chartBox.x - chartBox.w / 2 + (chartBox.w * plot.left) / 100
+  const top = chartBox.y - chartBox.h / 2 + (chartBox.h * plot.top) / 100
+  return {
+    x: left + (plotW * chartPointXPercent(index, pointCount)) / 100,
+    // plotH 已是**画布高度百分比**（box.h × 绘图区占比），不能再 /100 ——
+    // 多除一次会把点压到绘图区顶部（实测 y 从 49.8 变 35.6），圆点和引线各指一处。
+    y: top + plotH * (1 - ratio),
+  }
+}
+
+/** 某个值在画布上的 y（参考均值线用；与 `chartPointOnCanvas` 的 y 同一把尺子）。 */
+export function chartValueY(
+  ratio: number,
+  chartBox: { x: number; y: number; w: number; h: number },
+  hasTitle = false,
+): number {
+  const plot = chartPlotFor(hasTitle)
+  const plotH = (chartBox.h * (100 - plot.top - plot.bottom)) / 100
+  const top = chartBox.y - chartBox.h / 2 + (chartBox.h * plot.top) / 100
+  return top + plotH * (1 - ratio)
+}

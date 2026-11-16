@@ -87,7 +87,14 @@ test('RQ-04：radius/stroke/dash 写在 gradient/line 上只 warning（冗余告
   assert.ok(!m.warnings.some((w) => w.includes('gradientType/gradientCenter')))
   const line = validateManifest(withTrack(shape({ shape: 'line', radius: 10, gradientType: 'radial' })))
   assert.deepEqual(line.errors, [])
-  assert.ok(line.warnings.some((w) => w.includes("radius/stroke/dash 只在 shape:'rect'/'circle' 上生效")))
+  // R11（2026-11-16）行为变更，如实登记：`line` 现在**真的**吃 stroke / strokeWidthPx / dash
+  //（参考均值虚线，DAT6 需要；老实现是 4px 实心 div，dash 无处可落）。
+  // 所以只剩 radius 对它无意义 —— 说「radius/stroke/dash 全都已忽略」已经是错话。
+  assert.ok(line.warnings.some((w) => w.includes("radius 只在 rect 上生效")))
+  assert.ok(
+    !line.warnings.some((w) => w.includes("radius/stroke/dash")),
+    'line 的 stroke/dash 已生效，不能再报「三个都忽略」',
+  )
   assert.ok(line.warnings.some((w) => w.includes('gradientType/gradientCenter/gradientRadius/gradientTo 只在 shape:\'gradient\' 上生效')))
 })
 

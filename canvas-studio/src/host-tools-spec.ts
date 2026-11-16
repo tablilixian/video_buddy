@@ -38,6 +38,35 @@ import { auditSpecDensity } from './remotion/density-audit.js'
 /** spec 文件上限：与 `render_composition` 的 manifestPath 同口径（8MB）。 */
 const MAX_SPEC_BYTES = 8 * 1024 * 1024
 
+/**
+ * 输出画幅 → 1080 档画布尺寸（**唯一出处**）。
+ *
+ * `scaffold_manifest` 与 `scaffold_from_spec` 共用这一张表：此前 spec 通道硬编码
+ * 1920×1080，`aspect` 参数在 spec 分支被**静默忽略**（传了 9:16 还是出横屏）——
+ * 竖屏片（小红书 / 抖音）整条通道出不来，而且不报错，属于最难查的一类。
+ */
+export const OUTPUT_ASPECT_SIZES = {
+  '16:9': { width: 1920, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+  '1:1': { width: 1080, height: 1080 },
+} as const
+
+export type OutputAspect = keyof typeof OUTPUT_ASPECT_SIZES
+
+/** 缺省画幅（与 `scaffold_manifest` 的缺省一致：横屏）。 */
+export const DEFAULT_OUTPUT_ASPECT: OutputAspect = '16:9'
+
+/** 画幅入参收口：非法值**拒收**（不静默回退 —— 静默回退正是 spec 分支的老毛病）。 */
+export function resolveOutputAspect(value: unknown): OutputAspect {
+  if (value === undefined) return DEFAULT_OUTPUT_ASPECT
+  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(OUTPUT_ASPECT_SIZES, value)) {
+    return value as OutputAspect
+  }
+  throwError('CS-USER-ERR', {
+    message: `aspect 只能是 ${Object.keys(OUTPUT_ASPECT_SIZES).join(' / ')}（收到 ${JSON.stringify(value)}）`,
+  })
+}
+
 export interface SpecScaffoldInput {
   /** spec JSON 的**绝对路径**（与 manifestPath 同口径：相对路径会歧义到 cwd 还是项目根）。 */
   specPath: string
@@ -45,6 +74,8 @@ export interface SpecScaffoldInput {
   writeTo?: string
   /** 落盘时的项目根；`writeTo` 给了就必须有。 */
   projectDir?: string
+  /** 输出画幅（16:9 / 9:16 / 1:1）；缺省 16:9。竖屏片必须显式给 `9:16`。 */
+  aspect?: string
 }
 
 /**
@@ -117,12 +148,14 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
 
   const { theme } = resolveTheme(spec.meta.theme)
   const plan = planFromSpec(spec, total)
+  const aspect = resolveOutputAspect(input.aspect)
+  const size = OUTPUT_ASPECT_SIZES[aspect]
   const manifest = {
     id: `comp-spec-${Date.now().toString(36)}`,
     meta: {
       title: spec.meta.title,
-      width: 1920,
-      height: 1080,
+      width: size.width,
+      height: size.height,
       fps,
       durationInFrames: total,
       backgroundColor: theme.backgroundColor,

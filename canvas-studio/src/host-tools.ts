@@ -56,7 +56,7 @@ import { defineTemplateTools } from './host-tools-template.js'
 import { scaffoldFromTemplate } from './template-scaffold.js'
 // R7（REQ-038 · RQ-27）· 起点 D：内容规格（屏表）。逻辑在 host-tools-spec.ts ——
 // 这里只接线，避免又给本文件的函数长度闸加压。
-import { readContentSpecFile, scaffoldFromSpec } from './host-tools-spec.js'
+import { OUTPUT_ASPECT_SIZES, readContentSpecFile, resolveOutputAspect, scaffoldFromSpec } from './host-tools-spec.js'
 import type { SpecPatchSet } from './host-tools-spec-patch.js'
 import { patchSpecSection, resolveSegmentIdFromNode } from './host-tools-spec-patch.js'
 import type { SegmentBrief } from './segment-binding.js'
@@ -4774,7 +4774,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             + '跨项目/跨仓/`..` 逃逸一律 CS-USER-ERR 拒收且零副作用；给了它就不再回显完整 JSON（只给前 40 行核对）',
         },
         fps: { type: 'number' as const, description: '可选：24 / 25 / 30 / 60，缺省 30' },
-        aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1920×1080 / 1080×1920 / 1080×1080 —— 1080 档，竖版与横版同面积）' },
+        aspect: { type: 'string' as const, description: '可选：16:9 / 9:16 / 1:1，缺省 16:9（对应 1920×1080 / 1080×1920 / 1080×1080 —— 1080 档，竖版与横版同面积）。**specPath 分支同样生效**：竖屏片（小红书 / 抖音）必须显式传 9:16' },
         theme: {
           type: 'string' as const,
           enum: ['cold-tech', 'ink-press', 'warm-ember', 'neon-data'] as const,
@@ -4865,8 +4865,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           }
           const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
           const specProjectDir = writeToRaw === '' ? undefined : registry.projectDir(projectId)
+          // 画幅：此前在 spec 分支被静默忽略（竖屏片传 9:16 还是出横屏，且不报错）。
+          // 值域由 resolveOutputAspect 收口 —— 非法值拒收，不静默回退。
+          const specAspect = resolveOutputAspect(a.aspect)
           const scaffolded = scaffoldFromSpec({
             specPath,
+            aspect: specAspect,
             ...(writeToRaw === '' ? {} : { writeTo: writeToRaw }),
             ...(specProjectDir === undefined ? {} : { projectDir: specProjectDir }),
           })
@@ -4884,11 +4888,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (seconds <= 0) throwError('CS-USER-ERR', { message: 'durationSeconds 必须是正数（秒）' })
         if (seconds > 1800) throwError('CS-USER-ERR', { message: 'durationSeconds 上限 1800 秒（30 分钟）；更长的片子请分段出片再拼' })
         const fps = a.fps === 24 || a.fps === 25 || a.fps === 30 || a.fps === 60 ? a.fps : 30
-        const SIZES: Record<string, { width: number; height: number }> = {
-          '16:9': { width: 1920, height: 1080 },
-          '9:16': { width: 1080, height: 1920 },
-          '1:1': { width: 1080, height: 1080 },
-        }
+        const SIZES = OUTPUT_ASPECT_SIZES as Record<string, { width: number; height: number }>
         const aspect = typeof a.aspect === 'string' && SIZES[a.aspect] !== undefined ? a.aspect : '16:9'
         const size = SIZES[aspect] ?? { width: 1920, height: 1080 }
         // 片型配方（2026-10-25）：先解析 recipe，再定主题 —— recipe 自带的推荐主题只作**缺省**

@@ -23,7 +23,8 @@ test('normalizeCanvasView：缺失/非法输入回退默认值', () => {
   assert.equal(normalizeCanvasView(null), undefined)
   assert.equal(normalizeCanvasView('nope'), undefined)
   const view = normalizeCanvasView({ x: 'bad', y: 12, scale: 999, layersOpen: 'x' })
-  assert.deepEqual(view, { x: 0, y: 12, scale: 5, layersOpen: false, minimapVisible: false })
+  // REQ-040 A：waterfall 缺省 = true（历程视图为默认主视图，恒落字段）。
+  assert.deepEqual(view, { x: 0, y: 12, scale: 5, layersOpen: false, minimapVisible: false, waterfall: true })
 })
 
 test('clampViewScale：限制在 0.1–5', () => {

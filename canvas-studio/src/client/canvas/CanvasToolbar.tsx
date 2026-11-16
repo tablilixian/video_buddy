@@ -56,7 +56,9 @@ export interface CanvasToolbarProps {
 /**
  * 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
  *
- * 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
+ * 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）；
+ * 技能广场 / 资产库 / 辅助卡开关（2026-11-16 用户指定隐藏：前两者 lobby 态已有独立入口，
+ * 辅助卡为低频实现细节，默认收起）。
  * 保留：上传文件（CV-241 统一四类入口）、缩放；整理布局 / 图层 / 小地图移至最右侧图标组
  * （CV-059，2026-09-01 用户指定）。
  * 设置按钮已移除（CV-059 拍板：设置入口 = app 左下角全局入口）。
@@ -81,6 +83,12 @@ const TOOLBAR_VISIBILITY = {
   minimap: true,
   /** CV-059：画布设置按钮已移除，设置入口 = app 左下角全局入口。 */
   settings: false,
+  /** CV-065：技能广场（2026-11-16 用户指定隐藏：lobby 态已有独立入口）。 */
+  skills: false,
+  /** REQ-001：资产库（2026-11-16 用户指定隐藏：lobby 态已有独立入口）。 */
+  library: false,
+  /** D-1：辅助卡开关（2026-11-16 用户指定隐藏：低频实现细节概念，默认收起即可）。 */
+  auxiliary: false,
 } as const
 
 /**
@@ -152,13 +160,13 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           原设置按钮位；设置入口移至 app 左下角全局入口，按钮已删）。 */}
       {(TOOLBAR_VISIBILITY.arrange || TOOLBAR_VISIBILITY.layers || TOOLBAR_VISIBILITY.minimap) && (
       <div className="csToolbarGroup csToolbarGroupEnd">
-        {/* REQ-036：历程视图开关 —— 与「整理布局」同属布局/视图语义，排在其左。
-            激活态高亮（与小地图/图层同款 csToolbarIconActive）。 */}
+        {/* REQ-036：历程视图开关 —— REQ-040 A 期（D1）历程视图为**默认主视图**，
+            按钮语义 = 「切到自由画布 / 切回历程」双向切换（激活态 = 当前在历程）。 */}
         <button
           type="button"
           className={waterfall ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
-          title={waterfall ? '退出历程视图（回到自由画布）' : '历程视图：按阶段自上而下浏览创作产出'}
-          aria-label="历程视图"
+          title={waterfall ? '切换到自由画布（自由摆放 / 手动整理布局）' : '切回历程视图（默认 · 按阶段浏览创作产出）'}
+          aria-label={waterfall ? '切换到自由画布' : '切回历程视图'}
           aria-pressed={waterfall}
           onClick={onToggleWaterfall}
         >
@@ -202,7 +210,8 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           </svg>
         </button>
         {/* D-1：辅助卡开关 —— 末帧等机器产物默认收起；icon = 图片卡（收起态加斜杠，
-            与废弃素材的眼睛图标区分）。 */}
+            与废弃素材的眼睛图标区分）。2026-11-16：入口隐藏（TOOLBAR_VISIBILITY.auxiliary）。 */}
+        {TOOLBAR_VISIBILITY.auxiliary && (
         <button
           type="button"
           className={showAuxiliary ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
@@ -218,7 +227,9 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             {!showAuxiliary && <line x1="3" y1="3" x2="21" y2="21" />}
           </svg>
         </button>
-        {/* CV-065：技能广场入口（lobby 态在推荐技能横滚尾部也有「浏览全部」）。 */}
+        )}
+        {/* CV-065：技能广场入口（2026-11-16：入口隐藏，lobby 态「浏览全部」保留）。 */}
+        {TOOLBAR_VISIBILITY.skills && (
         <button
           type="button"
           className="csToolbarButton csToolbarIconButton"
@@ -233,7 +244,9 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             <circle cx="17" cy="17" r="2.6" />
           </svg>
         </button>
-        {/* REQ-001：全局资产库入口（档案盒图标；lobby 态在 LobbyHero 也有按钮）。 */}
+        )}
+        {/* REQ-001：全局资产库入口（2026-11-16：入口隐藏，lobby 态 LobbyHero 按钮保留）。 */}
+        {TOOLBAR_VISIBILITY.library && (
         <button
           type="button"
           className="csToolbarButton csToolbarIconButton"
@@ -247,6 +260,7 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             <path d="M10 12h4" />
           </svg>
         </button>
+        )}
         {TOOLBAR_VISIBILITY.layers && (
           <button
             type="button"

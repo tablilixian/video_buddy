@@ -15,7 +15,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { computeWaterfallLayout } from '../lib/canvas-waterfall.js'
+import { computeWaterfallLayout, thumbWidthFromViewport } from '../lib/canvas-waterfall.js'
 import { deriveShotSemantics, normalizeCanvasView } from '../lib/canvas-view.js'
 
 const readSource = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
@@ -31,7 +31,8 @@ const codeOnly = (src) =>
 const WF_CODE = codeOnly(readSource('../src/canvas-waterfall.ts'))
 const VIEW_CODE = codeOnly(readSource('../src/canvas-view.ts'))
 
-/** 最小节点壳：布局只读 id/kind/title/toolName/origin/sourceIds/supersededBy/createdAt（x/y/w/h 不进算法，进纯度校验）。 */
+/** 最小节点壳：布局只读 id/kind/title/toolName/origin/sourceIds/supersededBy/createdAt
+ *  与瞬态 isLoading/error（REQ-040 A 状态统计）；x/y/w/h 不进算法，进纯度校验。 */
 let seq = 0
 const node = (id, extra = {}) => ({
   id, kind: 'image', title: id, x: seq * 37, y: seq * 53, width: 260, height: 180,
@@ -262,22 +263,62 @@ test('REQ-036 静态守卫：瀑布流纯函数 import 面白名单 + 镜号语�
   assert.ok(VIEW_CODE.includes('deriveShotSemantics(nodes)'), '整理布局已切换到共享镜号语义（抽取干净，无第二份实现）')
 })
 
-test('REQ-036 normalizeCanvasView：waterfall 三字段合法保留、非法丢弃、缺省关闭（老文档零迁移）', () => {
+test('REQ-040 A normalizeCanvasView：waterfall 缺省 = 开（D1 默认主视图），显式 false 保真落盘', () => {
   const on = normalizeCanvasView({ x: 1, y: 2, scale: 1, layersOpen: false, minimapVisible: false, waterfall: true, waterfallShowText: true, waterfallOrder: ['b', 'a'] })
   assert.equal(on.waterfall, true)
   assert.equal(on.waterfallShowText, true)
   assert.deepEqual(on.waterfallOrder, ['b', 'a'])
 
-  const off = normalizeCanvasView({})
-  assert.equal(off.waterfall, undefined, '缺省 = 关闭（字段不落盘，等价 false）')
-  assert.equal(off.waterfallShowText, undefined)
-  assert.equal(off.waterfallOrder, undefined)
+  const missing = normalizeCanvasView({})
+  assert.equal(missing.waterfall, true, '缺省 = 开（历程视图为默认主视图，老文档零迁移进历程）')
+  assert.equal(missing.waterfallShowText, undefined)
+  assert.equal(missing.waterfallOrder, undefined)
 
   const invalid = normalizeCanvasView({ waterfall: 'yes', waterfallShowText: 1, waterfallOrder: ['b', 3] })
-  assert.equal(invalid.waterfall, undefined, '非布尔丢弃')
+  assert.equal(invalid.waterfall, true, '非布尔丢弃 → 回落缺省（开）')
   assert.equal(invalid.waterfallShowText, undefined, '非布尔丢弃')
   assert.equal(invalid.waterfallOrder, undefined, '混入非字符串整体丢弃')
 
   const falseIsOff = normalizeCanvasView({ waterfall: false })
-  assert.equal(falseIsOff.waterfall, undefined, 'false 与缺省同形（关闭态不冗余落盘）')
+  assert.equal(falseIsOff.waterfall, false, '显式 false 保真落盘（「切到自由画布」的选择必须可记忆）')
+})
+
+test('REQ-040 A 状态统计：全局/节/托盘三层数据 + 活动行摘要（判据 = isLoading / error 瞬态字段）', () => {
+  const card = cardNode('card1', 1)
+  const kfDone = node('kfDone', { toolName: 'image_generate', sourceIds: ['card1'] })
+  const kfRunning = node('kfRunning', { toolName: 'image_generate', sourceIds: ['card1'], isLoading: true })
+  const videoFail = videoNode('videoFail', { sourceIds: ['card1'], error: 'CS-GEN-500' })
+  const bgm = node('bgm', { kind: 'audio', toolName: 'music_generation', isLoading: true })
+  const layout = computeWaterfallLayout([card, kfDone, kfRunning, videoFail, bgm])
+
+  // 全局：total 5 = done 2（card/kfDone）+ running 2（kfRunning/bgm）+ failed 1。
+  assert.deepEqual(layout.stats, { total: 5, done: 2, running: 2, failed: 1 }, '全局统计三态口径')
+  assert.deepEqual([...layout.runningIds].sort(), ['bgm', 'kfRunning'], 'runningIds = 全部 isLoading 节点')
+  assert.ok(layout.activity.includes('kfRunning'), '活动行取第一个生成中节点')
+  assert.ok(layout.activity.includes('等 2 个'), '多个生成中附「等 N 个」')
+
+  // 托盘层：镜 1 = 卡(done) + 关键帧(done/running) + 视频(failed)。
+  const tray = trayOf(layout, 1)
+  assert.deepEqual(tray.stats, { total: 4, done: 2, running: 1, failed: 1 }, '托盘统计')
+  // 节层：分镜节 4 项；音频节 1 项 1 生成中。
+  assert.deepEqual(sectionOf(layout, 'shots').stats, { total: 4, done: 2, running: 1, failed: 1 }, '分镜节统计')
+  assert.deepEqual(sectionOf(layout, 'audio').stats, { total: 1, done: 0, running: 1, failed: 0 }, '音频节统计')
+
+  // 空闲：无生成/失败 → activity null。
+  const idle = computeWaterfallLayout([card, kfDone])
+  assert.equal(idle.activity, null, '空闲无活动行')
+  assert.deepEqual(idle.stats, { total: 2, done: 2, running: 0, failed: 0 })
+
+  // 失败中又在生成（重试在途）：isLoading 优先，不重复计数。
+  const retrying = computeWaterfallLayout([videoNode('v', { isLoading: true, error: '旧错误' })])
+  assert.deepEqual(retrying.stats, { total: 1, done: 0, running: 1, failed: 0 }, 'isLoading 优先于 error')
+})
+
+test('REQ-040 A 视口档位：thumbWidthFromViewport 阶梯 + 钳制', () => {
+  assert.equal(thumbWidthFromViewport(0), 240, '零宽兜底最小档')
+  assert.equal(thumbWidthFromViewport(500), 240)
+  assert.equal(thumbWidthFromViewport(900), 300)
+  assert.equal(thumbWidthFromViewport(1300), 380)
+  assert.equal(thumbWidthFromViewport(1800), 480)
+  assert.equal(thumbWidthFromViewport(4000), 480, '大屏钳上限')
 })

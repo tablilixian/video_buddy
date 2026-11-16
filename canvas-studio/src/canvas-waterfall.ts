@@ -56,6 +56,8 @@ export interface WaterfallSection {
   title: string
   /** 该节全部节点 id（分镜节 = 全部托盘成员之并，托盘卡在前）。 */
   nodeIds: readonly string[]
+  /** 节内生成状态统计（REQ-040 A 期：节头 / 阶段 chips 三态着色的只读数据）。 */
+  stats: WaterfallStats
   box: WaterfallBox
 }
 
@@ -66,7 +68,24 @@ export interface WaterfallTray {
   cardId?: string
   /** 镜内全部节点 id（卡在前，其余按 role 排列）。 */
   nodeIds: readonly string[]
+  /** 托盘内生成状态统计（REQ-040 A 期：托盘状态徽标 / 边色分流的只读数据）。 */
+  stats: WaterfallStats
   box: WaterfallBox
+}
+
+/**
+ * 生成状态统计（REQ-040 A 期：进度层 / 节头 / 托盘徽标的只读数据）。
+ *
+ * 判据与节点**瞬态字段**同源（零新状态机）：`isLoading === true` = 生成中；
+ * `error` 存在且不在生成中 = 失败；其余（含无 url 的占位/草稿）= 计入 done ——
+ * 「推进过程」的读数是「还有多少在飞」，不是「产物齐不齐」，占位前的静态卡
+ * 不该被读成未完成而永远压着进度条。
+ */
+export interface WaterfallStats {
+  total: number
+  done: number
+  running: number
+  failed: number
 }
 
 export interface WaterfallLayout {
@@ -78,6 +97,12 @@ export interface WaterfallLayout {
   sections: readonly WaterfallSection[]
   /** 分镜托盘，按镜号升序。 */
   trays: readonly WaterfallTray[]
+  /** 全局生成状态统计（REQ-040 A 期：状态条全局进度条的只读数据）。 */
+  stats: WaterfallStats
+  /** 正在生成的节点 id（「跟随新产出」的检测源；顺序 = 分类序）。 */
+  runningIds: readonly string[]
+  /** 正在生成的摘要文案（如「镜 3 · 仓库特写」，多个附「等 N 个」）；空闲为 null。 */
+  activity: string | null
 }
 
 export interface WaterfallOptions {
@@ -89,7 +114,9 @@ export interface WaterfallOptions {
   hiddenIds?: ReadonlySet<string>
   /** 手动排序覆盖（P2 拖拽写 `view.waterfallOrder`）：列表内节点按列表序，未列入的按 createdAt 追后。 */
   order?: readonly string[]
-  /** 标准缩略盒宽（画布空间 px，缺省 360；高按 16:9 派生，竖版媒体按真实比例）。 */
+  /** 标准缩略盒宽（画布空间 px，缺省 360；高按 16:9 派生，竖版媒体按真实比例）。
+   *  REQ-040 A 期：调用方应传 `thumbWidthFromViewport(viewportWidth)` 的档位值
+   *  （进入历程视图时定档一次），不再恒用缺省 —— 少节点不小、多节点不溢出。 */
   thumbWidth?: number
 }
 
@@ -279,6 +306,44 @@ function gridLayout(
 }
 
 /**
+ * 视口像素宽 → 标准缩略盒宽档位（REQ-040 A 期：进入历程视图时定档一次，
+ * resize 不重排 —— 避免拖拽窗口时布局反复跳动）。
+ *
+ * 目标：默认 scale≈1 时整列内容宽 ≈ 视口宽（四列），fit 适配后卡片以自然
+ * 尺寸呈现 —— 少节点不再是固定 360px 的小卡 + 右半空场，多节点不用缩到
+ * 很小才看得全。钳制 240~480：下限保单卡可读，上限防大屏虚胖。
+ */
+export function thumbWidthFromViewport(viewportWidth: number): number {
+  const width = Math.max(0, viewportWidth)
+  if (width <= 860) return 240
+  if (width <= 1200) return 300
+  if (width <= 1700) return 380
+  return 480
+}
+
+/** 状态统计判据（见 {@link WaterfallStats} 注）。 */
+function statsOf(ids: readonly string[], byId: ReadonlyMap<string, StudioCanvasNode>): WaterfallStats {
+  let running = 0
+  let failed = 0
+  for (const id of ids) {
+    const node = byId.get(id)
+    if (node === undefined) continue
+    if (node.isLoading === true) running += 1
+    else if (node.error !== undefined) failed += 1
+  }
+  return { total: ids.length, done: ids.length - running - failed, running, failed }
+}
+
+/** 空统计（空画布 / 空节早退共用）。 */
+const EMPTY_STATS: WaterfallStats = { total: 0, done: 0, running: 0, failed: 0 }
+
+/** 活动行摘要：`镜 3 · 仓库特写`（无镜号只给标题）；多个在调用侧拼「等 N 个」。 */
+function activityLabelOf(node: StudioCanvasNode, shot: number | undefined): string {
+  const label = node.title ?? node.toolName ?? node.kind
+  return shot !== undefined ? `镜 ${shot} · ${label}` : label
+}
+
+/**
  * 历程瀑布流布局（REQ-036 P0 核心）。
  *
  * @param nodes 全部画布节点（函数只读，不改输入）。
@@ -307,7 +372,9 @@ export function computeWaterfallLayout(
     if (isTextLike(node) && !showText) return false
     return true
   })
-  if (participants.length === 0) return { positions, boxes, sections: [], trays: [] }
+  if (participants.length === 0) {
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null }
+  }
 
   const { shotNo, keyframes } = deriveShotSemantics(nodes)
 
@@ -336,10 +403,11 @@ export function computeWaterfallLayout(
   interface SectionPlan {
     stage: WaterfallStage
     nodeIds: string[]
+    stats: WaterfallStats
     width: number
     height: number
     /** stage==='shots' 时为托盘计划，否则为单网格计划。 */
-    trays: readonly { shot: number; cardId?: string; nodeIds: readonly string[]; width: number; height: number; offsets: Map<string, { x: number; y: number }> }[]
+    trays: readonly { shot: number; cardId?: string; nodeIds: readonly string[]; stats: WaterfallStats; width: number; height: number; offsets: Map<string, { x: number; y: number }> }[]
     grid?: ReturnType<typeof gridLayout>
   }
 
@@ -374,14 +442,16 @@ export function computeWaterfallLayout(
         const contentHeight = audioItems.length > 0 ? audioY - GAP : grid.height
         const height = TRAY_HEAD_H + TRAY_PAD + contentHeight + TRAY_PAD
         const offsets = new Map([...grid.offsets, ...audioOffsets])
+        const memberIds = [
+          ...(card !== undefined ? [card.node.id] : []),
+          ...cells.map(cell => cell.id),
+          ...audioItems.map(item => item.node.id),
+        ]
         return {
           shot,
           ...(card !== undefined ? { cardId: card.node.id } : {}),
-          nodeIds: [
-            ...(card !== undefined ? [card.node.id] : []),
-            ...cells.map(cell => cell.id),
-            ...audioItems.map(item => item.node.id),
-          ],
+          nodeIds: memberIds,
+          stats: statsOf(memberIds, byId),
           width,
           height,
           offsets,
@@ -392,6 +462,7 @@ export function computeWaterfallLayout(
       plans.push({
         stage,
         nodeIds: trayPlans.flatMap(tray => [...tray.nodeIds]),
+        stats: statsOf(trayPlans.flatMap(tray => [...tray.nodeIds]), byId),
         width,
         height,
         trays: trayPlans,
@@ -412,10 +483,13 @@ export function computeWaterfallLayout(
     })
     const cells = sorted.map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW) }))
     const grid = gridLayout(cells, cellW)
-    plans.push({ stage, nodeIds: [...grid.offsets.keys()], width: grid.width, height: grid.height, trays: [], grid })
+    const gridIds = [...grid.offsets.keys()]
+    plans.push({ stage, nodeIds: gridIds, stats: statsOf(gridIds, byId), width: grid.width, height: grid.height, trays: [], grid })
   }
 
-  if (plans.length === 0) return { positions, boxes, sections: [], trays: [] }
+  if (plans.length === 0) {
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null }
+  }
 
   // ---- 统一落位：整列**居左对齐**（x=0 起排，用户 2026-10-27 拍板，原为居中），
   //      各节独立纵向游标 ----
@@ -434,6 +508,7 @@ export function computeWaterfallLayout(
           shot: tray.shot,
           ...(tray.cardId !== undefined ? { cardId: tray.cardId } : {}),
           nodeIds: tray.nodeIds,
+          stats: tray.stats,
           box,
         })
         if (tray.cardId !== undefined) {
@@ -464,9 +539,15 @@ export function computeWaterfallLayout(
       }
     }
     const height = SECTION_HEAD_H + plan.height
-    sections.push({ stage: plan.stage, title: STAGE_TITLES[plan.stage], nodeIds: plan.nodeIds, box: { x, y: cursorY - SECTION_HEAD_H, width: plan.width, height } })
+    sections.push({ stage: plan.stage, title: STAGE_TITLES[plan.stage], nodeIds: plan.nodeIds, stats: plan.stats, box: { x, y: cursorY - SECTION_HEAD_H, width: plan.width, height } })
     cursorY += height + SECTION_GAP - SECTION_HEAD_H
   }
 
-  return { positions, boxes, sections, trays }
+  // ---- 全局进度 / 活动行（REQ-040 A 期）：对全部参与布局节点求状态 ----
+  const runningItems = classified.filter(item => item.node.isLoading === true)
+  const runningIds = runningItems.map(item => item.node.id)
+  const activity = runningItems.length === 0
+    ? null
+    : `${activityLabelOf(runningItems[0]!.node, runningItems[0]!.shot)}${runningItems.length > 1 ? ` 等 ${runningItems.length} 个` : ''}`
+  return { positions, boxes, sections, trays, stats: statsOf(participants.map(node => node.id), byId), runningIds, activity }
 }

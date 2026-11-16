@@ -6764,6 +6764,125 @@ button.csNodeHeadAlert:hover {
   white-space: nowrap;
   user-select: none;
 }
+/* REQ-040 A 期（2026-11-16）：历程视图状态条 —— 画布顶部悬浮进度层（Demo 顶栏
+   的落地）：全局进度条 + 活动行 + 三枚开关（pill toggle）+ 阶段 chips（n/m 三态）。
+   屏幕空间定位：挂在 .csCanvasLayer **外**（与 NodeActionBar 同层），不随画布
+   transform 缩放；z 走 --cs-z-canvas-float 档。色全部取既有令牌（accent/ok/warn/
+   error + line/float），明暗双轨与品牌预设自动跟随，不引入新令牌。 */
+.csWfBar {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  right: 16px;
+  z-index: var(--cs-z-canvas-float, 50);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  /* C4 玻璃配额已满（settings 遮罩 + 详情面板 + 图层浮层）：这里只用半透明底，
+     不加 backdrop-filter —— 状态条信息密度低，底色模糊的收益不值得破配额。 */
+  background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 88%, transparent);
+  box-shadow: var(--cs-shadow-1, none);
+  pointer-events: auto;
+}
+.csWfBarRow {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  min-width: 0;
+}
+.csWfBarTrack {
+  flex: 1 1 160px;
+  min-width: 80px;
+  height: 4px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 60%, transparent);
+  overflow: hidden;
+}
+.csWfBarTrack > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--cs-ok, #4ade80);
+  transition: width 200ms var(--cs-ease, ease);
+}
+.csWfBarNum {
+  flex: none;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.csWfBarActivity {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cs-fs-xs, 11px);
+  color: color-mix(in srgb, var(--cs-accent) 80%, var(--dsw-alias-label-primary));
+}
+.csWfBarSwitches {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.csWfBarSwitch {
+  appearance: none;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-pill, 999px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csWfBarSwitch:hover { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); }
+.csWfBarSwitch[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--cs-accent) 55%, transparent);
+  background: var(--cs-accent-soft);
+  color: var(--dsw-alias-label-primary);
+}
+.csWfBarChips { flex-wrap: wrap; }
+.csWfBarChip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-pill, 999px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 2px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.csWfBarChip:hover { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); color: var(--dsw-alias-label-primary); }
+.csWfBarDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+.csWfBarChipDone { color: color-mix(in srgb, var(--cs-ok, #4ade80) 82%, var(--dsw-alias-label-primary)); border-color: color-mix(in srgb, var(--cs-ok, #4ade80) 40%, transparent); }
+.csWfBarChipDone .csWfBarDot { background: var(--cs-ok, #4ade80); }
+.csWfBarChipRunning { color: color-mix(in srgb, var(--cs-accent) 82%, var(--dsw-alias-label-primary)); border-color: color-mix(in srgb, var(--cs-accent) 45%, transparent); }
+.csWfBarChipRunning .csWfBarDot { background: var(--cs-accent); }
+.csWfBarChipFail { color: var(--dsw-alias-state-error-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent); }
+.csWfBarChipFail .csWfBarDot { background: var(--dsw-alias-state-error-primary); }
 /* 输入卡片**上方**的「刚拖入 / 上传中的视频」条（2026-09-22）。
 
    形态向宿主的图片附件 rail 看齐（缩略图 + 文件名 + 状态 + 移除）—— 宿主的附件通道

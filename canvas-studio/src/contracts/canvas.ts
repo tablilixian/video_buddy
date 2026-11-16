@@ -493,7 +493,8 @@ export interface StudioCanvasView {
   /**
    * REQ-036：历程瀑布流视图开关。true 时画布按 `computeWaterfallLayout` 的
    * 运行时投影渲染（**不写回节点坐标**），自由画布数据与交互零影响。
-   * 缺省/非法 = false = 自由画布（老文档零迁移）。
+   * REQ-040 A 期（2026-11-16 D1）：缺省/非法 = **true = 历程视图（默认主视图）**；
+   * 显式 false = 用户切到自由画布，必须保真落盘。
    */
   waterfall?: boolean
   /**
@@ -526,6 +527,10 @@ export const VIEW_DEFAULTS: StudioCanvasView = {
   // 验收反馈（2026-08-24）：面板默认收起，画布默认最大化内容区。
   layersOpen: false,
   minimapVisible: false,
+  // REQ-040 A 期（2026-11-16 用户拍板 D1）：历程视图是**默认主视图** —— 无已存
+  // view 的项目（新建 / 从未保存过视口）直接进历程；自由画布靠显式 waterfall:false
+  // 记忆（normalizeCanvasView 同口径）。
+  waterfall: true,
 }
 
 /** Defaults applied when migrating nodes that predate a field. */

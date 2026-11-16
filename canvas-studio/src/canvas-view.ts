@@ -113,8 +113,11 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
     : undefined
   const composeBgmNodeId = typeof raw.composeBgmNodeId === 'string' ? raw.composeBgmNodeId : undefined
   // REQ-036：历程瀑布流三字段 —— 与 timeline / composeExcluded 同一容忍策略，
-  // 非法整体丢弃，缺省 = 关闭（老文档零迁移，自由画布行为逐字节不变）。
-  const waterfall = boolOr(raw.waterfall, false)
+  // 非法整体丢弃。REQ-040 A 期（2026-11-16 用户拍板 D1）：`waterfall` **缺省 = 开**
+  // —— 历程视图升级为默认主视图，老文档 / 无 view 字段都进历程；**显式 false**
+  // （用户切到自由画布）必须保真落盘，否则「切回自由画布」的选择无法记忆。
+  // 故 waterfall 恒落字段（true / false 都不条件展开），showText / order 维持旧口径。
+  const waterfall = boolOr(raw.waterfall, true)
   const waterfallShowText = boolOr(raw.waterfallShowText, false)
   const waterfallOrder = Array.isArray(raw.waterfallOrder) && raw.waterfallOrder.every(id => typeof id === 'string')
     ? raw.waterfallOrder as string[]
@@ -128,7 +131,7 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
     ...(timeline !== undefined ? { timeline } : {}),
     ...(composeExcluded !== undefined ? { composeExcluded } : {}),
     ...(composeBgmNodeId !== undefined ? { composeBgmNodeId } : {}),
-    ...(waterfall ? { waterfall } : {}),
+    waterfall,
     ...(waterfallShowText ? { waterfallShowText } : {}),
     ...(waterfallOrder !== undefined ? { waterfallOrder } : {}),
   }

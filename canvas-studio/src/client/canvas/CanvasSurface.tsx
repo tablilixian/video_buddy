@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { centerViewOf, computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
-import { computeWaterfallLayout, SECTION_HEAD_H } from '../../canvas-waterfall.js'
+import { computeWaterfallLayout, SECTION_HEAD_H, thumbWidthFromViewport, type WaterfallStage } from '../../canvas-waterfall.js'
 import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
@@ -14,6 +14,7 @@ import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
 import { NodeInputCard } from './NodeInputCard.js'
+import { WaterfallStatusBar } from './WaterfallStatusBar.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { compareNodes } from '../project-store.js'
@@ -45,6 +46,12 @@ const WHEEL_IDLE_GESTURE_MS = 200
  */
 const CLICK_CLEAR_SLOP = 5
 const MIN_NODE_SIZE = 50
+/**
+ * REQ-040 A：托盘框边色 —— 有失败 = 红、生成中 = 亮绿、其余恒绿（REQ-036 基色）。
+ * 与节头/状态条同一份 stats 读数（布局产出），这里只做色值映射。
+ */
+const trayBorderColor = (stats: { failed: number; running: number }): string =>
+  stats.failed > 0 ? 'rgba(255,93,93,.55)' : stats.running > 0 ? 'rgba(15,220,120,.85)' : 'rgba(15,220,120,.4)'
 
 /**
  * CV-284：image/video 节点 resize 的锁比比例（**画面**区，不是整框）。
@@ -258,6 +265,14 @@ export interface CanvasSurfaceProps {
   onPromptEditNodeIdChange?(id: string | null): void
   /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
+  /**
+   * REQ-040 A：辅助卡开关现值（宿主 showAuxiliary 状态）。历程状态条「辅助卡」
+   * 开关的显示与布局过滤共用它；与自由画布同一份状态（工具栏图标 A 期已隐藏，
+   * 历程状态条是该开关的唯一 UI 入口）。
+   */
+  showAuxiliary?: boolean
+  /** REQ-040 A：辅助卡开关出口（切换时写回宿主状态，宿主负责持久化语义）。 */
+  onToggleShowAuxiliary?(): void
   /** When set, center this node in the viewport (timeline / review jump). */
   focusNodeId?: string | null
   /** Whether the minimap overlay is shown (toggle lives in the toolbar). */
@@ -418,6 +433,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     promptEditNodeId: promptEditNodeIdProp,
     onPromptEditNodeIdChange,
     onMediaNatural,
+    showAuxiliary: showAuxiliaryProp = false,
+    onToggleShowAuxiliary,
     focusNodeId,
     minimapVisible = true,
     shotIndexOf,
@@ -1218,9 +1235,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 关闭时走原路径（waterfallNodes === ordered，引用不变，CanvasNode memo 不破）。
   // 文本类 / 辅助卡的显隐在布局函数内按开关过滤（waterfallShowText 拍板默认隐藏）。
   const waterfallOn = view.waterfall === true
+  // REQ-040 A：缩略盒档位 —— 进入历程视图时按视口像素宽定档一次（进入时定档，
+  // resize 不重排，避免拖窗口时布局反复跳动）；缺省 360 = 旧行为。
+  const [wfThumb, setWfThumb] = useState(360)
+  // REQ-040 A：「跟随新产出」开关（会话内状态，默认开；不做持久化 —— 用户对
+  // 「镜头自动动」的容忍度分歧大，A 期先轻量，真机反馈再定是否随 view 落盘）。
+  const [wfFollow, setWfFollow] = useState(true)
+  useEffect(() => {
+    if (!waterfallOn) return
+    const el = containerRef.current
+    if (el === null) return
+    setWfThumb(thumbWidthFromViewport(el.clientWidth))
+  }, [waterfallOn])
   const waterfallLayout = useMemo(
-    () => (waterfallOn ? computeWaterfallLayout(visibleNodes, { showText: view.waterfallShowText === true }) : null),
-    [waterfallOn, visibleNodes, view.waterfallShowText],
+    () => (waterfallOn
+      ? computeWaterfallLayout(visibleNodes, {
+        showText: view.waterfallShowText === true,
+        showAuxiliary: showAuxiliaryProp,
+        thumbWidth: wfThumb,
+      })
+      : null),
+    [waterfallOn, visibleNodes, view.waterfallShowText, showAuxiliaryProp, wfThumb],
   )
   const waterfallNodes = useMemo(() => {
     if (waterfallLayout === null) return ordered
@@ -1425,6 +1460,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     fitToBounds(bounds)
   }, [revealNodes, fitToBounds])
 
+  // REQ-040 A：阶段 chips 跳转 —— 把对应节带进视野。锚点取节的第一个节点
+  // （分镜节 = 第一个托盘的卡）：整节往往比视口高，fit 整节会缩得过小，
+  // 对锚点 reveal/fit 的落点就是节头附近，符合「跳到这一节」的读法。
+  const handleRevealSection = useCallback((stage: WaterfallStage): void => {
+    const section = waterfallFitRef.current?.sections.find(item => item.stage === stage)
+    if (section === undefined) return
+    const anchor = section.nodeIds[0]
+    if (anchor !== undefined) revealNodesOrFit([anchor])
+  }, [revealNodesOrFit])
+
+  // REQ-040 A：「跟随新产出」—— 节点**进入**生成态时带进视野（transition 检测，
+  // 不是「存在生成节点就滚」：重开项目时在途节点只记基线不抢镜头）。手势进行中
+  // 不动镜头（revealNodesOrFit 内部已守卫，这里不再重复判）。
+  const wfRunningIdsRef = useRef<readonly string[]>([])
+  useEffect(() => {
+    if (!waterfallOn) {
+      wfRunningIdsRef.current = []
+      return
+    }
+    const runningIds = waterfallFitRef.current?.runningIds ?? []
+    const previous = new Set(wfRunningIdsRef.current)
+    wfRunningIdsRef.current = runningIds
+    if (!wfFollow) return
+    const fresh = runningIds.filter(id => !previous.has(id))
+    if (fresh.length > 0) revealNodesOrFit(fresh)
+  }, [waterfallOn, waterfallLayout, wfFollow, revealNodesOrFit])
+
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
   useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, revealNodesOrFit, viewportSize }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, revealNodesOrFit, viewportSize])
 
@@ -1517,7 +1579,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           />
         ))}
         {/* REQ-036：历程托盘框 —— 每镜一个容器（分镜卡 = 头部锚点），品牌绿区分
-            自由画布的琥珀镜位框。纯视觉：不创建 group 节点、不写 parentId。 */}
+            自由画布的琥珀镜位框。纯视觉：不创建 group 节点、不写 parentId。
+            REQ-040 A：边色按托盘状态分流 —— 有失败 = 红、生成中 = 亮绿，其余恒绿。 */}
         {waterfallOn && waterfallLayout?.trays.map(tray => (
           <div
             key={`wf-tray-${tray.shot}`}
@@ -1528,7 +1591,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               top: tray.box.y,
               width: tray.box.width,
               height: tray.box.height,
-              border: `${1.6 / view.scale}px solid rgba(15,220,120,.4)`,
+              border: `${1.6 / view.scale}px solid ${trayBorderColor(tray.stats)}`,
               borderRadius: 12 / view.scale,
               background: 'rgba(15,220,120,.045)',
               pointerEvents: 'none',
@@ -1536,7 +1599,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           />
         ))}
         {/* REQ-036：历程节头 —— 每节的名称 + 计数，画布空间定位、字号按屏幕
-            恒定（除以 scale），不参与任何指针交互。 */}
+            恒定（除以 scale），不参与任何指针交互。REQ-040 A：计数改 done/total
+            口径并追加生成中 / 失败徽标（推进过程在画布上直接可读）。 */}
         {waterfallOn && waterfallLayout?.sections.map(section => (
           <div
             key={`wf-sec-${section.stage}`}
@@ -1557,7 +1621,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               pointerEvents: 'none',
             }}
           >
-            {section.title} · {section.nodeIds.length}
+            {section.title} · {section.stats.done}/{section.stats.total}
+            {section.stats.running > 0 ? ' · 生成中' : ''}
+            {section.stats.failed > 0 ? ` · ${section.stats.failed} 失败` : ''}
           </div>
         ))}
         {!waterfallOn && (
@@ -1663,7 +1729,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               pointerEvents: 'none',
             }}
           >
-            镜 {tray.shot} · {tray.nodeIds.length} 项
+            镜 {tray.shot} · {tray.stats.done}/{tray.stats.total}
+            {tray.stats.running > 0 ? ' · 生成中' : ''}
+            {tray.stats.failed > 0 ? ` · ${tray.stats.failed} 失败` : ''}
           </span>
         ))}
         {linkLine !== null && (
@@ -1676,6 +1744,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </svg>
         )}
       </div>
+      {/* REQ-040 A：历程状态条 —— 全局进度 + 活动行 + 阶段 chips + 开关组。
+          屏幕空间浮层（挂在 .csCanvasLayer 外，不随画布缩放），仅历程模式且
+          画布非空时出现；位置在层容器之后、NodeActionBar 之前，z 走
+          --cs-z-canvas-float 档。 */}
+      {waterfallOn && waterfallLayout !== null && waterfallLayout.boxes.size > 0 && (
+        <WaterfallStatusBar
+          stats={waterfallLayout.stats}
+          sections={waterfallLayout.sections}
+          activity={waterfallLayout.activity}
+          showText={view.waterfallShowText === true}
+          showAuxiliary={showAuxiliaryProp}
+          followNew={wfFollow}
+          onToggleShowText={() => { onViewChangeRef.current({ waterfallShowText: view.waterfallShowText !== true }) }}
+          {...(onToggleShowAuxiliary !== undefined ? { onToggleShowAuxiliary } : { onToggleShowAuxiliary: () => {} })}
+          onToggleFollow={() => { setWfFollow(value => !value) }}
+          onRevealSection={handleRevealSection}
+        />
+      )}
       {/* 就近工具条：渲染在 `.csCanvasLayer` **之外**（与 minimap 同层）——
           画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
           层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。

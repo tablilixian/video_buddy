@@ -2222,13 +2222,17 @@ export function StudioFrame(props: StudioFrameProps) {
           {/* REQ-003 Step 2：「改提示词」改为画布就地浮层；CV-272 起浮层 id 受控于
               宿主（promptEditNodeId）—— 工具条「改提示词」与右键「修改提示词」
               打开同一个面板；双击节点的「查看详情」仍走 handleNodeOpenDetail。
-              浮层参考区依赖与详情抽屉同一份来源。 */}
+              浮层参考区依赖与详情抽屉同一份来源。REQ-040 A：showAuxiliary /
+              onToggleShowAuxiliary 供历程状态条「辅助卡」开关使用 —— 与自由画布
+              共用宿主的同一份状态。 */}
           <CanvasSurface
             nodes={visibleNodes}
             resolutionInherit={resolutionInherit}
             shotIndexOf={shotIndexOf}
             view={view}
             onViewChange={handleViewChange}
+            showAuxiliary={showAuxiliary}
+            onToggleShowAuxiliary={() => { setShowAuxiliary(value => !value) }}
             selectedNodeId={selectedNodeId}
             selectedNodeIds={selectedNodeIds}
             onSelectNode={handleSelectNode}

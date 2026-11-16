@@ -221,7 +221,9 @@ test('反向变异锚点：登记必须经 writeCanvas 写口 —— view / asse
     // 注册表原样带回（`view ?? normalize(existing.view)` / `assets ?? existing.assets`）。
     // 任何 `fs.writeFileSync('canvas.json', JSON.stringify({version, nodes}))` 的旁路都会
     // 把这两段丢掉 —— 那正是 P0-2 事故里 `node -e` 那一手的形态。
-    assert.deepEqual(doc.view, view, '视口必须保留：直写 canvas.json 的旁路会把它丢掉 ⇒ 本条即变异哨兵')
+    // REQ-040 A：normalizeCanvasView 对 waterfall 恒落字段（缺省 = true，D1 默认
+    // 主视图），写口带回时 doc.view 会多出这一键 —— 属预期形态，不是旁路丢失。
+    assert.deepEqual(doc.view, { ...view, waterfall: true }, '视口必须保留：直写 canvas.json 的旁路会把它丢掉 ⇒ 本条即变异哨兵')
     assert.deepEqual(doc.assets, [assetCard], '资产卡注册表必须保留：直写旁路同样会丢')
   } finally {
     await cleanup(fixture)

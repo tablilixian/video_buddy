@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS, AUDIO_COMPOSITION_HINTS, AUDIO_COMPOSITION_LABELS } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
+import { isReplayable } from '../../node-params.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
 import { generationParamsOf } from '../../node-params.js'
 import { bodyCharCount, estSecondsOf } from '../../voice-dims.js'
@@ -160,6 +161,22 @@ export interface CanvasNodeProps {
   /** CV-018：失败节点就地重试（重放同参数生成）。 */
   onRetry(id: string): void
   /**
+   * REQ-040 B：版本堆栈角标的被折叠历史数（链尾节点才传；>0 才显示角标）。
+   * 数据 = `computeWaterfallLayout.stacks`，历程模式限定。
+   */
+  stackCount?: number
+  /** REQ-040 B：点击角标打开版本历史浮层（CanvasSurface 受控 stackNodeId）。 */
+  onOpenStack?(node: StudioCanvasNode): void
+  /**
+   * REQ-040 C：卡面高频操作开关（历程模式 + 单选；媒体产物才出——文本类有
+   * 内联编辑，分镜卡/便签不出）。缺省/关闭时整组不渲染（memo props 纪律照旧）。
+   */
+  showQuickActions?: boolean
+  /** REQ-040 C：卡面「改提示词」——打开与就近工具条/右键菜单同一个输入卡。 */
+  onQuickEditPrompt?(node: StudioCanvasNode): void
+  /** REQ-040 C：卡面「重新生成」——透传 onRetry（判据 isReplayable 不另写一套）。 */
+  onQuickRetry?(id: string): void
+  /**
    * CV-013/029：媒体加载后上报真实宽高（总是上报；分辨率回填与框比例校正
    * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
    */
@@ -186,7 +203,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, dragging = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, dragging = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural, stackCount, onOpenStack, showQuickActions, onQuickEditPrompt, onQuickRetry } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -373,6 +390,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   /* 三期 W5-4：草稿档角标。草稿片与交付片是同一条链上的两种画质，视觉上必须分开 ——
      否则「快速看一版」的半分辨率粗片会被当成最终成片交付出去。 */
   const showDraft = node.draft === true && !retired
+  /* REQ-040 C：卡面高频操作（历程模式 + 单选；媒体产物才出——文本类有内联编辑，
+     分镜卡 / 便签不出；生成中的卡不出，避免和遮罩打架）。重新生成的判据唯一
+     走 isReplayable（渲染点内联判定，与就近工具条同一份实现，不另写一套）。 */
+  const quickActs = showQuickActions === true && !isGroup && !retired && node.isLoading !== true
+    && (node.kind === 'image' || node.kind === 'video' || node.kind === 'audio')
   const isReference = node.isReference === true
   const showAudioMix = node.audioComposition !== undefined
   const showDuration = node.kind === 'video' && durationLabel !== null
@@ -684,6 +706,18 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
                 {node.shotVersion !== undefined ? ` · v${node.shotVersion}` : ''}
               </span>
             )}
+            {/* REQ-040 B：版本堆栈角标 —— 被折叠的历史版本数（点击展开浮层可回滚）。
+                与 showVersion（vN）互补：历史收进这里，画布上只显当前生效版本。 */}
+            {stackCount !== undefined && stackCount > 0 && (
+              <button
+                type="button"
+                className="csNodeBadge csNodeBadgeStack"
+                title={`${stackCount} 个历史版本 · 点击查看并回滚`}
+                onClick={event => { event.stopPropagation(); onOpenStack?.(node) }}
+              >
+                {node.shotVersion !== undefined && node.shotVersion > 1 ? `v${node.shotVersion} · ` : ''}{stackCount} 历史
+              </button>
+            )}
             {/* C2：镜号 chip —— 编号与底部成片时间轴同源（同一次 isShotClip 筛选、
                 同一个 deriveTimelineOrder 顺序），所以卡上的 #N 与时间轴上的 N 是
                 同一个数。拖拽重排时间轴后两者一起变，不会各说各话。 */}
@@ -692,8 +726,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
                 #{shotIndex}
               </span>
             )}
-            {/* CV-108：版本链角标——「同一镜位重出过」的身份标记。 */}
-            {showVersion && (
+            {/* CV-108：版本链角标——「同一镜位重出过」的身份标记。
+                REQ-040 B：有堆栈角标时版本号并入「vN · k 历史」（避免双 vN 并排）。 */}
+            {showVersion && !(stackCount !== undefined && stackCount > 0) && (
               <span className="csNodeBadge csNodeBadgeVersion" title={`第 ${node.shotVersion} 版（同一镜位重出过）`}>v{node.shotVersion}</span>
             )}
             {/* 三期 W5-4：草稿档 chip —— 半分辨率 / 低码率 / 10s 关键帧间隔渲出来的
@@ -703,6 +738,19 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             )}
             {node.locked === true && <span className="csNodeBadge csNodeBadgeLock" title="已锁定（拖拽 / 缩放 / 编辑被拦下）">🔒</span>}
           </div>
+        </div>
+      )}
+      {/* REQ-040 C：卡面高频操作 —— hover 右上浮出（对齐交互原型 .acts 形态）。
+          改提示词打开与就近工具条 / 右键菜单**同一个**输入卡；重新生成判据唯一
+          isReplayable。按钮在 isInteractiveTarget 白名单内，不触发拖拽 / 框选。 */}
+      {quickActs && (onQuickEditPrompt !== undefined || onQuickRetry !== undefined) && (
+        <div className="csNodeQuickActs">
+          {onQuickEditPrompt !== undefined && (
+            <button type="button" className="csNodeQuickAct" title="改提示词" onClick={event => { event.stopPropagation(); onQuickEditPrompt(node) }}>✎</button>
+          )}
+          {onQuickRetry !== undefined && isReplayable(node) && (
+            <button type="button" className="csNodeQuickAct" title="重新生成（同参数）" onClick={event => { event.stopPropagation(); onQuickRetry(node.id) }}>↻</button>
+          )}
         </div>
       )}
       {isGroup

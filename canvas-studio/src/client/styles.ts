@@ -6883,6 +6883,150 @@ button.csNodeHeadAlert:hover {
 .csWfBarChipRunning .csWfBarDot { background: var(--cs-accent); }
 .csWfBarChipFail { color: var(--dsw-alias-state-error-primary); border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent); }
 .csWfBarChipFail .csWfBarDot { background: var(--dsw-alias-state-error-primary); }
+/* REQ-040 B：版本堆栈角标（链尾卡头部 chips 内的按钮态徽标）——历史收进这里，
+   画布上只显当前生效版本。按钮态 = 可点开浮层。 */
+.csNodeBadgeStack {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 45%, transparent);
+  background: var(--cs-accent-soft);
+  color: color-mix(in srgb, var(--cs-accent) 78%, var(--dsw-alias-label-primary));
+  cursor: pointer;
+  font-weight: 600;
+}
+.csNodeBadgeStack:hover { border-color: var(--cs-accent); }
+/* REQ-040 C：卡面高频操作（改提示词 / 重新生成）——hover 右上浮出（对齐交互
+   原型 .acts 形态）；按钮在 isInteractiveTarget 白名单内，不吃拖拽。 */
+.csNodeQuickActs {
+  position: absolute;
+  top: 30px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 120ms var(--cs-ease, ease);
+  z-index: 3;
+  pointer-events: none;
+}
+.csNode:hover .csNodeQuickActs { opacity: 1; pointer-events: auto; }
+.csNodeQuickAct {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: color-mix(in srgb, var(--cs-gate, var(--dsw-alias-bg-base)) 78%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-sm, 12px);
+  line-height: 1;
+  cursor: pointer;
+}
+.csNodeQuickAct:hover { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); }
+/* REQ-040 B：版本堆栈浮层（「vN · k 历史」展开面）。屏幕空间居中面板 + backdrop；
+   C4 玻璃配额已满，不用 backdrop-filter（同 .csWfBar 口径）。 */
+.csStackOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--cs-z-modal, 70);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.csStackPanel {
+  width: min(520px, calc(100vw - 48px));
+  max-height: 72vh;
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  box-shadow: var(--cs-shadow-3, none);
+  padding: var(--cs-space-4, 16px);
+}
+.csStackHead {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  margin-bottom: var(--cs-space-3, 12px);
+}
+.csStackTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csStackClose {
+  appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  cursor: pointer;
+}
+.csStackClose:hover { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); }
+.csStackList { display: flex; flex-direction: column; gap: var(--cs-space-2, 8px); }
+.csStackRow {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-3, 12px);
+  padding: var(--cs-space-2, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: color-mix(in srgb, var(--cs-canvas-bg-l1, var(--dsw-alias-bg-layer-1)) 60%, transparent);
+}
+.csStackThumb {
+  flex: none;
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+}
+.csStackThumbKind {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+}
+.csStackMeta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.csStackMetaTitle {
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csStackMetaSub { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary)); }
+.csStackRestore {
+  appearance: none;
+  flex: none;
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 55%, transparent);
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-accent-soft);
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csStackRestore:hover { border-color: var(--cs-accent); }
 /* 输入卡片**上方**的「刚拖入 / 上传中的视频」条（2026-09-22）。
 
    形态向宿主的图片附件 rail 看齐（缩略图 + 文件名 + 状态 + 移除）—— 宿主的附件通道

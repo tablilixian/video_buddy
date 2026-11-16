@@ -257,10 +257,44 @@ test('REQ-036 性质：12 镜高压数据下全部盒子两两不重叠', () => 
 
 test('REQ-036 静态守卫：瀑布流纯函数 import 面白名单 + 镜号语义单一实现', () => {
   const imports = [...new Set([...WF_CODE.matchAll(/from '([^']+)'/g)].map(match => match[1]))]
-  assert.deepEqual(imports, ['./contracts/canvas.js', './canvas-view.js'],
-    'canvas-waterfall 只许依赖 contracts 与 canvas-view（纯函数不许长出 IO / Host 依赖）')
+  assert.deepEqual(imports, ['./contracts/canvas.js', './canvas-view.js', './shot-versions.js'],
+    'canvas-waterfall 只许依赖 contracts / canvas-view / shot-versions（纯函数不许长出 IO / Host 依赖）')
   assert.ok(WF_CODE.includes('export function computeWaterfallLayout'), '唯一入口')
   assert.ok(VIEW_CODE.includes('deriveShotSemantics(nodes)'), '整理布局已切换到共享镜号语义（抽取干净，无第二份实现）')
+})
+
+test('REQ-040 B 版本堆栈折叠：被取代链不进布局、折叠进链尾 stacks（新→旧）；retired 隐藏；链尾不在场保持可见', () => {
+  // 链：v1 ← v2 ← v3（v3 = 链尾，当前生效版本）。fold 开：v1/v2 无格位，v3 名下 2 历史。
+  const v1 = node('v1', { kind: 'video', toolName: 'video_generate', shotVersion: 1, supersededBy: 'v2', createdAt: 10 })
+  const v2 = node('v2', { kind: 'video', toolName: 'video_generate', shotVersion: 2, supersededBy: 'v3', createdAt: 20 })
+  const v3 = node('v3', { kind: 'video', toolName: 'video_generate', shotVersion: 3, createdAt: 30 })
+  const folded = computeWaterfallLayout([v1, v2, v3], { foldSuperseded: true })
+  assert.equal(folded.boxes.size, 1, '折叠后只有链尾有格位')
+  assert.ok(folded.boxes.has('v3'))
+  assert.equal(folded.boxes.has('v1'), false)
+  assert.equal(folded.boxes.has('v2'), false)
+  const stack = folded.stacks.get('v3')
+  assert.ok(stack, '链尾名下有堆栈')
+  assert.equal(stack.count, 2, '两个历史版本')
+  assert.deepEqual([...stack.supersededIds], ['v2', 'v1'], '历史成员新→旧')
+  // stats 只数当前生效版本（推进读数不被历史稀释）。
+  assert.deepEqual(folded.stats, { total: 1, done: 1, running: 0, failed: 0 })
+  // fold 关：旧行为——三个都进布局（被取代者紧跟取代者），无 stacks。
+  const flat = computeWaterfallLayout([v1, v2, v3], { foldSuperseded: false })
+  assert.equal(flat.boxes.size, 3, '关闭折叠 = 平铺钉扎旧行为')
+  assert.equal(flat.stacks.size, 0)
+  // retired（手动作废、无替代者）折叠模式下隐藏。
+  const retiredNode = node('dead', { retired: true })
+  const withRetired = computeWaterfallLayout([v3, retiredNode], { foldSuperseded: true })
+  assert.equal(withRetired.boxes.has('dead'), false, 'retired 无格位')
+  assert.equal(withRetired.stacks.size, 0, 'retired 不入堆栈（无「当前生效版本」卡可挂）')
+  // 链尾不在场（取代者被删）：保持可见，兜底不丢节点。
+  const orphan = node('orphan', { kind: 'video', toolName: 'video_generate', supersededBy: 'gone' })
+  const fallback = computeWaterfallLayout([orphan], { foldSuperseded: true })
+  assert.equal(fallback.boxes.has('orphan'), true, '链尾解析不出 → 不折叠、保持可见')
+  // 纯度：入参不被修改（supersededBy/shotVersion 原样）。
+  assert.equal(v1.supersededBy, 'v2')
+  assert.equal(v3.shotVersion, 3)
 })
 
 test('REQ-040 A normalizeCanvasView：waterfall 缺省 = 开（D1 默认主视图），显式 false 保真落盘', () => {

@@ -19,6 +19,7 @@
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isShotCard, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
 import { deriveShotSemantics, isAuxiliaryNode } from './canvas-view.js'
+import { isDeprecatedNode } from './shot-versions.js'
 
 /** 历程节的五段纵向顺序。 */
 export type WaterfallStage = 'creative' | 'shots' | 'audio' | 'film' | 'other'
@@ -88,6 +89,19 @@ export interface WaterfallStats {
   failed: number
 }
 
+/**
+ * 版本堆栈（REQ-040 B：D2 干净化核心）。被取代链折叠进链尾（当前生效版本）
+ * 名下——画布上每一步只显当前生效版本，历史收进角标（`v3 · 2 历史`）。
+ * **视图折叠不是数据删除**：节点与 `supersededBy` 关系原样保留（生成历史
+ * 抽屉仍看全量），本结构是只读运行时投影，从不落盘。
+ */
+export interface WaterfallStack {
+  /** 被折叠的历史版本数。 */
+  count: number
+  /** 历史版本节点 id（新→旧：shotVersion 降序、createdAt 破平）。 */
+  supersededIds: readonly string[]
+}
+
 export interface WaterfallLayout {
   /** 每个参与布局节点的画布坐标（左上角）。 */
   positions: Map<string, { x: number; y: number }>
@@ -103,6 +117,8 @@ export interface WaterfallLayout {
   runningIds: readonly string[]
   /** 正在生成的摘要文案（如「镜 3 · 仓库特写」，多个附「等 N 个」）；空闲为 null。 */
   activity: string | null
+  /** 版本堆栈（REQ-040 B）：键 = 链尾（当前生效版本）节点 id。fold 关闭时恒空。 */
+  stacks: ReadonlyMap<string, WaterfallStack>
 }
 
 export interface WaterfallOptions {
@@ -118,6 +134,14 @@ export interface WaterfallOptions {
    *  REQ-040 A 期：调用方应传 `thumbWidthFromViewport(viewportWidth)` 的档位值
    *  （进入历程视图时定档一次），不再恒用缺省 —— 少节点不小、多节点不溢出。 */
   thumbWidth?: number
+  /**
+   * 版本堆栈折叠（REQ-040 B，缺省 false = 旧行为）。true 时：被取代节点
+   * （`supersededBy` 存在）不进布局（无格位），折叠进链尾的 `stacks`；
+   * retired（手动作废、无替代者）一并隐藏。链尾解析不出（取代者不在场上）
+   * 时该节点保持可见 —— 兜底「绝不丢节点」。调用方口径：历程视图默认折叠，
+   * 「显示废弃素材」开关打开时关闭折叠（平铺回显旧行为）。
+   */
+  foldSuperseded?: boolean
 }
 
 /* ================= 几何常量 ================= */
@@ -360,20 +384,38 @@ export function computeWaterfallLayout(
   const showText = options.showText ?? false
   const showAuxiliary = options.showAuxiliary ?? false
   const hiddenIds = options.hiddenIds
+  const foldSuperseded = options.foldSuperseded === true
+  /** REQ-040 B：被取代链折叠记录（链尾 id → 历史成员）。fold 关闭时恒空。
+   *  构建期用可变数组（push/sort），返回前整体作为只读 WaterfallStack 暴露。 */
+  const stacks = new Map<string, { count: number; supersededIds: string[] }>()
   const orderRank = new Map((options.order ?? []).map((id, index) => [id, index] as const))
   const cellW = Math.max(120, options.thumbWidth ?? 360)
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
   // ---- 参与布局的节点：容器不进（成员各自成卡）；文本/辅助按开关；显式隐藏剔除 ----
+  // REQ-040 B（foldSuperseded）：废弃节点在**辅助/文本开关之前**判定（末帧等
+  // 辅助卡被取代时也该折叠进历史，不能被辅助开关抢先吞掉不留痕）。被取代 →
+  // 折叠进链尾 stacks；retired → 直接隐藏；链尾不在场 → 保持可见（兜底不丢）。
   const participants = nodes.filter(node => {
     if (node.kind === 'group') return false
     if (hiddenIds?.has(node.id)) return false
+    if (foldSuperseded && isDeprecatedNode(node)) {
+      if (node.retired === true) return false
+      const end = resolveSuccessorEnd(node, byId)
+      if (end !== undefined && end.id !== node.id) {
+        const entry = stacks.get(end.id) ?? { count: 0, supersededIds: [] }
+        entry.count += 1
+        entry.supersededIds.push(node.id)
+        stacks.set(end.id, entry)
+        return false
+      }
+    }
     if (isAuxiliaryNode(node) && !showAuxiliary) return false
     if (isTextLike(node) && !showText) return false
     return true
   })
   if (participants.length === 0) {
-    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null }
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks }
   }
 
   const { shotNo, keyframes } = deriveShotSemantics(nodes)
@@ -488,7 +530,7 @@ export function computeWaterfallLayout(
   }
 
   if (plans.length === 0) {
-    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null }
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks }
   }
 
   // ---- 统一落位：整列**居左对齐**（x=0 起排，用户 2026-10-27 拍板，原为居中），
@@ -549,5 +591,14 @@ export function computeWaterfallLayout(
   const activity = runningItems.length === 0
     ? null
     : `${activityLabelOf(runningItems[0]!.node, runningItems[0]!.shot)}${runningItems.length > 1 ? ` 等 ${runningItems.length} 个` : ''}`
-  return { positions, boxes, sections, trays, stats: statsOf(participants.map(node => node.id), byId), runningIds, activity }
+  // ---- 版本堆栈排序（REQ-040 B）：历史成员新→旧（shotVersion 降序、createdAt 破平）----
+  for (const entry of stacks.values()) {
+    entry.supersededIds.sort((left, right) => {
+      const a = byId.get(left)
+      const b = byId.get(right)
+      if (a === undefined || b === undefined) return 0
+      return (b.shotVersion ?? 0) - (a.shotVersion ?? 0) || b.createdAt - a.createdAt
+    })
+  }
+  return { positions, boxes, sections, trays, stats: statsOf(participants.map(node => node.id), byId), runningIds, activity, stacks }
 }

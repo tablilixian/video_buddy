@@ -2233,6 +2233,7 @@ export function StudioFrame(props: StudioFrameProps) {
             onViewChange={handleViewChange}
             showAuxiliary={showAuxiliary}
             onToggleShowAuxiliary={() => { setShowAuxiliary(value => !value) }}
+            onRestoreVersion={handleToggleRetire}
             selectedNodeId={selectedNodeId}
             selectedNodeIds={selectedNodeIds}
             onSelectNode={handleSelectNode}

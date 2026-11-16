@@ -14,6 +14,7 @@ import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
 import { NodeInputCard } from './NodeInputCard.js'
+import { VersionStackPopover } from './VersionStackPopover.js'
 import { WaterfallStatusBar } from './WaterfallStatusBar.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
@@ -273,6 +274,12 @@ export interface CanvasSurfaceProps {
   showAuxiliary?: boolean
   /** REQ-040 A：辅助卡开关出口（切换时写回宿主状态，宿主负责持久化语义）。 */
   onToggleShowAuxiliary?(): void
+  /**
+   * REQ-040 B：版本堆栈「回滚为此版」出口 —— 语义 = `shot-versions.toggleRetire`
+   * （恢复旧版 + 接管者自动作废），与右键「作废/恢复」同一 Host 写口。缺省则
+   * 浮层不出回滚按钮（既有测试 / 预览台直接挂画布的用法不变）。
+   */
+  onRestoreVersion?(id: string): void
   /** When set, center this node in the viewport (timeline / review jump). */
   focusNodeId?: string | null
   /** Whether the minimap overlay is shown (toggle lives in the toolbar). */
@@ -435,6 +442,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onMediaNatural,
     showAuxiliary: showAuxiliaryProp = false,
     onToggleShowAuxiliary,
+    onRestoreVersion,
     focusNodeId,
     minimapVisible = true,
     shotIndexOf,
@@ -1225,22 +1233,29 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 隐藏（被取代 / 手动作废）。渲染、连线、minimap、镜道、聚光全部只消费本列表；
   // 数据层不删不改，开关打开即整体回显。
   const deprecatedCount = useMemo(() => nodes.filter(isDeprecatedNode).length, [nodes])
+  // REQ-040 B：waterfallOn 提前声明（visibleNodes 的历程分支要用）。
+  const waterfallOn = view.waterfall === true
   const visibleNodes = useMemo(
-    () => nodes.filter(node => node.visible !== false && (showDeprecatedNodes || !isDeprecatedNode(node))),
-    [nodes, showDeprecatedNodes],
+    () => nodes.filter(node => node.visible !== false
+      // REQ-040 B：历程模式**不在此过滤**废弃节点——它们要进布局函数参与版本
+      // 堆栈折叠（foldSuperseded），折叠与否由 showDeprecatedNodes 开关决定
+      // （关 = 折叠成角标，开 = 平铺回显旧行为）；自由画布维持 BUG-020 原口径。
+      && (waterfallOn || showDeprecatedNodes || !isDeprecatedNode(node))),
+    [nodes, showDeprecatedNodes, waterfallOn],
   )
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
   // REQ-036：历程瀑布流 —— view.waterfall 开启时，节点按 `computeWaterfallLayout`
   // 的**运行时投影**渲染（boxes 替换 x/y/width/height），绝不写回 store、绝不落盘；
   // 关闭时走原路径（waterfallNodes === ordered，引用不变，CanvasNode memo 不破）。
   // 文本类 / 辅助卡的显隐在布局函数内按开关过滤（waterfallShowText 拍板默认隐藏）。
-  const waterfallOn = view.waterfall === true
   // REQ-040 A：缩略盒档位 —— 进入历程视图时按视口像素宽定档一次（进入时定档，
   // resize 不重排，避免拖窗口时布局反复跳动）；缺省 360 = 旧行为。
   const [wfThumb, setWfThumb] = useState(360)
   // REQ-040 A：「跟随新产出」开关（会话内状态，默认开；不做持久化 —— 用户对
   // 「镜头自动动」的容忍度分歧大，A 期先轻量，真机反馈再定是否随 view 落盘）。
   const [wfFollow, setWfFollow] = useState(true)
+  // REQ-040 B：版本堆栈浮层 —— 展开某张卡名下的被折叠历史（键 = 链尾节点 id）。
+  const [stackNodeId, setStackNodeId] = useState<string | null>(null)
   useEffect(() => {
     if (!waterfallOn) return
     const el = containerRef.current
@@ -1253,9 +1268,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         showText: view.waterfallShowText === true,
         showAuxiliary: showAuxiliaryProp,
         thumbWidth: wfThumb,
+        // REQ-040 B：默认折叠被取代链（干净画布只显当前生效版本）；「显示废弃
+        // 素材」开关打开时关闭折叠（平铺回显旧行为）。
+        foldSuperseded: !showDeprecatedNodes,
       })
       : null),
-    [waterfallOn, visibleNodes, view.waterfallShowText, showAuxiliaryProp, wfThumb],
+    [waterfallOn, visibleNodes, view.waterfallShowText, showAuxiliaryProp, wfThumb, showDeprecatedNodes],
   )
   const waterfallNodes = useMemo(() => {
     if (waterfallLayout === null) return ordered
@@ -1470,6 +1488,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (anchor !== undefined) revealNodesOrFit([anchor])
   }, [revealNodesOrFit])
 
+  // REQ-040 B：版本堆栈角标点击 —— 打开历史浮层（数据 = stacks.get(链尾 id)）。
+  const handleOpenStack = useCallback((node: StudioCanvasNode): void => {
+    setStackNodeId(node.id)
+  }, [])
+
+  // REQ-040 C：卡面「改提示词」—— 与就近工具条 / 右键菜单打开**同一个**输入卡
+  // （CV-272 两入口统一 id 通路的延续）；「重新生成」直接透传 onRetry（判据在
+  // CanvasNode 侧复用 isReplayable，不另写一套）。
+  const handleQuickEditPrompt = useCallback((node: StudioCanvasNode): void => {
+    setInputCardNodeId(node.id)
+    setPromptEditNodeId(null)
+  }, [])
+
   // REQ-040 A：「跟随新产出」—— 节点**进入**生成态时带进视野（transition 检测，
   // 不是「存在生成节点就滚」：重开项目时在途节点只记基线不抢镜头）。手势进行中
   // 不动镜头（revealNodesOrFit 内部已守卫，这里不再重复判）。
@@ -1643,10 +1674,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           <div key={`gh-${position}`} className="csGuide csGuideHorizontal" style={{ top: position }} />
         ))}
         {/* REQ-036：历程模式下渲染**投影节点**（waterfallNodes），交互语义不变，
-            拖拽/缩放/连线手势替换为只读变体（见 onNodePointerDownWaterfall）。 */}
+            拖拽/缩放/连线手势替换为只读变体（见 onNodePointerDownWaterfall）。
+            REQ-040 B/C：历程模式附加版本堆栈角标（B）与卡面高频操作（C）——
+            多选不出卡面钮（「这一张要不要重试」与整队动作是两种解释，与就近
+            工具条同一守卫口径）。 */}
         {(waterfallOn ? waterfallNodes : ordered).map(node => {
           const shotIndex = shotIndexOf?.get(node.id)
           const tier = spotlightTierOf(spotlight, node.id)
+          // REQ-040 B：链尾名下的被折叠历史数（fold 关闭时 stacks 恒空 → 不出角标）。
+          const stack = waterfallOn ? waterfallLayout?.stacks.get(node.id) : undefined
           return (
             <CanvasNode
               key={node.id}
@@ -1680,6 +1716,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
               onContextMenu={onContextMenu}
               onRetry={onRetry}
+              {...(stack !== undefined && stack.count > 0 ? { stackCount: stack.count, onOpenStack: handleOpenStack } : {})}
+              {...(waterfallOn && selectedNodeIds.length <= 1 ? { showQuickActions: true, onQuickEditPrompt: handleQuickEditPrompt } : {})}
+              {...(waterfallOn && selectedNodeIds.length <= 1 && onRetry !== undefined ? { onQuickRetry: onRetry } : {})}
               {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
               {...(props.queueNote != null ? { queueNote: props.queueNote } : {})}
             />
@@ -1762,6 +1801,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           onRevealSection={handleRevealSection}
         />
       )}
+      {/* REQ-040 B：版本堆栈浮层 —— 「vN · k 历史」角标的展开面（受控 stackNodeId）。
+          历史成员从全量节点表回查（被折叠节点不渲染但数据俱在）；回滚走宿主
+          onRestoreVersion（= toggleRetire 同一写口）。 */}
+      {stackNodeId !== null && waterfallLayout !== null && (() => {
+        const stack = waterfallLayout.stacks.get(stackNodeId)
+        if (stack === undefined || stack.count === 0) return null
+        const anchor = nodes.find(candidate => candidate.id === stackNodeId)
+          ?? waterfallNodes.find(candidate => candidate.id === stackNodeId)
+        if (anchor === undefined) return null
+        const versions = stack.supersededIds
+          .map(id => nodes.find(candidate => candidate.id === id))
+          .filter((candidate): candidate is StudioCanvasNode => candidate !== undefined)
+        return (
+          <VersionStackPopover
+            anchor={anchor}
+            versions={versions}
+            onClose={() => { setStackNodeId(null) }}
+            {...(onRestoreVersion !== undefined ? { onRestore: onRestoreVersion } : {})}
+          />
+        )
+      })()}
       {/* 就近工具条：渲染在 `.csCanvasLayer` **之外**（与 minimap 同层）——
           画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
           层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。

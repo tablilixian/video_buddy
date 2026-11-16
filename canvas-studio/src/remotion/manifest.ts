@@ -105,6 +105,32 @@ export interface ManifestMeta {
   family?: string
   /** 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。 */
   lint?: 'off'
+  /**
+   * R11 · O-2（2026-11-16）：**段表** —— 每段真实的「内容窗」。
+   *
+   * 为什么必须有：段渲染过去用 `planStages` 的等分起点（200/400）当段边界，而
+   * `applyStageTransitions` 会把下一屏的轨整体左移 10 帧造叠化窗（190/390）——
+   * 两者错位 10 帧 ⇒ 每段末尾都含下一段的入场画面 ⇒ 改 s2 必脏 s1（实测
+   * `1 复用 / 2 重渲`），“改一段不动全片”根本做不到。
+   *
+   * 语义：`startFrame` 是该段首轨的**实际**起点（含转场预卷）；`frames` 到下一段
+   * 起点（末段到片尾）；**首尾相接、无重叠、Σ = meta.durationInFrames**。
+   *
+   * 兼容：可选字段（旧 manifest 缺它照样合法），缺省时渲染侧回退旧边界推导。
+   * ⚠️ 它**不是渲染输入**：`manifestGlobalsFingerprint` 必须排除，否则段表一改
+   * 全段 hash 失效（见 shot-cache.ts）。
+   */
+  segments?: ManifestSegment[]
+}
+
+/** R11 · O-2：段表条目（见 `ManifestMeta.segments`）。 */
+export interface ManifestSegment {
+  /** 段 id（与 spec `sections[].id` 同源；空屏也保留，保证段序与 sections 一一对应）。 */
+  id: string
+  /** 该段首帧（含转场预卷，可能早于 stage 等分起点）。 */
+  startFrame: number
+  /** 段长（帧）；= 下一段 startFrame − 本段 startFrame，末段到片尾。 */
+  frames: number
 }
 
 /** 三期 W5-3：三档质量预设（`draft` 半分辨率 + 低码率；`standard` 与今天完全一致）。 */
@@ -1175,7 +1201,7 @@ function isFinitePositive(value: unknown): value is number {
 
 /** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
 const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
-const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy', 'templateId', 'family'])
+const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor', 'look', 'quality', 'lint', 'generatedBy', 'templateId', 'family', 'segments'])
 /** P-02 漂移检查数据面（见 KNOWN_TRACK_KEYS 注释）。 */
 export const KNOWN_BASE_TRACK_KEYS = new Set([
   'id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames',

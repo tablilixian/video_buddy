@@ -36,6 +36,7 @@ import { StudioComposition } from '../remotion/components/Root.js'
 import { RENDER_QUALITY_SCALE, validateManifest, type CompositionManifest, type RenderQuality } from '../remotion/manifest.js'
 import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
+import { audioRenderOptions } from '../remotion/audio-options.js'
 import { flattenTracksDeep } from '../remotion/group-children.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
 import { auditTextFit, textFitWarnings, type TextFitReportEntry } from '../remotion/text-fit-audit.js'
@@ -309,8 +310,10 @@ export async function renderManifestOnWeb(
     inputProps: { manifest: probedManifest },
     container: 'mp4',
     videoCodec: 'h264',
-    // R11-C3：muteAudio ⇒ 不编码音轨（段视频无声，音频整轨后配）
-    audioCodec: options.muteAudio === true ? null : 'aac',
+    // R11-C3 / P1-4：muteAudio ⇒ **不建音轨**。参数走 `audioRenderOptions` 唯一构造点：
+    // 直接写 `audioCodec: null` 会被 web-renderer 的 `?? default` 吃成 aac（实测段产物
+    // 带 -91dB 静音轨、拼接点定格 40ms）。真正关断的开关是 `muted: true`。
+    ...audioRenderOptions(options.muteAudio ?? false),
     outputTarget: 'arraybuffer',
     licenseKey: options.licenseKey ?? DEFAULT_REMOTION_LICENSE_KEY,
     // ── 三期 W5-3：质量档（`standard` 与今天的默认值完全一致） ──

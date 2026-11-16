@@ -29,6 +29,14 @@
 - `templateId`?: string — 1（CV-463）：产出这份 manifest 的模板 id（`family/id`）。手写 / 自由编排没有这一项。
 - `family`?: string — 1（CV-463，P-7）：模板家族（`science` / `product` / `report`）。**G2 段组合的判据** ——
 - `lint`?: 'off' — 三期 W1-3：`off` = 跳过编排体检（lint 只告警，模型可显式关）。
+- `segments`?: ManifestSegment[] — R11 · O-2（2026-11-16）：**段表** —— 每段真实的「内容窗」。
+
+## ManifestSegment
+> R11 · O-2：段表条目（见 `ManifestMeta.segments`）。
+
+- `id`: string — 段 id（与 spec `sections[].id` 同源；空屏也保留，保证段序与 sections 一一对应）。
+- `startFrame`: number — 该段首帧（含转场预卷，可能早于 stage 等分起点）。
+- `frames`: number — 段长（帧）；= 下一段 startFrame − 本段 startFrame，末段到片尾。
 
 ## RenderQuality
 > 三期 W5-3：三档质量预设（`draft` 半分辨率 + 低码率；`standard` 与今天完全一致）。

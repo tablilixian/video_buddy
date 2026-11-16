@@ -31,6 +31,7 @@ import { projectBoxToCell } from './cell-projection.js'
 import type { StagePlan } from './stage-plan.js'
 import { StagePlanError, planStages } from './stage-plan.js'
 import { applyStageTransitions } from './stage-transition.js'
+import type { ManifestSegment } from './manifest.js'
 
 /** 一屏内的一个单元（RQ-25）：主视觉 + 文案 + 自己的格位。 */
 export interface SpecUnit {
@@ -543,7 +544,50 @@ function buildCarryTracks(spec: ContentSpec, timeline: RecipePlan['timeline']): 
  * spec → 配方计划（确定性）。卡已注册的段走生成器（RQ-10 接线）；
  * 未注册的段回落 planRecipe 的占位轨。返回里带素材需求清单（RQ-21）。
  */
-export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan & { assetNeeds: ReturnType<typeof specAssetNeeds>; stagePlan?: StagePlan } {
+/**
+ * R11 · O-2：由**已左移的**屏桶聚合出段表（`meta.segments`）。
+ *
+ * 为什么从屏桶聚合而不是从 `timeline` / `planStages` 算：`applyStageTransitions`
+ * 会把下一屏的轨整体左移 10 帧造叠化窗（200 → 190），`timeline` 里的屏起点是
+ * **左移前**的等分边界。拿等分边界当段窗，每段末尾就会含下一段入场画面 ——
+ * 改 s2 必脏 s1（实测 1 复用 / 2 重渲）。屏桶里的 `startFrame` 是渲染器真正
+ * 看到的帧号，直接聚合才是「段的内容窗」。
+ *
+ * 严格性：首段强制从 0 起；任何非严格升序（异常轨 / 空屏重叠）⇒ 返回 `[]`，
+ * 让渲染侧回退旧边界推导。**宁可不用段表，也不产出零宽或倒序段**。
+ */
+export function planSegmentsFromScreens(
+  screens: readonly (readonly Record<string, unknown>[])[],
+  timeline: readonly { id: string; startFrame: number }[],
+  totalFrames: number,
+): ManifestSegment[] {
+  if (screens.length === 0 || totalFrames <= 0) return []
+  const starts: number[] = []
+  for (let i = 0; i < screens.length; i += 1) {
+    const fallbackRaw = timeline[i]?.startFrame
+    const fallback = typeof fallbackRaw === 'number' ? Math.round(fallbackRaw) : 0
+    let earliest = Number.POSITIVE_INFINITY
+    for (const track of screens[i] ?? []) {
+      const value = track.startFrame
+      if (typeof value === 'number' && Number.isFinite(value) && value < earliest) earliest = value
+    }
+    starts.push(Number.isFinite(earliest) ? Math.max(0, Math.round(earliest)) : Math.max(0, fallback))
+  }
+  starts[0] = 0
+  for (let i = 1; i < starts.length; i += 1) {
+    if ((starts[i] as number) <= (starts[i - 1] as number)) return []
+  }
+  const segments: ManifestSegment[] = []
+  for (let i = 0; i < starts.length; i += 1) {
+    const start = starts[i] as number
+    const end = i + 1 < starts.length ? (starts[i + 1] as number) : totalFrames
+    if (end <= start) return []
+    segments.push({ id: timeline[i]?.id ?? `s${String(i + 1)}`, startFrame: start, frames: end - start })
+  }
+  return segments
+}
+
+export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan & { assetNeeds: ReturnType<typeof specAssetNeeds>; stagePlan?: StagePlan; segments: ManifestSegment[] } {
   const recipe = toRecipe(spec)
   const plan = planRecipe({ title: spec.meta.title, totalFrames, recipe })
   // B1（RQ-N2）：autoStages —— planStages 的屏窗替换 planRecipe 的等权切分。
@@ -660,5 +704,7 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
     filmEndFrame: totalFrames,
   })
   tracks.push(...transitions)
-  return { tracks, timeline, assetNeeds: specAssetNeeds(spec), ...(stagePlan === undefined ? {} : { stagePlan }) }
+  // R11 · O-2：段表 —— 在左移之后聚合，段窗 = 每段首轨的实际起点。
+  const segments = planSegmentsFromScreens(screenTracks, timeline, totalFrames)
+  return { tracks, timeline, assetNeeds: specAssetNeeds(spec), segments, ...(stagePlan === undefined ? {} : { stagePlan }) }
 }

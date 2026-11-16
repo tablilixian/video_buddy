@@ -15,9 +15,11 @@
  *   的轨子集，渲染器只渲请求帧窗——跨段轨（bg/carry）天然在每段重复出现，
  *   转场尾帧（下一屏轨在 [b−T, b) 的入场）天然落在前段活跃集。语义与 D2
  *   （转场窗归前段）完全一致，实现少两类裁剪重建。
- * - 边界来源三级回退（D4）：spec sections 派生 → transition 轨末端 → 单段回退。
- *   **transition 末端是启发式**：手写 manifest 的中途叠化会被当成边界——已知限制，
- *   文档如实登记；spec 派生失败（文件缺失/解析失败/边界非法）才落这条路。
+ * - 边界来源四级回退（D4 / R11 · O-2）：**manifest 段表** → spec sections 派生 →
+ *   transition 轨末端 → 单段回退。
+ *   `meta.segments` 是唯一知道「转场预卷后真实段窗」的数据（190/390 而非 200/400），
+ *   有它就优先用；spec 派生是旧 manifest 的回退。**transition 末端是启发式**：
+ *   手写 manifest 的中途叠化会被当成边界——已知限制，文档如实登记。
  *
  * 纪律：纯函数、无 IO、无时钟；非法边界**回退单段**而不是抛错（分镜渲染是优化，
  * 任何不确定性都落回「与今天逐字段一致」的整片路径——fail-safe）。
@@ -28,7 +30,7 @@ import { planStages } from './remotion/stage-plan.js'
 /** 相邻边界的最小段长（帧）：低于此值的段是切片噪声，丢弃该边界。 */
 export const MIN_SHOT_FRAMES = 30
 
-export type ShotBoundarySource = 'spec' | 'transition' | 'fallback-single'
+export type ShotBoundarySource = 'segments' | 'spec' | 'transition' | 'fallback-single'
 
 export interface ShotSegment {
   /** 段序号（按时间升序，0 起）。 */
@@ -86,7 +88,32 @@ export function boundariesFromSpec(spec: unknown, totalFrames: number, fps: numb
 }
 
 /**
- * 边界来源三级回退：spec 派生（合法才用）→ transition 轨末端 → 单段回退。
+ * R11 · O-2：把 `meta.segments` 折成切点；**不自洽就整表不用**。
+ *
+ * 自洽判据（任一不满足返回 `[]`，让调用方回退旧路径）：
+ * ① 段数 ≥ 2；② 每段 `frames > 0`；③ 首段从 0 起、相邻段首尾相接；
+ * ④ Σ frames == `meta.durationInFrames`。过期 manifest（改过时长但没重建段表）
+ * 会在这里被挡住——这是「宁可不切，也不能切错」的那道闸。
+ */
+function segmentTableCuts(manifest: CompositionManifest): number[] {
+  const segments = manifest.meta?.segments
+  if (!Array.isArray(segments) || segments.length < 2) return []
+  const total = Math.max(1, Math.floor(manifest.meta?.durationInFrames ?? 0))
+  const cuts: number[] = []
+  let cursor = 0
+  for (const segment of segments) {
+    const start = typeof segment?.startFrame === 'number' ? Math.round(segment.startFrame) : Number.NaN
+    const frames = typeof segment?.frames === 'number' ? Math.round(segment.frames) : Number.NaN
+    if (!Number.isInteger(start) || !Number.isInteger(frames) || frames <= 0) return []
+    if (start !== cursor) return []
+    cursor = start + frames
+    if (start > 0) cuts.push(start)
+  }
+  return cursor === total ? cuts : []
+}
+
+/**
+ * 边界来源四级回退：**manifest 段表** → spec 派生 → transition 轨末端 → 单段回退。
  * transition 末端是启发式：手写 manifest 的中途叠化会被当成边界——已知限制（§模块头）。
  */
 export function resolveShotBoundaries(
@@ -95,6 +122,9 @@ export function resolveShotBoundaries(
 ): { cuts: number[]; source: ShotBoundarySource } {
   const totalFrames = Math.max(1, Math.floor(manifest.meta?.durationInFrames ?? 0))
   const candidates: Array<{ cuts: number[]; source: ShotBoundarySource }> = []
+  // R11 · O-2：段表优先 —— 它是唯一知道「转场预卷后真实段窗」的数据。
+  const declaredCuts = segmentTableCuts(manifest)
+  if (declaredCuts.length > 0) candidates.push({ cuts: declaredCuts, source: 'segments' })
   if (Array.isArray(specBoundaries) && specBoundaries.length > 0) {
     candidates.push({ cuts: specBoundaries.filter((v) => Number.isFinite(v)).map((v) => Math.round(v)), source: 'spec' })
   }

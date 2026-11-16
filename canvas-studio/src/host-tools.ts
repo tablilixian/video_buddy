@@ -4044,7 +4044,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 // 合成（下游 4219 行 spread 空对象 = 无字段泄漏）。
                 report: undefined as unknown as RenderJobReport,
               }
-              const boundaryLabel = resolveShotBoundaries(renderManifest, specBoundaries).source === 'spec' ? 'spec' : resolveShotBoundaries(renderManifest, specBoundaries).source === 'transition' ? 'transition 末端' : '单段回退'
+              // R11 · O-2：段表是首选来源，文案要如实区分（模型靠这句判断「段窗是否可信」）。
+              const boundary = resolveShotBoundaries(renderManifest, specBoundaries)
+              const boundaryLabel = boundary.source === 'segments'
+                ? '段表'
+                : boundary.source === 'spec'
+                  ? 'spec'
+                  : boundary.source === 'transition' ? 'transition 末端' : '单段回退'
               shotReceipt.push(
                 `🧩 分镜渲染：${String((plan.segments as unknown[]).length)} 段（${String(reused.length)} 复用 / ${String(dirty.length)} 重渲，边界来源 ${boundaryLabel}）`,
               )

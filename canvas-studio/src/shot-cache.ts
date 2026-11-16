@@ -70,10 +70,14 @@ function stableStringify(value: unknown): string {
  *   durationInFrames…）与 `global` 全量（fontFamily/fonts/theme/brandColor/logo）。
  * - **不进**：`tracks`（段活跃集已含）、`audio`（分镜路线只在无 audio 时启用，
  *   见 `planShotRender` 的 allowShots）、顶层 `id`（模型每次生成可能换新 id，
- *   进指纹会让缓存永不命中——它不参与任何渲染输出）。
+ *   进指纹会让缓存永不命中——它不参与任何渲染输出）、`meta.segments`（R11 · O-2：
+ *   段表是**派生数据**，只描述怎么切段，不改任何一张像素；进了指纹就等于“切法一改
+ *   全段失效”，把「改一段只重渲这段」直接废掉。段窗本身已进 `segmentHash` 的
+ *   `start/end`，不需要在全局指纹里重复）。
  */
 export function manifestGlobalsFingerprint(manifest: CompositionManifest): string {
-  return stableStringify({ meta: manifest.meta ?? null, global: manifest.global ?? null })
+  const { segments: _segments, ...metaWithoutSegments } = manifest.meta ?? {}
+  return stableStringify({ meta: metaWithoutSegments, global: manifest.global ?? null })
 }
 
 /**

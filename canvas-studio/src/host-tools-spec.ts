@@ -113,6 +113,8 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
       backgroundColor: theme.backgroundColor,
       // RQ-19 的密度报告按前缀判定「配方生成」：spec 产物必须自报家门，否则算手写。
       generatedBy: 'spec:content-spec' as const,
+      // R11 · O-2：段表（段窗 = 左移后的真实内容窗）。空表不写，保持旧 manifest 逐字段一致。
+      ...(plan.segments.length > 0 ? { segments: plan.segments } : {}),
     },
     tracks: plan.tracks,
   }

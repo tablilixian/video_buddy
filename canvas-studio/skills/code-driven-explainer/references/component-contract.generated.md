@@ -63,7 +63,7 @@
 - `GRADIENT_TYPES`: 'linear' | 'radial'
 - `RENDER_QUALITIES`: 'draft' | 'standard' | 'high'
 - `KNOWN_MANIFEST_KEYS`: 'id' | 'meta' | 'tracks' | 'audio' | 'global'
-- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint' | 'generatedBy' | 'templateId' | 'family'
+- `KNOWN_META_KEYS`: 'title' | 'width' | 'height' | 'fps' | 'durationInFrames' | 'backgroundColor' | 'look' | 'quality' | 'lint' | 'generatedBy' | 'templateId' | 'family' | 'segments'
 - `KNOWN_BASE_TRACK_KEYS`: 'id' | 'type' | 'startFrame' | 'durationInFrames' | 'transform' | 'animate' | 'fadeFrames' | 'box' | 'orbit' | 'fx' | 'exit' | 'startAfter' | 'colorShift' | 'blend' | 'reveal'
 - `KNOWN_TRACK_KEYS.video`: 'src' | 'kenBurns' | 'trimBeforeFrames' | 'playbackRate' | 'muted' | 'volume' | 'loop' | 'clip'
 - `KNOWN_TRACK_KEYS.image`: 'src' | 'fit' | 'caption' | 'sourceRect' | 'hasAlpha' | 'clip' | 'camera'

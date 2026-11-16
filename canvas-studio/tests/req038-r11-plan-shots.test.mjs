@@ -44,6 +44,9 @@ test('正常三屏：mode shots，段数 3、hash 3、缓存目录在 build/shot
   assert.equal(plan.hashes.length, 3)
   assert.match(plan.cacheDir, /build[\\/]shot-cache$/)
   for (const h of plan.hashes) assert.match(h, /^[0-9a-f]{16}$/)
+  // P1-2：全局态指纹随 plan 下发（调用方三方共用同一把缓存钥匙）。
+  assert.equal(typeof plan.globals, 'string')
+  assert.ok(plan.globals.length > 0)
 })
 
 test('有 audio 段 ⇒ whole（D3：音频整轨后配 = Phase 1.5）', () => {

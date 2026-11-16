@@ -34,7 +34,7 @@ import { resolveAssetPathIn } from './asset-path.js'
 import { deliveryReceiptLines, isDeliverableRender, writeDeliverable } from './deliverable.js'
 import { auditManifestFile, formatManifestAudit } from './manifest-audit.js'
 import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
-import { planShotRender, getDirtySegments, segmentManifest, storeSegment, shotCacheDir } from './shot-cache.js'
+import { planShotRender, getDirtySegments, clearStaleEntries, segmentRenderOptions, storeSegment, shotCacheDir } from './shot-cache.js'
 import { boundariesFromSpec, resolveShotBoundaries } from './shot-slice.js'
 import { concatShots } from './shot-concat.js'
 import { probeMediaInfo } from './ffmpeg-run.js'
@@ -3981,20 +3981,30 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             if (plan.mode === 'shots') {
               const assetsDir = registry.assetsDir(projectId)
               const cacheDir = plan.cacheDir as string
-              const { dirty, reused } = getDirtySegments(plan.segments as never, quality ?? 'standard', cacheDir)
+              // P1-2：全局态指纹由 planShotRender 算一次、三方（决策 hash / 缓存比对 /
+              // 落缓存）共用同一个值——改 meta.look / global.fonts 等全局输入时全段脏。
+              const shotGlobals = plan.globals as string
+              const { dirty, reused } = getDirtySegments(plan.segments as never, quality ?? 'standard', cacheDir, shotGlobals)
+              // P0 配套孤儿回收：hash 失配的旧条目（含 P0 期间写入的「整片长错误段」，
+              // 体积可观）由 clearStaleEntries 按本次合法集合清理；hashes 异常缺失时
+              // 跳过清理（绝不能拿空集合当合法集——那会清光整个缓存目录）。
+              if (Array.isArray(plan.hashes) && plan.hashes.length > 0) {
+                const orphans = clearStaleEntries(cacheDir, new Set(plan.hashes as string[]))
+                if (orphans > 0) shotReceipt.push(`🧹 段缓存回收 ${String(orphans)} 条过期条目`)
+              }
               const renderedByIndex = new Map<number, string>()
               for (const seg of dirty) {
+                // P0 修复：工单参数由 segmentRenderOptions 唯一构造——frameRange
+                // （闭区间 [start, end-1]）与 muteAudio 此前漏传，每段按整片时长渲染
+                // （commit c277a960a8 声称传了、代码没传），拼接产物 = N × 整片时长。
                 const segOutcome = await runRenderJobWithStuckRetry({
                   projectId,
-                  manifest: segmentManifest(renderManifest, seg),
-                  fps: source.meta.fps,
                   signal: exec.signal,
-                  quality: quality ?? 'standard',
-                  realDurations: pre.realDurations,
+                  ...segmentRenderOptions(renderManifest, seg, quality ?? 'standard', pre.realDurations),
                 })
                 const segAbsPath = resolveAssetPathIn(assetsDir, segOutcome.assetFile)
                 renderedByIndex.set(seg.index, segAbsPath)
-                storeSegment(seg, quality ?? 'standard', cacheDir, segAbsPath)
+                storeSegment(seg, quality ?? 'standard', cacheDir, segAbsPath, shotGlobals)
               }
               // 段序文件清单：复用缓存 mp4 + 新渲段产物
               const orderedFiles = (plan.segments as never[] as { index: number }[]).map((seg) => {

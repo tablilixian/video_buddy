@@ -6,6 +6,8 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace, choice cards, a
 ---
 
 # 3D Animation Short Generator
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 风格化 3D 动画短片的**风格知识库**：画风锁定、角色与场景资产规则、分镜表规格、成片纪律。
 

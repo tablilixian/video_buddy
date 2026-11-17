@@ -104,6 +104,8 @@ const CREATION_BOOKLETS = [
   'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
   'screenplay.md', 'shot-format.md', 'consistency.md', 'look.md',
   'layout-recipes.md', 'style-library.md',
+  // C2/P8（2026-11-17）：总纲分册补入 intent-card / audio-first（骨架里已被引用，此前不在守卫清单）
+  'intent-card.md', 'audio-first.md',
 ]
 
 /** executor 侧分册清单（code-driven-explainer）。screen-plan.md 为 2026-11-14 版面层（R7-B2）新增：

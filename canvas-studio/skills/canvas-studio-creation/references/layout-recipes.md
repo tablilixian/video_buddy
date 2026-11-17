@@ -114,4 +114,6 @@
 
 ## 配方截图（验收锚点）
 
+> **版式名坐标唯一性**：本册的 5 个 demo 配方名（split-lr / split-tb / picture-in-picture / lower-third / full-bleed）是 skill 侧**唯一现役坐标系**。计划文档（如《视觉质量工程方法论-20261113》）里提过的 `layout-skeletons` 骨架名（solo / split-2 / trio / grid-2x3 / figure-caption / full-bleed）是**未落地的计划稿坐标**（src/ 无对应实现），同名条目（full-bleed）语义不同、`split-2` 也不是 `split-lr` —— 不要跨表对照或混用。
+
 `assets/layout-demos/` 下每配方一张**真实渲染截图**（split-lr.png / split-tb.png / picture-in-picture.png / lower-third.png / full-bleed.png，2026-10-26 由 `scripts/probe/layout-demo.probe.mjs` 逐配方真渲抽帧产出，final 档 1280×720）。配方 6 的四阶段关键帧在 `docs/demos/layout-demo-20261026/`。截图必须来自真实渲染产物，不许手画。

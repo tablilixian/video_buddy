@@ -7,6 +7,8 @@ trigger-words: [手绘发光动画实拍融合, 15秒变形追逐视频提示词
 ---
 
 # Handdrawn Live-Action Fusion Video Generator
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 手绘发光动画 × 实拍空间融合短片的**风格知识库**：影像结构不变量、质感、变形链路、追逐运镜与禁止项。
 

@@ -3,23 +3,11 @@ name: brand-promo-video-generator
 description: |
   Style knowledge for trustworthy brand promo reels: provenance-first asset discipline (never redraw or approximate logos, product UI, packaging or mascots), brand truth extraction from authorized sources only, product-category-specific story spines, frame-accurate beat planning, controlled motion language with 2-5 meaningful color states, and pre-delivery authenticity review. Use for launches, website showcases, app and shop promos, and social promotion. Not for imitating real brand marks without authorized assets, inventing product claims, or producing long-form narrative films.
 compatibility: Requires the MiniMax Hub agent (canvas workspace and the hub_* tools listed below); not portable to generic agent harnesses.
-allowed-tools:
-- webfetch
-- hub_image_search
-- hub_analyse_media
-- hub_canvas_get_node
-- hub_canvas_group_recent_outputs
-- hub_generate_image
-- hub_generate_video
-- hub_generate_audio
-- hub_generate_music
-- hub_synthesize_speech
-- hub_video_edit
-- hub_audio_meta
-- task
 ---
 
 # Brand Promo Video Generator
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 > **上游体裁壳（必读）**：本 skill 是 `brand-format-director` 的**下游 executor**。
 > 用户点名本 skill 时**仍须先加载该壳**完成定向三问（素材现实 / 投放场景 / 时长画幅语言）——

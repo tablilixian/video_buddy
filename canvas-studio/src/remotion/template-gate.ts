@@ -210,7 +210,7 @@ export function gateTemplate(
     : (() => {
       const screens = Math.min(MAX_STAGES, Math.max(2, Math.round(totalSeconds / TARGET_STAGE_SEC)))
       const own = meta.fps > 0 ? Math.round((meta.durationInFrames / meta.fps) * 10) / 10 : 0
-      return `整片 ${String(totalSeconds)}s ≈ ${String(screens)} 屏（6.5s/屏节奏，上限 40）；${label}固有 ${String(own)}s，长片里最多占 1 屏（其余屏用卡 + 格位拼）`
+      return `整片 ${String(totalSeconds)}s ≈ ${String(screens)} 屏（6.5s/屏节奏，上限 40）；${label}固有 ${String(own)}s，长片里模板通道最多吃 2–3 屏（开场 / 落版 / 罗列各一屏，D2 定位），其余屏用卡 + 格位拼`
     })()
 
   return {

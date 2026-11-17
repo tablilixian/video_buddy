@@ -30,6 +30,10 @@ const EXECUTORS = [
   'minimalist-product-ad-generator',
   'mv-production',
   'viral-remake',
+  // P7（2026-11-17）：explainer 链三个 executor 补入 B-6 在场性守卫（此前取证标记 0 命中）
+  'code-driven-explainer',
+  'papercraft-stop-motion-explainer',
+  'paper-collage-explainer-generator',
 ]
 
 test('B-6 六壳：三层取证层级 + 交付复述纪律在位', () => {

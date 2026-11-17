@@ -293,7 +293,13 @@ test('1 ★注册表：四个模板都在册、契约版本一致、按 id 排�
   for (const item of catalog.items) {
     assert.equal(item.contractOk, true, `${item.meta.id} 契约版本不符`)
     assert.ok(item.slotSummary.length > 0)
-    assert.ok(item.slotSummary.every((slot) => slot.required), '模板起步阶段应全是必填槽（可选槽等有真实需求再加）')
+    // P3（2026-11-17 拍板）：唯一例外 outro/strip-away 的 ctaHint —— semantic 明写「可选展示」且带 default，
+    // required:true 与 semantic 自相矛盾（A8），改 required:false；其余模板起步阶段仍应全是必填槽。
+    const optionalSlots = item.slotSummary.filter((slot) => !slot.required)
+    assert.ok(
+      optionalSlots.every((slot) => item.meta.id === 'outro/strip-away' && slot.id === 'ctaHint'),
+      '模板起步阶段应全是必填槽（可选槽等有真实需求再加）；当前唯一许可例外 = outro/strip-away#ctaHint（P3 拍板）',
+    )
   }
 })
 

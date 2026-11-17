@@ -46,7 +46,7 @@ compatibility: Portable to any agent that can read local files — no external A
 
 本 skill 的 50 套运镜是**场景化组合**，而 `h3-prompt-writing/references/camera-vocabulary.md` 的 20 个词是**基础原子词**。两者关系：
 - 分镜规划时：用本 skill 的场景化组合快速选方案
-- 写 H3 IR 时：用 camera-vocabulary.md 的 20 个原子词（H3 模型训练时见过的词）
+- 写 H3 IR 时：用 camera-vocabulary.md 的 20 个原子词（H3 模型训练时见过的词）。⚠️ 本 skill 与运镜面板（`src/camera-moves.ts`）用的英文名（Whip Pan / Handheld / Dolly In / Dolly Out / Dolly Zoom 等）多数在 H3 校验器**表外词清单**（`src/h3-ir-validate.ts` `CAMERA_OUT_OF_VOCAB`，出现即报错）里 —— 写 IR 前必须换算成原子词组合，不能照抄英文名
 - 转换：本 skill 的运镜描述可拆解为 camera-vocabulary.md 的原子词组合
 
 ## 示例

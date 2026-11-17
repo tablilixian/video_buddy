@@ -87,3 +87,4 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 - [ ] 有没有误传 `negativePrompt`？（有则删掉，改写成正向约束）
 - [ ] 画面要出现文字 → 确切文本加引号了吗？字体排版写了吗？
 - [ ] 出图后发现文字有错 → 走 `image_fix` 只修文字（prompt 只写文字部分），不要整图重出？
+- [ ] prompt 长度过 **500 字符软限**了吗？（去空白计，与 Krea2 计字口径一致；超限**合成后仅提示、不拦截** —— `SOFT_PROMPT_LIMIT`，见 `src/style-conflicts.ts`；接近上限就先砍装饰性描述）

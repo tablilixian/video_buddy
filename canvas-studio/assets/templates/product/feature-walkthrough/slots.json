@@ -8,7 +8,7 @@
       "maxChars": 14,
       "maxLines": 1,
       "maxCharsPerLine": 14,
-      "semantic": "产品/功能的名字，品牌写法照原样（中英文都行；英文字母按 1 字计，13 个字符以内）",
+      "semantic": "产品/功能的名字，品牌写法照原样（中英文都行；英文字母按 1 字计，14 个字符以内）",
       "styleRole": "eyebrow",
       "example": "Canvas Studio",
       "onOverflow": "reject"

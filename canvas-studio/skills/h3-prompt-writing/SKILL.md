@@ -88,7 +88,7 @@ H3-Context-IR 完整编写规范（模式判定、对齐行、分镜时间戳、
   text in their original language.
 - Keep reference labels consistent (`<Picture 1>`, `<Video 1>`, `<Audio 1>`) across
   every section; material numbering is 1-based and per-category.
-- Match the total duration of the description to the requested video length (4–15s).
+- Match the total duration of the description to the requested video length (4–15s; on this platform the fal provider clamps video duration to [5,15] with a warning, so plan for ≥5s — a 4s request is unreachable here).
 - H3-Base 没有 negative prompt 字段："不要有人"写成 `The doorway remains empty.`。
 
 ## 参考文件（按需读，不要一次全读）

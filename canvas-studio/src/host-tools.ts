@@ -3424,7 +3424,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议按 toolchain.md §"BGM 时长铁律"余量梯度（宁可比视频长也不要短，≤300 稳定）' },
         // CV-209：余量生成开关 —— true 时工具会按成片真值自动计算 `T × 1.3` 这类含余量时长，
         // 免去 agent 关心余量数。同时可显式传 filmDuration 注入真值。
-        durationMargin: { type: 'number' as const, description: '可选：CV-209 时长余量倍率（1.2 / 1.3 等），与 filmDuration 同时出现时按 `filmDuration * margin` 取 ceil 秒；不传则按 toolchain.md §"BGM 时长铁律"梯度自动决定' },
+        durationMargin: { type: 'number' as const, description: '可选：CV-209 时长余量倍率（1.2 / 1.3 / 1.5），与 filmDuration 联用时按 `filmDuration * margin` 取 ceil 秒；不传缺省 1.3（30% 余量）' },
         filmDuration: { type: 'number' as const, description: '可选：成片真实时长（秒）；与 durationMargin 联用，按余量倍率计算 BGM 时长' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
         sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集，过滤不存在的 id）' },

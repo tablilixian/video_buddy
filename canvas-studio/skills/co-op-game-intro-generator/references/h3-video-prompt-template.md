@@ -130,4 +130,6 @@ HUD结构：HUD 淡入。右上角出现小地图；左下角出现两组独立�
 声音：城市环境氛围、远处载具声、脚步声、HUD 淡入提示音。
 
 ## Negative constraints
+
+> **本仓覆盖（总规则：H3 无负向 prompt、约束写正向）**：H3-Base 没有 negative prompt 字段，下面这段 `No …` **不原样发送**——每条约束改写成正向描述（如 `The doorway remains empty.` 式）写进正文，总规则见 `h3-prompt-writing/SKILL.md` Output Rules。本节仅作上游原文存档。
 No third player, no female character unless explicitly requested by user, no duplicated character, no character swapping, no username swapping, no merged bodies, no identical body proportions, no changing faces, no changing hairstyles, no changing identity, no missing PLAYER 1, no missing PLAYER 2, no split screen, no hard cuts, no random camera shake, no floating body parts, no gruesome dismemberment, no weapon, no excessive neon unless selected by user style, no purple background unless selected by user style, no unreadable UI, no random letters, no misspelled usernames, no extra menu options, no official game logo, no copied branded interface, no watermark.

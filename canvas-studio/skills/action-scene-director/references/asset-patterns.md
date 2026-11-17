@@ -2,6 +2,8 @@
 
 为 AI 视频创作设计标准化的视觉资产提示词。输入为剧本、故事梗概、世界观设定或分镜文本；输出为可直接投喂图像生成模型的角色定妆照、场景空镜、道具资产设定图。
 
+> 本仓生成走 `image_generate`：画幅用 `aspectRatio` 参数控制，提示词正文**不带** `--ar` / `8k` 等 Midjourney 后缀参数（下文模板中出现的画幅标注只是推荐值，经参数传、不经正文传）。
+
 ---
 
 ## 核心原则：三类模式互不混用
@@ -38,7 +40,7 @@
 ### 英文提示词模板
 
 ```
-[Style/Tone], [Character Name], [Age/Role], [Physical Details], [Outfit], full body shot, standing pose, front view, looking at viewer, character sheet, cinematic lighting, [Lighting Setup], [Camera/Lens], 8k --ar 9:16
+[Style/Tone], [Character Name], [Age/Role], [Physical Details], [Outfit], full body shot, standing pose, front view, looking at viewer, character sheet, cinematic lighting, [Lighting Setup], [Camera/Lens]
 ```
 
 ### 半身特写变体
@@ -70,7 +72,7 @@ half-body portrait, looking at camera, [面部细节描述]
 ### 英文提示词模板
 
 ```
-[Style/Tone Keywords], [Location Name], [Architectural/Nature Details], [Lighting & Atmosphere], no people, nobody, empty scene, panoramic view, wide angle shot, cinematic color grading, [Lens/Atmosphere], highly detailed --ar 16:9
+[Style/Tone Keywords], [Location Name], [Architectural/Nature Details], [Lighting & Atmosphere], no people, nobody, empty scene, panoramic view, wide angle shot, cinematic color grading, [Lens/Atmosphere], highly detailed
 ```
 
 ---
@@ -85,9 +87,9 @@ half-body portrait, looking at camera, [面部细节描述]
 
 | 资产类型 | 视角 | 画幅 |
 |----------|------|------|
-| 道具 | `front orthographic view`（正交视图） | `--ar 1:1` |
-| 载具 | `pure side view`（纯侧视） | `--ar 16:9` |
-| 人形机械 | `Robot asset sheet, Full body, Standing, Front view` | `--ar 9:16` |
+| 道具 | `front orthographic view`（正交视图） | `1:1`（`image_generate` 的 `aspectRatio` 参数） |
+| 载具 | `pure side view`（纯侧视） | `16:9`（`aspectRatio` 参数） |
+| 人形机械 | `Robot asset sheet, Full body, Standing, Front view` | `9:16`（`aspectRatio` 参数） |
 
 成对道具可"一正一侧或正面+轻微3/4角度"并列陈列。
 
@@ -100,7 +102,7 @@ half-body portrait, looking at camera, [面部细节描述]
 ### 中文提示词模板
 
 ```
-[风格定调句]，[资产类型与身份锚点]，[整体形态与结构分解]，[配色系统与共享设计语言声明]，[材质与旧化痕迹]，[负面约束：比例排除/风格排除/文字排除]，[Asset type] + [View]，isolated asset，neutral gray background，[Lighting]，high detail，8K --ar [1:1 或 16:9 或 9:16]
+[风格定调句]，[资产类型与身份锚点]，[整体形态与结构分解]，[配色系统与共享设计语言声明]，[材质与旧化痕迹]，[负面约束：比例排除/风格排除/文字排除]，[Asset type] + [View]，isolated asset，neutral gray background，[Lighting]，high detail
 ```
 
 ---
@@ -117,7 +119,7 @@ half-body portrait, looking at camera, [面部细节描述]
 4. **配色系统**：显式列出主色序列，跨资产声明继承
 5. **旧化痕迹**：写实资产必写沙尘、划痕、掉漆、维修补丁等
 6. **负面约束**：用中文正面否定句写进 prompt 正文
-7. **英文固定后缀块**：资产类型词 + 视角 + 背景 + 灯光 + 画质词 + `--ar`
+7. **英文固定后缀块**：资产类型词 + 视角 + 背景 + 灯光 + 画质词（画幅由 `image_generate` 的 `aspectRatio` 参数控制，提示词里不写 Midjourney 的 `--ar` / `8k` 类后缀）
 
 ---
 

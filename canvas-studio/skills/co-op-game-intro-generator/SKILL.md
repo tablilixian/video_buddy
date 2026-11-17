@@ -6,6 +6,8 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace and MiniMax H3 g
 ---
 
 # Co-op Game Intro Generator
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 双人合作游戏主菜单/开场动画的**风格知识库**：固定 UI 骨架、风格填充规则、身份映射与文字纠错。
 

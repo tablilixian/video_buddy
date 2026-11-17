@@ -8,6 +8,8 @@ metadata:
 ---
 
 # Minimalist Product Ad Generator
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 > **上游体裁壳（必读）**：本 skill 是 `product-format-director` 的**下游 executor**。
 > 用户点名本 skill 时**仍须先加载该壳**完成定向三问（产品与素材现实 / 卖点与调性 / 时长画幅）——

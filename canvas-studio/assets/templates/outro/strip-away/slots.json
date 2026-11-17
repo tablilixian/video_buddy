@@ -43,7 +43,7 @@
       "id": "ctaHint",
       "label": "CTA 提示",
       "type": "string",
-      "required": true,
+      "required": false,
       "maxChars": 12,
       "maxLines": 1,
       "semantic": "结尾行动号召（可选展示）",

@@ -237,3 +237,15 @@ test('CV-317 同类语义门禁：展示文案不得引用已下线的审批门�
     }
   }
 })
+
+test('C4（2026-11-17）：featured 与 hidden 不得并存（hidden 滤掉广场后 featured 是死字段）', () => {
+  for (const [name, record] of platformRecords) {
+    const both = record.featured === true && record.hidden === true
+    assert.ok(
+      !both,
+      `skills/${name}/platform.yaml 同时 featured:true + hidden:true —— ` +
+        'hidden 把条目滤出广场后 featured 是死字段，按语义二选一：' +
+        '广场推荐位（featured:true, hidden:false）或下沉不进广场（featured:false, hidden:true）',
+    )
+  }
+})

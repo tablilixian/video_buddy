@@ -65,6 +65,8 @@ render_composition({ manifestPath })        ← 唯一出片口
 
 阈值可用 `minInfoRatio` 覆盖（缺省 0.35）。
 
+`itemCapacity`（判据 4）= 模板承载的**并列罗列条目数上限**，与槽位总数无关（如 `outro/strip-away` 有 4 个固定文案槽但 `itemCapacity: 2` = 不适合罗列型内容；`feature-walkthrough` 的 `itemCapacity: 3` 对应恰好 3 条特性）。
+
 ## 3. 填槽位的三条纪律
 
 1. **按 `semantic` 写，不按 `label` 猜**：`semantic` 说明这一格该写什么、用什么语气。

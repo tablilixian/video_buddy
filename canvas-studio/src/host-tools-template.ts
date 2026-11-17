@@ -57,7 +57,7 @@ export function defineTemplateTools() {
       parameters: {
         family: {
           type: 'string' as const,
-          description: '可选：按体裁过滤（science 科普 / product 产品 / report 汇报）；不传则全列',
+          description: '可选：按体裁过滤（10 个 family：data 数据 / outro 收尾 / press 报刊 / product 产品 / promo 促销 / report 汇报 / science 科普 / tech 数码 / ui 界面 / vo-ad 口播广告）；不传则全列',
         },
         requirements: {
           type: 'object' as const,

@@ -436,7 +436,7 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'spec',
     icon: 'compass',
     hue: 262,
-    featured: true,
+    featured: false,
     hidden: true,
   },
   // CV-327（REQ-034 B4）：代码驱动合成路径 —— render_composition 的决策型下游分支 skill。
@@ -482,7 +482,7 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'prompting',
     icon: 'quill',
     hue: 205,
-    featured: true,
+    featured: false,
     h3: true,
     hidden: true,
   },
@@ -497,7 +497,7 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'prompting',
     icon: 'quill',
     hue: 240,
-    featured: true,
+    featured: false,
     hidden: true,
   },
   // CV-189：image2image 后端切换 Krea2 Edit 工作流并扩到 4 个参考槽位，新增本规范。
@@ -510,7 +510,7 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     category: 'prompting',
     icon: 'quill',
     hue: 250,
-    featured: true,
+    featured: false,
     hidden: true,
   },
   {

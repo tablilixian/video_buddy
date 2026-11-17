@@ -110,7 +110,7 @@ duration 三个** —— bpm / keyscale / language / timesignature 是请求模�
 | 参数 | 建议 | 边界与坑 |
 |---|---|---|
 | `prompt`（caption） | 风格/情绪/乐器/音色/**速度·调性·拍号词汇** | 0.7.0 对拍：bpm/keyscale/language/timesignature 元数据参数已退役，音乐特征一律用文字写进 caption（如「128 BPM」「A minor」「4/4」「中文人声」） |
-| `duration` | **= 成片总时长（秒）** | ≤300 实测稳定；30–60s 与 2–4min 结构最好，超 4min 可能重复 |
+| `duration` | **不传 = 后端缺省 30s**（不是成片时长）；贴片长就传 `filmDuration`，宿主按余量自动算（宁长勿短） | 直接传 `duration` 时 ≤300 实测稳定；30–60s 与 2–4min 结构最好，超 4min 可能重复 |
 | `lyrics` | 歌词结构（Verse/Chorus） | 纯器乐留空自动填 [Instrumental] |
 
 ⚠️ **不要产生错觉**：caption 里的速度/调性词是**风格引导**，不是硬约束 —— 后端可能

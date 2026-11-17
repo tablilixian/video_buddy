@@ -6,7 +6,7 @@
 
 ## 组成
 
-- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`,**22 条**常量:projects / draft-landing / resolve-refs / groups / generate / generate-queue / assets / canvas / workflow / upload / upload-media / promote / waveform / split-video / style-demos / asset-gc / asset-history / active-skills / compose 等)、媒体生成工具集(`host-tools.ts`,**26 个工具** Host 侧注册,见 [docs/canvas-studio-tools.md](docs/canvas-studio-tools.md))、skill 注册器(`skills/minimax-skills.ts`,扫描 `skills/` 目录注册全部 **22 个 skill**)。
+- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`,**44 条**常量:projects / draft-landing / resolve-refs / groups / generate / generate-queue / assets / canvas / workflow / upload / upload-media / promote / waveform / split-video / style-demos / asset-gc / asset-history / active-skills / compose 等)、媒体生成工具集(`host-tools.ts`,**54 个工具**（53 真实 + 1 占位 `subtitle_burn`） Host 侧注册,见 [docs/canvas-studio-tools.md](docs/canvas-studio-tools.md))、skill 注册器(`skills/minimax-skills.ts`,扫描 `skills/` 目录注册全部 **31 个 skill**；三个计数 2026-11-17 对账刷新：`routes.ts` 44 个 ROUTE_* 定义 / 注册面总数由 `tests/tool-registry.test.mjs` 钉死 54 / `skills/` 31 目录)。
 - 生成与供应商(`generate.ts` / `providers/`):Drama Backend 调用(0.5.0 起视频为 **异步 submit → 30s 轮询 → 40min 整体墙钟**)、fal 适配器、能力路由、产物落盘托管、参考视频 ffmpeg 抽帧提风格;超时与队列语义见 [`docs/canvas-studio-task-timeout-spec.md`](../docs/canvas-studio-task-timeout-spec.md)。
 - 本地合成(`compose.ts`):分镜片段 ffmpeg 转码拼接 + BGM 混音淡出,`compose_video` 工具入口(调色 / 交叉淡化等见 [docs/video-chain.md](docs/video-chain.md))。
 - 共享契约(`contracts/`、`reference-token.ts`、`node-params.ts`):节点模型(`StudioCanvasNode` 含 filename / sourceIds / shotVersion 等)与 `@ref[显示名]` 引用标记(纯类型/纯函数)。

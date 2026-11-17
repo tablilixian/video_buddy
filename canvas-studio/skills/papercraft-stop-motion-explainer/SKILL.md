@@ -6,6 +6,8 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace and MiniMax H3 g
 ---
 
 # Papercraft Stop-Motion Explainer
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 > **上游体裁壳（必读）**：本 skill 是 `explainer-format-director` 的**下游 executor**。
 > 用户点名本 skill 时**仍须先加载该壳**完成定向三问（受众 / 记住哪一件事 / 时长画幅）——
@@ -85,3 +87,7 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace and MiniMax H3 g
 ## 边界
 
 生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不提供工具参数、不设审批门。视频模型固定 MiniMax-H3，本项目没有模型选择环节。
+
+## 取证纪律（B-6 executor 同款，2026-11-17 补）
+
+本地产物（抽帧 / 素材）的画面判据**首选 `read_image(file_path=…)` 看图本身**，禁拿 manifest 字段自证；精确数值用 `inspect_image`；`image2vl` / `video2vl` 是 VLM 文字转述，仅保底且**不可当事实**。全契约见 `canvas-studio-creation/references/toolchain.md` §7。

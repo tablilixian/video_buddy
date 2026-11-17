@@ -24,7 +24,7 @@
   "itemCapacity": 2,
   "requiredAssets": [],
   "furniture": [],
-  "usage": "4 个文案槽。蒸发节拍固定：点击后 4f 错峰、每层 14f、离场加速（easeIn）；外层先走内层后走，不要重排。",
+  "usage": "4 个文案槽（固定文案位，非罗列条目 —— 条目容量见 itemCapacity=2，罗列型内容请换模板）。蒸发节拍固定：点击后 4f 错峰、每层 14f、离场加速（easeIn）；外层先走内层后走，不要重排。",
   "lintSuppress": [
     "ML-07"
   ]

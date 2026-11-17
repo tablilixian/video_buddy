@@ -9,7 +9,7 @@
 | 卡片位 | 3（`itemCapacity`） |
 | 素材 | 不需要（需要实拍产品图时改用自由编排 + `image` 轨） |
 | 构件 | `cornerBrackets` + `progressBar`（32 刻度，蓝色游标） |
-| 音效 | 3 × `card`（特性入场）+ 1 × `swoosh`（落版） |
+| 音效 | 3 × `click-camera`（特性入场）+ 1 × `whoosh-fast`（落版 CTA）—— fx 路线，真值见 `audio.json` |
 
 ## 结构（时间轴）
 

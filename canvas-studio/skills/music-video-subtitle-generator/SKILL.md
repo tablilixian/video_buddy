@@ -7,6 +7,8 @@ trigger-words: [MV, music video, lyric typography, on-screen text, prompt audit,
 ---
 
 # Music Aesthetics MV
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+
 
 音乐美学 MV 与歌词贴字的**风格知识库**：排印作为空间图层、主音频对齐、五道拼接连续性锁、Dark-pop / Cyber-grunge / Trap 的剪辑语言。
 

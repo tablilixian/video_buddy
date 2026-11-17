@@ -6,7 +6,7 @@ compatibility: Requires the MiniMax Hub agent (canvas workspace and the hub_* to
 ---
 
 # Brand Promo Video Generator
-> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。
+> **Harness 覆盖声明**：上方 `compatibility` 是上游 MiniMax-H3 原文署名，原样保留 —— 本仓运行时没有 MiniMax Hub agent 与 `hub_*` 工具，流程一律走 `canvas-studio-creation` 工具链（工具契约见 `canvas-studio-creation/references/toolchain.md`）。原文所说的 "tools listed below" 清单已随 `allowed-tools` 死字段一并删除，本文件下方不再附该清单。
 
 
 > **上游体裁壳（必读）**：本 skill 是 `brand-format-director` 的**下游 executor**。

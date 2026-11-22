@@ -42,6 +42,7 @@ import {
 } from './generation-client.js'
 import type { GenerationOperation, GenerationSnapshot } from './contracts/generation.js'
 import { isGenerationId } from './contracts/generation.js'
+import { pngValidateAndTrim } from './media-download.js'
 import type { CreateGenerationBody } from './generation-client.js'
 import { validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
@@ -1016,10 +1017,29 @@ async function runBusinessImage(
     // 成功却没有二进制输出：契约漂移，宁可报结构异常也不静默。
     throwError('CS-NET-010')
   }
-  const bytes = await downloadGenerationContent(deps, final.id, output.ordinal, {
-    ...IMAGE_CONTENT_LIMITS,
-    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-  })
+  // 真机实锤（CV-468）：后台 content 端点对较大 PNG 随机截断/混流（同一 generation
+  // 每次下载字节数不同、缺 IEND）——落画布前必须做结构校验，失败重试 ×2；重试后
+  // 仍不完整就丢弃并报 CS-NET-011，绝不静默把坏图落到画布。
+  const isPng = output.mime_type === 'image/png'
+  const download = async (): Promise<Buffer> =>
+    downloadGenerationContent(deps, final.id, output.ordinal, {
+      ...IMAGE_CONTENT_LIMITS,
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    })
+  let bytes = await download()
+  if (isPng) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const trimmed = pngValidateAndTrim(bytes)
+      if (trimmed !== null) {
+        bytes = trimmed
+        break
+      }
+      if (attempt === 3) {
+        throwError('CS-NET-012', { attempts: 3, label: opts.label })
+      }
+      bytes = await download()
+    }
+  }
   return { bytes, generationId: final.id, ext: extensionForMime(output.mime_type) }
 }
 
@@ -1835,7 +1855,8 @@ export async function analyzeImage(
       operation: 'image2vl',
       input: { prompt, system_prompt: systemPrompt },
       refs: [{ assetId: handle, role: 'image' }],
-      timeoutMs: DRAMA_TIMEOUT_MS.text,
+      // 真机实锤（CV-468）：服务端排队时 360s（text 档）不够，image2vl 提到 image 档。
+      timeoutMs: DRAMA_TIMEOUT_MS.image,
       ...(signal !== undefined ? { signal } : {}),
     })
     return textOutputOf(final)

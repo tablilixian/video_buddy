@@ -41,6 +41,39 @@ export async function fetchBodyLimited(
 }
 
 /**
+ * PNG 结构完整性校验（真机验收实锤：后台 content 端点对较大产物随机截断/混流，
+ * 见 docs/api-probe/generation-migration-20261122/report.md 附录）。走 chunk 链：
+ * 签名 8 字节 → [len(4) type(4) data(len) crc(4)]* → IEND。到达 IEND 即认为结构
+ * 完整（IEND 之后的尾随字节一律裁掉——实测同一产物每次下载字节数不同，可能带尾巴）。
+ * 返回裁剪后的完整 PNG；结构不完整返回 null。
+ */
+export function pngValidateAndTrim(buf: Buffer): Buffer | null {
+  if (buf.length < 12) return null
+  if (buf.subarray(0, 8).toString('latin1') !== '\u0089PNG\r\n\u001a\n') return null
+  let off = 8
+  for (;;) {
+    if (off + 8 > buf.length) return null
+    const len = buf.readUInt32BE(off)
+    const type = buf.subarray(off + 4, off + 8).toString('latin1')
+    const dataEnd = off + 8 + len
+    if (dataEnd + 4 > buf.length) return null // 数据或 CRC 被截断
+    if (type === 'IEND') return buf.subarray(0, dataEnd + 4)
+    if (len === 0 || len > 0x7fffffff) return null // 防 Integer 环绕死循环
+    off = dataEnd + 4
+  }
+}
+
+/**
+ * MP4 轻校验：`ftyp` 盒头 + `moov` 盒存在（截断的 mp4 缺 moov 无法播放）。
+ * 只做存在性检查，不解析盒链——够拦「下载截断」这一种故障。
+ */
+export function mp4LooksIntact(buf: Buffer): boolean {
+  if (buf.length < 12) return false
+  if (buf.subarray(4, 8).toString('latin1') !== 'ftyp') return false
+  return buf.indexOf('moov') !== -1
+}
+
+/**
  * 已拿到 Response 后的流式限长读取。content 端点的 Response 由调用方发起
  * （带鉴权、可能已带超时 signal），这里只管「读得多快、读到多大」。
  */

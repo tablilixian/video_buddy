@@ -24,6 +24,7 @@ import { libraryMediaUrl } from '../lib/contracts/asset-library.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 import { resolveRefFilenames } from '../lib/reference-resolve.js'
 
 // ---------------------------------------------------------------------------
@@ -411,7 +412,7 @@ function stubFetchCapture() {
       }
     }
     if (text.includes('/content/')) {
-      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]), text: async () => '' }
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng()), text: async () => '' }
     }
     return {
       ok: true,

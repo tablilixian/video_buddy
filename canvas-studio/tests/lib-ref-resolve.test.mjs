@@ -28,6 +28,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AssetLibrary } from '../lib/asset-library.js'
+import { minimalPng } from './helpers/generation-stub.mjs'
 import { createStudioTools } from '../lib/host-tools.js'
 import { resetDramaProbeCache } from '../lib/generate.js'
 import { resetLookBudget } from '../lib/look-budget.js'
@@ -72,7 +73,7 @@ const genBranch = (text, init = {}) => {
       }),
     }
   }
-  if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]), text: async () => '' }
+  if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng()), text: async () => '' }
   return null
 }
 

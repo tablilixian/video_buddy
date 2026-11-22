@@ -152,8 +152,10 @@ export interface FollowGenerationOptions {
   readonly signal?: AbortSignal
   /** 每次拿到新版本快照时回调（台账增量回写 / 进度展示）。 */
   readonly onSnapshot?: (snapshot: GenerationSnapshot) => void | Promise<void>
-  /** 整体墙钟上限（毫秒）；超时先尽力 cancel 再抛 CS-PROV-014。 */
+  /** 整体墙钟上限（毫秒）；超时先尽力 cancel 再抛 CS-GEN-209。 */
   readonly timeoutMs?: number
+  /** 超时文案里的操作名（如「音乐生成」/「角色四视图」；缺省 generation）。 */
+  readonly label?: string
   /** 打断时是否撤销远端任务（默认 true：避免孤儿扣费）。 */
   readonly cancelOnAbort?: boolean
   /** 退避初值（毫秒），默认 500——测试注入 1ms 免等待。 */
@@ -214,8 +216,9 @@ export async function followGeneration(
     if (Date.now() > deadline) {
       await cancelRemote()
       const seconds = Math.max(1, Math.round((opts.timeoutMs ?? 2_400_000) / 1000))
-      // 与 executor 的超时码对齐（视频走 CS-PROV-014；图片调用侧可换 GEN 码）。
-      throw makeCanvasError('CS-PROV-014', { seconds, label: 'generation' })
+      // 业务链路超时专用码（CS-GEN-209，operation 感知文案）；CS-PROV-014 的
+      // 「视频生成超时」模板只属于 fal executor——图像/理解复用会张冠李戴（真机实锤）。
+      throw makeCanvasError('CS-GEN-209', { seconds, tool: opts.label ?? '生成' })
     }
 
     let next: GenerationSnapshot

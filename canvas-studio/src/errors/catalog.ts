@@ -1117,6 +1117,34 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '拼接是机械步骤（concat demuxer + -c copy），直接重试通常可过；连续失败先查磁盘空间与分段产物完整性。',
   },
   {
+    // 产物下载不完整（迁移 B3-3 真机实锤）：后台 content 端点对较大产物随机截断
+    // （同 id 每次下载字节数不同、PNG 缺 IEND，探测见 cv-details CV-468）。重试后
+    // 仍不完整才抛——真机观察后台大概率需要修 serving 层。
+    // 注：CS-NET-011 已被 CR-011（本地文件引用越界）占用，本条顺延为 CS-NET-012。
+    code: 'CS-NET-012',
+    module: 'NET',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '生成产物下载不完整（多次尝试仍被截断），本次结果已丢弃。请直接重新生成；若反复出现请联系开发并附任务时间。',
+    devMessage: 'content 端点下载 {attempts} 次均截断：need≥{need} got {got}（{label}）',
+    recoveryHint: '服务端 content serving 疑似故障——重试同一 generation 无效时建议整单重新生成；持续出现需反馈 DramaServer。',
+  },
+  {
+    // 业务 API 异步任务超时（迁移 B3-3）：预算内后台未到终态，已自动 cancel。
+    // 与 CS-PROV-014（视频供应商文案）分离——图像/理解/音乐等 operation 复用会张冠李戴。
+    code: 'CS-GEN-209',
+    module: 'GEN',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '{tool} 超时（{seconds} 秒未完成），已自动取消后台任务。可稍后重试。',
+    devMessage: 'generation {label} 超时：{seconds}s 未到终态，已 cancel',
+    recoveryHint: '后台排队或执行慢——稍后重试；反复出现按 operation 反馈 DramaServer。',
+  },
+  {
     // quote 硬闸（迁移 B4，拍板 ⑤）：预估积分 > 可用余额 → 提交前拦截。
     code: 'CS-BILL-002',
     module: 'BILL',

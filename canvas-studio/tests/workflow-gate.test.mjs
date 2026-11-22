@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -76,7 +77,7 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
       }
     }
     if (String(url).includes('/content/')) {
-      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      return { ok: true, arrayBuffer: async () => new Uint8Array(minimalPng(864, 480)) }
     }
     if (String(url) === mediaUrl) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     return { ok: false, status: 404 }

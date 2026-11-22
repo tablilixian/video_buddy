@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
 import { queueDepthOf } from '../lib/generate.js'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 
 /** 工具执行上下文（会话 cwd 绑定项目目录）。 */
 const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(15000) })
@@ -68,7 +69,7 @@ function stubBusiness({ unreachable = false } = {}) {
     }
     if (target.includes('/content/')) {
       calls.content += 1
-      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]), text: async () => '' }
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng()), text: async () => '' }
     }
     throw new Error(`unexpected fetch: ${target}`)
   }

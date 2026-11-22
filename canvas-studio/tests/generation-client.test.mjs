@@ -5,7 +5,7 @@
  *   1. 创建：inputs[] 按 role 从 1 连续编号、白名单校验本地先拦；Idempotency-Key
  *      必发；**intent 持久化先于 POST**（网络重试复用同 key 的凭据）。
  *   2. 跟随：终态只认 terminal；瞬时错误（网络/429/5xx）退避重试、4xx 即停；
- *      打断尽力 cancel 远端再抛 CS-GEN-207；墙钟超时 cancel 后抛 CS-PROV-014。
+ *      打断尽力 cancel 远端再抛 CS-GEN-207；墙钟超时 cancel 后抛 CS-GEN-209。
  *   3. 下载：content 端点非 2xx（410 过期等）→ CS-NET-007。
  *   4. 报价 fail-open：失败返回 null 不阻断提交。
  */
@@ -204,11 +204,11 @@ test('followGeneration：用户打断 → 尽力 cancel 远端 → CS-GEN-207', 
   assert.deepEqual(calls.cancel, ['aaaaaaaa-aaaa-4aaa-8aaa-000000000001'], '打断必须尽力撤销远端任务')
 })
 
-test('followGeneration：墙钟超时 → cancel 远端 → CS-PROV-014', async () => {
+test('followGeneration：墙钟超时 → cancel 远端 → CS-GEN-209（operation 感知文案）', async () => {
   const { deps, calls } = fakeDeps({ poll: () => SNAP({ version: 2, status: 'running' }) })
   await assert.rejects(
-    () => followGeneration(deps, SNAP(), { timeoutMs: 20, backoffStartMs: 1 }),
-    (e) => e instanceof CanvasStudioError && e.code === 'CS-PROV-014',
+    () => followGeneration(deps, SNAP(), { timeoutMs: 20, backoffStartMs: 1, label: '音乐生成' }),
+    (e) => e instanceof CanvasStudioError && e.code === 'CS-GEN-209' && e.message.includes('音乐生成'),
   )
   assert.equal(calls.cancel.length, 1, '超时也必须尽力撤销远端任务')
 })

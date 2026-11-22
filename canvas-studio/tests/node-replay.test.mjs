@@ -28,6 +28,7 @@ import { generateAsset } from '../lib/generate.js'
 import { isReplayable } from '../lib/node-params.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { assetUploadBranch, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
@@ -243,7 +244,7 @@ function stubSheetFetch() {
     }
     if (text.includes('/content/')) {
       calls.push({ kind: 'download' })
-      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([5, 5, 5]) }
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng(1808, 1024)) }
     }
     return { ok: false, status: 404, text: async () => '' }
   }
@@ -308,8 +309,10 @@ test('character_sheet 重放：复用锚点节点 id，资产卡原地保留（�
     assert.equal(result.nodeId, 'cs1')
 
     // 拼图**真的重写到了同一路径**（资源路由是 no-store，故同名文件不会被缓存）。
+    // 迁移 B3-2：产物按 content 端点 MIME 校验后落盘——字节 = 桩回的 valid PNG。
     const bytes = await readFile(join(dir, 'cs1.png'))
-    assert.deepEqual([...bytes], [5, 5, 5])
+    assert.equal(bytes.subarray(0, 8).toString('latin1'), '\u0089PNG\r\n\u001a\n', '落盘的是合法 PNG')
+    assert.equal(bytes.readUInt32BE(16), 1808, 'IHDR width = 桩回的 1808')
 
     const assets = registry.assets()
     assert.equal(assets.length, 1, '同名即覆盖：不许新增第二张卡')

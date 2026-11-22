@@ -25,6 +25,22 @@ export function GEN_SNAP_DONE(output) {
   }
 }
 
+/** 结构合法的最小 PNG（sig + IHDR + IDAT + IEND；CRC 全零——本仓校验不走 CRC）。
+ *  width/height 写进 IHDR，供 pngSizeOf 实测分辨率类用例使用。 */
+export function minimalPng(width = 8, height = 8, extra = []) {
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length, 0)
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)])
+  }
+  const idat = extra.length > 0 ? Buffer.from(extra) : Buffer.from([1, 2, 3, 4])
+  return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))])
+}
+
 const PENDING = {
   id: 'cccccccc-cccc-4ccc-8ccc-000000000001',
   operation: 'txt2image',
@@ -66,7 +82,7 @@ export function generationStub(opts = {}) {
     }
     if (text.includes('/content/')) {
       state.content += 1
-      const bytes = opts.contentBytes ?? [1, 2, 3]
+      const bytes = opts.contentBytes ?? minimalPng(opts.pngWidth ?? 8, opts.pngHeight ?? 8)
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(bytes), text: async () => '' }
     }
     return null

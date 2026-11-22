@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateCharacterSheet } from '../lib/generate.js'
 import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 
 const SHEET_URL = 'https://media.example/sheet.png'
 
@@ -32,7 +33,7 @@ const SHEET_DONE = {
 }
 
 /** character_sheet 专用打桩：image2character 首拍 500（temp 丢失）→ 重传后二拍成功。 */
-function stubCharacterSheetFetch(sheetBytes = new Uint8Array([7, 7, 7])) {
+function stubCharacterSheetFetch(sheetBytes = minimalPng(1376, 768)) {
   const calls = []
   globalThis.fetch = async (url, init = {}) => {
     const text = String(url)
@@ -132,11 +133,9 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
 test('CV-229 character_sheet：拼图尺寸落盘即正确（实测 IHDR → 自然像素 + 分辨率）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-sheet-'))
   try {
-    // 造一段带 PNG magic + IHDR 的字节：后端四视图拼图实测就是 1808×1024。
-    const sheet = Buffer.alloc(24)
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(sheet, 0)
-    sheet.writeUInt32BE(1808, 16)
-    sheet.writeUInt32BE(1024, 20)
+    // 造一段带 PNG magic + IHDR 的**结构合法**字节：后端四视图拼图实测 1808×1024。
+    // （迁移 B3-3 后 runBusinessImage 校验 PNG 完整性，桩必须回真结构。）
+    const sheet = minimalPng(1808, 1024)
     // 自愈链需要一个本地资产做重传源（与上面那条用例同一前提）。
     await writeFile(join(dir, 'local.png'), Buffer.from([1, 2, 3]))
     stubCharacterSheetFetch(new Uint8Array(sheet))
@@ -158,21 +157,19 @@ test('CV-229 character_sheet：拼图尺寸落盘即正确（实测 IHDR → 自
   }
 })
 
-test('CV-229 character_sheet：拼图字节解析不出（非 PNG）→ 回退占位尺寸，不写假分辨率', async () => {
+test('CV-229→B3-3：非 PNG 产物在下载校验即拦截（CS-NET-012），不再落盘后回退占位尺寸', async () => {
+  // 迁移 B3-3：runBusinessImage 下载后先走 PNG 结构校验——非 PNG 字节三次重试后
+  // CS-NET-012 拦截，坏图根本不会落到画布（旧口径是落盘后 pngSizeOf 回退占位尺寸）。
   const dir = await mkdtemp(join(tmpdir(), 'cs-sheet-'))
   try {
-    stubCharacterSheetFetch()
+    stubCharacterSheetFetch(new Uint8Array([7, 7, 7])) // 非 PNG 字节（模拟后台截断/坏流）
     const registry = stubSheetRegistry([stubNode()], dir)
-    await generateCharacterSheet(registry, 'p1', {
-      filename: 'ok.png',
-      assetName: '女主',
-      lockedPrompt: 'SAME: 红裙短发',
-    })
-    const appended = registry.getWrites().find((w) => w[0] === 'appendCanvasNode')?.[1]
-    assert.equal(appended.width, 260, '解析失败回退占位尺寸（客户端 5% 校正仍是兜底）')
-    assert.equal(appended.height, 228)
-    assert.equal(appended.mediaWidth, undefined, '不知道就留空，不编一个数字')
-    assert.equal(appended.mediaHeight, undefined)
+    await assert.rejects(
+      generateCharacterSheet(registry, 'p1', { filename: 'ok.png', assetName: '女主', lockedPrompt: 'SAME: 红裙短发' }),
+      (err) => err.code === 'CS-NET-012',
+    )
+    assert.equal(registry.getWrites().find((w) => w[0] === 'appendCanvasNode'), undefined,
+      '坏图不落画布（旧口径是回退占位尺寸落盘）')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

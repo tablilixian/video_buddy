@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { generateAsset, clampDuration, operationTypeOf, overwriteNodeAsset } from '../lib/generate.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
-import { generationStub } from './helpers/generation-stub.mjs'
+import { generationStub, minimalPng } from './helpers/generation-stub.mjs'
 
 // ── B2 三段式上传桩（迁移方案 2026-11-22）：presign → PUT → complete ─────────
 // 旧通道 multipart /api/v1/generate/upload 已退役；所有涉及参考句柄的流程测试
@@ -58,6 +58,7 @@ function assetUploadBranch(text, init) {
 function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3]), genOpts = {}) {
   const calls = []
   const gen = generationStub({
+    contentBytes: PNG_BYTES,
     ...genOpts,
     output: genOpts.output ?? { ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' },
   })
@@ -129,10 +130,13 @@ const GEN_DONE = {
   ...GEN_PENDING, status: 'succeeded', version: 2, progress: 100, billing_status: 'committed', terminal: true,
   outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
 }
+// 结构合法的最小 PNG（B3-3 真机修复后 runBusinessImage 校验 PNG 完整性，桩必须回真 PNG）
+const PNG_BYTES = minimalPng(1376, 768)
 const GEN_DONE_VIDEO = {
   ...GEN_DONE, operation: 'image2videofl2va',
   outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
 }
+const MP4_BYTES = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32, 0x6d, 0x6f, 0x6f, 0x76, 0x00, 0x00, 0x00, 0x01, 0x6d, 0x70, 0x34, 0x32])
 
 /** 项目注册表打桩：读到的既有文档（v3 形态）+ 记录写盘。 */
 function stubRegistry(initialNodes, assetsDir) {
@@ -282,7 +286,7 @@ test('filename 失效自愈：生成 500 时按画布节点反查本地资产重
         return { ok: true, status: 200, json: async () => GEN_DONE }
       }
       if (text.includes('/content/')) {
-        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+        return { ok: true, arrayBuffer: async () => PNG_BYTES }
       }
       if (text === 'https://media.example/out.png') {
         return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
@@ -388,7 +392,7 @@ test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样�
         return { ok: true, status: 200, json: async () => GEN_DONE_VIDEO }
       }
       if (text.includes('/content/')) {
-        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+        return { ok: true, arrayBuffer: async () => PNG_BYTES }
       }
       return { ok: false, status: 404 }
     }
@@ -1209,7 +1213,7 @@ test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 s
         return { ok: true, status: 200, json: async () => GEN_DONE }
       }
       if (text.includes('/content/')) {
-        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+        return { ok: true, arrayBuffer: async () => PNG_BYTES }
       }
       return { ok: false, status: 404 }
     }

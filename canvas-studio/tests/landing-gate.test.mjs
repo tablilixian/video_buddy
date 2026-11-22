@@ -35,6 +35,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
+import { minimalPng } from './helpers/generation-stub.mjs'
 import { createStoryboard, emptyStoryboardSections } from '../lib/contracts/storyboard.js'
 import { LOOK_BUDGET_PER_CYCLE, resetLookBudget } from '../lib/look-budget.js'
 
@@ -89,7 +90,7 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
       }
     }
     if (String(url).includes('/content/')) {
-      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      return { ok: true, arrayBuffer: async () => new Uint8Array(minimalPng()) }
     }
     if (init.method === 'POST') {
       return { ok: true, json: async () => ({ full_url: mediaUrl, filename: 'gen.png' }) }

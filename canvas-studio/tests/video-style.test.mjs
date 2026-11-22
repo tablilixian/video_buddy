@@ -25,6 +25,7 @@ import {
   splitVideoAsset,
 } from '../lib/video-style.js'
 import { ProjectRegistry } from '../lib/projects.js'
+import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
 
 // ---------------------------------------------------------------------------
 // 1. planFrameTimes（抽帧计划）
@@ -125,6 +126,7 @@ function stubDramaFetch() {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
     if (target.includes('/generate/upload')) {
+      // 旧通道分支保留防回弹（迁移 B2 后不会再命中）。
       uploadCount += 1
       calls.push({ url: target, kind: 'upload' })
       return {
@@ -132,6 +134,17 @@ function stubDramaFetch() {
         status: 200,
         json: async () => ({ filename: `drama-${uploadCount}.png` }),
         text: async () => '',
+      }
+    }
+    {
+      const handled = assetUploadBranch(target, init)
+      if (handled !== null) {
+        // 只有 presign 算一次「上传」事件（PUT/complete 是同一上传的后续段）。
+        if (init.method === 'POST' && target.includes('/v1/assets/presign')) {
+          uploadCount += 1
+          calls.push({ url: target, kind: 'upload' })
+        }
+        return handled
       }
     }
     if (target.includes('/generate/image2vl')) {
@@ -198,6 +211,7 @@ test('importVideoAsset：只落盘 + 探时长，**一个远端请求都不发�
 })
 
 test('splitVideoAsset：对**已有资产**抽帧 + 归纳，且原视频必须留下', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+  resetAssetUploadStub()
   const dir = await mkdtemp(join(tmpdir(), 'cs-video-'))
   try {
     const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
@@ -224,12 +238,12 @@ test('splitVideoAsset：对**已有资产**抽帧 + 归纳，且原视频必须�
 
     // 时长来自假 ffmpeg 的 stderr。
     assert.ok(Math.abs(result.duration - 5.04) < 1e-9)
-    // 5.04s → [0, 2, 4] 三帧；帧文件真实落盘且拿到 Drama filename。
+    // 5.04s → [0, 2, 4] 三帧；帧文件真实落盘且拿到上传句柄（迁移 B2：asset_id）。
     assert.equal(result.frames.length, 3)
     assert.deepEqual(result.frames.map((frame) => frame.time), [0, 2, 4])
     for (const frame of result.frames) {
       assert.ok(frame.url.startsWith(`/canvas-studio/assets/${project.id}/`), '帧 URL 应为同源相对路径')
-      assert.match(frame.filename, /^drama-\d+\.png$/)
+      assert.match(frame.filename, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
       const file = frame.url.split('/').at(-1)
       const bytes = await readFile(join(registry.assetsDir(project.id), file))
       assert.ok(bytes.length > 0, '帧 PNG 应已写入 assets')
@@ -237,14 +251,14 @@ test('splitVideoAsset：对**已有资产**抽帧 + 归纳，且原视频必须�
     // 风格归纳正文：头部 + 逐帧观察 + 末尾 5 项 tokens 段；≤4 帧时全部送 VLM。
     assert.match(result.summary, /【参考视频风格归纳】参考片\.mov · 3 帧 · 时长 5\.0s/)
     assert.equal(result.summary.split('帧 @').length - 1, 3)
-    assert.match(result.summary, /色彩：暖黄（drama-1\.png）/)
+    assert.match(result.summary, new RegExp(`色彩：暖黄（${ASSET_HANDLE(1)}）`))
     assert.match(result.summary, /【5 项风格 tokens】/)
     // 归并后的 tokens：固定 5 行、按字段顺序、跨帧去重、非字段行被丢弃。
     assert.deepEqual(
       result.tokens.split('\n').map((line) => line.split('：')[0]),
       ['色彩', '光线', '材质', '镜头语汇', '节奏'],
     )
-    assert.match(result.tokens, /^色彩：暖黄（drama-1\.png）；暖黄（drama-2\.png）；暖黄（drama-3\.png）$/m)
+    assert.match(result.tokens, new RegExp(`^色彩：暖黄（${ASSET_HANDLE(1)}）；暖黄（${ASSET_HANDLE(2)}）；暖黄（${ASSET_HANDLE(3)}）$`, 'm'))
     assert.equal(result.tokens.split('光线：').length - 1, 1, '帧间相同子句应去重，不得重复')
     assert.ok(!result.tokens.includes('补充说明'), '非字段行不得进入 tokens')
     // 原视频**原样回传且必须留下** —— 它是画布上的正式节点资产，派生不该动它。

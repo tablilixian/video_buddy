@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isDramaProductName, looksLikeCanvasNodeId, healReferenceFilename, promoteAssetFile } from '../lib/generate.js'
 import { createStudioTools, refCandidatePool } from '../lib/host-tools.js'
+import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
 
 // ---------------------------------------------------------------------------
 // 1. 判据：纯函数，直连单测
@@ -82,6 +83,7 @@ const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortS
 
 /** 编排 fetch：按 url 子串匹配路由，respond(第几次命中, 请求体) 返回 { status, json, text }。 */
 function stubFetch(routes) {
+  resetAssetUploadStub()
   const calls = []
   const original = globalThis.fetch
   globalThis.fetch = async (url, init = {}) => {
@@ -91,6 +93,9 @@ function stubFetch(routes) {
       try { body = JSON.parse(init.body) } catch { body = init.body }
     }
     calls.push({ url: href, body })
+    // 迁移 B2：素材上传走 /v1/assets/* 三段式（共享桩），旧 /generate/upload 路由已死。
+    const handled = assetUploadBranch(href, init)
+    if (handled !== null) return handled
     const route = routes.find((entry) => href.includes(entry.match))
     let spec = { status: 200, json: {} }
     if (route !== undefined) {
@@ -140,7 +145,6 @@ test('CV-155：@ref 引用产物节点时主动重传换句柄，并回写节点
     assert.ok(vl, 'image2vl 工具应存在')
 
     const { calls, restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-cafe1234.png' } }) },
       { match: '/image2vl', respond: () => ({ status: 200, json: { output: '画面描述' } }) },
     ])
     try {
@@ -148,8 +152,8 @@ test('CV-155：@ref 引用产物节点时主动重传换句柄，并回写节点
       assert.equal(res.text, '画面描述')
       const vlCall = calls.find((call) => call.url.includes('/image2vl'))
       assert.ok(vlCall, '应调用 image2vl')
-      assert.equal(vlCall.body.image, 'ref-cafe1234.png', '入参应已是重传后的句柄，而不是产物名')
-      assert.equal(nodes()[0].filename, 'ref-cafe1234.png', '节点 filename 应被回写为可用句柄')
+      assert.equal(vlCall.body.image, ASSET_HANDLE(1), '入参应已是重传后的句柄（asset_id），而不是产物名')
+      assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '节点 filename 应被回写为可用句柄')
     } finally {
       restore()
     }
@@ -171,7 +175,6 @@ test('CV-155：analyzeImage 拿到产物名 → 500 后自愈换句柄并重试�
 
     let vlHits = 0
     const { calls, restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-deadbeef.png' } }) },
       {
         match: '/image2vl',
         respond: () => {
@@ -189,8 +192,8 @@ test('CV-155：analyzeImage 拿到产物名 → 500 后自愈换句柄并重试�
       const vlCalls = calls.filter((call) => call.url.includes('/image2vl'))
       assert.equal(vlCalls.length, 2, '应重试恰好一次（不自愈循环）')
       assert.equal(vlCalls[0].body.image, 'img_01290_.png', '首次仍是原样透传产物名')
-      assert.equal(vlCalls[1].body.image, 'ref-deadbeef.png', '重试应带新句柄')
-      assert.equal(nodes()[0].filename, 'ref-deadbeef.png', '自愈应回写节点 filename')
+      assert.equal(vlCalls[1].body.image, ASSET_HANDLE(1), '重试应带新句柄')
+      assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '自愈应回写节点 filename')
     } finally {
       restore()
     }
@@ -252,7 +255,6 @@ test('video2vl：@ref 引用产物视频 → 主动重传换句柄（不让后�
     assert.ok(v2vl, 'video2vl 工具应存在')
 
     const { calls, restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-cafe1234.mp4' } }) },
       { match: '/video2vl', respond: () => ({ status: 200, json: { output: '0-3 秒：中景缓推…' } }) },
     ])
     try {
@@ -260,9 +262,9 @@ test('video2vl：@ref 引用产物视频 → 主动重传换句柄（不让后�
       assert.equal(res.text, '0-3 秒：中景缓推…')
       const vlCall = calls.find((call) => call.url.includes('/video2vl'))
       assert.ok(vlCall, '应调用 video2vl')
-      assert.equal(vlCall.body.video, 'ref-cafe1234.mp4', '入参应已是换名后的句柄，而不是产物名')
+      assert.equal(vlCall.body.video, ASSET_HANDLE(1), '入参应已是换名后的句柄（asset_id），而不是产物名')
       assert.equal(vlCall.body.system_prompt.length > 0, true, 'system_prompt 必填（端点 422 拒绝空值）')
-      assert.equal(nodes()[0].filename, 'ref-cafe1234.mp4', '节点 filename 应被回写为可用句柄')
+      assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '节点 filename 应被回写为可用句柄')
     } finally {
       restore()
     }
@@ -281,7 +283,6 @@ test('video2vl：拿到产物名 → 500 后自愈换句柄并重试恰好一次
 
     let hits = 0
     const { calls, restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-deadbeef.mp4' } }) },
       {
         match: '/video2vl',
         respond: () => {
@@ -297,8 +298,8 @@ test('video2vl：拿到产物名 → 500 后自愈换句柄并重试恰好一次
       const vlCalls = calls.filter((call) => call.url.includes('/video2vl'))
       assert.equal(vlCalls.length, 2, '应重试恰好一次（不自愈循环）')
       assert.equal(vlCalls[0].body.video, 'MiniMax_H3_ref2va_00020_.mp4', '首次仍是原样透传产物名')
-      assert.equal(vlCalls[1].body.video, 'ref-deadbeef.mp4', '重试应带新句柄')
-      assert.equal(nodes()[0].filename, 'ref-deadbeef.mp4', '自愈应回写节点 filename')
+      assert.equal(vlCalls[1].body.video, ASSET_HANDLE(1), '重试应带新句柄')
+      assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '自愈应回写节点 filename')
     } finally {
       restore()
     }
@@ -316,18 +317,17 @@ test('CV-155：healReferenceFilename 认 filename 与本地资产名，认不出
     await writeFile(join(dir, 'shot1.png'), Buffer.from([1, 2, 3]))
     const { registry } = stubRegistry([productNode()], dir)
     const { restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-aaaabbbb.png' } }) },
     ])
     try {
       // 按 filename 命中
       assert.equal(
         await healReferenceFilename(registry, 'p1', 'img_01287_.png'),
-        'ref-aaaabbbb.png',
+        ASSET_HANDLE(1),
       )
       // 按本地资产名命中（实测 Agent 会把画布资产文件名当 filename 传）
       assert.equal(
         await healReferenceFilename(registry, 'p1', 'shot1.png'),
-        'ref-aaaabbbb.png',
+        ASSET_HANDLE(2),
       )
       // 认不出 → null（调用方据此保留原始错误）
       assert.equal(await healReferenceFilename(registry, 'p1', '不存在.png'), null)
@@ -463,12 +463,11 @@ test('CV-242：promote 成功即记账 manifest（句柄 → 本地资产文件�
     await writeFile(join(dir, 'frame1.png'), Buffer.from([1, 2, 3]))
     const { registry } = stubRegistry([], dir)
     const { restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-11112222.png' } }) },
     ])
     try {
-      assert.equal(await promoteAssetFile(registry, 'p1', 'frame1.png'), 'ref-11112222.png')
+      assert.equal(await promoteAssetFile(registry, 'p1', 'frame1.png'), ASSET_HANDLE(1))
       const manifest = JSON.parse(await readFile(join(dir, 'reference-manifest.json'), 'utf8'))
-      assert.equal(manifest.handles['ref-11112222.png'], 'frame1.png', '记账句柄 → 资产文件')
+      assert.equal(manifest.handles[ASSET_HANDLE(1)], 'frame1.png', '记账句柄 → 资产文件')
     } finally {
       restore()
     }
@@ -488,13 +487,12 @@ test('CV-242：节点被删后，heal 经 manifest 反查磁盘资产重传自�
     )
     const { registry } = stubRegistry([], dir)
     const { restore } = stubFetch([
-      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-33334444.png' } }) },
     ])
     try {
       // 按旧句柄自愈：画布反查不中 → 落盘映射 → 重传换新句柄
       assert.equal(
         await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'),
-        'ref-33334444.png',
+        ASSET_HANDLE(1),
       )
       // 磁盘文件也被删 → 查映射也救不回 → null（调用方抛原始错误）
       await rm(join(dir, 'frame1.png'))

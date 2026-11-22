@@ -409,13 +409,10 @@ test('DramaClient.listGenerations：坏帧跳过、next_cursor 透传', async ()
   assert.equal(page.next_cursor, 'eyJ')
 })
 
-test('DramaClient.presignAsset：不安全 upload_url 在 Host 侧被 502 拦下', async () => {
-  const client = fakeClient(async () => new Response(JSON.stringify({
-    ...PRESIGN_SAMPLE,
-    upload_url: 'http://blob.example.com/put',
-  }), { status: 201 }))
-  await assert.rejects(() => client.presignAsset('tok', { type: 'image', filename: 'a.png', content_type: 'image/png', size_bytes: 1 }),
-    (e) => e.code === 'invalid_response' && e.status === 502)
+test('DramaClient.presignAsset：协议层只解析不裁剪（upload_url 护栏在上传引擎，见 asset-upload.test.mjs）', async () => {
+  const client = fakeClient(async () => new Response(JSON.stringify(PRESIGN_SAMPLE), { status: 201 }))
+  const parsed = await client.presignAsset('tok', { type: 'image', filename: 'a.png', content_type: 'image/png', size_bytes: 1 })
+  assert.equal(parsed.upload_url, PRESIGN_SAMPLE.upload_url)
 })
 
 test('DramaClient.completeAsset：status≠ready → invalid_response', async () => {

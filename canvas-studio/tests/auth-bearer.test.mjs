@@ -55,23 +55,36 @@ test('dramaAuthHeaders: 有会话 = Bearer，无会话 = 空', () => {
   clearAuthSession()
 })
 
-test('鉴权闸 fail-open：开关关闭时无会话照常上传（不带头）', async () => {
+test('鉴权闸 fail-open：开关关闭时无会话照常上传（presign 不带头；PUT 永不带鉴权）', async () => {
   setDramaAuthRequired(false)
   clearAuthSession()
   const calls = []
+  let lastAsset = null
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), method: init.method ?? 'GET', headers: init.headers ?? {} })
-    if (String(url).includes('/api/v1/health')) {
-      return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+    const target = String(url)
+    calls.push({ url: target, method: init.method ?? 'GET', headers: init.headers ?? {} })
+    if (target.includes('/v1/assets/presign')) {
+      lastAsset = 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002'
+      return { ok: true, status: 201, json: async () => ({
+        asset: { id: lastAsset, type: 'image', status: 'uploading' },
+        upload_url: 'https://blob.test/put/ref',
+        headers: { 'content-type': 'image/png' },
+      }) }
     }
-    return { ok: true, status: 200, json: async () => ({ filename: 'ref.png' }) }
+    if (target === 'https://blob.test/put/ref') return { ok: true, status: 200, json: async () => ({}) }
+    if (target.includes('/v1/assets/complete')) {
+      return { ok: true, status: 200, json: async () => ({ id: lastAsset, type: 'image', status: 'ready' }) }
+    }
+    return { ok: true, status: 200, json: async () => ({}) }
   }
   try {
-    const filename = await uploadBytesToDrama(new Uint8Array([1]), 'png')
-    assert.equal(filename, 'ref.png')
-    const upload = calls.find((c) => c.url.includes('/upload'))
-    assert.ok(upload, 'upload 请求已发出')
-    assert.equal(upload.headers.authorization, undefined)
+    const assetId = await uploadBytesToDrama(new Uint8Array([1]), 'png')
+    assert.match(assetId, /^[0-9a-f-]{36}$/u, '返回值应为 asset_id（UUID）')
+    const presign = calls.find((c) => c.url.includes('/v1/assets/presign'))
+    const put = calls.find((c) => c.method === 'PUT')
+    assert.ok(presign, 'presign 已发出（fail-open：无会话不带假头，由服务端 401 裁决）')
+    assert.equal(presign.headers.authorization, undefined)
+    assert.equal(put.headers.authorization, undefined, 'PUT 直传永不带鉴权头')
   } finally {
     resetDramaProbeCache()
   }
@@ -99,26 +112,44 @@ test('鉴权闸 fail-fast：开关开启 + 无会话 → CS-AUTH-001 且零网�
   }
 })
 
-test('header 注入：upload / dramaJobRequest / health 都带 Bearer', async () => {
+test('header 注入：presign/complete（业务 API）带 Bearer；PUT 直传永不带；job/health 带 Bearer', async () => {
   setDramaAuthRequired(true)
   setAuthSession(SESSION)
   const calls = []
+  let lastAsset = null
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), method: init.method ?? 'GET', headers: init.headers ?? {} })
-    if (String(url).includes('/api/v1/health')) {
+    const target = String(url)
+    calls.push({ url: target, method: init.method ?? 'GET', headers: init.headers ?? {} })
+    if (target.includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+    }
+    if (target.includes('/v1/assets/presign')) {
+      lastAsset = 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002'
+      return { ok: true, status: 201, json: async () => ({
+        asset: { id: lastAsset, type: 'image', status: 'uploading' },
+        upload_url: 'https://blob.test/put/ref',
+        headers: { 'content-type': 'image/png' },
+      }) }
+    }
+    if (target === 'https://blob.test/put/ref') return { ok: true, status: 200, json: async () => ({}) }
+    if (target.includes('/v1/assets/complete')) {
+      return { ok: true, status: 200, json: async () => ({ id: lastAsset, type: 'image', status: 'ready' }) }
     }
     return { ok: true, status: 200, json: async () => ({ filename: 'ref.png', status: 'running' }) }
   }
   try {
     await uploadBytesToDrama(new Uint8Array([1]), 'png')
     await dramaJobRequest('GET', '/api/v1/jobs/j1')
-    const upload = calls.find((c) => c.url.includes('/upload'))
+    const presign = calls.find((c) => c.url.includes('/v1/assets/presign'))
+    const put = calls.find((c) => c.method === 'PUT')
+    const complete = calls.find((c) => c.url.includes('/v1/assets/complete'))
     const job = calls.find((c) => c.url.includes('/api/v1/jobs/j1'))
-    const health = calls.find((c) => c.url.includes('/api/v1/health'))
-    assert.equal(upload.headers.authorization, `Bearer ${SESSION.accessToken}`)
+    assert.equal(presign.headers.Authorization, `Bearer ${SESSION.accessToken}`)
+    assert.equal(complete.headers.Authorization, `Bearer ${SESSION.accessToken}`)
+    assert.equal(put.headers.Authorization ?? put.headers.authorization, undefined, 'PUT 直传只带 presign.headers')
     assert.equal(job.headers.authorization, `Bearer ${SESSION.accessToken}`)
-    assert.equal(health.headers.authorization, `Bearer ${SESSION.accessToken}`)
+    // health 探针的 Bearer 注入由 health.test.mjs / generate.test.mjs 的流程覆盖
+    //（迁移 B2 起上传不再前置探活，presign 本身就是探针）。
     // POST 轮询（cancel）的 content-type 与 Bearer 并存。
     await dramaJobRequest('POST', '/api/v1/jobs/j1/cancel')
     const cancel = calls.find((c) => c.url.includes('/cancel'))
@@ -131,14 +162,14 @@ test('header 注入：upload / dramaJobRequest / health 都带 Bearer', async ()
   }
 })
 
-test('401 归一：upload 遇 HTTP 401 → CS-AUTH-001', async () => {
+test('401 归一：upload（presign）遇 HTTP 401 → CS-AUTH-001', async () => {
   setDramaAuthRequired(true)
   setAuthSession(SESSION)
   globalThis.fetch = async (url, init = {}) => {
-    if (String(url).includes('/api/v1/health')) {
-      return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+    if (String(url).includes('/v1/assets/presign')) {
+      return { ok: false, status: 401, json: async () => ({ error: { code: 'unauthenticated', message: 'authentication required' } }) }
     }
-    return { ok: false, status: 401, json: async () => ({ error: 'invalid token' }) }
+    return { ok: true, status: 200, json: async () => ({}) }
   }
   try {
     await assert.rejects(

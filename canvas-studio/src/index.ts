@@ -337,6 +337,8 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。
   const cfg = {
     dramaApiBase: () => source().dramaApiBase,
+    // 迁移方案 B2：素材三段式上传（presign/complete）走业务 API 基址（B3 起生成调用同源）。
+    businessApiBase: () => source().businessApiBase,
     maxVideoSeconds: () => source().maxVideoSeconds,
     resolveDramaApiKey,
     resolveFalApiKey,

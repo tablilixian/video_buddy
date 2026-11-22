@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url'
 import { generateAsset } from '../lib/generate.js'
 import { isReplayable } from '../lib/node-params.js'
 import { ProjectRegistry } from '../lib/projects.js'
+import { assetUploadBranch, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
@@ -373,9 +374,10 @@ test('extract_last_frame 重放：原地换末帧（新文件），血缘与位�
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) return healthOk()
-      if (init.method === 'POST' && text.includes('/generate/upload')) {
-        uploaded.push(text)
-        return { ok: true, status: 200, json: async () => ({ name: 'ref-framereplay.png' }) }
+      const handled = assetUploadBranch(text, init)
+      if (handled !== null) {
+        if (init.method === 'POST' && text.includes('/v1/assets/presign')) uploaded.push(text)
+        return handled
       }
       return { ok: false, status: 404, text: async () => '' }
     }
@@ -387,7 +389,7 @@ test('extract_last_frame 重放：原地换末帧（新文件），血缘与位�
     })
 
     assert.equal(result.nodeId, 'f1', '重放复用原节点 id')
-    assert.equal(result.filename, 'ref-framereplay.png')
+    assert.equal(result.filename, ASSET_HANDLE(1), '句柄语义迁移 B2：上传返回 asset_id')
     assert.equal(uploaded.length, 1)
 
     const nodes = (await registry.readCanvas(project.id)).nodes

@@ -19,8 +19,41 @@ import { generateAsset, clampDuration, operationTypeOf, overwriteNodeAsset } fro
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
+// ── B2 三段式上传桩（迁移方案 2026-11-22）：presign → PUT → complete ─────────
+// 旧通道 multipart /api/v1/generate/upload 已退役；所有涉及参考句柄的流程测试
+// 经此分支拿到**确定性 asset id**（序号递增的 UUID 形态），断言直接引用常量。
+const ASSET_HANDLE = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`
+let assetUploadSeq = 0
+let lastAssetHandle = ''
+/** 每个用自愈句柄断言的用例开头调用：序号归一，ASSET_HANDLE(1) 恒为本用例第一次上传。 */
+function resetAssetUploadSeq() {
+  assetUploadSeq = 0
+  lastAssetHandle = ''
+}
+function assetUploadBranch(text, init) {
+  if (init?.method === 'POST' && text.includes('/v1/assets/presign')) {
+    assetUploadSeq += 1
+    lastAssetHandle = ASSET_HANDLE(assetUploadSeq)
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({
+        asset: { id: lastAssetHandle, type: 'image', status: 'uploading' },
+        upload_url: 'https://blob.test/put/ref',
+        headers: { 'content-type': 'image/png' },
+      }),
+    }
+  }
+  if (text === 'https://blob.test/put/ref') return { ok: true, status: 200, json: async () => ({}) }
+  if (init?.method === 'POST' && text.includes('/v1/assets/complete')) {
+    return { ok: true, status: 200, json: async () => ({ id: lastAssetHandle, type: 'image', status: 'ready' }) }
+  }
+  return null
+}
+
 /** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。mediaBytes 可指定产物字节（CV-202 尺寸实测用例）。
- * 后端 0.5.0：视频两端点提交即 202 + job_id，状态/结果走 /api/v1/jobs/*——桩按 URL 分流。 */
+ * 后端 0.5.0：视频两端点提交即 202 + job_id，状态/结果走 /api/v1/jobs/*——桩按 URL 分流。
+ * 迁移 B2：素材上传走 /v1/assets/* 三段式（见 assetUploadBranch）。 */
 function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3])) {
   const calls = []
   const jobId = 'job-test-1'
@@ -29,6 +62,8 @@ function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new 
     if (String(url).includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
+    const assetHandled = assetUploadBranch(String(url), init)
+    if (assetHandled !== null) return assetHandled
     let body = null
     if (typeof init.body === 'string') {
       try { body = JSON.parse(init.body) } catch { body = init.body }
@@ -179,6 +214,7 @@ test('retryOf：目标节点不存在时报错且不写盘', async () => {
 })
 
 test('filename 失效自愈：生成 500 时按画布节点反查本地资产重传换新名并重试一次，回写节点 filename', async () => {
+  resetAssetUploadSeq()
   const dir = await mkdtemp(join(tmpdir(), 'cs-refresh-'))
   try {
     // 本地资产落盘（节点 url 指向的文件必须真实存在）。
@@ -201,15 +237,13 @@ test('filename 失效自愈：生成 500 时按画布节点反查本地资产重
     const registry = stubRegistry([node], dir)
     const genBodies = []
     let genCount = 0
-    let uploadCount = 0
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
       }
-      if (init.method === 'POST' && text.includes('/upload')) {
-        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
-      }
+      const assetHandled = assetUploadBranch(text, init)
+      if (assetHandled !== null) return assetHandled
       if (init.method === 'POST' && text.includes('image2image')) {
         genBodies.push(JSON.parse(init.body))
         genCount += 1
@@ -232,10 +266,10 @@ test('filename 失效自愈：生成 500 时按画布节点反查本地资产重
 
     assert.equal(genCount, 2, '应恰好自动重试一次')
     assert.equal(genBodies[0].image1, 'stale.png')
-    assert.equal(genBodies[1].image1, 'fresh0.png', '重试应携带重传后的新 filename')
+    assert.equal(genBodies[1].image1, ASSET_HANDLE(1), '重试应携带重传后的新句柄（asset_id）')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
     // 节点 filename 回写为新名（后续调用直达，不再触发自愈）。
-    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === 'fresh0.png'))
+    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === ASSET_HANDLE(1)))
     assert.ok(refreshWrite, '节点 filename 应回写为新名')
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -276,6 +310,7 @@ test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺�
 })
 
 test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样触发参考图自愈——视频提交路径', async () => {
+  resetAssetUploadSeq()
   const dir = await mkdtemp(join(tmpdir(), 'cs-refresh502-'))
   try {
     await writeFile(join(dir, 'local.png'), Buffer.from([7, 7, 7]))
@@ -297,16 +332,14 @@ test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样�
     const registry = stubRegistry([node], dir)
     const genBodies = []
     let genCount = 0
-    let uploadCount = 0
     let submitOk = 0
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
       }
-      if (init.method === 'POST' && text.includes('/upload')) {
-        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
-      }
+      const assetHandled = assetUploadBranch(text, init)
+      if (assetHandled !== null) return assetHandled
       if (init.method === 'POST' && text.includes('image2videofl2va')) {
         genBodies.push(JSON.parse(init.body))
         genCount += 1
@@ -343,10 +376,10 @@ test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样�
     assert.equal(genCount, 3, '502 内部重试一次 + 自愈重传后再提交一次，共三次')
     assert.equal(genBodies[0].image1, 'stale.png')
     assert.equal(genBodies[1].image1, 'stale.png', 'dramaPost 的内部重试不换名（自愈还没介入）')
-    assert.equal(genBodies[2].image1, 'fresh0.png', '自愈后的提交应携带重传的新句柄')
+    assert.equal(genBodies[2].image1, ASSET_HANDLE(1), '自愈后的提交应携带重传的新句柄（asset_id）')
     assert.ok(submitOk >= 1, '重试应提交成功（202 任务信封）')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'), '视频应成功落盘')
-    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === 'fresh0.png'))
+    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === ASSET_HANDLE(1)))
     assert.ok(refreshWrite, '节点 filename 应回写为新名')
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -1159,6 +1192,7 @@ test('CV-239：用户打断（生成中 abort）→ 取消码 CS-GEN-207 原样�
 // 实际生成是成功的，三方对不上。
 // ---------------------------------------------------------------------------
 test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 sourceIds 用新句柄', async () => {
+  resetAssetUploadSeq()
   const dir = await mkdtemp(join(tmpdir(), 'cs-healprompt-'))
   try {
     await writeFile(join(dir, 'local.png'), Buffer.from([7, 7, 7]))
@@ -1188,15 +1222,13 @@ test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 s
       appendCanvasNode: async (_projectId, node) => { nodes = [...nodes, node] },
     }
     let genCount = 0
-    let uploadCount = 0
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
       }
-      if (init.method === 'POST' && text.includes('/upload')) {
-        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
-      }
+      const assetHandled = assetUploadBranch(text, init)
+      if (assetHandled !== null) return assetHandled
       if (init.method === 'POST' && text.includes('image2image')) {
         genCount += 1
         if (genCount <= 2) {
@@ -1222,10 +1254,10 @@ test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 s
     const saved = nodes.find((node) => node.id !== 'src1')
     assert.ok(saved, '新图节点已落卡')
     const prompt = JSON.parse(saved.generationPrompt)
-    assert.equal(prompt.filename, 'fresh0.png', 'generationPrompt 必须记录自愈后的新句柄（详情读数与实际提交一致）')
+    assert.equal(prompt.filename, ASSET_HANDLE(1), 'generationPrompt 必须记录自愈后的新句柄（详情读数与实际提交一致）')
     assert.ok(!JSON.stringify(prompt).includes('stale.png'), '不得残留旧句柄')
     assert.deepEqual(saved.sourceIds, ['src1'], '血缘反查用新句柄命中源节点（连线不缺）')
-    assert.equal(nodes.find((node) => node.id === 'src1').filename, 'fresh0.png', '源节点 filename 已被自愈回写')
+    assert.equal(nodes.find((node) => node.id === 'src1').filename, ASSET_HANDLE(1), '源节点 filename 已被自愈回写')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

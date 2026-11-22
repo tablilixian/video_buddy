@@ -319,8 +319,9 @@ export class DramaClient {
 
   /**
    * 创建素材预签名（`POST /v1/assets/presign`，上游 201；§6.6.1）。
-   * 返回的 `upload_url` 已过 {@link assertSafeAssetUploadUrl}——不合格 502，
-   * 不把不可信 URL 交给上层。
+   * **upload_url 的出站安全校验不在这里做**——协议层只解析；护栏归上传引擎
+   * （asset-upload.ts 消费侧，映射 CS-ASSET-005），避免与 complete 的
+   * `invalid_response` 撞码。
    */
   async presignAsset(token: string, request: AssetPresignRequest): Promise<AssetPresignResponse> {
     const body = await this.#request<unknown>(token, '/v1/assets/presign', {
@@ -331,7 +332,6 @@ export class DramaClient {
     if (parsed === null) {
       throw new ApiError('invalid_response', 'presign 响应缺少 asset/upload_url。', 502, null)
     }
-    assertSafeAssetUploadUrl(parsed.upload_url)
     return parsed
   }
 
@@ -439,7 +439,8 @@ export class DramaClient {
 
 /** 错误信封解析：code 优先，`Retry-After` 头单独取，非 JSON 体回退 HTTP 状态文案。 */
 export async function parseApiError(response: Response): Promise<ApiError> {
-  const declared = Number(response.headers.get('Retry-After'))
+  // headers 容忍缺失（测试桩可能是无 headers 的普通对象；生产 Response 恒有）。
+  const declared = Number(response.headers?.get?.('Retry-After'))
   const retryAfter = Number.isFinite(declared) && declared > 0 ? declared : null
   let code = `http_${response.status}`
   let message = `请求失败（HTTP ${response.status}）`

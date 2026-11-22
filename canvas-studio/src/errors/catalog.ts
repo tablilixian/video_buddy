@@ -1129,6 +1129,68 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'shot-render: segment {index} has neither cache hit nor fresh render output',
     recoveryHint: '触发即增量装配接线 bug：检查 getDirtySegments 的 dirty/reused 是否与 plan.segments 序对齐。',
   },
+
+  // ── ASSET 素材三段式上传（迁移方案 B2，2026-11-22；api(12).md §6.6）────────
+  {
+    // presign 失败：业务 API 不可达 / 401 / 限流。agent 可感知可重试。
+    code: 'CS-ASSET-001',
+    module: 'ASSET',
+    severity: 'S2',
+    audience: ['agent', 'developer'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '素材上传预处理失败（HTTP {status}），请稍后重试或重新登录。',
+    devMessage: 'presign 失败：{detail}',
+    recoveryHint: '401 → 走登录自愈链后重试；429 → 遵守 Retry-After；503 → 有界退避；连续失败检查 businessApiBase 配置。',
+  },
+  {
+    // PUT 直传失败：对象存储不可达 / 签名过期 / 网络抖动。重传一次即自愈。
+    code: 'CS-ASSET-002',
+    module: 'ASSET',
+    severity: 'S2',
+    audience: ['agent', 'developer'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '素材直传失败（HTTP {status}），请重试。',
+    devMessage: 'PUT upload_url 失败：{detail}',
+    recoveryHint: '网络抖动直接重试；403/Expired 重新走 presign（预签名不幂等，会拿到新 asset）。',
+  },
+  {
+    // complete 未返回 ready：响应形状坏 / 服务端校验流程异常 → 开发者问题。
+    code: 'CS-ASSET-003',
+    module: 'ASSET',
+    severity: 'S1',
+    audience: ['developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: '素材校验未完成，上传通道异常，请联系开发。',
+    devMessage: 'complete 响应非 ready/形状坏：{detail}',
+    recoveryHint: '检查 /v1/assets/complete 响应契约（api(12).md §6.6.3：status 必须 ready）。',
+  },
+  {
+    // 409 conflict（checksum 不一致 / 素材状态冲突）：确定性坏消息，重传换新 asset。
+    code: 'CS-ASSET-004',
+    module: 'ASSET',
+    severity: 'S2',
+    audience: ['agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '素材校验冲突（{detail}），请重新上传。',
+    devMessage: 'complete 返回 409 conflict：{detail}',
+    recoveryHint: 'checksum 冲突 = 传的字节与 complete 声明不一致；重新走完整三段式（新 asset）。',
+  },
+  {
+    // upload_url 不受信任（非 https/回环、带 userinfo）：安全护栏，永不放行。
+    code: 'CS-ASSET-005',
+    module: 'ASSET',
+    severity: 'S1',
+    audience: ['developer'],
+    recoverability: 'fatal',
+    channel: 'log',
+    userMessage: '素材上传地址未通过安全校验，已中止上传。',
+    devMessage: 'upload_url 未通过安全校验：{detail}',
+    recoveryHint: 'presign 返回的 upload_url 必须 https 或回环 http 且无 userinfo（api(12).md §6.6.1）；触发即上游契约异常。',
+  },
 ]
 
 for (const spec of SPECS) {

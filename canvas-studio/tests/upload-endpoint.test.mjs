@@ -1,112 +1,146 @@
 /**
- * CV-137 统一上传端点契约：`POST /api/v1/generate/upload`。
+ * 素材上传通道契约（迁移方案 B2 重写；api(12).md §6.6）。
  *
- * 背景（2026-09-10 实测）：旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除
- * ——对图片/视频/音频任何文件均返回 `404 {"detail":"Not Found"}`，`openapi.json`
- * 里也不再出现该路径。新端点是**唯一**的上传入口，且不限文件类型。
+ * 背景：旧通道 multipart `POST /api/v1/generate/upload`（ComfyUI `{name}` 句柄）
+ * 随生成后端 8082 退役；新通道 = 三段式 `POST /v1/assets/presign` → `PUT upload_url`
+ * → `POST /v1/assets/complete`（返回 **asset_id**）。本文件把这条通路的四件事锁死：
  *
- * 「先上传拿 name，再把 name 填进以文件名为入参的接口」是所有下游生成接口的标准
- * 前置流程（image2image 的 image、image2vl 的 image、ref2va 的 image1..9 /
- * video1..3 / audio1..3 …），因此本文件把这条通路的四件事全部锁死：
- *
- * 1. 端点常量 = `/api/v1/generate/upload`，且**不再存在** `uploadimage` 键（防回弹）。
- * 2. 请求形态：form-data 字段名必须是 `file`；上传文件名走唯一安全名
- *    （只含 [A-Za-z0-9._-]，无空格/括号——后端会给重名加 ` (1)` 后缀，
- *    带空格括号的名字会让下游 500）。
- * 3. 响应解析：取 `name`（ComfyUI 原生 `{name, subfolder, type}`），并兼容
- *    `filename` / `data.filename` / `data.url`。
- * 4. 404 / 非 2xx / 缺字段都有明确中文错误，不静默返回 undefined。
+ * 1. 路由：presign / complete 打 businessApiBase（默认 `http://117.50.108.73`）的
+ *    `/v1/assets/*`；PUT 打 presign 返回的 upload_url（https）。
+ * 2. 请求形态：presign filename 走唯一安全名（只含 [A-Za-z0-9._-]）；PUT 只带
+ *    presign.headers（不带任何鉴权头——多余头可能破坏对象存储签名）。
+ * 3. 响应解析：只有 complete `status:'ready'` 才返回 asset_id；返回值语义从
+ *    filename 变为 asset_id（UUID 形态）。
+ * 4. 失败有明确中文错误码：401 → CS-AUTH-001；presign/complete 非 2xx →
+ *    CS-ASSET-001/003；PUT 非 2xx → CS-ASSET-002。
  *
  * 运行：corepack yarn workspace canvas-studio run test:smoke
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DRAMA_ENDPOINTS } from '../lib/config.js'
-import { uploadBytesToDrama, resetDramaProbeCache } from '../lib/generate.js'
+import { uploadBytesToDrama } from '../lib/generate.js'
+import { CanvasStudioError } from '../lib/error-system.js'
 
-/** 打桩：健康探针放行 + 记录上传请求，按 json 返回给定响应。 */
-function stubUpload(response, status = 200) {
+const BASE = 'http://117.50.108.73'
+
+/** 三段式桩：记录全部请求；presignId 可控，PUT/complete 行为按用例覆盖。 */
+function stubThreeStage(opts = {}) {
   const calls = []
+  let lastAsset = null
+  const realFetch = globalThis.fetch
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url)
-    if (target.includes('/api/v1/health')) {
-      return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
+    const method = init.method ?? 'GET'
+    calls.push({ url: target, method, headers: init.headers ?? {}, body: init.body })
+    if (target.startsWith(`${BASE}/v1/assets/presign`)) {
+      if (opts.presignStatus !== undefined) {
+        return { ok: opts.presignStatus < 400, status: opts.presignStatus, json: async () => (opts.presignBody ?? {}) }
+      }
+      lastAsset = `bbbbbbbb-bbbb-4bbb-8bbb-${String(calls.length).padStart(12, '0')}`
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          asset: { id: lastAsset, type: 'image', status: 'uploading' },
+          upload_url: 'https://blob.test/put/ref',
+          headers: { 'content-type': 'image/png' },
+        }),
+      }
     }
-    const form = init.body
-    const file = typeof form?.get === 'function' ? form.get('file') : null
-    calls.push({
-      url: target,
-      method: init.method ?? 'GET',
-      fieldNames: typeof form?.getAll === 'function' ? form.getAll('file').length : 0,
-      fileName: file?.name,
-      fileType: file?.type,
-      // 请求头里是否被写死了 Content-Type（写死会让 boundary 丢失，后端解析失败）。
-      contentType: init.headers === undefined ? undefined : JSON.stringify(init.headers),
-    })
-    return { ok: status < 400, status, json: async () => response, text: async () => JSON.stringify(response) }
+    if (target === 'https://blob.test/put/ref') {
+      const status = opts.putStatus ?? 200
+      return { ok: status < 400, status, json: async () => ({}) }
+    }
+    if (target.startsWith(`${BASE}/v1/assets/complete`)) {
+      if (opts.completeStatus !== undefined) {
+        return { ok: opts.completeStatus < 400, status: opts.completeStatus, json: async () => (opts.completeBody ?? {}) }
+      }
+      return { ok: true, status: 200, json: async () => ({ id: lastAsset, type: 'image', status: 'ready' }) }
+    }
+    return realFetch(url, init)
   }
   return calls
 }
 
-test('CV-137 上传端点：只认 /api/v1/generate/upload，uploadimage 已从常量表移除', () => {
-  assert.equal(DRAMA_ENDPOINTS.upload, '/api/v1/generate/upload')
-  assert.ok(
-    !Object.keys(DRAMA_ENDPOINTS).includes('uploadimage'),
-    'uploadimage 已从后端路由表移除（实测 404），不得再出现在端点常量里',
-  )
-  assert.ok(
-    !Object.values(DRAMA_ENDPOINTS).some((path) => path.includes('uploadimage')),
-    '端点表里不应再残留 uploadimage 路径',
-  )
+test('三段式路由：presign/complete 打业务 API，PUT 打 upload_url，返回 asset_id', async () => {
+  const calls = stubThreeStage()
+  const assetId = await uploadBytesToDrama(new Uint8Array([1, 2, 3]), 'png')
+  assert.match(assetId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
+    `返回值应为 asset_id（UUID），实际 ${assetId}`)
+  const presign = calls.find((c) => c.url.startsWith(`${BASE}/v1/assets/presign`))
+  const put = calls.find((c) => c.method === 'PUT')
+  const complete = calls.find((c) => c.url.startsWith(`${BASE}/v1/assets/complete`))
+  assert.ok(presign && put && complete, '三段各发一次请求')
+  assert.equal(presign.method, 'POST')
+  assert.equal(complete.method, 'POST')
+  assert.equal(put.url, 'https://blob.test/put/ref')
 })
 
-test('CV-137 上传请求形态：form-data 字段 file + 唯一安全名（无空格/括号）', async () => {
-  resetDramaProbeCache()
-  const calls = stubUpload({ name: 'ref-abcd1234.png', subfolder: '', type: 'input' })
-  const name = await uploadBytesToDrama(new Uint8Array([1, 2, 3]), 'png')
-  assert.equal(name, 'ref-abcd1234.png', '应取响应里的 name 字段')
-  assert.equal(calls.length, 1, '应恰好发起一次上传请求')
-  assert.equal(calls[0].url, 'http://117.50.108.73:8082/api/v1/generate/upload')
-  assert.equal(calls[0].method, 'POST')
-  assert.equal(calls[0].fieldNames, 1, 'form-data 字段名必须是 file')
+test('presign 请求形态：type/content_type/size_bytes 完备 + 唯一安全名', async () => {
+  const calls = stubThreeStage()
+  await uploadBytesToDrama(new Uint8Array([1, 2, 3]), 'png')
+  const presign = calls.find((c) => c.url.includes('/v1/assets/presign'))
+  const body = JSON.parse(presign.body)
+  assert.equal(body.type, 'image')
+  assert.equal(body.content_type, 'image/png')
+  assert.equal(body.size_bytes, 3)
   // 唯一安全名：ref-<8 位 uuid>.<ext>——只含 [A-Za-z0-9._-]，且每次不同。
-  assert.match(calls[0].fileName ?? '', /^ref-[0-9a-f]{8}\.png$/u, `上传文件名不合安全名约定: ${calls[0].fileName}`)
-  assert.equal(calls[0].contentType, undefined, '不得手工写死 Content-Type（boundary 会丢失）')
+  assert.match(body.filename, /^ref-[0-9a-f]{8}\.png$/u, `presign 文件名不合安全名约定: ${body.filename}`)
 })
 
-test('CV-137 上传响应解析：兼容 name / filename / data.* 四种形态', async () => {
-  const cases = [
-    [{ name: 'a.png', subfolder: '', type: 'input' }, 'a.png'],
-    [{ filename: 'b.png' }, 'b.png'],
-    [{ data: { filename: 'c.png' } }, 'c.png'],
-    [{ data: { url: 'd.png' } }, 'd.png'],
-  ]
-  for (const [response, expected] of cases) {
-    resetDramaProbeCache()
-    stubUpload(response)
-    const name = await uploadBytesToDrama(new Uint8Array([1]), 'png')
-    assert.equal(name, expected, `响应 ${JSON.stringify(response)} 应解析出 ${expected}，实际 ${name}`)
-  }
+test('PUT 只带 presign.headers（authorization 必须缺席）', async () => {
+  const calls = stubThreeStage()
+  await uploadBytesToDrama(new Uint8Array([1]), 'png')
+  const put = calls.find((c) => c.method === 'PUT')
+  assert.equal(put.headers['content-type'], 'image/png')
+  assert.equal(put.headers.authorization, undefined, 'PUT 直传不得携带任何鉴权头（会破坏签名）')
 })
 
-test('CV-137 上传失败有明确中文提示：404 / 500 / 缺字段', async () => {
-  resetDramaProbeCache()
-  stubUpload({ detail: 'Not Found' }, 404)
+test('complete 请求体：asset_id + 64 位小写 hex checksum + size_bytes', async () => {
+  const calls = stubThreeStage()
+  const assetId = await uploadBytesToDrama(new Uint8Array([1]), 'png')
+  const complete = calls.find((c) => c.url.includes('/v1/assets/complete'))
+  const body = JSON.parse(complete.body)
+  assert.equal(body.asset_id, assetId)
+  assert.match(body.checksum_sha256, /^[0-9a-f]{64}$/u)
+  assert.equal(body.size_bytes, 1)
+})
+
+test('上传失败有明确中文错误码：presign 500 / PUT 403 / complete 非 ready / 401', async () => {
+  stubThreeStage({ presignStatus: 500 })
   await assert.rejects(
     () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
-    (err) => err.code === 'CS-NET-004' && err.message.includes('404'),
-    '404 应给出「后端未注册该端点」的定位提示，而不是笼统的上传失败',
+    (err) => err instanceof CanvasStudioError && err.code === 'CS-ASSET-001',
+    'presign 非 2xx → CS-ASSET-001',
   )
 
-  resetDramaProbeCache()
-  stubUpload({}, 500)
-  await assert.rejects(() => uploadBytesToDrama(new Uint8Array([1]), 'png'), /文件上传失败（HTTP 500）/u)
-
-  resetDramaProbeCache()
-  stubUpload({ subfolder: '', type: 'input' }, 200)
+  stubThreeStage({ putStatus: 403 })
   await assert.rejects(
     () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
-    (err) => err.code === 'CS-NET-006',
-    '响应缺文件名时必须报错，不得返回 undefined 污染下游',
+    (err) => err instanceof CanvasStudioError && err.code === 'CS-ASSET-002',
+    'PUT 非 2xx → CS-ASSET-002',
   )
+
+  stubThreeStage({ completeStatus: 200, completeBody: { id: 'x', type: 'image', status: 'uploading' } })
+  await assert.rejects(
+    () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
+    (err) => err instanceof CanvasStudioError && err.code === 'CS-ASSET-003',
+    'complete 非 ready → CS-ASSET-003（不得返回未 ready 的 asset）',
+  )
+
+  stubThreeStage({ presignStatus: 401, presignBody: { error: { code: 'unauthenticated', message: 'authentication required' } } })
+  await assert.rejects(
+    () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
+    (err) => err instanceof CanvasStudioError && err.code === 'CS-AUTH-001',
+    '401 → CS-AUTH-001（登录自愈链入口码）',
+  )
+})
+
+test('不支持的扩展名直接拒绝（不发出任何请求）', async () => {
+  const calls = stubThreeStage()
+  await assert.rejects(
+    () => uploadBytesToDrama(new Uint8Array([1]), 'xyz'),
+    (err) => err instanceof CanvasStudioError && err.code === 'CS-USER-ERR',
+  )
+  assert.equal(calls.length, 0, '扩展名白名单拒绝时零网络请求')
 })

@@ -17,6 +17,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateCharacterSheet } from '../lib/generate.js'
+import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
 
 const SHEET_URL = 'https://media.example/sheet.png'
 
@@ -29,15 +30,14 @@ function stubCharacterSheetFetch(sheetBytes = new Uint8Array([7, 7, 7])) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
     calls.push({ url: text, body: init.body instanceof FormData ? '<form>' : init.body })
+    const assetHandled = assetUploadBranch(text, init)
+    if (assetHandled !== null) return assetHandled
     if (init.method === 'POST' && text.includes('image2character')) {
       const body = JSON.parse(init.body)
       if (body.image === 'dead.png') {
         return { ok: false, status: 500, text: async () => 'Internal Server Error' }
       }
       return { ok: true, status: 200, json: async () => ({ full_url: SHEET_URL, filename: 'sheet-fresh.png' }) }
-    }
-    if (init.method === 'POST' && text.includes('/generate/upload')) {
-      return { ok: true, status: 200, json: async () => ({ filename: 'fresh.png' }) }
     }
     if (text === SHEET_URL) {
       return { ok: true, status: 200, arrayBuffer: async () => sheetBytes }
@@ -82,6 +82,7 @@ function stubNode() {
 }
 
 test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ 本地资产重传换新名重试成功', async () => {
+  resetAssetUploadStub()
   const dir = await mkdtemp(join(tmpdir(), 'cs-sheet-'))
   try {
     await writeFile(join(dir, 'local.png'), Buffer.from([1, 2, 3]))
@@ -98,15 +99,15 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
     // CV-122：不再调 splitegrid 切分；资产卡锚点只有拼图节点。
     assert.ok(!calls.some((c) => c.url.includes('image2splitegrid')))
     assert.equal(registry.getAssets()[0].anchorNodeIds.length, 1)
-    // 自愈链路发生：image2character 打了两拍，第二拍带重传新名。
+    // 自愈链路发生：image2character 打了两拍，第二拍带重传新句柄（迁移 B2：asset_id）。
     const charCalls = calls.filter((c) => c.url.includes('image2character'))
     assert.equal(charCalls.length, 2)
     assert.equal(JSON.parse(charCalls[0].body).image, 'dead.png')
-    assert.equal(JSON.parse(charCalls[1].body).image, 'fresh.png')
-    assert.ok(calls.some((c) => c.url.includes('/generate/upload')))
-    // 节点 filename 回写为新名（不变式：节点 filename = 后端当前可用名）。
+    assert.equal(JSON.parse(charCalls[1].body).image, ASSET_HANDLE(1))
+    assert.ok(calls.some((c) => c.url.includes('/v1/assets/presign')))
+    // 节点 filename 回写为新名（不变式：节点 filename = 后端当前可用句柄）。
     const patched = registry.getWrites().find((w) => w[0] === 'writeCanvas')
-    assert.ok(patched && patched[1].some((s) => s.startsWith('n1:fresh.png')))
+    assert.ok(patched && patched[1].some((s) => s.startsWith(`n1:${ASSET_HANDLE(1)}`)))
     // 资产卡建立。
     assert.equal(registry.getAssets()[0].name, '女主')
   } finally {

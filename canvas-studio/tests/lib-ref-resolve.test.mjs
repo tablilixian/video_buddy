@@ -46,13 +46,14 @@ async function waitFor(predicate, label, timeoutMs = 5000) {
 }
 
 /**
- * Drama Backend fetch 打桩（按 URL 分流）：health → 探针；generate/upload → 上传
- * 句柄；其余（image2image / 产物下载）→ `{full_url}` + 字节。
+ * Drama Backend fetch 打桩（按 URL 分流）：health → 探针；/v1/assets/* → 三段式
+ * 上传（迁移 B2，返回确定性 asset_id）；其余（image2image / 产物下载）→ `{full_url}` + 字节。
  */
 function stubLibFetch() {
   const calls = []
   const original = globalThis.fetch
   let seq = 0
+  let lastAsset = ''
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url)
     let body = null
@@ -62,7 +63,19 @@ function stubLibFetch() {
     calls.push({ url: target, method: init.method ?? 'GET', body })
     const json = async () => {
       if (target.includes('/api/v1/health')) return { status: 'ok' }
-      if (target.includes('/api/v1/generate/upload')) return { name: `ref-lib${seq++}.png` }
+      if (init.method === 'POST' && target.includes('/v1/assets/presign')) {
+        seq += 1
+        lastAsset = `aaaaaaaa-0000-4000-8000-${String(seq).padStart(12, '0')}`
+        return {
+          asset: { id: lastAsset, type: 'image', status: 'uploading' },
+          upload_url: 'https://blob.test/put/ref',
+          headers: { 'content-type': 'image/png' },
+        }
+      }
+      if (target === 'https://blob.test/put/ref') return {}
+      if (init.method === 'POST' && target.includes('/v1/assets/complete')) {
+        return { id: lastAsset, type: 'image', status: 'ready' }
+      }
       return { full_url: 'https://media.example/out.png' }
     }
     return {
@@ -149,7 +162,8 @@ test('REQ-001：@ref[lib:<id>] 走解析→物化→promote 三段式，并记�
       // ① 生成请求真的把物化出来的文件当参考图传给了后端。
       const genCall = calls.find((entry) => entry.body && entry.body.image1 !== undefined)
       assert.ok(genCall, '应有一次携带 image1 的生成请求')
-      assert.match(genCall.body.image1, /^ref-lib\d+\.png$/u, '参考图应是上传后拿到的 Drama 句柄')
+      // 迁移 B2：句柄语义从 Drama filename 变为 asset_id（UUID 形态）。
+      assert.match(genCall.body.image1, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u, '参考图应是上传后拿到的 asset_id')
 
       // ② 物化：库文件被拷进当前项目 assets/，确定性名 lib-<assetId>-<file>。
       const files = await readdir(fixture.assets.p1)

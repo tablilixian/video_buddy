@@ -2148,6 +2148,11 @@ async function ensureExternalImageNode(
 export interface StudioRuntimeConfig {
   /** 返回当前 Drama Backend API 基址。 */
   dramaApiBase: () => string
+  /**
+   * DramaServer 业务 API 基址（迁移方案 B2 起素材上传/B3 起生成调用走这里；
+   * 与管理面同源）。可选：未注入时按编译期默认值兜底（generate.ts runtime()）。
+   */
+  businessApiBase?: () => string
   /** 返回当前单段视频时长上限（秒）。 */
   maxVideoSeconds: () => number
   /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时返回空串）。 */

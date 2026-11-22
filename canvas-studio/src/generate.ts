@@ -26,7 +26,9 @@ import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, SEED_SHOT_TOOL, STORYBOARD_NODE_TOOL, isShotCard } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
-import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
+import { DEFAULT_BUSINESS_API_BASE, DEFAULT_DRAMA_API_BASE } from './host-config.js'
+import { DramaClient } from './drama-management.js'
+import { assetKindFromExtension, uploadAssetBytes } from './asset-upload.js'
 import { validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
 import { validateH3ReferenceBudget, validateH3VideoReferences } from './video-reference.js'
@@ -105,6 +107,7 @@ function runtime(): StudioRuntimeConfig {
   if (current != null) return current
   return {
     dramaApiBase: () => DEFAULT_DRAMA_API_BASE,
+    businessApiBase: () => DEFAULT_BUSINESS_API_BASE,
     maxVideoSeconds: () => 15,
     resolveDramaApiKey: () => Promise.resolve(''), // CR-033：未注入时按「未配置」处理，返回空串（后端无鉴权，不强制 key）
     resolveFalApiKey: () => Promise.resolve(''), // 阶段 4：fal key 未注入同样按「未配置」处理，空串由 fal adapter 报错
@@ -817,88 +820,70 @@ async function readSourceBytes(
   return { bytes: buf, ext }
 }
 
-/** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到 Drama Backend，返回服务器 filename。 */
+/** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到素材通道，返回 asset_id。 */
 async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: number, registry?: ProjectRegistry, projectId?: string): Promise<string> {
-  await ensureDramaReachable(signal)
   const { bytes, ext } = await readSourceBytes(sourceUrl, port, signal, registry, projectId)
   return uploadBytesToDrama(bytes, ext, signal)
 }
 
 /**
- * 把文件字节上传到 Drama Backend（统一上传端点 `POST /api/v1/generate/upload`），
- * 返回服务器 filename —— 这是**所有以文件名为入参的接口**（image2image / image2vl /
- * fl2va / ref2va 的 image1..9 · video1..3 · audio1..3 …）的标准前置步骤（CV-137）。
+ * 把文件字节上传到素材通道，返回 **asset_id**（迁移方案 B2：api(12).md §6.6 三段式
+ * presign → PUT → complete 取代旧 multipart `POST /api/v1/generate/upload`——
+ * 旧端点随生成后端 8082 一并退役）。
  *
- * 端点演进：旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除（2026-09-10 实测
- * 任何请求均 404，openapi.json 亦无此路径）；新端点不限文件类型，图片 / 视频 / 音频
- * 共用，响应结构与旧端点一致（ComfyUI 原生 `{name, subfolder, type}`）。
+ * 返回值语义变化：旧版返回服务器文件名，新版返回 DramaServer 资产 ID（B3 起
+ * inputs[] 按 asset_id 引用）。出口形状不变（仍是 `(bytes, ext, signal) → string`），
+ * video-frames / video-qc / video-style / host-tools 的帧图上传调用点零改动。
  *
- * P8.1 本地图片与 P8.4 视频抽帧共用；表单文件名沿用唯一安全名约定
- * （只含 [A-Za-z0-9._-]），避免触发后端去重后缀破坏下游。
+ * 三段式引擎与全部护栏（PUT 不带鉴权头 / upload_url 安全校验 / SHA-256 校验 /
+ * 429 有界重试）在 `asset-upload.ts` 唯一实现；本函数只负责装配（基址、会话、
+ * 安全文件名）与鉴权闸。
+ *
+ * 鉴权语义变化（新后台强约束）：`/v1/assets/*` **必须**携带 Supabase JWT。开关
+ * 开启（Supabase 已配置）时无会话在闸口就拦（CS-AUTH-001，零网络）；开关关闭
+ * （本地/测试态）时无会话仍发 presign（token 置空），由服务端 401 打回——
+ * 401 在引擎内归一成 CS-AUTH-001，客户端自愈链入口不变。
  */
-/**
- * 文件上传的硬上限（毫秒）。CV-135 遗漏的第三处 Drama 请求：上传此前用**裸 fetch**
- * ——既不注入 `longRequestDispatcher`（传输层仍是 undici 默认 300s），也不带任何
- * 超时（`signal` 缺省时上传可无限挂起）。大视频 / 大参考音频正常需数秒到数十秒，
- * 5 分钟足够宽裕；不变量同 DRAMA_TIMEOUT_MS：**必须严格小于
- * LONG_REQUEST_TIMEOUT_MS**(1800s)，否则传输层会先于本超时触发、报错误导。
- */
-export const UPLOAD_TIMEOUT_MS = 10 * 60_000
-
 export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?: AbortSignal): Promise<string> {
   // P2 鉴权闸：与 dramaPost 同口径（未登录先拦，客户端弹登录窗）。
   requireDramaAuth()
-  // 上传同样前置探针（后端单任务，宕机时先给中文提示而不是等长超时）。
-  await ensureDramaReachable(signal)
-  const assetId = newAssetId()
-  const form = new FormData()
-  // new Uint8Array(...) 拷贝进全新 ArrayBuffer（BlobPart 要求非 SharedArrayBuffer 视图）。
-  form.append('file', new Blob([new Uint8Array(bytes)]), `ref-${assetId.slice(0, 8)}.${ext}`)
-  // CV-135 补齐：与 dramaPost 同一套——逻辑超时 + 按请求注入长超时 dispatcher。
-  const timeout = AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
-  const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
-  const requestInit = {
-    method: 'POST',
-    body: form,
-    // P2：Bearer 单点取值。**有会话才带 headers 键**（CV-137 守卫钉住「无鉴权时
-    // 不得手工写 headers」—— 空对象也会让 FormData 的自动 boundary 判定走偏）；
-    // 头里只有 authorization，content-type 始终交给 fetch 按 FormData 自动补。
-    ...(dramaAuthHeaders()['authorization'] !== undefined
-      ? { headers: dramaAuthHeaders() }
-      : {}),
-    signal: composed,
-  } as RequestInit & { dispatcher?: unknown }
-  const dispatcher = longRequestDispatcher()
-  if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
-  let upload: Response
-  try {
-    upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.upload}`, requestInit)
-  } catch (cause) {
-    // 用户主动打断不改写错误；本地超时如实报上限（与 dramaPost 同口径）。
-    if (signal?.aborted === true) throw cause
-    if (timeout.aborted) {
-      throwError('CS-GEN-205', { n: Math.round(UPLOAD_TIMEOUT_MS / 1000) })
-    }
-    throwError('CS-NET-003', { cause: cause instanceof Error ? cause.message : String(cause) })
+  const kind = assetKindFromExtension(ext)
+  if (kind === null) {
+    throwError('CS-USER-ERR', { message: `不支持的素材类型：.${ext}（仅接受图片/视频/音频）` })
   }
-  // P2：401 先于 404/非 2xx 判定 —— 登录态问题走 CS-AUTH-001 自愈链，不落通用网络错误。
-  if (upload.status === 401) {
-    throwError('CS-AUTH-001', { detail: 'Drama Backend rejected the bearer token (HTTP 401)' })
-  }
-  if (upload.status === 404) {
-    throwError('CS-NET-004')
-  }
-  if (!upload.ok) throwError('CS-NET-005', { status: upload.status })
-  const data = await upload.json() as Record<string, unknown>
-  // 兼容多种响应格式：{ name } / { filename } / { data: { filename } } / { data: { url } }
-  const filename = (data.name
-    ?? data.filename
-    ?? (data.data as Record<string, unknown> | undefined)?.filename
-    ?? (data.data as Record<string, unknown> | undefined)?.url
-  ) as string | undefined
-  if (!filename) throwError('CS-NET-006', { data: JSON.stringify(data) })
-  return filename
+  const session = getAuthSession()
+  const token = session?.accessToken ?? ''
+  const filename = `ref-${newAssetId().slice(0, 8)}.${ext}`
+  return uploadAssetBytes(dramaGenerationClient(), token, bytes, {
+    filename,
+    kind,
+    ...(signal !== undefined ? { signal } : {}),
+  })
 }
+
+/**
+ * 生成面的业务 API 客户端（**每次调用现建**）。DramaClient 无状态（基址 + fetch），
+ * 构造成本可忽略；刻意不做模块级缓存——构造时会捕获当时的 global fetch，缓存会
+ * 让测试桩（与运行期的 fetch 替换）失效，这正是 upload-endpoint 契约测试钉住的坑。
+ */
+function dramaGenerationClient(): DramaClient {
+  const baseUrl = (runtime().businessApiBase ?? (() => DEFAULT_BUSINESS_API_BASE))().replace(/\/+$/, '')
+  return new DramaClient({
+    baseUrl,
+    // 上传与生成调用不消费设备三元组（设备登记在管理面 sync 里做），占位即可。
+    deviceId: () => 'host',
+    platform: () => process.platform,
+    appVersion: () => '0',
+  })
+}
+
+/**
+ * 文件上传（PUT 直传段）的硬上限（毫秒）。不变量同 DRAMA_TIMEOUT_MS：
+ * **必须严格小于 LONG_REQUEST_TIMEOUT_MS**(1800s)，否则传输层会先于本超时触发、
+ * 报错误导。常量与实现都收在 `asset-upload.ts`（三段式唯一实现），这里按既有
+ * import 路径再出口（`tests/long-request.test.mjs` 的不变量断言不搬家）。
+ */
+export { ASSET_PUT_TIMEOUT_MS as UPLOAD_TIMEOUT_MS } from './asset-upload.js'
 
 /** 同源资产 url → `<projectId>/<assetFile>` 键（null = 非画布资产 url）；文件段走 `asset-path.ts` 唯一判据。 */
 export function assetKeyFromUrl(url: string): string | null {

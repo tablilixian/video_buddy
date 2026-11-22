@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_argument",
+    "message": "request body is invalid"
+  }
+}

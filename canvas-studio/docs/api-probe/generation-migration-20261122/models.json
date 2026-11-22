@@ -1,0 +1,404 @@
+{
+  "entitlement": {
+    "plan_code": "starter_monthly",
+    "features": {
+      "concurrent_generations": 2
+    }
+  },
+  "models": [
+    {
+      "id": "5832ee42-4d14-49ae-ba0e-b6a2468609bb",
+      "code": "agnes-flash",
+      "display_name": "Agnes Flash",
+      "modality": "text",
+      "capabilities": {
+        "inputs": [
+          "text"
+        ],
+        "outputs": [
+          "text"
+        ],
+        "protocols": [
+          "openai_chat",
+          "openai_responses"
+        ]
+      },
+      "context_window": 512000,
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-10-25T17:02:13.736536+08:00",
+      "endpoints": [
+        {
+          "id": "6cbd05ca-3884-426f-a28f-2b7449ccfef5",
+          "provider_code": "agnes",
+          "provider_name": "Agnes AI",
+          "endpoint_type": "openai.chat",
+          "region": "global",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "55555555-5555-4555-8555-000000000009",
+      "code": "audio.fast-whisper",
+      "display_name": "Fast Whisper ASR",
+      "modality": "audio",
+      "capabilities": {
+        "inputs": [
+          "audio",
+          "video"
+        ],
+        "operations": [
+          "asr2txt"
+        ],
+        "outputs": [
+          "text"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-18T21:06:48.148973+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000011",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "41f4af2b-cb65-412c-b031-f2c7f0d748ab",
+      "code": "audio.voxcpm2",
+      "display_name": "VoxCPM2",
+      "modality": "audio",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "audio"
+        ],
+        "operations": [
+          "txt2speech"
+        ],
+        "outputs": [
+          "audio"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-17T19:35:32.724059+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000010",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "f47cd91d-995b-4eae-b2ea-468c296aec7d",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "757ec675-bf26-491a-b0ed-37ebd0097fe5",
+      "code": "audio.yue2",
+      "display_name": "Yue2",
+      "modality": "audio",
+      "capabilities": {
+        "inputs": [
+          "text"
+        ],
+        "operations": [
+          "txt2audio"
+        ],
+        "outputs": [
+          "audio"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-17T19:23:24.069623+08:00",
+      "endpoints": [
+        {
+          "id": "aa81407e-0518-4cf0-8e6e-8e04c3a0852f",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "e6ffb577-adb4-4af4-aac5-8b199a15c473",
+      "code": "deepseek-flash",
+      "display_name": "DeepSeek Flash",
+      "modality": "text",
+      "capabilities": {
+        "protocols": [
+          "openai_chat",
+          "openai_responses"
+        ]
+      },
+      "context_window": 1000000,
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-10-16T10:59:06.74908+08:00",
+      "endpoints": [
+        {
+          "id": "14c86b30-1ff9-4e73-8b01-5ae4dc9391a1",
+          "provider_code": "opencode-go",
+          "provider_name": "OpenCode Go",
+          "endpoint_type": "openai.chat",
+          "region": "global",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "5478781f-8e18-4a17-b010-19b7a31a1501",
+          "provider_code": "openrouter",
+          "provider_name": "OpenRouter",
+          "endpoint_type": "openai.chat",
+          "region": "global",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "02957e89-4d1d-430e-b435-7995770322a6",
+      "code": "image.krea2",
+      "display_name": "Krea2",
+      "modality": "image",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "image"
+        ],
+        "operations": [
+          "txt2image",
+          "image2character"
+        ],
+        "outputs": [
+          "image"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-15T21:43:57.770109+08:00",
+      "endpoints": [
+        {
+          "id": "3cb3c756-5455-4d78-8e9f-05721675a2a0",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "region": "global",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "66666666-6666-4666-8666-000000000006",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "55555555-5555-4555-8555-000000000001",
+      "code": "image.nano_banana.pro",
+      "display_name": "Nano Banana Pro",
+      "modality": "image",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "image"
+        ],
+        "outputs": [
+          "image"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-10-14T13:28:21.398014+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000001",
+          "provider_code": "fal",
+          "provider_name": "fal.ai",
+          "endpoint_type": "fal.queue.image",
+          "region": "us-east-1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "55555555-5555-4555-8555-000000000004",
+      "code": "image.qwen-image-2.1",
+      "display_name": "Qwen Image 2.1",
+      "modality": "image",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "image"
+        ],
+        "operations": [
+          "txt2image",
+          "image2image"
+        ],
+        "outputs": [
+          "image"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-15T19:54:40.529678+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000004",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "66666666-6666-4666-8666-000000000005",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "91919191-9191-4191-8191-919191919191",
+      "code": "image.qwen3-vl",
+      "display_name": "Qwen3 VL",
+      "modality": "image",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "image"
+        ],
+        "operations": [
+          "image2vl"
+        ],
+        "outputs": [
+          "text"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-18T16:58:03.772554+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000007",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "92929292-9292-4292-8292-929292929292",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "region": "global",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "55555555-5555-4555-8555-000000000010",
+      "code": "video.minimax_h3",
+      "display_name": "Minimax H3",
+      "modality": "video",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "image",
+          "video",
+          "audio"
+        ],
+        "operations": [
+          "image2videofl2va",
+          "image2videoref2va"
+        ],
+        "outputs": [
+          "video"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-19T15:34:21.214287+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000012",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "region": "global",
+          "status": "active",
+          "available": true
+        },
+        {
+          "id": "66666666-6666-4666-8666-000000000013",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "region": "global",
+          "status": "active",
+          "available": true
+        }
+      ]
+    },
+    {
+      "id": "a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1",
+      "code": "video.qwen3-vl",
+      "display_name": "Qwen3-VL Video",
+      "modality": "video",
+      "capabilities": {
+        "inputs": [
+          "text",
+          "video"
+        ],
+        "operations": [
+          "video2vl"
+        ],
+        "outputs": [
+          "text"
+        ]
+      },
+      "entitled": true,
+      "available": true,
+      "created_at": "2026-11-18T17:41:21.16442+08:00",
+      "endpoints": [
+        {
+          "id": "66666666-6666-4666-8666-000000000008",
+          "provider_code": "playsout",
+          "provider_name": "Playsout DramaBackend",
+          "endpoint_type": "playsout.dramabackend.v1",
+          "status": "active",
+          "available": true
+        }
+      ]
+    }
+  ]
+}

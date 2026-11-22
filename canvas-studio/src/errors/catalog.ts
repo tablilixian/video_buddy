@@ -1117,6 +1117,18 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '拼接是机械步骤（concat demuxer + -c copy），直接重试通常可过；连续失败先查磁盘空间与分段产物完整性。',
   },
   {
+    // quote 硬闸（迁移 B4，拍板 ⑤）：预估积分 > 可用余额 → 提交前拦截。
+    code: 'CS-BILL-002',
+    module: 'BILL',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '本次生成预计消耗 {estimated} 积分，但可用余额只有 {available}。请先充值或降低规格（时长 / 分辨率）后再试。',
+    devMessage: 'quote 预检拦截：estimated_credits={estimated} > available_balance={available}',
+    recoveryHint: '预估来自 POST /v1/generations/quote（不建任务不冻结）；充值后重试，或调小 duration / megapixels / 档位。',
+  },
+  {
     // 分镜装配的不变量：plan.segments 的每一段必须「缓存命中 / 新渲产物」二者有其一。
     // 触发即 C5 增量装配接线 bug（脏段渲染成功却没进 renderedByIndex，或复用清单错位）。
     code: 'CS-SHOT-004',

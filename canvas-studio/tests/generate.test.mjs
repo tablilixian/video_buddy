@@ -181,7 +181,7 @@ test('retryOf：结果写回原节点，不追加新节点', async () => {
       retryOf: 'n1',
     })
 
-    assert.equal(calls.length, 3) // 迁移 B3-2：创建 + 轮询 + content 下载（无参考图下载/上传步骤）
+    assert.equal(calls.length, 4) // B4：quote 预检 + 创建 + 轮询 + content 下载
     const writes = registry.getWrites()
     assert.equal(writes.length, 1)
     const saved = writes[0].nodes

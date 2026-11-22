@@ -175,6 +175,15 @@ export class DramaClient {
     return response.models ?? []
   }
 
+  /** text 目录 + 套餐（entitlement.features 供并发宽度钳制；B4）。 */
+  async listTextCatalog(token: string): Promise<{ models: CatalogModel[]; entitlement: Record<string, unknown> | null }> {
+    const response = await this.#request<ModelListResponse>(token, '/v1/models?modality=text')
+    return {
+      models: response.models ?? [],
+      entitlement: (response.entitlement ?? null) as Record<string, unknown> | null,
+    }
+  }
+
   /** 积分余额（仅展示语义，不做生成前预检）。 */
   async creditBalance(token: string): Promise<CreditBalance> {
     return this.#request<CreditBalance>(token, '/v1/credits/balance')

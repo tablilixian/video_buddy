@@ -211,7 +211,9 @@ test('401 归一：submit（generateAsset → dramaPost）遇 HTTP 401 → CS-AU
       generateAsset(registry, 'image_generate', 'p1', { prompt: 'x' }),
       (err) => err instanceof CanvasStudioError && err.code === 'CS-AUTH-001',
     )
-    assert.equal(submitCalls, 1, '401 不进 5xx 自动重试分支')
+    // B4：quote 预检也打一次 POST（401 被 quoteGenerationCost fail-open 吞掉），
+    // 创建再打一次 → 共 2 次 POST，仍不进重试分支。
+    assert.equal(submitCalls, 2, '401 不进 5xx 自动重试分支（quote 预检 + 创建各一次）')
   } finally {
     resetDramaProbeCache()
     setDramaAuthRequired(false)

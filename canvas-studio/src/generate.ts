@@ -35,6 +35,7 @@ import {
   downloadGenerationContent,
   followGeneration,
   newIdempotencyKey,
+  quoteGenerationCost,
   IMAGE_CONTENT_LIMITS,
   type GenerationEngineDeps,
   type GenerationRef,
@@ -908,11 +909,29 @@ async function runBusinessGenerationTask(opts: {
   timeoutMs: number
   label?: string
   signal?: AbortSignal
+  /** 非致命提示汇入调用方的 warnings（报价预估等）。 */
+  warnings?: string[]
 }): Promise<GenerationSnapshot> {
   const run = async (): Promise<GenerationSnapshot> => {
-    // G1 余额闸（B4 换 quote 硬闸前的兜底）：确定读到余额 ≤ 0 时拦。
+    // G1 余额闸（quote 失败 fail-open 时的兜底）：确定读到余额 ≤ 0 时拦。
     requireCreditsForGeneration()
+    // B4 quote 硬闸（拍板 ⑤）：预估 > 可用余额 → 提交前拦截（CS-BILL-002）。
+    // quote 失败（网络/形状）fail-open 不阻断——最终以创建响应为准（§6.7）。
+    // 报价只用 model/operation/input，素材不就绪也可以调（Host 会剔除 inputs）。
     const deps = businessEngineDeps()
+    const estimated = await quoteGenerationCost(deps, {
+      model: opts.model,
+      operation: opts.operation,
+      ...(opts.input !== undefined ? { input: opts.input } : {}),
+    })
+    const balance = creditsView().balance
+    if (estimated !== null && balance !== null && Number.isFinite(balance.available_balance)
+      && estimated > balance.available_balance) {
+      throwError('CS-BILL-002', {
+        estimated: String(Math.round(estimated * 10000) / 10000),
+        available: String(Math.round(balance.available_balance * 10000) / 10000),
+      })
+    }
     let snapshot: GenerationSnapshot
     try {
       snapshot = await createGenerationTask(deps, {
@@ -924,6 +943,10 @@ async function runBusinessGenerationTask(opts: {
       }, { ...(opts.signal !== undefined ? { signal: opts.signal } : {}) })
     } catch (cause) {
       throw businessErrorToGenerationError(opts.tool, cause)
+    }
+    // 预估积分随 warnings 回流（结果文本可读）；结算金额以服务端为准。
+    if (estimated !== null && opts.warnings !== undefined) {
+      opts.warnings.push(`本次生成预估消耗 ${Math.round(estimated * 10000) / 10000} 积分（提交时冻结，任务失败自动释放；以服务端结算为准）。`)
     }
     try {
       const final = await followGeneration(deps, snapshot, {

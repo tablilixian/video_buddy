@@ -33,6 +33,7 @@ import { installAccountState, markCreditsStale } from './account-state.js'
 import { installBillingState } from './billing-state.js'
 import type { CatalogModel } from './drama-management.js'
 import { setGenerationSettledHook, setGenerateQueueWidth } from './generate-queue.js'
+import { planConcurrencyView } from './account-state.js'
 import {
   gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
   publishGatewayCredential, readGatewayCatalog,
@@ -356,9 +357,13 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     autoSaveInterval: () => source().autoSaveInterval,
   }
   setRuntimeConfig(cfg)
-  // 迁移 B3-3（拍板 ④）：在途任务宽度 = maxParallel 设置项（getter 直读设置，
-  // 设置页改动即时生效）；与套餐 concurrent_generations 的取 min 在 B4 目录接线后收紧。
-  setGenerateQueueWidth(() => source().maxParallel)
+  // 迁移 B3-3/B4（拍板 ④）：在途任务宽度 = min(maxParallel 设置项, 套餐
+  // concurrent_generations)。套餐值未知（未登录/目录缺字段）时不钳制——
+  // 硬限制在服务端（超量提交 409 有正确退避）。设置页改动即时生效。
+  setGenerateQueueWidth(() => {
+    const plan = planConcurrencyView()
+    return plan === null ? source().maxParallel : Math.min(source().maxParallel, plan)
+  })
 
   // Media generation tools register on the Host (the `tools` service is
   // Host-only); each tool resolves its project from the session workspace.

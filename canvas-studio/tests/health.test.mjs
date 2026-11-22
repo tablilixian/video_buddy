@@ -113,7 +113,8 @@ test('业务 API 不可达：生成请求快速失败（CS-NET-001），且不�
         (err) => err.code === 'CS-NET-001',
         '拿不到任何响应应报网络层错误（CS-NET-001），不是笼统失败',
       )
-      assert.equal(stub.calls.create, 1, '创建请求恰好一次（引擎不自动重试 POST）')
+      // B4 quote 硬闸先行：quote（fail-open）+ 创建各一次；引擎不自动重试 POST。
+      assert.equal(stub.calls.create, 2, 'quote 预检 + 创建各一次（无重试）')
       assert.equal(stub.calls.poll, 0, '创建失败不得进入轮询')
       assert.equal(stub.calls.content, 0, '创建失败不得下载产物')
       assert.ok(Date.now() - startedAt < 10_000, '应快速失败而不是吃满长超时')
@@ -128,7 +129,7 @@ test('业务 API 不可达：生成请求快速失败（CS-NET-001），且不�
 test('全链路走通：创建 202 → 轮询到 succeeded → content 下载 → 节点落盘', async () => {
   const { result, calls } = await withImageGenerate(stubBusiness())
   assert.match(result.url, /\/canvas-studio\/assets\//)
-  assert.equal(calls.create, 1)
+  assert.equal(calls.create, 2) // quote 预检 + 创建
   assert.ok(calls.poll >= 1)
   assert.equal(calls.content, 1, '产物字节恰好从 content 端点取一次')
 })

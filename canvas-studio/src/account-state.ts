@@ -153,6 +153,27 @@ export function markCreditsStale(): void {
   creditsStale = true
 }
 
+/**
+ * 套餐并发上限（entitlement.features.concurrent_generations，B4）。
+ * null = 未知（未登录 / 目录缺字段）——队列宽度不钳制（硬限制在服务端 409）。
+ */
+let planConcurrency: number | null = null
+
+function capturePlanConcurrency(entitlement: Record<string, unknown> | null): void {
+  const features = entitlement?.features
+  if (features === null || features === undefined || typeof features !== 'object') {
+    planConcurrency = null
+    return
+  }
+  const raw = (features as Record<string, unknown>)['concurrent_generations']
+  planConcurrency = typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.round(raw) : null
+}
+
+/** 套餐并发上限视图（队列宽度取 min 用）。 */
+export function planConcurrencyView(): number | null {
+  return planConcurrency
+}
+
 /** 读当前视图（纯读，无副作用；路由与 UI 的唯一数据来源）。 */
 export function creditsView(): AccountCreditsView {
   const d = deps
@@ -207,7 +228,9 @@ async function runBootstrap(d: AccountStateDeps, token: string): Promise<void> {
   const client = clientOf(d)
   try {
     await client.sync(token)
-    const models = await client.listTextModels(token)
+    const catalog = await client.listTextCatalog(token)
+    const models = catalog.models
+    capturePlanConcurrency(catalog.entitlement)
     bootstrappedToken = token
     catalogFetchedAt = Date.now()
     retryNotBefore = 0

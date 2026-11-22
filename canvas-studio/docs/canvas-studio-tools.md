@@ -35,7 +35,7 @@
 
 **三个容易踩的点（2026-09-10 实测补充）**
 
-- **上传响应取 `name`**：`POST /api/v1/generate/upload` 返回 ComfyUI 原生结构
+- **上传已迁三段式（迁移 2026-11-22）**：`presign → PUT upload_url → complete` 返回 **asset_id**（句柄语义从文件名换成 asset_id，见 docs/api.md §4）；
   `{name, subfolder, type}`，**`name` 就是下游工具要传的文件名**（如 `ref-8e6fce70.png`）。
   调用时只传 `name`，不要拼 `subfolder` 前缀。
 - **参考图必须是有意义的真实尺寸图**：拿 1×1 像素 / 几百字节的占位图当参考图，后端
@@ -194,7 +194,7 @@
 | `sourceUrls` | string[] | 否 | 参考的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（带字幕 / 招牌等文字的关键帧应传） |
 
-**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，文字仍出错时用 `image_generate_withtxt` 带修正后的文字规格重出（autoFixText/CV-212 兜底链已随 image_fix 下线退役）。
+**模型**：`image.qwen-image-2.1` @ `txt2image`（业务 API；目录实测唯一带文字渲染的模型），input `prompt` / `width` / `height`；产物以 content 端点字节落盘，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，文字仍出错时用 `image_generate_withtxt` 带修正后的文字规格重出（autoFixText/CV-212 兜底链已随 image_fix 下线退役）。
 
 ---
 
@@ -209,7 +209,7 @@
 | `sourceUrls` | string[] | 否 | 设计图对应的画布产物 URL |
 | `shotRefs` | array | 否 | 关联分镜卡 |
 
-**端点**：`POST /api/v1/generate/image2character`（CV-191 起 `krea2_quadview` 工作流，steps=10 / cfg=1.0；此前 `qwen_4view_char_2step`），请求体只吃 `image`；产物名 `krea2_char_4view_*.png`。
+**模型**：`image.krea2` @ `image2character`（恰 1 张参考、无 prompt）；产物以 content 端点字节落盘。
 
 ---
 
@@ -243,7 +243,7 @@
 | `prompt` | string | 是 | 分析提示词 |
 | `systemPrompt` | string | 否 | 缺省「你是一个专业的影视镜头分析师。请从电影摄影的角度分析这张画面。」 |
 
-**端点**：`POST /api/v1/generate/image2vl`（`image` + `prompt` + `system_prompt`）。
+**模型**：`image.qwen3-vl` @ `image2vl`（inputs[] 1 张 image + `prompt` / `system_prompt`）；文本输出内联快照（不调 content 端点）。
 
 > ⚠️ 2026-11-04 起模型行已声明 `input: [text, image]`，可直接 `read_image(file_path=…)` 读项目内本地图；本工具走的是后端 VLM，文字转述只作辅助参考。产物 URL / filename 句柄**不是**本地图片路径，别塞给 `read_image`。
 > 📌 **保底通道，三种情况才用**：① 只有远端句柄 / 产物 URL、没有本地文件；② `read_image` 报 `does not declare image input`（能力声明失效）；③ 需要第二意见。降级时必须在交付里明写「未做画面自检」，且 VLM 文字**不可当事实**。
@@ -281,7 +281,7 @@
    - **canvas-studio 资产 URL**（`/canvas-studio/assets/<projectId>/<file>`，带不带 `http://127.0.0.1:<port>` 前缀均可）：Host 进程直接 `registry.assetsDir(projectId)/<file>` 读盘——**绕过本地 webServer 对 loopback 请求返回的 403**。
    - 本地绝对路径 / `file://`：直接读盘。
    - 其它 URL：补全 loopback 端口后 `fetch` 下载。
-2. `FormData`（字段名 `file`）`POST` 到 **`/api/v1/generate/upload`**（唯一上传端点；旧 `uploadimage` 已下线返回 404）。
+2. 三段式上传（迁移 2026-11-22）：`presign → PUT upload_url → complete`，产出 **asset_id**（旧 multipart upload 端点已随 8082 退役）。
 3. 解析响应提取文件名（兼容 `{ name }` / `{ filename }` / `{ data: { filename } }` / `{ data: { url } }`）。
 4. 返回 `filename`。表单文件名统一 `ref-<8位uuid>.<ext>`，避开后端去重后缀 ` (1)` 带出的空格/括号（下游会 500）。
 
@@ -314,9 +314,9 @@
 
 | 条件 | 端点 |
 |------|------|
-| 纯文生视频（无参考图） | `POST /api/v1/generate/image2videofl2va` |
-| 单张首帧图生视频 | `POST /api/v1/generate/image2videofl2va`（`image1`） |
-| 首尾帧插值（filename + filenameTail） | `POST /api/v1/generate/image2videofl2va`（`image1` + `image2`） |
+| 纯文生视频（无参考图） | `video.minimax_h3` @ `image2videofl2va`（inputs 空） |
+| 单张首帧图生视频 | `image2videofl2va`（inputs image ordinal 1） |
+| 首尾帧插值（filename + filenameTail） | `image2videofl2va`（inputs image ordinal 1 + 2） |
 
 `provider=fal` 时改走 fal MiniMax H3（参考上限 9 张，时长下限 5 秒）。
 
@@ -341,7 +341,7 @@
 
 | 条件 | 端点 |
 |------|------|
-| 任意合法参考组合 | `POST /api/v1/generate/image2videoref2va`（`image1`…`image9` + `video1`…`video3` + `audio1`…`audio3`） |
+| 任意合法参考组合 | `image2videoref2va`（inputs image≤9 ordinal 1..9 + video≤3 + audio≤3，总 ≤15） |
 
 > 端点恒定（CV-269 拆分后工具 execute 显式带 `channel: 'ref2va'`）；旧节点重放仍按
 > `src/providers/capability.ts` 的 `capabilityOf` 推断（2 图旧 composite 重放依旧走首尾帧，零迁移）。

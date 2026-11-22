@@ -321,10 +321,12 @@ test('CV-155：healReferenceFilename 认 filename 与本地资产名，认不出
         await healReferenceFilename(registry, 'p1', 'img_01287_.png'),
         ASSET_HANDLE(1),
       )
-      // 按本地资产名命中（实测 Agent 会把画布资产文件名当 filename 传）
+      // 按本地资产名命中（实测 Agent 会把画布资产文件名当 filename 传）。
+      // 迁移 B3-2：同一文件的 asset_id 服务端稳定 → 第二次 heal 复用缓存句柄
+      //（不重复上传，presign+complete 有 30 次/分钟配额）。要强制重传走 fresh 参数。
       assert.equal(
         await healReferenceFilename(registry, 'p1', 'shot1.png'),
-        ASSET_HANDLE(2),
+        ASSET_HANDLE(1),
       )
       // 认不出 → null（调用方据此保留原始错误）
       assert.equal(await healReferenceFilename(registry, 'p1', '不存在.png'), null)
@@ -491,12 +493,29 @@ test('CV-242：节点被删后，heal 经 manifest 反查磁盘资产重传自�
         await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'),
         ASSET_HANDLE(1),
       )
-      // 磁盘文件也被删 → 查映射也救不回 → null（调用方抛原始错误）
+      // 磁盘文件也被删：本地重传已不可能，但 asset_id 缓存仍在（asset 服务端
+      // 仍 ready）→ 返回缓存句柄（迁移 B3-2：这才是「救得回」的准确语义——
+      // 服务端 asset 与本地磁盘是两份存储）。真正救不回的是「无缓存且无磁盘」：
       await rm(join(dir, 'frame1.png'))
-      assert.equal(await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'), null)
+      assert.equal(await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'), ASSET_HANDLE(1))
     } finally {
       restore()
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-242：无缓存也无磁盘文件 → heal 返回 null（真正救不回的形态）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cv242-'))
+  try {
+    // manifest 里只有 v1 handles（无 assetIds 缓存），磁盘文件也不存在
+    await writeFile(
+      join(dir, 'reference-manifest.json'),
+      JSON.stringify({ version: 1, handles: { 'ref-7516d08b.png': 'gone.png' } }),
+    )
+    const { registry } = stubRegistry([], dir)
+    assert.equal(await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'), null)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

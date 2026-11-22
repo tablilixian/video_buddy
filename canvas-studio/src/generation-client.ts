@@ -24,7 +24,7 @@ import {
   OPERATION_INPUT_FIELDS,
   validateInputRefs,
 } from './contracts/generation.js'
-import { makeCanvasError } from './error-system.js'
+import { makeCanvasError, throwError } from './error-system.js'
 import './errors/catalog.js'
 import { IMAGE_DOWNLOAD_MAX_BYTES, IMAGE_DOWNLOAD_TIMEOUT_MS, MEDIA_DOWNLOAD_MAX_BYTES, MEDIA_DOWNLOAD_TIMEOUT_MS, readBodyLimited } from './media-download.js'
 /** 引擎依赖（由 generate.ts 装配注入，避免模块环）。 */
@@ -299,8 +299,7 @@ export async function downloadGenerationContent(
 ): Promise<Buffer> {
   const response = await deps.client.openGenerationContent(deps.token(), generationId, ordinal)
   if (!response.ok) {
-    // 与 fetchBodyLimited 的非 2xx 分支同码；label 给调用侧定位用。
-    const { throwError } = await import('./error-system.js')
+    // 与 fetchBodyLimited 的非 2xx 分支同码；410 gone（结果过期）等状态码由调用侧分派。
     throwError('CS-NET-007', { label: `生成结果 ${generationId}#${ordinal}`, status: response.status })
   }
   return readBodyLimited(response, {

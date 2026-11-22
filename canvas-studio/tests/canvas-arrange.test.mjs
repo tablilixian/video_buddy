@@ -51,7 +51,7 @@ const ROUTES_CODE = codeOnly(readSource('../src/routes.ts'))
 // 但故障点完全不同 —— 所以逐环钉住，而不是只断一个总效果。
 const GENERATE_CODE = codeOnly(readSource('../src/generate.ts'))
 const HOST_TOOLS_CODE = codeOnly(readSource('../src/host-tools.ts'))
-const DRAMA_CODE = codeOnly(readSource('../src/providers/drama.ts'))
+const DRAMA_CODE = codeOnly(readSource('../src/providers/business.ts'))
 const FAL_CODE = codeOnly(readSource('../src/providers/fal.ts'))
 const CAPABILITY_CODE = codeOnly(readSource('../src/providers/capability.ts'))
 
@@ -264,11 +264,9 @@ test('参考视频接线：能力路由 + Drama 落字段 + fal 明确拒收（�
   // ① 能力路由漏了 → 请求落到 FL2VA 端点，而 video1..3 只对 ref2va 有意义 ⇒ 字段被静默忽略
   assert.match(CAPABILITY_CODE, /\(params\.videoRefs\?\.length \?\? 0\) > 0\) return 'multi-reference'/,
     '带参考视频必须解析为 multi-reference（官方参考模式 r2v）')
-  // ② Drama 不落字段 → 参数根本没进请求体
-  assert.match(DRAMA_CODE, /const DRAMA_VIDEO_FIELD = 'video'/,
-    '字段名前缀集中在一处 —— 后端若改名只改这里')
-  assert.match(DRAMA_CODE, /body\[`\$\{DRAMA_VIDEO_FIELD\}\$\{i \+ 1\}`\]/,
-    'Drama 必须按序把参考视频落成 video1..video3')
+  // ② 业务 API 不落字段 → 参数根本没进请求体（迁移 B3-3：inputs[] role/ordinal）
+  assert.match(DRAMA_CODE, /refs\.push\(\{ assetId: ref\.localPath, role: 'video' \}\)/,
+    'business provider 必须把参考视频落成 inputs[] 的 video 角色')
   // ③ fal 静默丢参数 → 用户以为参考视频生效了，实际没有。宁可明确失败。
   assert.match(FAL_CODE, /throwError\('CS-PROV-007'/,
     'fal 侧字段名未经实测，必须明确报错（CS-PROV-007）而不是丢弃')

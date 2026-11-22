@@ -37,11 +37,12 @@ test('2.1：generate 写路径走 normalizeVideoAspect（不再写字面量两�
   assert.ok(!t.includes("params.aspectRatio === '9:16' ? '9:16' : '16:9'"), '旧两档字面量钳制必须已退役')
 })
 
-test('2.1：drama 放行 1:1 直传并带联调前降级警告', () => {
-  const t = srcOf('src/providers/drama.ts')
-  assert.ok(t.includes("return normalizeVideoAspect(typeof ratio === 'string' ? ratio : undefined)"), 'dramaAspect 必须走唯一归一实现点')
-  assert.ok(t.includes("if (aspect === '1:1')"), '1:1 警告分支缺失')
-  assert.ok(t.includes('后台 1:1 联调就绪前可能被静默降级'), '降级警告文案缺失')
+test('2.1：drama 放行 1:1 直传（迁移 2026-11-22：1:1 官方支持，降级警告已摘除）', async () => {
+  const t = srcOf('src/providers/business.ts')
+  // 业务 API 探针实测 1:1 报价放行（docs/api-probe/generation-migration-20261122/report.md §2）；
+  // 旧「可能被静默降级」警告随迁移摘除——provider 不再对 1:1 发 warning。
+  assert.ok(!t.includes('静默降级'), 'business provider 不得再带 1:1 降级警告（官方已支持）')
+  assert.match(t, /normalizeVideoAspect/, '画幅归一仍要走唯一实现（非法值落 16:9）')
 })
 
 test('2.1：两个视频工具 schema 与 UI chips 同步三档', () => {

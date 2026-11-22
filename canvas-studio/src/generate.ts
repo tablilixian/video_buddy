@@ -892,6 +892,8 @@ interface BusinessGenerationOutcome {
   readonly bytes: Buffer
   /** 终态快照的 generation id（落 `dramaFilename`——新 API 的产物没有可复用服务端文件名）。 */
   readonly generationId: string
+  /** 产物扩展名（按 content 端点 MIME 判定，落盘不假 .png）。 */
+  readonly ext: string
 }
 
 /**
@@ -985,6 +987,8 @@ interface BusinessGenerationOutcome {
   readonly bytes: Buffer
   /** 终态快照的 generation id（落 `dramaFilename`——新 API 的产物没有可复用服务端文件名）。 */
   readonly generationId: string
+  /** 产物扩展名（按 content 端点 MIME 判定，落盘不假 .png）。 */
+  readonly ext: string
 }
 
 /**
@@ -993,7 +997,7 @@ interface BusinessGenerationOutcome {
 async function runBusinessImage(
   tool: string,
   request: { model: string; operation: GenerationOperation; input: Record<string, unknown>; refs: GenerationRef[] },
-  opts: { label: string; signal?: AbortSignal },
+  opts: { label: string; signal?: AbortSignal; warnings?: string[] },
 ): Promise<BusinessGenerationOutcome> {
   const final = await runBusinessGenerationTask({
     tool,
@@ -1004,6 +1008,7 @@ async function runBusinessImage(
     timeoutMs: DRAMA_TIMEOUT_MS.image,
     label: opts.label,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    ...(opts.warnings !== undefined ? { warnings: opts.warnings } : {}),
   })
   const deps = businessEngineDeps()
   const output = final.outputs.find((entry) => entry.content_url !== undefined)
@@ -1015,7 +1020,7 @@ async function runBusinessImage(
     ...IMAGE_CONTENT_LIMITS,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   })
-  return { bytes, generationId: final.id }
+  return { bytes, generationId: final.id, ext: extensionForMime(output.mime_type) }
 }
 
 /** 从终态快照取内联文本输出（image2vl / video2vl；§6.10 文本不调 content 端点）。 */
@@ -1104,8 +1109,11 @@ const promoteInflight = new Map<string, Promise<string>>()
  * 旧项目天然兼容（查不到 → heal 走原路径报错）。
  */
 interface ReferenceManifest {
-  version: 1
+  /** v2 起增加 `assetIds`（file → asset_id 反向缓存，业务 API 句柄可复用）。 */
+  version: 1 | 2
   handles: Record<string, string>
+  /** B3-2 迁移新增：本地资产文件 → 最近一次上传的 asset_id（resolveRefFilenames 复用，免重复上传）。 */
+  assetIds?: Record<string, string>
 }
 
 function referenceManifestFile(registry: ProjectRegistry, projectId: string): string {
@@ -1123,18 +1131,26 @@ async function recordReferenceHandle(
 ): Promise<void> {
   const run = manifestQueue.then(async () => {
     const file = referenceManifestFile(registry, projectId)
-    let manifest: ReferenceManifest = { version: 1, handles: {} }
+    let manifest: ReferenceManifest = { version: 2, handles: {} }
     try {
       const parsed = JSON.parse(await readFile(file, 'utf8')) as ReferenceManifest
       if (parsed !== null && typeof parsed === 'object'
         && parsed.handles !== null && typeof parsed.handles === 'object') {
-        manifest = { version: 1, handles: parsed.handles }
+        manifest = {
+          version: 2,
+          handles: parsed.handles,
+          ...(parsed.assetIds !== null && typeof parsed.assetIds === 'object' ? { assetIds: parsed.assetIds } : {}),
+        }
       }
     } catch {
       // 缺失/损坏按空表起底——映射是自愈加速器，不是事实源，丢了可重新积累。
     }
-    if (manifest.handles[handle] === assetFile) return
+    if (manifest.handles[handle] === assetFile
+      && manifest.assetIds?.[assetFile] === handle) return
     manifest.handles[handle] = assetFile
+    // B3-2：反向缓存（file → 最近一次上传的 asset_id）——resolveRefFilenames
+    // 复用句柄免重复上传；自愈（fresh）重传后覆盖为新 asset_id。
+    manifest.assetIds = { ...(manifest.assetIds ?? {}), [assetFile]: handle }
     // AR-03：队列防并发撕档，原子写防「写一半进程没了」——半截 JSON 读回即空表，
     // 虽可自愈但会白白丢一批句柄映射。与 canvas / 注册表同口径。
     await writeFileAtomic(file, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, dirMode: 0o700 })
@@ -1152,6 +1168,25 @@ async function lookupReferenceAssetFile(
     const parsed = JSON.parse(await readFile(referenceManifestFile(registry, projectId), 'utf8')) as ReferenceManifest
     const assetFile = parsed?.handles?.[handle]
     return typeof assetFile === 'string' && assetFile.length > 0 ? assetFile : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 【B3-2】反向缓存读取：本地资产文件 → 最近一次上传的 asset_id。
+ * 业务 API 的 asset 服务端稳定（ready 且未过期即可复用），同一文件的重复引用
+ * 不必重传。自愈（fresh）路径绕过本缓存——缓存里的 id 刚在服务端 404 过。
+ */
+async function lookupCachedAssetId(
+  registry: ProjectRegistry,
+  projectId: string,
+  assetFile: string,
+): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(await readFile(referenceManifestFile(registry, projectId), 'utf8')) as ReferenceManifest
+    const assetId = parsed?.assetIds?.[assetFile]
+    return typeof assetId === 'string' && assetId.length > 0 ? assetId : null
   } catch {
     return null
   }
@@ -1188,10 +1223,15 @@ export async function pruneReferenceManifest(
       if (keepFile(assetFile)) nextHandles[handle] = assetFile
       else changed = true
     }
+    const nextAssetIds: Record<string, string> = {}
+    for (const [assetFile, assetId] of Object.entries(manifest.assetIds ?? {})) {
+      if (keepFile(assetFile)) nextAssetIds[assetFile] = assetId
+      else changed = true
+    }
     if (!changed) return
     await writeFileAtomic(
       file,
-      `${JSON.stringify({ version: 1 as const, handles: nextHandles }, null, 2)}\n`,
+      `${JSON.stringify({ version: 2 as const, handles: nextHandles, assetIds: nextAssetIds }, null, 2)}\n`,
       { mode: 0o600, dirMode: 0o700 },
     )
   })
@@ -1209,6 +1249,7 @@ export async function promoteAssetFile(
   projectId: string,
   assetFile: string,
   signal?: AbortSignal,
+  opts: { fresh?: boolean } = {},
 ): Promise<string> {
   // CR-01/CR-02：防路径穿越的统一准入点（`assetFile` 必须是由 Host 生成的纯文件名）。
   const rootPath = resolveAssetPathIn(registry.assetsDir(projectId), assetFile)
@@ -1218,6 +1259,13 @@ export async function promoteAssetFile(
   const pending = (async () => {
     const project = (await registry.list()).find((entry) => entry.id === projectId)
     if (!project) throwError('CS-PROJ-001', { id: projectId })
+    // B3-2：反向缓存快路径——同一文件的 asset_id 服务端稳定（ready 未过期即可复用），
+    // 重复引用不重传（presign+complete 有 30 次/分钟配额，视频重传尤其浪费）。
+    // `fresh: true`（自愈）绕过——缓存里的 id 刚在服务端 404/失效过，必须重传换新。
+    if (opts.fresh !== true) {
+      const cached = await lookupCachedAssetId(registry, projectId, assetFile)
+      if (cached !== null) return cached
+    }
     let bytes: Buffer
     try {
       bytes = await readFile(rootPath)
@@ -1268,6 +1316,7 @@ export async function healReferenceFilename(
   projectId: string,
   filename: string,
   signal?: AbortSignal,
+  opts: { fresh?: boolean } = {},
 ): Promise<string | null> {
   try {
     const doc = await registry.readCanvas(projectId)
@@ -1280,9 +1329,9 @@ export async function healReferenceFilename(
       //（调用方换名重试），查不到返回 null，调用方抛原始错误（不掩盖真因）。
       const mapped = await lookupReferenceAssetFile(registry, projectId, filename)
       if (mapped === null) return null
-      return await promoteAssetFile(registry, projectId, mapped, signal)
+      return await promoteAssetFile(registry, projectId, mapped, signal, opts)
     }
-    const fresh = await promoteAssetFile(registry, projectId, file, signal)
+    const fresh = await promoteAssetFile(registry, projectId, file, signal, opts)
     await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename: fresh } : entry)))
     return fresh
   } catch {
@@ -1800,19 +1849,12 @@ export async function analyzeImage(
     // 起来，Look Phase 4 的风格质检基准也就无从生效）。补上「反查画布节点 → 本地
     // 资产重传 → 换名重试一次」，与 runGeneration 同一不变式。
     if (heal === undefined || !isBadReferenceError(cause)) throw cause
-    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal)
+    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal, { fresh: true })
     if (fresh === null) throw cause
     return call(fresh)
   }
 }
 
-/**
- * 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。
- *
- * @param timeoutMs - 本档上限，默认 `DRAMA_TIMEOUT_MS.text`。视频理解（video2vl）要显式
- *   传视频档：输入是视频，处理耗时随片长增长（实测 1.65MB 样片 16.7s），文本档的
- *   180s 对长片不够用。
- */
 /**
  * 视频理解（VLM）：调用 Drama Backend 的 video2vl 接口（Qwen3-VL-4B），入参是已上传的
  * 视频文件名，返回逐镜头 / 按时间轴的文本分析。
@@ -1854,7 +1896,7 @@ export async function analyzeVideo(
     // CV-155 同型自愈：产物名（`MiniMax_H3_*.mp4` / 旧版 `*-audio.mp4`）不可直接入参，
     // 反查画布节点 → 本地资产重传 → 换名重试一次。本工具最常被喂的正是「刚生成的视频」。
     if (heal === undefined || !isBadReferenceError(cause)) throw cause
-    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal)
+    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal, { fresh: true })
     if (fresh === null) throw cause
     return call(fresh)
   }
@@ -1927,7 +1969,7 @@ export async function transcribeAudio(
   } catch (cause) {
     // 与 analyzeImage / analyzeVideo 同一不变式：产物名入参必 500，靠自愈换名重试一次。
     if (heal === undefined || !isBadReferenceError(cause)) throw cause
-    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal)
+    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal, { fresh: true })
     if (fresh === null) throw cause
     return call(fresh)
   }
@@ -2211,6 +2253,8 @@ export async function generateAsset(
   // 迁移 B3-2：业务 API 链路（图像）直接拿产物字节（content 端点下载），
   // 共享结算段的 downloadBytes(mediaUrl) 只服务仍走 full_url 的旧链路（视频/fal）。
   let mediaBytes: Buffer | undefined
+  // 产物扩展名（按 content 端点 MIME 判定；legacy/fal 路径缺省 undefined = 旧口径）。
+  let mediaExt: string | undefined
   // 生成类节点也持久化后端产物名。CV-155 更正：产物名**不可**直接作下游入参，
   // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
   // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
@@ -2318,13 +2362,17 @@ export async function generateAsset(
   ): Promise<BusinessGenerationOutcome> => {
     const request = build()
     try {
-      return await runBusinessImage(tool, request, { label, ...(signal !== undefined ? { signal } : {}) })
+      return await runBusinessImage(tool, request, {
+        label,
+        ...(signal !== undefined ? { signal } : {}),
+        warnings,
+      })
     } catch (error) {
       if (!isBadReferenceError(error) || request.refs.length === 0) throw error
       const mapping = new Map<string, string>()
       const healedRefs: GenerationRef[] = []
       for (const ref of request.refs) {
-        const fresh = await healReferenceFilename(registry, projectId, ref.assetId, signal)
+        const fresh = await healReferenceFilename(registry, projectId, ref.assetId, signal, { fresh: true })
         if (fresh === null || fresh === ref.assetId) {
           throwError('CS-USER-ERR', {
             message: `参考文件句柄已失效，且画布上找不到可自动恢复的源文件（它可能已被重生成、删除或从未上传成功）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${error instanceof Error ? error.message : String(error)}`,
@@ -2336,7 +2384,11 @@ export async function generateAsset(
       }
       // A-1 路径 A：记账换名映射——落卡的 generationPrompt 与血缘反查据此同步。
       for (const [oldN, newN] of mapping) healedNames.set(oldN, newN)
-      return await runBusinessImage(tool, { ...request, refs: healedRefs }, { label, ...(signal !== undefined ? { signal } : {}) })
+      return await runBusinessImage(tool, { ...request, refs: healedRefs }, {
+        label,
+        ...(signal !== undefined ? { signal } : {}),
+        warnings,
+      })
     }
   }
 
@@ -2388,6 +2440,7 @@ export async function generateAsset(
       '图片生成',
     )
     mediaBytes = outcome.bytes
+    mediaExt = outcome.ext
     dramaFilename = outcome.generationId
   } else if (tool === 'image_generate_withtxt') {
     // CV-270：文字渲染特化（image.qwen-image-2.1，中文逐字正确）。**纯文生**。
@@ -2415,6 +2468,7 @@ export async function generateAsset(
       '文字生图',
     )
     mediaBytes = outcome.bytes
+    mediaExt = outcome.ext
     dramaFilename = outcome.generationId
   } else if (tool === 'character_generate') {
     // 基于角色设计图生成角色四视图：image.krea2 @ image2character（恰 1 张参考、无 prompt）。
@@ -2434,6 +2488,7 @@ export async function generateAsset(
       '角色四视图',
     )
     mediaBytes = outcome.bytes
+    mediaExt = outcome.ext
     dramaFilename = outcome.generationId
   } else if (tool === 'video_generate' || tool === 'video_composite') {
     // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
@@ -2526,6 +2581,25 @@ export async function generateAsset(
       // + content 下载产物字节。legacy 8082 注入面（dramaPostWithFallback/
       // dramaJobRequest/30s 轮询）随老端口退役，B5 清理批删除。
       businessRun: async (breq) => {
+        // B4 quote 硬闸对视频同样生效（视频是最贵的生成；预估 30 积分/片起）。
+        // 放在 acquire 之前：余额不足快速失败，不占在途名额。
+        const quoteDeps = businessEngineDeps()
+        const estimated = await quoteGenerationCost(quoteDeps, {
+          model: breq.model,
+          operation: breq.operation,
+          input: breq.input,
+        })
+        const balance = creditsView().balance
+        if (estimated !== null && balance !== null && Number.isFinite(balance.available_balance)
+          && estimated > balance.available_balance) {
+          throwError('CS-BILL-002', {
+            estimated: String(Math.round(estimated * 10000) / 10000),
+            available: String(Math.round(balance.available_balance * 10000) / 10000),
+          })
+        }
+        if (estimated !== null) {
+          warnings.push(`本次生成预估消耗 ${Math.round(estimated * 10000) / 10000} 积分（提交时冻结，任务失败自动释放；以服务端结算为准）。`)
+        }
         const lease = await acquireInFlight('视频生成', signal)
         try {
           const deps = businessEngineDeps()
@@ -2580,7 +2654,7 @@ export async function generateAsset(
           lease.release()
         }
       },
-      healBusinessRef: (handle) => healReferenceFilename(registry, projectId, handle, signal),
+      healBusinessRef: (handle) => healReferenceFilename(registry, projectId, handle, signal, { fresh: true }),
       isBadReferenceError,
       onHealed: (oldHandle, newHandle) => { healedNames.set(oldHandle, newHandle) },
     }
@@ -2654,6 +2728,7 @@ export async function generateAsset(
     dramaFilename: finalFilename,
     // BUG-019：图像路由证据随节点落盘（视频分支为 undefined，不落）。
     ...(routeEndpoint !== undefined ? { routeModel: routeEndpoint } : {}),
+    ...(mediaExt !== undefined ? { ext: mediaExt } : {}),
     isVideo,
     size,
     warnings,
@@ -2690,6 +2765,8 @@ interface PersistAssetOptions {
    * generationPrompt 与血缘反查据此同步到新句柄。
    */
   readonly healedNames?: ReadonlyMap<string, string>
+  /** 产物扩展名（业务 API 按 content 端点 MIME 判定；缺省 = 旧口径 isVideo?'mp4':'png'）。 */
+  readonly ext?: string | undefined
   readonly signal?: AbortSignal
 }
 
@@ -2701,7 +2778,7 @@ interface PersistAssetOptions {
  * 与「正常生成的节点」字段口径必然分叉。
  */
 async function persistGeneratedAsset(options: PersistAssetOptions): Promise<GenerateResult> {
-  const { registry, tool, projectId, params, bytes, dramaFilename, routeModel, isVideo, size, warnings, healedNames, signal } = options
+  const { registry, tool, projectId, params, bytes, dramaFilename, routeModel, isVideo, size, warnings, healedNames, ext, signal } = options
   const finalFilename = dramaFilename
 
   // CV-099 的单镜兜底（时长钳制）依赖项目 plan：结算可由恢复路径触发（无原调用
@@ -2712,7 +2789,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   const perShotFallback = (base: number): number => (planTotal !== undefined ? Math.min(base, planTotal) : base)
 
   const assetId = newAssetId()
-  const extension = isVideo ? 'mp4' : 'png'
+  const extension = ext ?? (isVideo ? 'mp4' : 'png')
   const filename = `${assetId}.${extension}`
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
@@ -3086,15 +3163,16 @@ export async function generateCharacterSheet(
       input: {},
       refs: [{ assetId: image, role: 'image' }],
     }, { label: '角色四视图', ...(signal !== undefined ? { signal } : {}) })
-    return { bytes: final.bytes, generationId: final.generationId }
+    return { bytes: final.bytes, generationId: final.generationId, ext: final.ext }
   }
   const sheet = await fetchSheet(params.filename).catch(async (cause) => {
     if (!isBadReferenceError(cause)) throw cause
-    const fresh = await healReferenceFilename(registry, projectId, params.filename, signal)
+    const fresh = await healReferenceFilename(registry, projectId, params.filename, signal, { fresh: true })
     if (fresh === null) throw cause
     return fetchSheet(fresh)
   })
   const sheetBytesDirect = sheet.bytes
+  const sheetExt = sheet.ext
   const sheetDramaName = sheet.generationId
 
   // 2) 拼图下载落盘 + 落画布节点（资产卡唯一锚点）。资产卡 id 在此提前生成，
@@ -3114,7 +3192,7 @@ export async function generateCharacterSheet(
   // no-store，同名文件不会被浏览器缓存 ⇒ 重出后画布上那张图立刻更新；同时资产卡
   // 的锚点节点 id 不变，不会多出第二张卡。
   const sheetNodeId = params.retryOf ?? newAssetId()
-  const sheetFile = `${sheetNodeId}.png`
+  const sheetFile = `${sheetNodeId}.${sheetExt ?? 'png'}`
   await writeFile(join(directory, sheetFile), sheetBytes)
   // CV-246：角色四视图入历史账（失败不阻断主流程）。
   await recordAssetHistory(registry, projectId, { file: sheetFile, tool: 'character', size: sheetBytes.length }).catch(() => {})

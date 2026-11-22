@@ -15,7 +15,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFalProvider } from '../lib/providers/fal.js'
-import { createDramaProvider } from '../lib/providers/drama.js'
+import { createBusinessVideoProvider } from '../lib/providers/business.js'
 import {
   assertFalReferenceSizes,
   toFalDataUri,
@@ -127,7 +127,7 @@ function stubFetch(handlers) {
 
 test('阶段 5：fal 自述补齐 multi-reference（与 Drama 同为三能力，上限同为 9）', () => {
   const fal = createFalProvider()
-  const drama = createDramaProvider()
+  const drama = createBusinessVideoProvider()
   assert.deepEqual([...fal.capabilities].sort(), ['first-last-frame', 'multi-reference', 'text-to-video'])
   assert.equal(fal.maxReferences, 9)
   assert.equal(drama.maxReferences, 9)
@@ -209,33 +209,32 @@ test('参考图上限一致（CV-191）：12 张时 fal 与 Drama 均保留 9 �
     restoreA()
   }
 
-  // Drama 侧：上限同为 9（CV-191 前是 6）——12 张同样保留 9 张，且 warning 经 executor
-  // 汇入 outcome.warnings（证明 handle.warnings 没在 executor 里被丢掉）。
-  // 0.5.0 异步化：提交返回 202 信封（无产物），outcome 来自下一拍的 result 端点。
-  const dramaCalls = []
+  // Drama 侧（迁移 B3-3 = business provider）：上限同为 9（CV-191）——12 张保留
+  // 前 9 张并回 warning（warning 经 executor 汇入 outcome.warnings，证明没被丢掉）。
+  // 业务链路：submit 直接到 settled（创建+轮询+下载在 businessRun 闭包里完成）。
+  const businessRuns = []
   const dramaOutcome = await runVideo(
-    createDramaProvider(),
+    createBusinessVideoProvider(),
     refReq({ capability: 'multi-reference', references: refs(12) }),
     {
       ...KEY_CTX,
-      dramaPostWithFallback: async (endpoint, body) => {
-        dramaCalls.push(body)
-        return { job_id: 'job-1', status: 'pending', status_url: '/api/v1/jobs/job-1', cancel_url: '/api/v1/jobs/job-1/cancel', result_url: '/api/v1/jobs/job-1/result' }
-      },
-      dramaJobRequest: async (method, path) => {
-        if (path.endsWith('/result')) {
-          return { status: 200, json: { prompt_id: 'job-1', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 } }
-        }
-        return { status: 200, json: { job_id: 'job-1', status: 'completed', execution_error: null } }
+      isBadReferenceError: () => false,
+      healBusinessRef: async (handle) => handle,
+      businessRun: async (req) => {
+        businessRuns.push(req)
+        return { bytes: new Uint8Array([1]), ext: 'mp4', generationId: 'cccccccc-cccc-4ccc-8ccc-000000000001' }
       },
     },
   )
-  assert.equal(dramaCalls[0].image1, 'f0.png')
-  assert.equal(dramaCalls[0].image9, 'f11.png')
-  assert.equal(dramaCalls[0].image10, undefined)
+  assert.equal(businessRuns.length, 1)
+  const images = businessRuns[0].refs.filter((r) => r.role === 'image')
+  assert.equal(images.length, 9, '12 张截断为 9 张（图上限 CV-191）')
+  assert.equal(images[0].assetId, 'f0.png')
+  assert.equal(images[8].assetId, 'f8.png')
+  assert.equal(images[9], undefined)
   assert.ok(
-    dramaOutcome.warnings?.some((w) => w.includes('超过 Drama 上限 9 张')),
-    `Drama 截断告警未回流，实得 ${JSON.stringify(dramaOutcome.warnings)}`,
+    dramaOutcome.warnings?.some((w) => w.includes('上限 9 张')),
+    `截断告警未回流，实得 ${JSON.stringify(dramaOutcome.warnings)}`,
   )
 })
 

@@ -180,9 +180,12 @@ test('超时到期但进度仍在推进 ⇒ 续期，不结算', async () => {
     const before = activeRenderJobCount()
     // 预算 120ms、续期下限 60ms、停滞阈值 150ms：
     //  t=0    建单并上报 40% 进度（刷新 lastProgressAt）
-    //  t=120  原预算到期 ⇒ 续期 ≈ 120×(0.6/0.4)×1.4 = 252ms
-    //  t=200  断言仍在册（说明真的续了，没被砍）
-    //  t=372  续期到期且距上次进度 372ms > 150ms ⇒ 停滞判据生效，才结算超时
+    //  t=120  原预算到期，停滞 120 < 150 ⇒ 续期 ≈ 252ms，存活窗到 t≈372
+    //  t=372  续期到期：停滞 372 ≥ 150 ⇒ 判死（CS-RENDER-TIMEOUT）
+    // 2026-11-22：存活断言从「sleep(200) 后单次检查」改为**轮询窗口**——
+    // 全量冒烟单进程跑 400 个测试文件，CPU 竞争会让单次 sleep(200) 的唤醒点
+    // 越过 372ms 存活窗（负载抖动被误判成回归）。轮询到 t≈360 为止，窗口内
+    // 任意一次观察到「仍在册」即通过；窗口关闭（判死）后退出轮询。
     const pending = runRenderJob({
       projectId: project.id,
       manifest: minimalManifest(),
@@ -193,11 +196,13 @@ test('超时到期但进度仍在推进 ⇒ 续期，不结算', async () => {
     const view = pendingRenderJobFor(project.id)
     assert.equal(reportRenderJobProgress(view.jobId, 0.4), true, '进度必须被工单收下')
 
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    assert.ok(
-      activeRenderJobCount() > before,
-      '原预算到期时进度仍在推进 ⇒ 必须续期存活，而不是被准点砍掉',
-    )
+    const started = Date.now()
+    let observedAlive = false
+    while (Date.now() - started < 360) {
+      if (activeRenderJobCount() > before) { observedAlive = true; break }
+      await new Promise((resolve) => setTimeout(resolve, 15))
+    }
+    assert.ok(observedAlive, '原预算到期时进度仍在推进 ⇒ 必须续期存活（存活窗内轮询观察），而不是被准点砍掉')
 
     // 不再上报进度 ⇒ 续期到期后停滞判据判定为真卡死，结算超时。
     await assert.rejects(

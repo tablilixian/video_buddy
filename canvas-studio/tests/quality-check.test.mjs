@@ -219,12 +219,21 @@ async function withFakeVlm(output, fn) {
   globalThis.fetch = async (_url, init) => {
     const body = init?.body !== undefined ? JSON.parse(String(init.body)) : null
     if (body !== null) posts.push(body)
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ output }),
-      text: async () => JSON.stringify({ output }),
+    // 迁移 B3-2：VLM（image2vl）走业务 API 创建/轮询；文本输出内联快照。
+    if ((init?.method ?? 'GET') === 'POST') {
+      return { ok: true, status: 202, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000004', operation: 'image2vl', status: 'queued', version: 1,
+        progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+      }) }
     }
+    if (String(_url).includes('/poll')) {
+      return { ok: true, status: 200, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000004', operation: 'image2vl', status: 'succeeded', version: 2,
+        progress: 100, billing_status: 'held', terminal: true,
+        outputs: [{ ordinal: 0, type: 'text', mime_type: 'text/plain', text: output }], error: null,
+      }) }
+    }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' }
   }
   try {
     return await fn(posts)
@@ -269,10 +278,10 @@ test('qc_shot：结论写回被检节点，判定基准缺省取资产卡 locked
     assert.equal(res.attempts, 1)
     assert.equal(res.exhausted, false)
     assert.equal(res.nodeId, 'shot-1')
-    // 判定基准 = 资产卡 lockedPrompt + 负面约束
-    const sent = posts.find((p) => typeof p.prompt === 'string' && p.prompt.includes('SAME CHARACTER'))
-    assert.match(sent.prompt, /SAME CHARACTER: 黑色短发，米色风衣/)
-    assert.match(sent.prompt, /不更换服装/)
+    // 判定基准 = 资产卡 lockedPrompt + 负面约束（迁移 B3-2：业务请求体在 input 里）
+    const sent = posts.find((p) => typeof p.input?.prompt === 'string' && p.input.prompt.includes('SAME CHARACTER'))
+    assert.match(sent.input.prompt, /SAME CHARACTER: 黑色短发，米色风衣/)
+    assert.match(sent.input.prompt, /不更换服装/)
     // 落盘
     assert.equal(registry.writes.length, 1)
     const written = registry.writes[0].find((n) => n.id === 'shot-1')

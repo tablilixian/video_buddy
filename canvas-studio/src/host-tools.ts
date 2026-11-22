@@ -86,20 +86,19 @@ import { LIB_CATEGORIES, LIB_CATEGORY_LABELS } from './contracts/asset-library.j
 // 编排（锚传递 / 串行 / 进度报错）在 `narration.ts`，工具层只做引用解析与结果渲染。
 import { generateNarration } from './narration.js'
 import { DEFAULT_VOICE_GAP_SECONDS, MAX_NARRATION_LINES, VOICE_FPS, type VoiceFps } from './voice-timeline.js'
-import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
+import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
 import { generationParamsOf } from './node-params.js'
 import { normalizeResolutionId, resolutionRank } from './resolution-tiers.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, deriveQcContext, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { runVideoShotQc, aggregateVideoQc, buildVideoQcRecord, validateQcTargetInput, VIDEO_QC_BUDGET } from './video-qc.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, analyzeImage, analyzeVideo, transcribeAudio, type AsrRawText, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, analyzeImage, analyzeVideo, transcribeAudio, type AsrRawText, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, resumeBusinessGenerationRecord, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
 import { VIDEO_ANALYST_SYSTEM_PROMPT, VIDEO_SHOT_BREAKDOWN_PROMPT, VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX } from './video-analysis.js'
-import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
 // R-P1-03：路由决策与 description 判据摘要（与执行时同一份事实）。
-import { routeImageModel, ROUTE_SUMMARY } from './model-route.js'
+import { ROUTE_SUMMARY } from './model-route.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
 import { DEFAULT_NODE_SIZE } from './canvas-aspect.js'
@@ -1009,65 +1008,6 @@ function renderShotList(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: `当前镜头清单（${v.shots.length} 段）：\n${lines.join('\n')}\n\n重出某镜时把旧版 id 传给 video_generate / video_composite 的 replaces；精确合成时把要用的 id 传给 compose_video 的 clipIds。` }]
 }
 
-/**
- * CV-212：自动 image_fix 兜底 —— 当 `image_generate` 出图含非 ASCII 引号文本时，
- * 拿到产物 URL 后先 `upload_image` 拿句柄、再调 image_fix 把原图的文字部分修对。
- * 用 `replaces=<原图 nodeId>` 把原图标失效，固定产物节点链。
- *
- * 失败兜底：image_fix 任一步失败（upload 报错 / 后端偶发 500 / 后端拒接），
- * 返回原图并附 warning，不让上层工具调用报错。
- */
-async function runTextAutoFix(
-  registry: ProjectRegistry,
-  projectId: string,
-  port: () => number | undefined,
-  original: GenerateResult,
-  originalPrompt: string,
-  quotedTexts: readonly string[],
-  signal: AbortSignal | undefined,
-  cwd: string | undefined,
-): Promise<GenerateResult> {
-  try {
-    // 1) 把原图产物 URL 上传到 Drama Backend 拿可用句柄（产物名不可直接入参，CV-155）
-    const uploadedFilename = await uploadImage(original.url!, signal, port(), registry, projectId)
-    await backfillUploadFilename(registry, projectId, original.url!, uploadedFilename)
-    // 2) 构造修复 prompt（CV-218：从**原 prompt** 抽「文字规格段 + 逐字约束段」）。
-    //    原 prompt 是修复 prompt 的最佳来源 —— 丢位置线索正是「武仔 → 武传」仍错
-    //    且凭空增字的根因；只喂字符清单的旧模板已删除（该回退分支不可达）。
-    const fixPrompt = buildTextFixPrompt(originalPrompt)
-    // 3) 调 image_fix；replaces 仅在 nodeId 存在时携带（exactOptionalPropertyTypes）
-    const fixParams: GenerateParams = { prompt: fixPrompt, filename: uploadedFilename }
-    if (original.nodeId !== undefined) fixParams.replaces = original.nodeId
-    const fixResult = await runGeneration(
-      registry,
-      'image_fix',
-      fixParams,
-      signal ?? new AbortController().signal,
-      cwd,
-    )
-    // 4) 合并 supersede 关系 + 提示信息，方便上层 agent 知道这是自动修复结果
-    const mergedWarnings = [
-      ...(original.warnings ?? []),
-      ...(fixResult.warnings ?? []),
-      `CV-212/218：检测到 prompt 含待渲染文字（${quotedTexts.length} 段），已自动调 image_fix 兜底（修复 prompt 取自原出图提示词的文字规格段）；原图已失效，新节点取代之`,
-    ]
-    return {
-      ...fixResult,
-      ...(mergedWarnings.length > 0 ? { warnings: mergedWarnings } : {}),
-    }
-  } catch (err) {
-    // 失败时不阻塞上层；返回原图并附 CV-212 警告
-    const failureMessage = err instanceof Error ? err.message : String(err)
-    const fallbackWarnings = [
-      ...(original.warnings ?? []),
-      `CV-212 自动文字修复失败（${failureMessage}），原图保留；如文字渲染异常请手动调 image_fix`,
-    ]
-    return {
-      ...original,
-      ...(fallbackWarnings.length > 0 ? { warnings: fallbackWarnings } : {}),
-    }
-  }
-}
 
 /** 把上传结果渲染成模型可读的文本块。 */
 function renderUploadResult(_args: unknown, value: unknown): ContentBlock[] {
@@ -2246,39 +2186,35 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
   // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
   // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
   if (cfg !== undefined) setRuntimeConfig(cfg)
-  // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时扫描所有项目的 jobs.json，
-  // 对非终态任务逐个起独立 30s 轮询；completed 后经共享结算下载产物并写画布节点。
-  // 幂等装配由调用方保证（createStudioTools 每进程调用一次）；测试直连时 cfg 缺省
-  // 也能跑——request 闭包不依赖 cfg（dramaApiBase 走 runtime() 的编译期默认值）。
+  // 异步视频任务恢复（迁移 B3-3）：Host 装配时扫描所有项目的 jobs.json，对
+  // **business 非终态记录**逐个起独立恢复（长轮询到终态 → content 下载 → 共享结算
+  // 落盘节点）；v1 旧记录原样保留不处置（拍板 ③）。幂等装配由调用方保证
+  // （createStudioTools 每进程调用一次）。
   startDramaJobResumeWatcher({
     registry,
-    request: (method, path) => dramaJobRequest(method, path),
-    settle: (record) => settleDramaVideoJob(record, registry),
+    resumeBusiness: (record) => resumeBusinessGenerationRecord(registry, record),
   })
   const tools = [
     defineTool({
       name: 'image_generate',
       description:
-        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。动漫画风等风格表达**直接写进 prompt**（0.7.0 对拍：txt2imageanime 端点已从后端移除，不再有 style 参数）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。'
+        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的素材句柄（asset_id）；都不传则为纯文生图。返回图片的托管 URL 与尺寸。动漫画风等风格表达**直接写进 prompt**（0.7.0 对拍：txt2imageanime 端点已从后端移除，不再有 style 参数）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（Host 自动换素材句柄），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应素材句柄（asset_id），无需手动 upload_image。'
         + '\n\n' + ROUTE_SUMMARY
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。**传了 shotRefs（分镜效果图）时必传**——从分镜 meta.aspect 取，Host 会拒收缺省调用' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
-        filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
+        filename: { type: 'string' as const, description: '可选单参考图：已上传的素材句柄（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 4 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
         storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——**只准传 `look`**（基调样张，挂到 §02 视觉规范）。**shot 语义 id 形态已停用**：落地前传 shot id 会被门禁拦截（逐镜效果图必须等用户点「确认落地」），落地后逐镜关联请改用 `shotRefs`（分镜卡）。没传时若「故事板已建、§02 尚无样张、本图也未绑镜」，Host 会自动兜底挂为样张；「换一批」重出样张必须显式传 `look`，否则不会覆盖用户已确认的那张' },
-        // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
-        // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
-        autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true；纯文生图命中文字路由时产物已是逐字正确，无需也不会触发修复）。关闭后文字出错需手动调 image_fix' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean; storyboardRef?: string }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; storyboardRef?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -2297,21 +2233,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (budgetApplies) assertLookBudget(projectId)
         let result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd, shotBound)
         if (budgetApplies) chargeLookBudget(projectId)
-        // CV-212：含非 ASCII 引号文本 → 自动 image_fix 兜底（不读图，跳过 VLM 校验）。
-        // 默认开启；agent 显式传 autoFixText=false 可关闭（如做大批量无文字图省成本）。
-        // R-P1-03：纯文生且提示词含可显示文字时，路由已改走 Qwen 文字渲染链路
-        // （逐字正确），不再需要 image_fix 兜底——只有实际落在 Krea2（文生图）
-        // 或图生图链路上的产物才做自动修复。
-        const routedToTextRender = routeImageModel({
-          tool: 'image_generate',
-          prompt: a.prompt,
-          hasReferences: params.filename !== undefined || (params.filenames !== undefined && params.filenames.length > 0),
-        }).endpoint === DRAMA_ENDPOINTS.txt2imageWithtxt
-        const autoFixEnabled = a.autoFixText !== false && !routedToTextRender
-        const decision = autoFixEnabled ? shouldAutoFixText(a.prompt) : { needsFix: false, quotedTexts: [] }
-        if (decision.needsFix && result.nodeId !== undefined && result.url !== undefined) {
-          result = await runTextAutoFix(registry, projectId, portOf, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
-        }
         // 创意先行：storyboardRef 命中时把本图引用回写进故事板（覆盖层即刻可见）。
         // 回写用**最终**产物节点（auto-fix 会换新节点）；失败降级为附注，不阻断生成。
         if (a.storyboardRef !== undefined && a.storyboardRef.trim() !== '' && result.nodeId !== undefined) {
@@ -2330,7 +2251,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'image_generate_withtxt',
       description:
-        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。本工具与 image_generate 在纯文生图上**等价**——端点由 Host 按提示词现算（含可显示文字自动走本链路，无字自动改走 Krea2），按习惯选用即可；带参考图请用 image_generate；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
+        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染链路（image.qwen-image-2.1），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。本工具与 image_generate 在纯文生图上**等价**——模型由 Host 按提示词现算（含可显示文字自动走本链路，无字自动改走 Krea2），按习惯选用即可；带参考图请用 image_generate；已出图的文字错了也用本链路重出（Boogu 改字特化已随后台改版下线）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
         + '\n\n' + ROUTE_SUMMARY
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
@@ -2361,33 +2282,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       },
     }),
     defineTool({
-      name: 'image_fix',
-      description:
-        '修复图内文字（Boogu Edit 文字修复特化链路）：用 Krea2 出图后，如果画面里的文字出错（错字/乱码/缺笔画），用本工具修复——**不要换提示词整图重出**（重出会把已经正确的画面、角色与构图一起丢掉，而文字修复只动文字）。**prompt 写原文的「文字规格句」**：从原出图 prompt 里逐句挑出「指定某处文字 + 它的位置 / 字体 / 字号 / 颜色 / 排版关系」的句子（**原样保留，不要压缩成字符清单**），再补一句「逐字准确还原、不得替换增删」的约束（如：把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变）；**不要带画幅 / 材质 / 光线 / 配色 / 气质等美术描述**——这是改图接口，多余描述会伤及画面。⚠️ 只给一串字符会丢掉**位置锚点**，模型只能按形近字猜（实测把「武仔」修成「武传」仍错，并凭空多出文字）。filename 传要修复的图（upload_image 句柄或 @ref[节点标题]，可直接传此前的 image_generate 产物节点引用）。产物文件名 boogu_* 前缀（属后端产物名，不可直接作下游入参；要引用产物请用 @ref[节点标题] 让 Host 换句柄）。',
-      parameters: {
-        prompt: { type: 'string' as const, required: true, description: '修复指令：**原出图 prompt 里的文字规格句**（每段文字 + 位置/字体/字号/颜色/排版关系，原样保留）+ 逐字还原约束；不要压缩成字符清单，也不要带画幅/材质/光线/配色等美术描述' },
-        filename: { type: 'string' as const, required: true, description: '要修复的图：已上传的 Drama Backend 文件名（来自 upload_image 工具，支持 @ref[显示名] 自动解析）' },
-        replaces: { type: 'string' as const, description: '可选：修复结果取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池' },
-        sourceUrls: { type: 'array' as const, description: '被修复图对应的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；可省略' },
-        shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id）。修复逐镜关键帧上的文字时应传' },
-      },
-      output: { schema: resultSchema, render: renderResult },
-      async execute(args, exec) {
-        const a = args as { prompt: string; filename: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename, library, 'image') }
-        if (a.replaces !== undefined) params.replaces = a.replaces
-        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
-        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        return runGeneration(registry, 'image_fix', params, exec.signal, exec.agent?.session.header.cwd)
-      },
-    }),
-    defineTool({
       name: 'character_generate',
       description:
-        '基于一张角色设计图生成角色立绘图（四视图：正面特写 / 正面全身 / 侧面全身 / 背面全身）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+        '基于一张角色设计图生成角色立绘图（四视图：正面特写 / 正面全身 / 侧面全身 / 背面全身）。必须提供 filename（角色设计图，来自 upload_image 工具返回的素材句柄）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应素材句柄（asset_id）。',
       parameters: {
-        filename: { type: 'string' as const, required: true, description: '角色设计图：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
+        filename: { type: 'string' as const, required: true, description: '角色设计图：已上传的素材句柄（来自 upload_image 工具）' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。**传了 shotRefs（分镜效果图）时必传**——从分镜 meta.aspect 取，Host 会拒收缺省调用' },
         sourceUrls: { type: 'array' as const, description: '设计图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）' },
@@ -2412,9 +2311,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'character_sheet',
       description:
-        '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），整图直接作为资产卡唯一锚点（官方 reference-sheet 用法：拼图自带角色/视角标签，下游直接整图作参考，不再切分）。返回资产卡 id 与拼图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
+        '基于角色设计图/定妆照建立项目级一致性资产卡：调业务 API image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），整图直接作为资产卡唯一锚点（官方 reference-sheet 用法：拼图自带角色/视角标签，下游直接整图作参考，不再切分）。返回资产卡 id 与拼图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图素材句柄（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
       parameters: {
-        filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名。合法形态：`upload_image` 返回的 `ref-*.png` 句柄，或 `@ref[画布节点显示名]`（Host 自动换句柄）。⚠️ 反例（C-14）：不能传画布节点 id（形如 `6511xxxx-…` 的 UUID，会被 CS-USER-002 拒绝）；也不能传生成工具结果里的产物名（形如 `img_01287_.png`，CV-155）' },
+        filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名。合法形态：`upload_image` 返回的素材句柄（asset_id），或 `@ref[画布节点显示名]`（Host 自动换句柄）。⚠️ 反例（C-14）：不能传画布节点 id（形如 `6511xxxx-…` 的 UUID，会被 CS-USER-002 拒绝）；也不能传生成工具结果里的产物名（形如 `img_01287_.png`，CV-155）' },
         name: { type: 'string' as const, required: true, description: '资产卡显示名（如「女主」「侦探」）' },
         lockedPrompt: { type: 'string' as const, required: true, description: '冻结 SAME 块：该角色外貌/发型/服装/配色/光感的固定描述，已与用户确认；后续镜头 prompt 逐字节复用' },
         negativePrompt: { type: 'string' as const, description: '可选负面约束（如「不更换服装」「不摘眼镜」）' },
@@ -2985,7 +2884,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'image2vl',
       description:
-        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ **本工具不是「你自己看图」**：2026-11-04 起创作模型已能直接读本地图（`read_image(file_path=…)`，画面类判据优先走它）；本工具走的是后端 VLM，返回的是另一个模型的文字转述，只作辅助参考。⚠️ **不做像素级定位**：本工具只回自然语言描述，拿不到坐标 / 边界框；问"屏幕在画面哪个位置、占多大"只会得到含糊甚至编造的比例。定位请用 `inspect_image`（`grid` 看分布、`bbox-*` + `region` 拿画布百分比矩形）。',
+        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 不可靠产出宁愿复跑也不要拿着当事实。⚠️ **本工具不是「你自己看图」**：2026-11-04 起创作模型已能直接读本地图（`read_image(file_path=…)`，画面类判据优先走它）；本工具走的是后端 VLM，返回的是另一个模型的文字转述，只作辅助参考。⚠️ **不做像素级定位**：本工具只回自然语言描述，拿不到坐标 / 边界框；问"屏幕在画面哪个位置、占多大"只会得到含糊甚至编造的比例。定位请用 `inspect_image`（`grid` 看分布、`bbox-*` + `region` 拿画布百分比矩形）。',
       parameters: {
         // CV-155：补上「产物名不可直接用」——本工具最常被喂的就是刚生成图的产物名。
         filename: { type: 'string' as const, required: true, description: '可用句柄（`upload_image` 的返回），或 `@ref[显示名]` 引用标记（Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传。' },

@@ -16,6 +16,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,22 +48,35 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
       try { body = JSON.parse(init.body) } catch { body = init.body }
     }
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
-    if (init.method === 'POST') {
-      if (String(url).includes('/upload')) return { ok: true, json: async () => ({ filename: 'ref.png' }) }
-      if (String(url).includes('image2video')) {
-        return {
-          ok: true,
-          status: 202,
-          json: async () => ({ job_id: jobId, status: 'pending', status_url: `/api/v1/jobs/${jobId}`, cancel_url: `/api/v1/jobs/${jobId}/cancel`, result_url: `/api/v1/jobs/${jobId}/result` }),
-        }
+    // 迁移 B2/B3-3：上传三段式 + 业务 API 生成（图像/视频统一 create→poll→content）。
+    const uploadHandled = assetUploadBranch(String(url), init)
+    if (uploadHandled !== null) return uploadHandled
+    if ((init.method ?? 'GET') === 'POST' && /\/v1\/generations(\?|$)/.test(String(url))) {
+      const isVideo = (typeof body === 'object' && body?.operation?.startsWith('image2video'))
+      return {
+        ok: true,
+        status: 202,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: isVideo ? 'image2videofl2va' : 'txt2image', status: 'queued', version: 1,
+          progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+        }),
       }
-      return { ok: true, json: async () => ({ full_url: mediaUrl, filename: 'gen.png' }) }
     }
-    if (String(url).includes(`/api/v1/jobs/${jobId}/result`)) {
-      return { ok: true, status: 200, json: async () => ({ prompt_id: jobId, filename: 'gen.mp4', full_url: mediaUrl, duration: 8.5 }) }
+    if (String(url).includes('/poll')) {
+      const isVideo = true
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: isVideo ? 'image2videofl2va' : 'txt2image', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: isVideo ? 'video' : 'image', mime_type: isVideo ? 'video/mp4' : 'image/png', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }),
+      }
     }
-    if (String(url).includes(`/api/v1/jobs/${jobId}`)) {
-      return { ok: true, status: 200, json: async () => ({ job_id: jobId, status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }) }
+    if (String(url).includes('/content/')) {
+      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
     if (String(url) === mediaUrl) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     return { ok: false, status: 404 }

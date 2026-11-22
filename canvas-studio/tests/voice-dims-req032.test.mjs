@@ -202,7 +202,7 @@ test('REQ-032 Step 4 music duration 接线 + TOOL_TITLES 补项 + progSub 三格
   const source = await read('src/generate.ts')
   const node = await read('src/client/canvas/CanvasNode.tsx')
   // H4：generateMusic 必须消费 duration（D-MusicDur：= estSeconds 承诺）。
-  assert.match(source, /caption_prompt: params\.captionPrompt,\s*\n\s*lyrics_prompt: effectiveLyrics,\s*\n\s*duration,/, 'generateMusic 请求体必须带 duration')
+  assert.match(source, /prompt: params\.captionPrompt,\s*\n\s*lyrics: effectiveLyrics,\s*\n\s*duration,/, 'generateMusic 请求体必须带 duration（业务 API 标准字段）')
   assert.match(source, /const duration = params\.duration !== undefined \? Math\.max\(1, Math\.round\(params\.duration\)\) : DEFAULT_MUSIC_DURATION/, 'duration 必须取自参数（非写死默认）')
   // H8：TOOL_TITLES 补 music_generation（现缺，兜底「生成中…」）。
   assert.match(node, /music_generation: '生成音乐中…'/, 'TOOL_TITLES 必须补 music_generation')

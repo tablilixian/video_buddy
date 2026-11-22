@@ -29,6 +29,7 @@ import { join } from 'node:path'
 import { isDramaProductName, looksLikeCanvasNodeId, healReferenceFilename, promoteAssetFile } from '../lib/generate.js'
 import { createStudioTools, refCandidatePool } from '../lib/host-tools.js'
 import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
+import { generationStub } from './helpers/generation-stub.mjs'
 
 // ---------------------------------------------------------------------------
 // 1. 判据：纯函数，直连单测
@@ -82,20 +83,28 @@ function stubRegistry(nodes, dir) {
 const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(5000) })
 
 /** 编排 fetch：按 url 子串匹配路由，respond(第几次命中, 请求体) 返回 { status, json, text }。 */
-function stubFetch(routes) {
+function stubFetch(routes, genOpts = {}) {
   resetAssetUploadStub()
   const calls = []
   const original = globalThis.fetch
+  const gen = generationStub({
+    // 共享缺省文本（用例可用 genOpts.output 覆盖）。
+    output: { ordinal: 0, type: 'text', mime_type: 'text/plain', text: '0-3 秒：中景缓推…' },
+    ...genOpts,
+  })
   globalThis.fetch = async (url, init = {}) => {
     const href = String(url)
     let body = null
     if (typeof init.body === 'string') {
       try { body = JSON.parse(init.body) } catch { body = init.body }
     }
-    calls.push({ url: href, body })
+    calls.push({ url: href, method: init.method ?? 'GET', body })
     // 迁移 B2：素材上传走 /v1/assets/* 三段式（共享桩），旧 /generate/upload 路由已死。
     const handled = assetUploadBranch(href, init)
     if (handled !== null) return handled
+    // 迁移 B3-2：理解/识别链路 = 业务 API 创建/轮询（文本输出内联快照）。
+    const genHandled = gen.branch(href, init)
+    if (genHandled !== null) return genHandled
     const route = routes.find((entry) => href.includes(entry.match))
     let spec = { status: 200, json: {} }
     if (route !== undefined) {
@@ -110,6 +119,7 @@ function stubFetch(routes) {
       arrayBuffer: async () => new Uint8Array([1, 2, 3]),
     }
   }
+  calls.gen = gen.state
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
@@ -144,15 +154,16 @@ test('CV-155：@ref 引用产物节点时主动重传换句柄，并回写节点
     const vl = tools.find((t) => t.name === 'image2vl')
     assert.ok(vl, 'image2vl 工具应存在')
 
-    const { calls, restore } = stubFetch([
-      { match: '/image2vl', respond: () => ({ status: 200, json: { output: '画面描述' } }) },
-    ])
+    const { calls, restore } = stubFetch([], {
+      output: { ordinal: 0, type: 'text', mime_type: 'text/plain', text: '画面描述' },
+    })
     try {
       const res = await vl.execute({ filename: '@ref[分镜 1 关键帧]', prompt: '描述画面' }, EXEC(dir))
       assert.equal(res.text, '画面描述')
-      const vlCall = calls.find((call) => call.url.includes('/image2vl'))
-      assert.ok(vlCall, '应调用 image2vl')
-      assert.equal(vlCall.body.image, ASSET_HANDLE(1), '入参应已是重传后的句柄（asset_id），而不是产物名')
+      const createBodies = calls.gen.createBodies
+      assert.equal(createBodies.length, 1)
+      assert.equal(createBodies[0].operation, 'image2vl')
+      assert.equal(createBodies[0].inputs[0].asset_id, ASSET_HANDLE(1), '入参应已是重传后的句柄（asset_id），而不是产物名')
       assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '节点 filename 应被回写为可用句柄')
     } finally {
       restore()
@@ -173,26 +184,17 @@ test('CV-155：analyzeImage 拿到产物名 → 500 后自愈换句柄并重试�
     const tools = createStudioTools(registry, 3005)
     const vl = tools.find((t) => t.name === 'image2vl')
 
-    let vlHits = 0
-    const { calls, restore } = stubFetch([
-      {
-        match: '/image2vl',
-        respond: () => {
-          vlHits += 1
-          // 第一次 = 后端拿产物名当输入，快失败；换句柄后第二次成功。
-          return vlHits === 1
-            ? { status: 500, text: '' }
-            : { status: 200, json: { output: '自愈后描述' } }
-        },
-      },
-    ])
+    const { calls, restore } = stubFetch([], {
+      shouldFailCreate: (_body, nth) => nth === 1,
+      failStatus: 500,
+    })
     try {
       const res = await vl.execute({ filename: 'img_01290_.png', prompt: '描述画面' }, EXEC(dir))
-      assert.equal(res.text, '自愈后描述')
-      const vlCalls = calls.filter((call) => call.url.includes('/image2vl'))
-      assert.equal(vlCalls.length, 2, '应重试恰好一次（不自愈循环）')
-      assert.equal(vlCalls[0].body.image, 'img_01290_.png', '首次仍是原样透传产物名')
-      assert.equal(vlCalls[1].body.image, ASSET_HANDLE(1), '重试应带新句柄')
+      assert.equal(res.text, '0-3 秒：中景缓推…')
+      const createBodies = calls.gen.createBodies
+      assert.equal(createBodies.length, 2, '应重试恰好一次（不自愈循环）')
+      assert.equal(createBodies[0].inputs[0].asset_id, 'img_01290_.png', '首次仍是原样透传产物名')
+      assert.equal(createBodies[1].inputs[0].asset_id, ASSET_HANDLE(1), '重试应带新句柄')
       assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '自愈应回写节点 filename')
     } finally {
       restore()
@@ -210,16 +212,14 @@ test('CV-155：自愈反查不中时抛原始错误（不掩盖真因）', async
     const tools = createStudioTools(registry, 3005)
     const vl = tools.find((t) => t.name === 'image2vl')
 
-    const { calls, restore } = stubFetch([
-      { match: '/image2vl', respond: () => ({ status: 500, text: '' }) },
-    ])
+    const { calls, restore } = stubFetch([], { shouldFailCreate: () => true, failStatus: 500 })
     try {
       await assert.rejects(
         () => vl.execute({ filename: 'img_99999_.png', prompt: '描述画面' }, EXEC(dir)),
         /生成失败/u,
       )
       assert.equal(
-        calls.filter((call) => call.url.includes('/image2vl')).length, 1,
+        calls.gen.createBodies.length, 1,
         '反查不中时不应重试',
       )
     } finally {
@@ -260,10 +260,11 @@ test('video2vl：@ref 引用产物视频 → 主动重传换句柄（不让后�
     try {
       const res = await v2vl.execute({ video: '@ref[分镜 1 · 视频]', prompt: '按时间轴描述' }, EXEC(dir))
       assert.equal(res.text, '0-3 秒：中景缓推…')
-      const vlCall = calls.find((call) => call.url.includes('/video2vl'))
-      assert.ok(vlCall, '应调用 video2vl')
-      assert.equal(vlCall.body.video, ASSET_HANDLE(1), '入参应已是换名后的句柄（asset_id），而不是产物名')
-      assert.equal(vlCall.body.system_prompt.length > 0, true, 'system_prompt 必填（端点 422 拒绝空值）')
+      const createBodies = calls.gen.createBodies
+      assert.equal(createBodies.length, 1)
+      assert.equal(createBodies[0].operation, 'video2vl')
+      assert.equal(createBodies[0].inputs[0].asset_id, ASSET_HANDLE(1), '入参应已是换名后的句柄（asset_id），而不是产物名')
+      assert.ok((createBodies[0].input.system_prompt ?? '').length > 0, 'system_prompt 必填（官方角色设定缺省）')
       assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '节点 filename 应被回写为可用句柄')
     } finally {
       restore()
@@ -281,24 +282,20 @@ test('video2vl：拿到产物名 → 500 后自愈换句柄并重试恰好一次
     const tools = createStudioTools(registry, 3005)
     const v2vl = tools.find((t) => t.name === 'video2vl')
 
-    let hits = 0
     const { calls, restore } = stubFetch([
-      {
-        match: '/video2vl',
-        respond: () => {
-          hits += 1
-          // 第一次 = 后端拿产物名当输入，0.1s 快失败（2026-09-22 探针实测形态）；换句柄后成功。
-          return hits === 1 ? { status: 500, text: '' } : { status: 200, json: { output: '自愈后分析' } }
-        },
-      },
-    ])
+      { match: '/never-hit-legacy-video2vl', respond: () => ({ status: 200, json: {} }) },
+    ], {
+      // 第一次 = 后端拿产物名当输入，快失败（2026-09-22 探针实测形态）；换句柄后成功。
+      shouldFailCreate: (_body, nth) => nth === 1,
+      failStatus: 500,
+    })
     try {
       const res = await v2vl.execute({ video: 'MiniMax_H3_ref2va_00020_.mp4', prompt: '按时间轴描述' }, EXEC(dir))
-      assert.equal(res.text, '自愈后分析')
-      const vlCalls = calls.filter((call) => call.url.includes('/video2vl'))
-      assert.equal(vlCalls.length, 2, '应重试恰好一次（不自愈循环）')
-      assert.equal(vlCalls[0].body.video, 'MiniMax_H3_ref2va_00020_.mp4', '首次仍是原样透传产物名')
-      assert.equal(vlCalls[1].body.video, ASSET_HANDLE(1), '重试应带新句柄')
+      assert.equal(res.text, '0-3 秒：中景缓推…')
+      const createBodies = calls.gen.createBodies
+      assert.equal(createBodies.length, 2, '应重试恰好一次（不自愈循环）')
+      assert.equal(createBodies[0].inputs[0].asset_id, 'MiniMax_H3_ref2va_00020_.mp4', '首次仍是原样透传产物名')
+      assert.equal(createBodies[1].inputs[0].asset_id, ASSET_HANDLE(1), '重试应带新句柄')
       assert.equal(nodes()[0].filename, ASSET_HANDLE(1), '自愈应回写节点 filename')
     } finally {
       restore()

@@ -34,6 +34,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
+import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
 import { createStoryboard, emptyStoryboardSections } from '../lib/contracts/storyboard.js'
 import { LOOK_BUDGET_PER_CYCLE, resetLookBudget } from '../lib/look-budget.js'
 
@@ -62,6 +63,34 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
     calls.push({ url: String(url), method: init.method ?? 'GET' })
+    // 迁移 B2/B3-2：上传三段式 + 业务 API 生成分支（@ref 现在会先 promote 上传）。
+    const uploadHandled = assetUploadBranch(String(url), init)
+    if (uploadHandled !== null) return uploadHandled
+    if ((init.method ?? 'GET') === 'POST' && /\/v1\/generations(\?|$)/.test(String(url))) {
+      return {
+        ok: true,
+        status: 202,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'queued', version: 1,
+          progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+        }),
+      }
+    }
+    if (String(url).includes('/poll')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }),
+      }
+    }
+    if (String(url).includes('/content/')) {
+      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+    }
     if (init.method === 'POST') {
       return { ok: true, json: async () => ({ full_url: mediaUrl, filename: 'gen.png' }) }
     }

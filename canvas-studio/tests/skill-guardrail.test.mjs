@@ -91,39 +91,33 @@ test('护栏：lib/host-tools.js 产物中 image2vl 描述含读图通道与 VLM
 const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image', 'asr2txt']
 const ASYNC_HINT_TOOLS = ['video_generate', 'video_composite']
 
-test('护栏：第 7 步不再说「可并行」，且骨架与分册都写明后端同步单任务（CV-215）', () => {
+test('护栏：第 7 步不再说「可并行」，且骨架与分册都写明异步任务纪律（CV-215 → 迁移 B3-2 换代）', () => {
   const md = readFileSync(RUNTIME_SKILL, 'utf8')
-  assert.ok(!md.includes('可并行'), 'SKILL.md 不得再出现「可并行」——后端是同步单任务（CV-215 修正）')
-  assert.match(md, /同步单任务/, 'SKILL.md 第 7 步缺少「同步单任务」约束（被整段删掉了？）')
+  assert.ok(!md.includes('可并行'), 'SKILL.md 不得再出现「可并行」（该口径属于更早的并发事故）')
+  assert.match(md, /异步任务/, 'SKILL.md 第 7 步缺少「异步任务」约束')
   const toolchain = readFileSync(TOOLCHAIN, 'utf8')
-  assert.match(toolchain, /同步单任务/, 'toolchain.md 缺少「同步单任务」分册说明')
-  assert.match(toolchain, /逐个调用/, 'toolchain.md 缺少「逐个调用」调用纪律')
+  assert.match(toolchain, /异步任务/, 'toolchain.md 缺少「异步任务」分册说明')
+  assert.match(toolchain, /逐个调用|逐个提交/, 'toolchain.md 缺少「逐个」调用纪律')
 })
 
-test('护栏：批量风险工具的提示分两档——同步工具串行、视频工具异步（CV-215 / 0.5.0 异步化）', () => {
+test('护栏：批量风险工具统一引用异步纪律文案（迁移 B3-2：同步/异步分档退役）', () => {
   // ① 常量本身就是模型可见文本：它必须真的在说这两件事。
-  assert.match(DRAMA_SERIAL_HINT, /同步单任务/, 'DRAMA_SERIAL_HINT 不再声明「同步单任务」')
+  assert.match(DRAMA_SERIAL_HINT, /异步任务/, 'DRAMA_SERIAL_HINT 必须声明异步纪律')
   assert.match(DRAMA_SERIAL_HINT, /逐个调用/, 'DRAMA_SERIAL_HINT 缺少「逐个调用」纪律')
-  // ② 每个批量风险工具都必须引用它（漏加 / 被谁重排描述时删掉，这里就红）。
+  // ② 每个批量风险工具都必须引用任一异步纪律文案（迁移 B3-2 后 SERIAL 已改写
+  // 为异步口径，与 ASYNC 并存合法；漏加 / 被谁重排描述时删掉，这里就红）。
   const src = readFileSync(join(PKG_ROOT, 'lib', 'host-tools.js'), 'utf8')
-  for (const tool of SERIAL_HINT_TOOLS) {
+  for (const tool of [...SERIAL_HINT_TOOLS, ...ASYNC_HINT_TOOLS]) {
     const anchor = `name: '${tool}'`
     const at = src.indexOf(anchor)
     assert.ok(at !== -1, `lib/host-tools.js 找不到 ${anchor}（产物未更新？先 build）`)
-    // 描述紧跟在 name 之后，3000 字符足以覆盖本工具的 description 全段。
     const segment = src.slice(at, at + 3000)
-    assert.match(segment, /DRAMA_SERIAL_HINT/, `${tool} 描述没有引用 DRAMA_SERIAL_HINT（漏加或被删）`)
+    assert.match(
+      segment, /DRAMA_SERIAL_HINT|DRAMA_VIDEO_ASYNC_HINT/,
+      `${tool} 描述没有引用异步纪律文案（漏加或被删）`,
+    )
   }
-  // ③ 视频两端点改异步（后端 0.5.0）：描述换用 DRAMA_VIDEO_ASYNC_HINT——
-  // 「可连续提交」是放开并发的模型可见面，丢了它 agent 会退回逐个等待。
+  // ③ ASYNC 常量自身的语义（可连续提交）必须保留。
   assert.match(DRAMA_VIDEO_ASYNC_HINT, /异步任务/, 'DRAMA_VIDEO_ASYNC_HINT 不再声明「异步任务」')
   assert.match(DRAMA_VIDEO_ASYNC_HINT, /连续提交/, 'DRAMA_VIDEO_ASYNC_HINT 缺少「连续提交」纪律')
-  for (const tool of ASYNC_HINT_TOOLS) {
-    const anchor = `name: '${tool}'`
-    const at = src.indexOf(anchor)
-    assert.ok(at !== -1, `lib/host-tools.js 找不到 ${anchor}（产物未更新？先 build）`)
-    const segment = src.slice(at, at + 3000)
-    assert.doesNotMatch(segment, /DRAMA_SERIAL_HINT/, `${tool} 是异步工具，不应再引用串行提示`)
-    assert.match(segment, /DRAMA_VIDEO_ASYNC_HINT/, `${tool} 描述没有引用 DRAMA_VIDEO_ASYNC_HINT（漏加或被删）`)
-  }
 })

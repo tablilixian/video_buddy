@@ -233,7 +233,6 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   timingSegments: '结构化拆解段数组（{label,startSec,endSec,elements?}），形状由 parseTimingSegments 显式拒收（startSec<endSec 逐段校验），elements 非法项过滤',
   // —— 布尔 / 数值：不存在文本占位形态 ——
   includeRetired: '布尔开关',
-  autoFixText: '布尔开关',
   generateAudio: '布尔开关',
   colorGrade: '布尔开关',
   allowFreeText: '布尔开关',

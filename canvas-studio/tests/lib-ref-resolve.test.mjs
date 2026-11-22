@@ -45,6 +45,37 @@ async function waitFor(predicate, label, timeoutMs = 5000) {
   }
 }
 
+/** 业务 API 生成分支（迁移 B3-2：图像链路创建/轮询/content）；状态由 stubLibFetch 复位。 */
+const genState = { createBodies: [], polls: 0, content: 0 }
+const genBranch = (text, init = {}) => {
+  const method = init.method ?? 'GET'
+  if (method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+    genState.createBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : init.body)
+    return {
+      ok: true,
+      status: 202,
+      json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'queued', version: 1,
+        progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+      }),
+    }
+  }
+  if (text.includes('/poll')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'succeeded', version: 2,
+        progress: 100, billing_status: 'held', terminal: true,
+        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+        error: null,
+      }),
+    }
+  }
+  if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]), text: async () => '' }
+  return null
+}
+
 /**
  * Drama Backend fetch 打桩（按 URL 分流）：health → 探针；/v1/assets/* → 三段式
  * 上传（迁移 B2，返回确定性 asset_id）；其余（image2image / 产物下载）→ `{full_url}` + 字节。
@@ -54,6 +85,9 @@ function stubLibFetch() {
   const original = globalThis.fetch
   let seq = 0
   let lastAsset = ''
+  genState.createBodies.length = 0
+  genState.polls = 0
+  genState.content = 0
   globalThis.fetch = async (url, init = {}) => {
     const target = String(url)
     let body = null
@@ -61,8 +95,26 @@ function stubLibFetch() {
       try { body = JSON.parse(init.body) } catch { body = init.body }
     }
     calls.push({ url: target, method: init.method ?? 'GET', body })
+    const genHandled = genBranch(target, init)
+    if (genHandled !== null) return genHandled
     const json = async () => {
       if (target.includes('/api/v1/health')) return { status: 'ok' }
+      // 迁移 B3-2：图像链路 = 业务 API 创建/轮询（文本输出不下载，图像产物走 content）。
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(target)) {
+        return {
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'queued', version: 1,
+          progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+        }
+      }
+      if (target.includes('/poll')) {
+        return {
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }
+      }
+      if (target.includes('/content/')) return {}
       if (init.method === 'POST' && target.includes('/v1/assets/presign')) {
         seq += 1
         lastAsset = `aaaaaaaa-0000-4000-8000-${String(seq).padStart(12, '0')}`
@@ -87,6 +139,7 @@ function stubLibFetch() {
       arrayBuffer: async () => new Uint8Array([1, 2, 3]),
     }
   }
+  calls.gen = genState
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
@@ -159,11 +212,11 @@ test('REQ-001：@ref[lib:<id>] 走解析→物化→promote 三段式，并记�
       )
       assert.ok(result.url.startsWith('/canvas-studio/assets/'), '产物应为同源相对 URL')
 
-      // ① 生成请求真的把物化出来的文件当参考图传给了后端。
-      const genCall = calls.find((entry) => entry.body && entry.body.image1 !== undefined)
-      assert.ok(genCall, '应有一次携带 image1 的生成请求')
-      // 迁移 B2：句柄语义从 Drama filename 变为 asset_id（UUID 形态）。
-      assert.match(genCall.body.image1, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u, '参考图应是上传后拿到的 asset_id')
+      // ① 生成请求真的把物化出来的文件当参考图传给了后端（业务 API inputs[]，B3-2）。
+      const genCall = calls.gen.createBodies[0]
+      assert.ok(genCall, '应有一次业务 API 创建请求')
+      assert.equal(genCall.operation, 'image2image')
+      assert.match(genCall.inputs[0].asset_id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u, '参考图应是上传后拿到的 asset_id')
 
       // ② 物化：库文件被拷进当前项目 assets/，确定性名 lib-<assetId>-<file>。
       const files = await readdir(fixture.assets.p1)
@@ -177,7 +230,7 @@ test('REQ-001：@ref[lib:<id>] 走解析→物化→promote 三段式，并记�
 
       // ③ promote 记账：句柄 → 本地资产的映射落盘（heal 自愈的反查源）。
       const manifest = JSON.parse(await readFile(join(fixture.assets.p1, 'reference-manifest.json'), 'utf8'))
-      assert.equal(manifest.handles[genCall.body.image1], materialized, 'reference-manifest 应记录句柄→物化文件')
+      assert.equal(manifest.handles[genCall.inputs[0].asset_id], materialized, 'reference-manifest 应记录句柄→物化文件')
 
       // ④ usage 回写是 fire-and-forget，必须轮询。
       const used = await waitFor(
@@ -202,9 +255,9 @@ test('REQ-001：裸 lib:<id>（不带 @ref）同样解析（不原样穿透后�
     const { calls, restore } = stubLibFetch()
     try {
       await imgGen.execute({ prompt: '测试', filename: `lib:${fixture.asset.id}` }, EXEC(fixture.dirA))
-      const genCall = calls.find((entry) => entry.body && entry.body.image1 !== undefined)
-      assert.ok(genCall, '应有一次携带 image1 的生成请求')
-      assert.notEqual(genCall.body.image1, `lib:${fixture.asset.id}`, '裸 lib: 句柄不能原样透传给后端')
+      const genCall = calls.gen.createBodies[0]
+      assert.ok(genCall, '应有一次业务 API 创建请求')
+      assert.notEqual(genCall.inputs[0].asset_id, `lib:${fixture.asset.id}`, '裸 lib: 句柄不能原样透传给后端')
       const files = await readdir(fixture.assets.p1)
       assert.ok(files.includes(`lib-${fixture.asset.id}-m_0.png`), '裸句柄也应完成物化')
     } finally {

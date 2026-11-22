@@ -17,8 +17,11 @@ import {
   pendingDramaJobs,
   readDramaJobs,
   recordDramaJobSubmitted,
+  recordGenerationIntent,
+  recordGenerationSubmitted,
   startDramaJobResumeWatcher,
   updateDramaJobStatus,
+  updateGenerationSnapshot,
 } from '../lib/video-jobs.js'
 
 /** registry 打桩：每项目一个独立子目录（台账按项目分文件）。 */
@@ -147,107 +150,119 @@ test('台账：failed 记录 execution_error；isTerminalJobPhase 覆盖 failed/
   }
 })
 
-test('扫描：pendingDramaJobs 汇总多项目非终态任务，跳过损坏文件', async () => {
+test('扫描：只入 business 非终态记录；v1 旧记录原样保留不处置（拍板 ③）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-videojobs-'))
   try {
     const registry = stubRegistry(dir, ['p1', 'p2'])
+    // v1 legacy 记录（8082 时代）：不落终态、不删除，但也不入恢复扫描。
     await recordDramaJobSubmitted(registry, 'p1', RECORD)
-    await recordDramaJobSubmitted(registry, 'p2', { ...RECORD, jobId: 'job-2' })
-    await updateDramaJobStatus(registry, 'p2', 'job-2', 'settled')
+    // business 记录（台账 v2）：intent 占位 + 202 后补 generationId。
+    const intent = { key: 'idem-1', body: { model: 'video.minimax_h3', operation: 'image2videofl2va', inputs: [] } }
+    await recordGenerationIntent(registry, 'p2', { intent, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    await recordGenerationSubmitted(registry, 'p2', { intentKey: 'idem-1', generationId: 'gen-2', version: 1 })
+    await updateDramaJobStatus(registry, 'p2', 'gen-2', 'settled')
     const pending = await pendingDramaJobs(registry)
-    assert.deepEqual(pending.map((entry) => entry.jobId), ['job-1'], 'settled 不再入恢复扫描')
+    assert.deepEqual(pending.map((entry) => entry.jobId), [], 'legacy 不入扫描；settled business 也不入')
+    // business 非终态记录正常入扫描；v1 记录仍留在台账（原样保留）。
+    const intent2 = { key: 'idem-2', body: { model: 'video.minimax_h3', operation: 'image2videofl2va', inputs: [] } }
+    await recordGenerationIntent(registry, 'p1', { intent: intent2, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    await recordGenerationSubmitted(registry, 'p1', { intentKey: 'idem-2', generationId: 'gen-1', version: 1 })
+    const pending2 = await pendingDramaJobs(registry)
+    assert.deepEqual(pending2.map((entry) => entry.jobId), ['gen-1'])
+    const all = await readDramaJobs(registry, 'p1')
+    assert.equal(all.length, 2, 'v1 记录与 business 记录并存（v1 不清理）')
   } finally {
     await cleanup(dir)
   }
 })
 
-test('恢复轮询：completed → 取 result → settle 回调；台账随状态流转', async () => {
+test('恢复（business）：resumeBusiness 全权处理——终态 succeeded 由闭包落 settled', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-videojobs-'))
   try {
     const registry = stubRegistry(dir)
-    await recordDramaJobSubmitted(registry, 'p1', RECORD)
-    const { request, calls } = makeRequest({ statusSequence: ['in_progress', 'completed'] })
-    const settled = []
+    const intent = { key: 'idem-1', body: {} }
+    await recordGenerationIntent(registry, 'p1', { intent, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    await recordGenerationSubmitted(registry, 'p1', { intentKey: 'idem-1', generationId: 'gen-1', version: 1 })
+    await updateDramaJobStatus(registry, 'p1', 'gen-1', 'in_progress')
+    const resumed = []
     const watcher = startDramaJobResumeWatcher({
       registry,
-      request,
-      settle: async (record, result) => {
-        settled.push({ jobId: record.jobId, filename: result.filename })
+      resumeBusiness: async (record) => {
+        resumed.push({ jobId: record.jobId, version: record.version })
+        await updateGenerationSnapshot(registry, 'p1', record.jobId, { status: 'succeeded', version: 9 })
+        await updateDramaJobStatus(registry, 'p1', record.jobId, 'settled')
       },
-      pollIntervalMs: 5,
     })
-    await waitFor(() => settled.length === 1, WAIT_BUDGET_MS, 'settle 被回调')
+    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'settled', WAIT_BUDGET_MS, 'resume 落 settled')
     await watcher.stop()
-    const jobs = await readDramaJobs(registry, 'p1')
-    assert.equal(jobs[0].status, 'completed', 'watcher 只到 completed；settled 由结算方（generate.ts）回写')
-    assert.equal(jobs[0].result?.fullUrl, 'https://media.example/out.mp4')
-    assert.ok(calls.some((c) => c.path.endsWith('/result')), 'completed 后取了 result')
+    assert.deepEqual(resumed, [{ jobId: 'gen-1', version: 1 }], '恢复闭包收到台账记录（含 version 游标）')
   } finally {
     await cleanup(dir)
   }
 })
 
-test('恢复轮询：failed 落终态（带错误详情），404 判任务消失，瞬时错误不放弃', async () => {
+test('恢复（business）：failed/cancelled 落终态；瞬时错误不落终态（下次 Host 重启再试）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-videojobs-'))
   try {
     const registry = stubRegistry(dir)
-    // —— failed
-    await recordDramaJobSubmitted(registry, 'p1', RECORD)
-    const failed = makeRequest({ statusSequence: ['failed'] })
-    let watcher = startDramaJobResumeWatcher({ registry, request: failed.request, settle: async () => {}, pollIntervalMs: 5 })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'failed', WAIT_BUDGET_MS, 'failed 落终态')
-    await watcher.stop()
-    assert.equal((await readDramaJobs(registry, 'p1'))[0].executionError, 'boom')
-
-    // —— 404（任务消失）
-    await recordDramaJobSubmitted(registry, 'p1', { ...RECORD, jobId: 'job-2' })
-    const missing = { request: async (_method, path) => ({ status: 404, json: { detail: 'Job not found' } }), calls: [] }
-    watcher = startDramaJobResumeWatcher({ registry, request: missing.request, settle: async () => {}, pollIntervalMs: 5 })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1')).find((entry) => entry.jobId === 'job-2')?.status === 'failed', WAIT_BUDGET_MS, '404 落 failed')
-    await watcher.stop()
-    assert.match((await readDramaJobs(registry, 'p1')).find((entry) => entry.jobId === 'job-2').executionError, /404/)
-
-    // —— 瞬时错误容忍：先失败两拍，再 completed，settle 仍被回调
-    await recordDramaJobSubmitted(registry, 'p1', { ...RECORD, jobId: 'job-3' })
-    const transient = makeRequest({ statusSequence: ['completed'], failFirst: 2 })
-    const settled = []
-    watcher = startDramaJobResumeWatcher({ registry, request: transient.request, settle: async (record, result) => { settled.push(result.filename) }, pollIntervalMs: 5 })
-    await waitFor(() => settled.length === 1, WAIT_BUDGET_MS, '瞬时错误后仍能结算')
-    await watcher.stop()
-  } finally {
-    await cleanup(dir)
-  }
-})
-
-test('恢复轮询：cancelled 落终态；settle 抛错时保持 completed（下一轮重试）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-videojobs-'))
-  try {
-    const registry = stubRegistry(dir)
-    // —— cancelled
-    await recordDramaJobSubmitted(registry, 'p1', RECORD)
+    // —— failed：恢复闭包内按终态快照回写
+    const intent = { key: 'idem-f', body: {} }
+    await recordGenerationIntent(registry, 'p1', { intent, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    await recordGenerationSubmitted(registry, 'p1', { intentKey: 'idem-f', generationId: 'gen-f', version: 1 })
+    let calls = 0
     let watcher = startDramaJobResumeWatcher({
       registry,
-      request: makeRequest({ statusSequence: ['cancelled'] }).request,
-      settle: async () => {},
-      pollIntervalMs: 5,
+      resumeBusiness: async (record) => {
+        calls += 1
+        await updateGenerationSnapshot(registry, 'p1', record.jobId, { status: 'failed', version: 5, error: { code: 'provider_error', message: 'boom' } })
+        throw new Error('unreachable after terminal write')
+      },
     })
-    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'cancelled', WAIT_BUDGET_MS, 'cancelled 落终态')
+    await waitFor(async () => (await readDramaJobs(registry, 'p1'))[0].status === 'failed', WAIT_BUDGET_MS, 'failed 落终态')
     await watcher.stop()
+    const failedRecord = (await readDramaJobs(registry, 'p1'))[0]
+    assert.equal(failedRecord.executionError, 'provider_error: boom')
+    assert.equal(failedRecord.version, 5, 'version 游标随快照回写')
 
-    // —— settle 抛错：台账留在 completed，settle 会被再次调用
-    await recordDramaJobSubmitted(registry, 'p1', { ...RECORD, jobId: 'job-4' })
-    let attempts = 0
+    // —— 恢复闭包抛错（网络抖动）：台账保持非终态，watcher 不崩、其余任务继续
+    const intent2 = { key: 'idem-g', body: {} }
+    await recordGenerationIntent(registry, 'p1', { intent: intent2, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    await recordGenerationSubmitted(registry, 'p1', { intentKey: 'idem-g', generationId: 'gen-g', version: 1 })
     watcher = startDramaJobResumeWatcher({
       registry,
-      request: makeRequest({ statusSequence: ['completed'] }).request,
-      settle: async () => {
-        attempts += 1
-        if (attempts < 2) throw new Error('磁盘抖动')
+      resumeBusiness: async (record) => {
+        if (record.jobId === 'gen-g') throw new Error('ECONNRESET')
       },
-      pollIntervalMs: 5,
     })
-    await waitFor(() => attempts >= 2, WAIT_BUDGET_MS, 'settle 失败后重试')
+    await waitFor(() => calls >= 1, 2_000, '首个恢复已发生')
     await watcher.stop()
+    assert.equal((await readDramaJobs(registry, 'p1')).find((e) => e.jobId === 'gen-g').status, 'pending', '瞬时错误不落终态（下次 Host 重启再试）')
+  } finally {
+    await cleanup(dir)
+  }
+})
+
+test('恢复（business）：intent 占位记录（响应丢失）也交给恢复闭包重放', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-videojobs-'))
+  try {
+    const registry = stubRegistry(dir)
+    // 崩溃窗口：intent 已落、202 响应没等到 → jobId 仍是幂等键占位。
+    const intent = { key: 'idem-x', body: { model: 'video.minimax_h3', operation: 'image2videofl2va', inputs: [] } }
+    await recordGenerationIntent(registry, 'p1', { intent, toolName: 'video_generate', params: '{"prompt":"p"}' })
+    const replayed = []
+    const watcher = startDramaJobResumeWatcher({
+      registry,
+      resumeBusiness: async (record) => {
+        replayed.push(record)
+        // 闭包内按原 key+body 重放创建后回写 generationId（这里模拟其结果）。
+        await recordGenerationSubmitted(registry, record.projectId, { intentKey: record.intent.key, generationId: 'gen-replayed', version: 1 })
+        await updateDramaJobStatus(registry, record.projectId, 'gen-replayed', 'settled')
+      },
+    })
+    await waitFor(async () => (await readDramaJobs(registry, 'p1')).some((e) => e.jobId === 'gen-replayed'), WAIT_BUDGET_MS, '重放创建回写 generationId')
+    await watcher.stop()
+    assert.equal(replayed[0].intent.key, 'idem-x', '恢复闭包拿到 intent（重放凭据）')
+    assert.equal((await readDramaJobs(registry, 'p1')).length, 1, '占位记录被原地更新（不重复入册）')
   } finally {
     await cleanup(dir)
   }
@@ -267,42 +282,35 @@ test('stop 会等循环退出：同一 jobId 紧接着重新启动能立刻接�
   const dirA = await mkdtemp(join(tmpdir(), 'cs-videojobs-a-'))
   const dirB = await mkdtemp(join(tmpdir(), 'cs-videojobs-b-'))
   try {
-    // A：每次状态请求都慢一拍，好让 stop() 时它一定还在 in-flight 里。
     const registryA = stubRegistry(dirA)
-    await recordDramaJobSubmitted(registryA, 'p1', RECORD)
-    const slow = makeRequest({ statusSequence: ['in_progress'] })
+    const intentA = { key: 'idem-a', body: {} }
+    await recordGenerationIntent(registryA, 'p1', { intent: intentA, toolName: 'video_generate', params: '{}' })
+    await recordGenerationSubmitted(registryA, 'p1', { intentKey: 'idem-a', generationId: 'gen-a', version: 1 })
     let inFlight = 0
-    const slowRequest = async (method, path) => {
-      inFlight += 1
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      return slow.request(method, path)
-    }
     const watcherA = startDramaJobResumeWatcher({
       registry: registryA,
-      request: slowRequest,
-      settle: async () => {},
-      pollIntervalMs: 5,
+      resumeBusiness: async () => {
+        inFlight += 1
+        await new Promise((resolve) => setTimeout(resolve, 300))
+      },
     })
-    // 必须等到 A **已经进入一次请求内部**（而不是两次轮询的间隙）再停 ——
-    // 否则 stop 落在 sleep 里，A 会立刻退出，测不出「没 drain」。
-    await waitFor(() => inFlight >= 1, WAIT_BUDGET_MS, 'A 已进入请求')
+    await waitFor(() => inFlight >= 1, WAIT_BUDGET_MS, 'A 已进入恢复闭包')
     await watcherA.stop()
 
-    // B：同一 jobId（job-1），不同目录；A 若没退干净，B 会被 activeResumeJobIds 挡掉。
+    // B：同一 jobId（gen-a），不同目录；A 若没退干净，B 会被 activeResumeJobIds 挡掉。
     const registryB = stubRegistry(dirB)
-    await recordDramaJobSubmitted(registryB, 'p1', RECORD)
+    const intentB = { key: 'idem-b', body: {} }
+    await recordGenerationIntent(registryB, 'p1', { intent: intentB, toolName: 'video_generate', params: '{}' })
+    await recordGenerationSubmitted(registryB, 'p1', { intentKey: 'idem-b', generationId: 'gen-a', version: 1 })
     const settledB = []
     const watcherB = startDramaJobResumeWatcher({
       registry: registryB,
-      request: makeRequest({ statusSequence: ['completed'] }).request,
-      settle: async (record, result) => { settledB.push(result.filename) },
-      pollIntervalMs: 5,
+      resumeBusiness: async (record) => { settledB.push(record.jobId) },
     })
     await waitFor(() => settledB.length === 1, 5_000, 'B 接管同一 jobId')
     await watcherB.stop()
-    assert.equal(settledB[0], 'out.mp4')
+    assert.equal(settledB[0], 'gen-a')
   } finally {
-    // A 已被 stop；这里只管清目录。
     await cleanup(dirA)
     await cleanup(dirB)
   }

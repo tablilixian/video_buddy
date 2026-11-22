@@ -200,7 +200,7 @@ export class DramaClient {
    */
   async quoteGeneration(
     token: string,
-    request: { model: string; operation: string; input: Record<string, unknown> },
+    request: { model: string; operation: string; input?: Record<string, unknown> },
   ): Promise<GenerationQuote> {
     const body = await this.#request<unknown>(token, '/v1/generations/quote', {
       method: 'POST',
@@ -222,7 +222,7 @@ export class DramaClient {
    */
   async createGeneration(
     token: string,
-    request: { model: string; operation: string; input?: Record<string, unknown>; inputs?: unknown[] },
+    request: { model: string; operation: string; input?: Record<string, unknown>; inputs?: readonly unknown[] },
     idempotencyKey: string,
     clientRunId?: string,
   ): Promise<GenerationSnapshot> {

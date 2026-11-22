@@ -95,12 +95,31 @@ export const DRAMA_ENDPOINTS = {
 } as const
 
 /**
- * Drama 后端「同步单任务」纪律的**模型可见文案（唯一源）**。
+ * 业务 API 媒体模型 code（迁移 B3-2，2026-11-22；目录实测见
+ * docs/api-probe/generation-migration-20261122/report.md §1——每个 operation
+ * 只有唯一模型声明，无歧义）。图像三车道在 model-route.ts 的 MODEL_ROUTE_TABLE。
+ */
+export const BUSINESS_MODEL_CODES = {
+  /** 图像理解（image2vl）。 */
+  image2vl: 'image.qwen3-vl',
+  /** 视频理解（video2vl）。 */
+  video2vl: 'video.qwen3-vl',
+  /** 语音识别（asr2txt）。 */
+  asr2txt: 'audio.fast-whisper',
+  /** 文生音乐（txt2audio）。 */
+  txt2audio: 'audio.yue2',
+  /** 语音合成（txt2speech）。 */
+  txt2speech: 'audio.voxcpm2',
+  /** 视频生成（fl2va / ref2va，H3）。 */
+  videoH3: 'video.minimax_h3',
+} as const
+
+/**
+ * 生成纪律的**模型可见文案（唯一源）**。
  *
- * 后端同刻只处理一个请求，一次 POST 等到出片才返回；并发提交只排队、不加速
- * （实测 A 9.4s / B 18.7s 并发墙钟仍 18.7s）。**必须写进工具描述**——描述每回合
- * 都在模型上下文里，而 SKILL.md 只有被加载后才进上下文。多个工具共用同一措辞，
- * 防两处漂移（与 `h3-ir-validate.ts` 的 `COUNT_MODE_HINT` 同一做法）。
+ * 业务 API 全异步（迁移 B3-2）：创建即 202，轮询到终态。**必须写进工具描述**
+ * ——描述每回合都在模型上下文里，而 SKILL.md 只有被加载后才进上下文。多个工具
+ * 共用同一措辞，防两处漂移。
  *
  * 后端 0.5.0 起视频两端点改异步（提交即 202），**视频工具换用
  * `DRAMA_VIDEO_ASYNC_HINT`**；本提示继续贴在图片 / 上传 / 视频理解等仍为
@@ -108,7 +127,7 @@ export const DRAMA_ENDPOINTS = {
  * `cut_audio` —— 三者都只碰本地磁盘，与后端队列无关）。
  */
 export const DRAMA_SERIAL_HINT =
-  '⚠️ Drama 后端**同步单任务**（同刻只处理一个请求）：需要多次生成时**逐个调用、等上一个返回**再发下一个。并发提交只排队不加速，还会让用户以为卡死。'
+  'ℹ️ 生成接口为**异步任务**（提交即返回，系统跟踪到终态）：需要多次生成时**逐个调用、等上一个返回**再发下一个；客户端在途任务数受限，超出会排队。'
 
 /**
  * Drama 视频工具（`video_generate` / `video_composite`）的**异步纪律文案（唯一源）**。

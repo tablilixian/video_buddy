@@ -1,43 +1,30 @@
 /**
- * 宿主侧「同步单任务」生成队列（CV-220）。
+ * 宿主侧在途任务闸（迁移 B3-3，2026-11-22 重写；原 CV-220 单槽 FIFO）。
  *
- * ## 为什么需要
+ * ## 演进：为什么从「单槽」变「宽度 N 的在途计数闸」
  *
- * Drama 后端是**同步单任务**：同刻只处理一个请求，并发提交只排队、墙钟不变
- * （实测 A 9.4s + B 18.7s 并发墙钟仍 18.7s；模型可见纪律见 `config.ts`）。
- * 宿主此前**没有任何队列** —— `/canvas-studio/generate` 收到即发，客户端连点
- * 节点重试 / 打回重出 / 模型同回合发多个调用，都会把多个请求同时压给后端。
+ * 旧后台（8082）是**同步单任务**：并发提交只排队、墙钟不变 ⇒ 宿主把并发收敛为 1
+ * （CV-220，`maxParallel` 刻意不接线）。新业务 API 是**异步任务 + 套餐并发上限**
+ * （`entitlement.features.concurrent_generations`，实测 starter = 2），拍板（2026-11-22）：
+ * 客户端按 `min(maxParallel, 套餐值)` 限「同时任务数」，出厂默认 1（保守起步，
+ * 设置页可调）。
  *
- * 真正的代价不是「慢」，而是**误判**：
- *  - 客户端占位节点的结算上限 `PENDING_TIMEOUT_MS = 660s` 从**占位落地那一刻**
- *    起算（`client/index.ts` 的 `onToolCall`），而 `DRAMA_TIMEOUT_MS.video = 600s`
- *    —— 只剩 **60s 余量**。只要请求重叠一次，排在后面的请求「还没轮到」就会被
- *    判成「生成超时」。
- *  - 后端还被**他人**占用（实测 `queue_task_count=5`），我们无从预知。
+ * 语义（与旧单槽的关键差别）：
+ *  - **acquire 于创建前、release 于终态**——「在途」= 已创建但未终态的任务数，
+ *    不是「正在执行的函数」。视频跑 40 分钟只占一个在途名额，不把其它创建挡满
+ *    40 分钟（旧实现 video submit 即释放槽位，本质就是手动版的这个语义）。
+ *  - **严格 FIFO**、**等待中被取消必须出队**（不变式与 CV-220 相同，测试钉住）。
+ *  - 重启恢复轮询在跟的在途任务**不计入**（它们是服务端已知在跑的事实；客户端
+ *    闸是尽力而为，真正的硬限制在服务端 409 conflict）。
  *
- * 于是本模块做两件事：
- *  ① 把宿主自己的并发收敛为 1 —— 至少做到「我们这边不再往后端队列里堆」；
- *  ② 把「谁在执行 / 谁在等 / 排第几」变成**可读快照**，让 UI 如实显示，
- *    并把排队时间从「超时」里摘出去（见 `client/index.ts` 的轮询）。
- *
- * ## 边界（刻意不做的事）
- *
- * - **不排队上传 / 健康探针 / 文本工具**：接入点选在 `callDrama`（媒体生成的
- *   唯一网络入口）。`uploadBytesToDrama`、`ensureDramaReachable`、`callDramaRaw`
- *   各自独立，因此上传、探活、prompt 增强都不会抢占生成槽位。
- * - **不排队异步供应商**：fal 是 submit → 轮询的三段式，天然不走 `callDrama`，
- *   所以显式选 fal 的用户不受影响。「provider-aware」在这里是**结构**保证
- *   （接在 Drama 专属入口上），不是散落的 `if (provider === 'drama')` 分支。
- * - **不接 `maxParallel`**：后端同步单任务，调大并发只会堆积排队并放大上面的
- *   误判，收益为零。设置页继续如实标注「本项不会生效」（见 `host-config.ts`）。
+ * ## 接入点（两处，测试钉住）
+ *  - `runBusinessGenerationTask`（业务 API 链路：acquire → 创建+轮询 → release）；
+ *  - `callDramaJson`（legacy 视频路径：等价旧 withGenerateSlot）。
  *
  * ## 不变式
- *
- * - **同刻最多一个在执行**（`active` 至多一个非空）。
- * - **严格 FIFO**：按入队次序授权，不插队。
- * - **槽位必须释放**：`withGenerateSlot` 在 `finally` 里释放，`run()` 抛错同理。
- * - **等待中被取消必须出队**：否则一个被取消的请求会把整条队列锁死 ——
- *   这是本模块最危险的失败模式，由 `tests/generate-queue.test.mjs` 钉住。
+ *  - 同刻在途 ≤ width（`active` 集合大小）。
+ *  - 严格 FIFO：按入队次序授权，不插队。
+ *  - 等待中被取消必须出队（否则一个被取消的请求锁死整条队列——最危险失败模式）。
  */
 import { makeCanvasError } from './error-system.js'
 import './errors/catalog.js'
@@ -51,21 +38,25 @@ interface Waiter {
 }
 
 let nextId = 1
-let active: { id: number; label: string } | null = null
+/** 在途任务（已授权、未 release）。 */
+const active = new Map<number, string>()
 const waiting: Waiter[] = []
 
 /**
- * 授权下一个：仅在空闲时出队。
- *
- * 唯一的推进点 —— `withGenerateSlot` 释放槽位后必须调它，否则队列永不再前进
- * （表现为「第一个跑完，后面的永远不动」）。
+ * 在途上限（同时任务数宽度）。**取值是 getter**：装配层接 `maxParallel` 设置项
+ * （设置页改动即时生效，无需重启）。缺省 1 = 拍板④的保守出厂值。
  */
-function pump(): void {
-  if (active !== null) return
-  const next = waiting.shift()
-  if (next === undefined) return
-  active = { id: next.id, label: next.label }
-  next.grant()
+let widthOf: () => number = () => 1
+
+/** 装配时注入宽度来源（settings getter）；测试可直接注入常量。 */
+export function setGenerateQueueWidth(source: () => number): void {
+  widthOf = source
+}
+
+/** 当前生效宽度（clamp 1..8，与 maxParallel 设置项范围一致）。 */
+function effectiveWidth(): number {
+  const raw = widthOf()
+  return Number.isFinite(raw) ? Math.min(8, Math.max(1, Math.round(raw))) : 1
 }
 
 /** 把 abort 归一成**取消码**（CV-239：CS-GEN-207，客户端据此移除占位而非标红失败）。 */
@@ -92,13 +83,49 @@ export function setGenerationSettledHook(hook: GenerationSettledHook | null): vo
   settledHook = hook
 }
 
+/** 释放并推进（pump 在前：先让下一单拿到名额，记账失败不传导给队列）。 */
+function release(id: number): void {
+  active.delete(id)
+  pump()
+  try {
+    settledHook?.()
+  } catch {
+    // 记账钩子的异常绝不外抛（它是附加语义，不是生成结果的一部分）。
+  }
+}
+
 /**
- * 申请一个槽位。等待期间被 abort 则**出队并抛错** —— 不清理就锁死整条队列。
+ * 授权下一个：在途 < 宽度时出队（可能一次授权多个——release 后空位补齐）。
+ * 唯一的推进点：release 后必须调它。
  */
-function acquire(label: string, signal: AbortSignal | undefined): Promise<void> {
+function pump(): void {
+  for (;;) {
+    if (active.size >= effectiveWidth()) return
+    const next = waiting.shift()
+    if (next === undefined) return
+    active.set(next.id, next.label)
+    next.grant()
+  }
+}
+
+/** 一次在途任务的租约：调用方在终态/放弃时调用 `release()`（必须 finally）。 */
+export interface InFlightLease {
+  readonly release: () => void
+}
+
+/**
+ * 申请一个在途名额。等待期间被 abort 则**出队并抛错** —— 不清理就锁死整条队列。
+ *
+ * 用法（创建前 acquire、终态 release）：
+ * ```ts
+ * const lease = await acquireInFlight(label, signal)
+ * try { /* 创建 + 轮询 *\/ } finally { lease.release() }
+ * ```
+ */
+export function acquireInFlight(label: string, signal: AbortSignal | undefined): Promise<InFlightLease> {
   // 入队前就已取消：直接拒绝，不占用队列位置。
   if (signal?.aborted === true) return Promise.reject(abortReason(signal))
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<InFlightLease>((resolve, reject) => {
     const id = nextId
     nextId += 1
     // `done` 是「本次等待已有结论」的唯一判据：保证 grant / abort 二者只有一个生效。
@@ -117,7 +144,7 @@ function acquire(label: string, signal: AbortSignal | undefined): Promise<void> 
       if (done) return
       done = true
       detach()
-      resolve()
+      resolve({ release: () => release(id) })
     }
     if (signal !== undefined) signal.addEventListener('abort', onAbort, { once: true })
     waiting.push({ id, label, grant })
@@ -126,39 +153,28 @@ function acquire(label: string, signal: AbortSignal | undefined): Promise<void> 
 }
 
 /**
- * 在队列里执行 `run()`：先排队拿到槽位，跑完（或抛错）必然释放。
- *
- * @param label - 展示用标签（`generateLabelOf(endpoint)` 派生）。
- * @param signal - 取消信号；等待期间取消会出队。
- * @param run - 真正的生成逻辑。
+ * 旧口径兼容：在队列里执行 `run()`（acquire → run → release）。legacy callDramaJson
+ * 与测试继续用它；业务 API 链路用 {@link acquireInFlight} 手动配对（创建前/终态）。
  */
 export async function withGenerateSlot<T>(
   label: string,
   signal: AbortSignal | undefined,
   run: () => Promise<T>,
 ): Promise<T> {
-  await acquire(label, signal)
+  const lease = await acquireInFlight(label, signal)
   try {
     return await run()
   } finally {
-    // 释放与推进必须在一起：漏掉 pump() 会让队列停在第一个上。
-    active = null
-    pump()
-    // 钩子排在 pump() 之后：先让下一单拿到槽位，记账失败的代价不许传导给队列。
-    try {
-      settledHook?.()
-    } catch {
-      // 记账钩子的异常绝不外抛（它是附加语义，不是生成结果的一部分）。
-    }
+    lease.release()
   }
 }
 
 /** 取当前队列快照（纯读取，无副作用）。 */
 export function generateQueueSnapshot(): GenerateQueueSnapshot {
   // 执行中的条目 `position` 恒为 0（对位次的约定只在 queue-view.ts 里写一次）。
-  const activeEntry: GenerateQueueEntry | null = active === null
+  const activeEntry: GenerateQueueEntry | null = active.size === 0
     ? null
-    : { id: `g${active.id}`, label: active.label, position: 0 }
+    : { id: `g${active.keys().next().value ?? 0}`, label: active.values().next().value ?? '', position: 0 }
   const waitingEntries: GenerateQueueEntry[] = waiting.map((entry, index) => ({
     id: `g${entry.id}`,
     label: entry.label,
@@ -175,6 +191,6 @@ export function generateQueueSnapshot(): GenerateQueueSnapshot {
  */
 export function resetGenerateQueue(): void {
   waiting.length = 0
-  active = null
+  active.clear()
   nextId = 1
 }

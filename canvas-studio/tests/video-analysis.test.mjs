@@ -39,24 +39,35 @@ function stubRegistry() {
   }
 }
 
-/** 捕获 video2vl 的请求体；respond 决定响应。 */
-function stubVideo2vl(respond = () => ({ status: 200, json: { output: '分析结果' } })) {
+/** 捕获 video2vl 的业务请求体；respond 决定创建响应（迁移 B3-2：/v1/generations 全异步）。 */
+function stubVideo2vl(respond = () => ({ status: 202 })) {
   const calls = []
   const original = globalThis.fetch
+  const SNAP = (status) => ({
+    id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'video2vl',
+    status: status === 202 ? 'queued' : 'failed', version: 1, progress: 0,
+    billing_status: 'held', terminal: status !== 202,
+    outputs: status === 202 ? [] : [],
+    error: status === 202 ? null : { code: 'provider_error', message: 'boom' },
+  })
   globalThis.fetch = async (url, init = {}) => {
     const href = String(url)
-    if (!href.includes('/generate/video2vl')) {
-      return { ok: true, status: 200, json: async () => ({}), text: async () => '', arrayBuffer: async () => new Uint8Array() }
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(href)) {
+      calls.push(JSON.parse(init.body))
+      const spec = respond()
+      return { ok: spec.status < 400, status: spec.status, json: async () => SNAP(spec.status) }
     }
-    const body = JSON.parse(init.body)
-    calls.push(body)
-    const spec = respond()
-    return {
-      ok: spec.status < 400,
-      status: spec.status,
-      json: async () => spec.json ?? {},
-      text: async () => spec.text ?? '',
+    if (href.includes('/poll')) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'video2vl', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'text', mime_type: 'text/plain', text: '分析结果' }], error: null,
+        }),
+      }
     }
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '', arrayBuffer: async () => new Uint8Array() }
   }
   return { calls, restore: () => { globalThis.fetch = original } }
 }
@@ -82,9 +93,9 @@ test('CV-230 默认模式：不传 prompt 时，发出去的就是官方模板�
     const tool = V2VL(stubRegistry())
     await tool.execute({ video: 'ref-abc123.mp4' }, EXEC)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].prompt, VIDEO_SHOT_BREAKDOWN_PROMPT, '默认模式必须是模板原文，不能是模型自己写的版本')
-    assert.equal(calls[0].system_prompt, VIDEO_ANALYST_SYSTEM_PROMPT, 'system_prompt 缺省即官方角色设定')
-    assert.equal(calls[0].video, 'ref-abc123.mp4', '句柄原样透传')
+    assert.equal(calls[0].input.prompt, VIDEO_SHOT_BREAKDOWN_PROMPT, '默认模式必须是模板原文，不能是模型自己写的版本')
+    assert.equal(calls[0].input.system_prompt, VIDEO_ANALYST_SYSTEM_PROMPT, 'system_prompt 缺省即官方角色设定')
+    assert.deepEqual(calls[0].inputs, [{ asset_id: 'ref-abc123.mp4', role: 'video', ordinal: 1 }], '句柄原样透传')
   } finally {
     restore()
   }
@@ -95,8 +106,8 @@ test('CV-230 shot-breakdown + 额外关注点：模板在前、关注点作末�
   try {
     const tool = V2VL(stubRegistry())
     await tool.execute({ video: 'ref-abc123.mp4', prompt: '尤其注意转场方式' }, EXEC)
-    assert.equal(calls[0].prompt, `${VIDEO_SHOT_BREAKDOWN_PROMPT}\n${VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX}尤其注意转场方式`)
-    assert.ok(calls[0].prompt.startsWith(VIDEO_SHOT_BREAKDOWN_PROMPT), '模板必须完整保留在前')
+    assert.equal(calls[0].input.prompt, `${VIDEO_SHOT_BREAKDOWN_PROMPT}\n${VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX}尤其注意转场方式`)
+    assert.ok(calls[0].input.prompt.startsWith(VIDEO_SHOT_BREAKDOWN_PROMPT), '模板必须完整保留在前')
   } finally {
     restore()
   }
@@ -107,8 +118,8 @@ test('CV-230 free 模式：prompt 原样发出（不套模板）；缺 prompt �
   try {
     const tool = V2VL(stubRegistry())
     await tool.execute({ video: 'ref-abc123.mp4', mode: 'free', prompt: '这段片子的运镜适合参考吗？' }, EXEC)
-    assert.equal(calls[0].prompt, '这段片子的运镜适合参考吗？')
-    assert.equal(calls[0].system_prompt, VIDEO_ANALYST_SYSTEM_PROMPT, 'free 模式仍用官方角色设定做缺省')
+    assert.equal(calls[0].input.prompt, '这段片子的运镜适合参考吗？')
+    assert.equal(calls[0].input.system_prompt, VIDEO_ANALYST_SYSTEM_PROMPT, 'free 模式仍用官方角色设定做缺省')
 
     await assert.rejects(
       () => tool.execute({ video: 'ref-abc123.mp4', mode: 'free' }, EXEC),

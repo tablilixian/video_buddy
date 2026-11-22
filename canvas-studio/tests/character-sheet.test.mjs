@@ -21,6 +21,16 @@ import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers
 
 const SHEET_URL = 'https://media.example/sheet.png'
 
+/** 业务 API 快照（迁移 B3-2）：image2character pending 帧 + succeeded 终帧（content = SHEET_URL 字节）。 */
+const SHEET_PENDING = {
+  id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'image2character', status: 'queued', version: 1,
+  progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+}
+const SHEET_DONE = {
+  ...SHEET_PENDING, status: 'succeeded', version: 2, progress: 100, billing_status: 'held', terminal: true,
+  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL }],
+}
+
 /** character_sheet 专用打桩：image2character 首拍 500（temp 丢失）→ 重传后二拍成功。 */
 function stubCharacterSheetFetch(sheetBytes = new Uint8Array([7, 7, 7])) {
   const calls = []
@@ -32,14 +42,18 @@ function stubCharacterSheetFetch(sheetBytes = new Uint8Array([7, 7, 7])) {
     calls.push({ url: text, body: init.body instanceof FormData ? '<form>' : init.body })
     const assetHandled = assetUploadBranch(text, init)
     if (assetHandled !== null) return assetHandled
-    if (init.method === 'POST' && text.includes('image2character')) {
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+      // 迁移 B3-2：业务 API image2character（首拍 legacy 句柄失效 500；换句柄后二拍 202）。
       const body = JSON.parse(init.body)
-      if (body.image === 'dead.png') {
+      if (body.inputs?.[0]?.asset_id === 'dead.png') {
         return { ok: false, status: 500, text: async () => 'Internal Server Error' }
       }
-      return { ok: true, status: 200, json: async () => ({ full_url: SHEET_URL, filename: 'sheet-fresh.png' }) }
+      return { ok: true, status: 202, json: async () => SHEET_PENDING }
     }
-    if (text === SHEET_URL) {
+    if (text.includes('/poll')) {
+      return { ok: true, status: 200, json: async () => SHEET_DONE }
+    }
+    if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => sheetBytes }
     }
     return { ok: false, status: 404, text: async () => '' }
@@ -95,15 +109,15 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
     })
     // 二拍成功：拼图落画布 + 锚点 = 拼图整图单节点 + 返回 Drama filename。
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
-    assert.equal(result.filename, 'sheet-fresh.png')
+    assert.equal(result.filename, SHEET_PENDING.id, '迁移 B3-2：产物句柄 = generation id（新 API 无服务端文件名）')
     // CV-122：不再调 splitegrid 切分；资产卡锚点只有拼图节点。
     assert.ok(!calls.some((c) => c.url.includes('image2splitegrid')))
     assert.equal(registry.getAssets()[0].anchorNodeIds.length, 1)
     // 自愈链路发生：image2character 打了两拍，第二拍带重传新句柄（迁移 B2：asset_id）。
-    const charCalls = calls.filter((c) => c.url.includes('image2character'))
+    const charCalls = calls.filter((c) => /\/v1\/generations(\?|$)/.test(c.url))
     assert.equal(charCalls.length, 2)
-    assert.equal(JSON.parse(charCalls[0].body).image, 'dead.png')
-    assert.equal(JSON.parse(charCalls[1].body).image, ASSET_HANDLE(1))
+    assert.equal(JSON.parse(charCalls[0].body).inputs[0].asset_id, 'dead.png')
+    assert.equal(JSON.parse(charCalls[1].body).inputs[0].asset_id, ASSET_HANDLE(1))
     assert.ok(calls.some((c) => c.url.includes('/v1/assets/presign')))
     // 节点 filename 回写为新名（不变式：节点 filename = 后端当前可用句柄）。
     const patched = registry.getWrites().find((w) => w[0] === 'writeCanvas')
@@ -171,7 +185,7 @@ test('CV-111 character_sheet：画布上找不到对应本地资产 → 保留�
     const registry = stubSheetRegistry([], dir)
     await assert.rejects(
       generateCharacterSheet(registry, 'p1', { filename: 'dead.png', assetName: '女主', lockedPrompt: 'X' }),
-      /Internal Server Error/,
+      /HTTP 500/,
     )
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -187,7 +201,7 @@ test('CV-111 character_sheet：非参考图类错误（如 4xx 参数错）不�
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
       }
-      if (init.method === 'POST' && text.includes('image2character')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
         return { ok: false, status: 400, text: async () => 'bad request' }
       }
       return { ok: false, status: 404, text: async () => '' }
@@ -195,7 +209,7 @@ test('CV-111 character_sheet：非参考图类错误（如 4xx 参数错）不�
     const registry = stubSheetRegistry([stubNode()], dir)
     await assert.rejects(
       generateCharacterSheet(registry, 'p1', { filename: 'dead.png', assetName: '女主', lockedPrompt: 'X' }),
-      /bad request/,
+      /HTTP 400/,   // 新通道 parseApiError 回退文案（原 body 文本 'bad request' 不再进消息）
     )
   } finally {
     await rm(dir, { recursive: true, force: true })

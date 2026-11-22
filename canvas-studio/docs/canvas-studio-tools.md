@@ -59,7 +59,6 @@
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `image2image`（带参考图时） | 画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役） |
 | `image_generate_withtxt` | image | `txt2image_withtxt` | **文字渲染特化**（Qwen Image 2.1，CV-270）：prompt 含**待显示的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；R-P1-03 起与 `image_generate` 在纯文生图上等价（Host 按提示词现算端点，无字图自动降级 Krea2）；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
-| `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
 | `image2vl` | text | `image2vl` | 直调视觉模型分析画面 |
@@ -111,7 +110,7 @@
 > `approval-gate.ts` 的两张表：`FORMAL_TOOLS`（8 个正式产出工具，`drafting` 态拦截：video_generate /
 > video_composite / compose_video / extract_last_frame / character_sheet / qc_shot / music_generation /
 > tts_voiceover）与 `PRODUCING_TOOLS`（在 FORMAL 之外加 image_generate / image_generate_withtxt /
-> image_fix / character_generate 四个图片类工具，审阅态也拦）；是否绑定分镜卡（`shotBound`）还会区分
+> character_generate 等三个图片类工具，审阅态也拦）；是否绑定分镜卡（`shotBound`）还会区分
 > 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
 > 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
@@ -184,7 +183,7 @@
 
 **功能**：生成**画面里有要读的文字**的图片（中文海报 / 片名字幕卡 / 标语招牌 / 封面标题）。走 Qwen Image 2.1 文字渲染特化链路（后端 0.8.0 新增端点 `txt2image_withtxt`，steps=25），中文可做到逐字正确（探针实测《剑归江湖》四字无错字，报告见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）。
 
-**选工具判据（R-P1-03 起「选工具 ≠ 选端点」）**：端点由 Host 按提示词现算——本工具与 `image_generate` 在纯文生图上**等价**（含可显示文字自动走本链路，无字自动降级 Krea2，C-12 收口）；带参考图只能用 `image_generate`；已出图的文字错了 → `image_fix`（不要整图重出）。
+**选工具判据（R-P1-03 起「选工具 ≠ 选端点」）**：端点由 Host 按提示词现算——本工具与 `image_generate` 在纯文生图上**等价**（含可显示文字自动走本链路，无字自动降级 Krea2，C-12 收口）；带参考图只能用 `image_generate`；已出图的文字错了用 `image_generate_withtxt` 带修正后的文字规格重出（image_fix 已下线）。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -195,7 +194,7 @@
 | `sourceUrls` | string[] | 否 | 参考的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（带字幕 / 招牌等文字的关键帧应传） |
 
-**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，`image_generate` 的 autoFixText 只在产物实际落在 Krea2 / 图生图链路时触发（R-P1-03 路由门控），文字仍出错时手动走 `image_fix`。
+**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，文字仍出错时用 `image_generate_withtxt` 带修正后的文字规格重出（autoFixText/CV-212 兜底链已随 image_fix 下线退役）。
 
 ---
 
@@ -398,26 +397,6 @@
 
 ---
 
-### A11. `image_fix`（CV-202）
-
-**功能**：修复图内文字（Boogu Edit 文字修复特化链路，2026-09-18 后端新增端点）。Krea2 出图后画面文字出错（错字/乱码/缺笔画）时修字用，**不要换提示词整图重出**（重出会丢掉已正确的画面）。探针实测：200 / 68.5s，修复生效（SALLE→SALE），见 `docs/api-probe/image2fix-20260918/report.md`。
-
-⚠️ **CV-218（修复 prompt 的形态）**：prompt 须是**原出图 prompt 的「文字规格段」+「逐字约束段」**，**不能只给字符清单** —— 后者丢掉**位置锚点**，模型只能按形近字猜（真机把「武仔」修成「武传」**仍错** + 凭空多出两处文字 + 曝光漂移）；规格段形态则 8 处错字全对、排版零漂移（正例取证 `docs/api-probe/image2fix-20260920-text-spec/`）。自动兜底路径已按此改造：`extractTextSpec()`（抽规格句/约束句/占位句）+ `buildTextFixPrompt(原 prompt)` 直通。
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `prompt` | string | 是 | 修复指令：**原出图 prompt 里的文字规格句**（每段文字 + 位置/字体/字号/颜色/排版关系，原样保留）+ 逐字还原约束；**不要压缩成字符清单**，也不要带画幅/材质/光线/配色等美术描述（改图接口，多余描述会伤及画面） |
-| `filename` | string | 是 | 要修复的图：Drama 文件名（upload_image 句柄，可传 `@ref[显示名]` 自动解析） |
-| `replaces` | string | 否 | 修复结果取代哪个已有图片节点（节点 id，旧图自动失效退出参考池） |
-| `sourceUrls` | string[] | 否 | 被修复图的画布产物 URL（血缘箭头） |
-| `shotRefs` | string[] | 否 | 关联分镜卡（修复逐镜关键帧上的文字时应传） |
-
-**行为要点**：
-- 端点**不收 width/height**（改图接口，产物尺寸跟随输入图）→ 落盘前从 PNG IHDR 实测像素（`pngSizeOf`），节点 `mediaWidth/mediaHeight` 与返回 `width/height` 都是**实测真值**（与 image_generate 的「声明 = 真实」不同源，属唯一需要实测的图片路径）。
-- 产物文件名 **`boogu_*` 前缀**（后端文档示例写 `boogu_edit_*`，以实测为准），属「产物名」类**不可直接作下游入参**（探针复证直用 500 快失败，CV-155 同型），引用走 `@ref[节点标题]`。
-- 审批门禁：与 `image_generate` 同列 `PRODUCING_TOOLS`（审阅态拦、drafting 放行）；可重放（`REPLAYABLE_TOOLS` 已含），重试沿用节点参数。
-
----
 
 ### A12. `video2vl`（CV-230）
 

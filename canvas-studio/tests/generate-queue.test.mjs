@@ -286,18 +286,29 @@ test('每个走队列的生成端点都有专属标签', () => {
   assert.equal(generationLabelOf('/api/v1/nope'), '生成')
 })
 
-test('队列接入点唯一，且在 callDrama 内', () => {
+test('队列接入点收敛（legacy callDramaJson + acquireInFlight 两处形态）', () => {
+  // 迁移 B3-3：业务链路统一走 acquireInFlight（在途名额：acquire 创建前 / release
+  // 终态——runBusinessGenerationTask 通用 + 视频 businessRun 专用）；legacy
+  // callDramaJson 保留 withGenerateSlot 兼容形态。除这三处外，新接入点必须先改这里。
   const src = readSource('../src/generate.ts')
-  const calls = src.match(/withGenerateSlot\(/g) ?? []
-  assert.equal(calls.length, 1, '队列接入点必须唯一——多处接入就是多套口径')
+  const slotCalls = src.match(/withGenerateSlot\(/g) ?? []
+  const leaseCalls = src.match(/acquireInFlight\(/g) ?? []
+  assert.equal(slotCalls.length, 0, 'withGenerateSlot 已退役（业务链路全走 acquireInFlight）')
+  assert.equal(leaseCalls.length, 2, 'acquireInFlight 只允许业务 runner 与视频 businessRun 两处')
 
-  const callAt = src.indexOf('withGenerateSlot(')
-  const enclosing = src.slice(0, callAt).match(/\n(?:export )?(?:async )?function (\w+)/g)?.pop() ?? ''
-  assert.match(
-    enclosing,
-    /callDrama/,
-    `队列必须接在 callDrama 内（同步单任务后端的唯一网络入口），实际落在：${enclosing.trim()}`,
-  )
+  const sites = [
+    ...src.matchAll(/withGenerateSlot\(/g).map((m) => ['withGenerateSlot', m.index]),
+    ...src.matchAll(/acquireInFlight\(/g).map((m) => ['acquireInFlight', m.index]),
+  ]
+  for (const [pattern, at] of sites) {
+    const enclosing = src.slice(0, at).match(/\n(?:export )?(?:async )?function (\w+)/g)?.pop() ?? ''
+    if (pattern === 'withGenerateSlot') {
+      assert.match(enclosing, /callDramaJson/, `withGenerateSlot 只许在 callDramaJson，实际：${enclosing.trim()}`)
+    } else {
+      assert.match(enclosing, /runBusinessGenerationTask|generateAsset/,
+        `acquireInFlight 只许在业务 runner 或 generateAsset（视频分支），实际：${enclosing.trim()}`)
+    }
+  }
 })
 
 test('fal 不进队列：provider-aware 是结构保证', () => {

@@ -331,23 +331,32 @@ test('I 视频侧实测为准：落盘取实测 864×480，而非档位声明值
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
-      // 后端 0.5.0：视频提交 202 + job_id，状态/结果走 /api/v1/jobs/*。
-      if ((init.method ?? 'GET') === 'POST' && text.includes('image2video')) {
+      // 迁移 B3-3：业务 API 创建/轮询；产物字节由 content 端点回（864×480 的实测源）。
+      if ((init.method ?? 'GET') === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
         return {
           ok: true,
           status: 202,
-          json: async () => ({ job_id: 'job-restier', status: 'pending', status_url: '/api/v1/jobs/job-restier', cancel_url: '/api/v1/jobs/job-restier/cancel', result_url: '/api/v1/jobs/job-restier/result' }),
+          json: async () => ({
+            id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'queued', version: 1,
+            progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+          }),
           text: async () => '',
         }
       }
-      if (text.includes('/api/v1/jobs/job-restier/result')) {
-        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-restier', filename: 'drama.mp4', full_url: mediaUrl, duration: 8.5 }), text: async () => '' }
+      if (text.includes('/poll')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'succeeded', version: 2,
+            progress: 100, billing_status: 'held', terminal: true,
+            outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
+            error: null,
+          }),
+          text: async () => '',
+        }
       }
-      if (text.includes('/api/v1/jobs/job-restier')) {
-        return { ok: true, status: 200, json: async () => ({ job_id: 'job-restier', status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }), text: async () => '' }
-      }
-      if ((init.method ?? 'GET') === 'POST') return { ok: true, status: 200, json: async () => ({ full_url: mediaUrl }), text: async () => '' }
-      if (text === mediaUrl) return { ok: true, status: 200, arrayBuffer: async () => bytes, text: async () => '' }
+      if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => bytes, text: async () => '' }
       return { ok: false, status: 404, json: async () => ({}), text: async () => '' }
     }
     restoreFetch = () => { globalThis.fetch = originalFetch }

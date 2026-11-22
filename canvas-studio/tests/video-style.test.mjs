@@ -115,6 +115,8 @@ const FAKE_FFMPEG = [
   'exit 1',
 ].join('\n')
 
+let lastVlHandle = 'x'
+
 function stubDramaFetch() {
   const calls = []
   let uploadCount = 0
@@ -145,6 +147,41 @@ function stubDramaFetch() {
           calls.push({ url: target, kind: 'upload' })
         }
         return handled
+      }
+    }
+    {
+      const handled = assetUploadBranch(target, init)
+      if (handled !== null) return handled
+      if ((init.method ?? 'GET') === 'POST' && /\/v1\/generations(\?|$)/.test(target)) {
+        try { lastVlHandle = JSON.parse(String(init.body)).inputs?.[0]?.asset_id ?? 'x' } catch { lastVlHandle = 'x' }
+        return {
+          ok: true,
+          status: 202,
+          json: async () => ({
+            id: 'cccccccc-cccc-4ccc-8ccc-00000000000a', operation: 'image2vl', status: 'queued', version: 1,
+            progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+          }),
+        }
+      }
+      if (target.includes('/poll')) {
+        const handle = lastVlHandle ?? 'x'
+        const output = [
+          `色彩：暖黄（${handle}）`,
+          '光线：柔和',
+          '材质：湿润青砖',
+          '镜头语汇：中长焦浅景深',
+          '节奏：平稳',
+          '补充说明：这段不是字段，应被忽略',
+        ].join('\n')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'cccccccc-cccc-4ccc-8ccc-00000000000a', operation: 'image2vl', status: 'succeeded', version: 2,
+            progress: 100, billing_status: 'held', terminal: true,
+            outputs: [{ ordinal: 0, type: 'text', mime_type: 'text/plain', text: output }], error: null,
+          }),
+        }
       }
     }
     if (target.includes('/generate/image2vl')) {

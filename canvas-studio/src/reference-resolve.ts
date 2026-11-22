@@ -19,7 +19,7 @@ import { isShotCard, type StudioCanvasNode, type StudioCanvasNodeKind } from './
 import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
 import type { LibMedia, LibraryAsset } from './contracts/asset-library.js'
 import { findNodeByRef, suggestRefCandidates } from './reference-token.js'
-import { assetKeyFromUrl, isDramaProductName, promoteAssetFile } from './generate.js'
+import { assetKeyFromUrl, promoteAssetFile } from './generate.js'
 import { throwError } from './error-system.js'
 
 /**
@@ -182,32 +182,25 @@ export async function resolveRefFilenames(
         hint: candidateHint(suggestRefCandidates(pool, token)),
       })
     }
-    if (node.filename === undefined || node.filename === null || node.filename.length === 0) {
-      // 惰性兜底：节点已落盘（有项目资产 url）但 Drama 提升未完成 → 现场提升并回写。
-      const assetKey = node.url === undefined ? null : assetKeyFromUrl(node.url)
-      if (assetKey === null || !assetKey.startsWith(`${projectId}/`)) {
-        throwError('CS-USER-ERR', { message: `参考图 @ref[${token}] 尚未上传到 Drama Backend（缺少 filename），且该节点不是画布资产。请先调 upload_image 取得文件名，或直接在参数里粘贴该文件名。`, detail: `未上传 filename: ${token}` })
-      }
+    // 迁移 B3-2（2026-11-22）：新业务 API 的参考句柄 = **asset_id**，产物不再有
+    // 可复用的服务端文件名（生成节点的 filename 落的是 generation id，只是证据不
+    // 是句柄）。因此画布节点引用一律走「本地资产 → promoteAssetFile 换 asset_id」
+    // （promote 内有 manifest + in-flight 双档缓存，重复引用不重复上传），回写节点
+    // 保持不变式「节点 filename 恒为后端当前可用句柄」。节点没有本地资产（纯外链
+    // / 句柄丢失）时退回 filename 原值，由消费端（analyzeImage 等）的失败自愈兜底
+    // ——旧句柄（legacy ref-*）本就随后端 8082 退役，失败信息会指向重新上传。
+    const assetKey = node.url === undefined ? null : assetKeyFromUrl(node.url)
+    if (assetKey !== null && assetKey.startsWith(`${projectId}/`)) {
       const filename = await promoteAssetFile(registry, projectId, assetKey.slice(projectId.length + 1))
-      const doc = await registry.readCanvas(projectId)
-      await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename } : entry)))
+      if (node.filename !== filename) {
+        const doc = await registry.readCanvas(projectId)
+        await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename } : entry)))
+      }
       out.push(filename)
       continue
     }
-    // CV-155：生成类节点的 filename 是**后端产物名**（`img_*` / `z-image_*`），作带
-    // 文件端点入参会**约 0.1s 内 500** —— 不换名就必然失败，所以这里不等失败：形态
-    // 命中产物名且本地资产可达时，直接重传换成可用句柄并回写节点（与上面「有 url 无
-    // filename」分支同一不变式：节点 filename 恒为后端当前可用的名字）。
-    // 本地资产不可达时退回产物名，由消费端（analyzeImage 等）的失败自愈兜底。
-    if (isDramaProductName(node.filename)) {
-      const assetKey = node.url === undefined ? null : assetKeyFromUrl(node.url)
-      if (assetKey !== null && assetKey.startsWith(`${projectId}/`)) {
-        const filename = await promoteAssetFile(registry, projectId, assetKey.slice(projectId.length + 1))
-        const doc = await registry.readCanvas(projectId)
-        await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename } : entry)))
-        out.push(filename)
-        continue
-      }
+    if (node.filename === undefined || node.filename === null || node.filename.length === 0) {
+      throwError('CS-USER-ERR', { message: `参考图 @ref[${token}] 既不是画布资产（无本地文件可上传），也没有可用句柄。请先调 upload_image 取得素材，或直接在参数里粘贴素材句柄。`, detail: `无可提升资产: ${token}` })
     }
     out.push(node.filename)
   }

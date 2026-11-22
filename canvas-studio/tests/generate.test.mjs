@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { generateAsset, clampDuration, operationTypeOf, overwriteNodeAsset } from '../lib/generate.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
+import { generationStub } from './helpers/generation-stub.mjs'
 
 // ── B2 三段式上传桩（迁移方案 2026-11-22）：presign → PUT → complete ─────────
 // 旧通道 multipart /api/v1/generate/upload 已退役；所有涉及参考句柄的流程测试
@@ -54,11 +55,15 @@ function assetUploadBranch(text, init) {
 /** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。mediaBytes 可指定产物字节（CV-202 尺寸实测用例）。
  * 后端 0.5.0：视频两端点提交即 202 + job_id，状态/结果走 /api/v1/jobs/*——桩按 URL 分流。
  * 迁移 B2：素材上传走 /v1/assets/* 三段式（见 assetUploadBranch）。 */
-function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3])) {
+function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3]), genOpts = {}) {
   const calls = []
+  const gen = generationStub({
+    ...genOpts,
+    output: genOpts.output ?? { ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' },
+  })
   const jobId = 'job-test-1'
   globalThis.fetch = async (url, init = {}) => {
-    // P10 health 探针前置：所有 Drama 请求前会探测一次，桩里直接放行。
+    // P10 health 探针前置（legacy 8082 探针）：桩里直接放行。
     if (String(url).includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
@@ -70,6 +75,9 @@ function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new 
     }
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
     const text = String(url)
+    // —— 迁移 B3-2：图像/视频主链路 = 业务 API（create 202 → poll → content）。
+    const genHandled = gen.branch(text, init)
+    if (genHandled !== null) return genHandled
     // —— 视频异步任务：提交 202 信封 → 状态已 completed → result 给产物（下一拍即完成）。
     if (init.method === 'POST' && (text.includes('image2videofl2va') || text.includes('image2videoref2va'))) {
       return {
@@ -106,7 +114,24 @@ function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new 
     }
     return { ok: false, status: 404 }
   }
+  // 生成桩状态挂在数组属性上（保持既有「stubFetch() 返回 calls 数组」的调用面）。
+  calls.gen = gen.state
   return calls
+}
+const isUuidHandle = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(v)
+
+/** 业务 API 任务快照（测试桩共用）：pending 202 帧 + succeeded 终帧。 */
+const GEN_PENDING = {
+  id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'queued', version: 1,
+  progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+}
+const GEN_DONE = {
+  ...GEN_PENDING, status: 'succeeded', version: 2, progress: 100, billing_status: 'committed', terminal: true,
+  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+}
+const GEN_DONE_VIDEO = {
+  ...GEN_DONE, operation: 'image2videofl2va',
+  outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
 }
 
 /** 项目注册表打桩：读到的既有文档（v3 形态）+ 记录写盘。 */
@@ -156,7 +181,7 @@ test('retryOf：结果写回原节点，不追加新节点', async () => {
       retryOf: 'n1',
     })
 
-    assert.equal(calls.length, 2) // 生成 / 产物下载（无参考图下载/上传步骤）
+    assert.equal(calls.length, 3) // 迁移 B3-2：创建 + 轮询 + content 下载（无参考图下载/上传步骤）
     const writes = registry.getWrites()
     assert.equal(writes.length, 1)
     const saved = writes[0].nodes
@@ -244,14 +269,20 @@ test('filename 失效自愈：生成 500 时按画布节点反查本地资产重
       }
       const assetHandled = assetUploadBranch(text, init)
       if (assetHandled !== null) return assetHandled
-      if (init.method === 'POST' && text.includes('image2image')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        // 迁移 B3-2：业务 API 创建（首拍 500 = legacy 句柄失效；重传换新句柄后二拍 202）。
         genBodies.push(JSON.parse(init.body))
         genCount += 1
         if (genCount === 1) {
-          // 后端重启清了 temp/ 后的实测表现：笼统 500。
           return { ok: false, status: 500, text: async () => 'Internal Server Error', json: async () => ({}) }
         }
-        return { ok: true, json: async () => ({ full_url: 'https://media.example/out.png' }) }
+        return { ok: true, status: 202, json: async () => GEN_PENDING }
+      }
+      if (text.includes('/poll')) {
+        return { ok: true, status: 200, json: async () => GEN_DONE }
+      }
+      if (text.includes('/content/')) {
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
       }
       if (text === 'https://media.example/out.png') {
         return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
@@ -265,8 +296,8 @@ test('filename 失效自愈：生成 500 时按画布节点反查本地资产重
     })
 
     assert.equal(genCount, 2, '应恰好自动重试一次')
-    assert.equal(genBodies[0].image1, 'stale.png')
-    assert.equal(genBodies[1].image1, ASSET_HANDLE(1), '重试应携带重传后的新句柄（asset_id）')
+    assert.equal(genBodies[0].inputs[0].asset_id, 'stale.png')
+    assert.equal(genBodies[1].inputs[0].asset_id, ASSET_HANDLE(1), '重试应携带重传后的新句柄（asset_id）')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
     // 节点 filename 回写为新名（后续调用直达，不再触发自愈）。
     const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === ASSET_HANDLE(1)))
@@ -286,7 +317,7 @@ test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺�
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
       }
-      if (init.method === 'POST' && text.includes('image2image')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
         genCount += 1
         return { ok: false, status: 500, text: async () => 'Internal Server Error', json: async () => ({}) }
       }
@@ -299,7 +330,7 @@ test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺�
         // C-4：自愈无对象时不再裸抛后端 502——包一层可行动解释，原始报错保留尾部。
         assert.match(error.message, /参考文件句柄已失效/)
         assert.match(error.message, /重新上传该素材取得新句柄/)
-        assert.match(error.message, /Internal Server Error/, '原始报错保留在消息尾部供排查')
+        assert.match(error.message, /HTTP 500/, '原始报错（结构化状态码）保留在消息尾部供排查')
         return true
       },
     )
@@ -340,28 +371,23 @@ test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样�
       }
       const assetHandled = assetUploadBranch(text, init)
       if (assetHandled !== null) return assetHandled
-      if (init.method === 'POST' && text.includes('image2videofl2va')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        // 迁移 B3-2：业务 API 创建——参考句柄失效 → 404 not_found（结构化 code；
+        // isBadReferenceError 按 httpStatus 判定，与旧「502+detail 无 HTTP 字样」同防）。
         genBodies.push(JSON.parse(init.body))
         genCount += 1
-        if (genCount <= 2) {
-          // 2026-09-24 实测的后端 0.5.0 形态（docs/api-probe/video-jobs-20260924）：
-          // 参考文件不存在 → 502 + body detail；消息里没有「HTTP 5xx」字样，
-          // 旧的消息正则失配 → 自愈被跳过（事故中 21 连败的放大器）。
-          // 前两次 = dramaPost 对 502 的内部自动重试 + 自愈前的首次提交；
-          // 重传换句柄后的第三次才应成功。
-          const body = JSON.stringify({ detail: '请求失败: 400 Client Error: Bad Request for url: http://127.0.0.1:8188/prompt' })
-          return { ok: false, status: 502, json: async () => JSON.parse(body), text: async () => body }
+        if (genCount === 1) {
+          // 首拍 = legacy 句柄失效（404 not_found）；自愈换句柄后二拍成功
+          //（新引擎不自动重试 POST，重试即自愈换键）。
+          return { ok: false, status: 404, json: async () => ({ error: { code: 'not_found', message: 'asset missing' } }), text: async () => '' }
         }
         submitOk += 1
-        return { ok: true, status: 202, json: async () => ({ job_id: 'job-heal', status: 'pending' }) }
+        return { ok: true, status: 202, json: async () => GEN_PENDING }
       }
-      if (text.includes('/api/v1/jobs/job-heal/result')) {
-        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-heal', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 }) }
+      if (text.includes('/poll')) {
+        return { ok: true, status: 200, json: async () => GEN_DONE_VIDEO }
       }
-      if (text.includes('/api/v1/jobs/job-heal')) {
-        return { ok: true, status: 200, json: async () => ({ job_id: 'job-heal', status: 'completed', execution_error: null }) }
-      }
-      if (text === 'https://media.example/out.mp4') {
+      if (text.includes('/content/')) {
         return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
       }
       return { ok: false, status: 404 }
@@ -373,10 +399,9 @@ test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样�
       duration: 5,
     })
 
-    assert.equal(genCount, 3, '502 内部重试一次 + 自愈重传后再提交一次，共三次')
-    assert.equal(genBodies[0].image1, 'stale.png')
-    assert.equal(genBodies[1].image1, 'stale.png', 'dramaPost 的内部重试不换名（自愈还没介入）')
-    assert.equal(genBodies[2].image1, ASSET_HANDLE(1), '自愈后的提交应携带重传的新句柄（asset_id）')
+    assert.equal(genCount, 2, '首拍失效 + 自愈换句柄重拍，共两次（新引擎不自动重试 POST）')
+    assert.equal(genBodies[0].inputs[0].asset_id, 'stale.png')
+    assert.equal(genBodies[1].inputs[0].asset_id, ASSET_HANDLE(1), '自愈后的提交应携带重传的新句柄（asset_id）')
     assert.ok(submitOk >= 1, '重试应提交成功（202 任务信封）')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'), '视频应成功落盘')
     const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === ASSET_HANDLE(1)))
@@ -517,8 +542,9 @@ test('video_composite 双图走首尾帧插值（fl2va）端点，时长被钳�
       duration: 30,
       filenames: ['a.png', 'b.png'],
     })
-    const gen = calls.find((call) => call.url.includes('/generate/'))
-    assert.ok(gen.url.includes('image2videofl2va'), `期望 fl2va 端点，实际 ${gen.url}`)
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.operation, 'image2videofl2va', `期望 fl2va，实际 ${gen.operation}`)
     const node = registry.getWrites()[0].nodes[0]
     assert.equal(node.duration, 15)
   } finally {
@@ -533,17 +559,16 @@ test('api.md 契约：video_generate → image2videofl2va 首帧模式（image1=
     await generateAsset(stubRegistry([], dir), 'video_generate', 'p1', {
       prompt: 'p', aspectRatio: '16:9', duration: 8.6, filename: 'bg.png',
     })
-    const gen = calls.find((call) => call.url.includes('image2videofl2va'))
-    assert.ok(gen, '缺少 image2videofl2va 调用')
-    assert.equal(gen.body.prompt, 'p')
-    assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
-    assert.equal(gen.body.image1, 'bg.png')
-    assert.equal(gen.body.duration, 9) // clampDuration(8.6,5)→9
-    assert.equal(gen.body.image2, undefined) // 未提供尾帧
-    assert.equal(gen.body.background, undefined) // 不再走 msr
-    assert.equal(gen.body.width, undefined)
-    assert.equal(gen.body.fps, undefined)
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.model, 'video.minimax_h3')
+    assert.equal(gen.operation, 'image2videofl2va')
+    assert.equal(gen.input.prompt, 'p')
+    assert.equal(gen.input.aspect, '16:9')
+    assert.equal(gen.input.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
+    assert.deepEqual(gen.inputs.map((i) => `${i.role}:${i.ordinal}`), ['image:1'], '首帧 = ordinal 1')
+    assert.equal(gen.inputs[0].asset_id, 'bg.png')
+    assert.equal(gen.input.duration, 9) // clampDuration(8.6,5)→9
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -556,11 +581,11 @@ test('api.md 契约：video_generate 无 filename → image2videofl2va 文生视
     await generateAsset(stubRegistry([], dir), 'video_generate', 'p1', {
       prompt: 'p', aspectRatio: '9:16', duration: 5,
     })
-    const gen = calls.find((call) => call.url.includes('image2videofl2va'))
-    assert.ok(gen, '缺少 image2videofl2va 调用')
-    assert.equal(gen.body.aspect, '9:16')
-    assert.equal(gen.body.image1, undefined)
-    assert.equal(gen.body.image2, undefined)
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.operation, 'image2videofl2va')
+    assert.equal(gen.input.aspect, '9:16')
+    assert.deepEqual(gen.inputs, [], '纯文生视频不带任何引用')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -573,13 +598,15 @@ test('api.md 契约：video_composite 双图 → image2videofl2va 请求体（as
     await generateAsset(stubRegistry([], dir), 'video_composite', 'p1', {
       prompt: 'p', aspectRatio: '9:16', duration: 6, filenames: ['a.png', 'b.png'],
     })
-    const gen = calls.find((call) => call.url.includes('image2videofl2va'))
-    assert.ok(gen, '缺少 image2videofl2va 调用')
-    assert.equal(gen.body.aspect, '9:16')
-    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
-    assert.equal(gen.body.duration, 6)
-    assert.equal(gen.body.image1, 'a.png')
-    assert.equal(gen.body.image2, 'b.png')
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.operation, 'image2videofl2va')
+    assert.equal(gen.input.aspect, '9:16')
+    assert.equal(gen.input.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
+    assert.equal(gen.input.duration, 6)
+    assert.deepEqual(gen.inputs.map((i) => `${i.role}:${i.asset_id}:${i.ordinal}`), [
+      'image:a.png:1', 'image:b.png:2',
+    ], '双图 = 首帧/尾帧（ordinal 1/2）')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -592,16 +619,15 @@ test('api.md 契约：video_composite 多图 → image2videoref2va（image1..ima
     await generateAsset(stubRegistry([], dir), 'video_composite', 'p1', {
       prompt: 'p', aspectRatio: '16:9', duration: 10, filenames: ['a.png', 'b.png', 'c.png'],
     })
-    const gen = calls.find((call) => call.url.includes('image2videoref2va'))
-    assert.ok(gen, '缺少 image2videoref2va 调用')
-    assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
-    assert.equal(gen.body.duration, 10)
-    assert.equal(gen.body.image1, 'a.png')
-    assert.equal(gen.body.image2, 'b.png')
-    assert.equal(gen.body.image3, 'c.png')
-    assert.equal(gen.body.images, undefined) // 不再走 mkr 的 images[]/frame_index
-    assert.equal(gen.body.fps, undefined)
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.operation, 'image2videoref2va')
+    assert.equal(gen.input.aspect, '16:9')
+    assert.equal(gen.input.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
+    assert.equal(gen.input.duration, 10)
+    assert.deepEqual(gen.inputs.map((i) => `${i.role}:${i.asset_id}:${i.ordinal}`), [
+      'image:a.png:1', 'image:b.png:2', 'image:c.png:3',
+    ])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -798,16 +824,18 @@ test('CV-189 契约：image_generate 多参考（4 张）→ image2image 端点�
       aspectRatio: '1:1',
       filenames: ['r1.png', 'r2.png', 'r3.png', 'r4.png'],
     })
-    const gen = calls.find((call) => call.url.includes('image2image'))
-    assert.ok(gen, '缺少 image2image 调用')
-    assert.equal(gen.body.prompt, '融合四张参考图')
-    assert.equal(gen.body.image1, 'r1.png')
-    assert.equal(gen.body.image2, 'r2.png')
-    assert.equal(gen.body.image3, 'r3.png')
-    assert.equal(gen.body.image4, 'r4.png')
-    assert.ok(gen.body.width > 0 && gen.body.height > 0, '缺少尺寸参数')
-    // 多参考走图生图，绝对不应落入文生图端点。
-    assert.ok(!calls.some((call) => call.url.includes('txt2image')), '多参考误走 txt2image')
+    // 迁移 B3-2：业务 API 契约 —— model/operation 路由 + inputs[]（role/ordinal）。
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.equal(gen.model, 'image.qwen-image-2.1', '带参考 → Qwen 图生图（目录唯一 image2image 声明者）')
+    assert.equal(gen.operation, 'image2image')
+    assert.equal(gen.input.prompt, '融合四张参考图')
+    assert.deepEqual(gen.inputs.map((i) => `${i.role}:${i.asset_id}:${i.ordinal}`), [
+      'image:r1.png:1', 'image:r2.png:2', 'image:r3.png:3', 'image:r4.png:4',
+    ])
+    assert.ok(gen.input.width > 0 && gen.input.height > 0, '缺少尺寸参数')
+    // 多参考走图生图，绝不落纯文生图模型。
+    assert.ok(gen.model !== 'image.krea2', '多参考误走 Krea2 文生图')
     // 单 filename 仍兼容：应与 filenames 互斥回退。
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -822,13 +850,11 @@ test('CV-189 契约：image_generate filenames 超过 4 张只取前 4 张并告
       prompt: 'p',
       filenames: ['a.png', 'b.png', 'c.png', 'd.png', 'e.png'],
     })
-    const gen = calls.find((call) => call.url.includes('image2image'))
-    assert.ok(gen, '缺少 image2image 调用')
-    assert.equal(gen.body.image1, 'a.png')
-    assert.equal(gen.body.image2, 'b.png')
-    assert.equal(gen.body.image3, 'c.png')
-    assert.equal(gen.body.image4, 'd.png', '第 4 张应映射 image4（CV-189 起 4 个槽位）')
-    assert.equal(gen.body.image5, undefined, '超出 4 张应被截断')
+    const gen = calls.gen.createBodies[0]
+    assert.ok(gen, '缺少业务 API 创建请求')
+    assert.deepEqual(gen.inputs.map((i) => i.asset_id), ['a.png', 'b.png', 'c.png', 'd.png'],
+      '只取前 4 张（image2image 规格上限 4）')
+    assert.equal(gen.inputs.length, 4, '超出 4 张应被截断')
     assert.ok(
       (result.warnings ?? []).some((w) => w.includes('最多 4 张生效') && w.includes('e.png')),
       '超限应显式告警并点名被忽略的文件',
@@ -838,7 +864,7 @@ test('CV-189 契约：image_generate filenames 超过 4 张只取前 4 张并告
   }
 })
 
-test('P8.2 契约：image_generate 单 filename 仍走 image2image（image1），不触发 txt2image', async () => {
+test('P8.2 契约：image_generate 单 filename 仍走 image2image（inputs 1 项），不触发纯文生图', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-imgref3-'))
   try {
     const calls = stubFetch('https://media.example/out.png')
@@ -846,73 +872,10 @@ test('P8.2 契约：image_generate 单 filename 仍走 image2image（image1）�
       prompt: 'p',
       filename: 'solo.png',
     })
-    const gen = calls.find((call) => call.url.includes('image2image'))
+    const gen = calls.gen.createBodies[0]
     assert.ok(gen, '单 filename 应走 image2image')
-    assert.equal(gen.body.image1, 'solo.png')
-    assert.equal(gen.body.image2, undefined)
-    assert.ok(!calls.some((call) => call.url.includes('txt2image')))
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('CV-202 契约：image_fix → image2fix 端点（prompt + image，不收 width/height）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix-'))
-  try {
-    const calls = stubFetch('https://media.example/out.png')
-    await generateAsset(stubRegistry([], dir), 'image_fix', 'p1', {
-      prompt: '把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变',
-      filename: 'poster.png',
-    })
-    const gen = calls.find((call) => call.url.includes('image2fix'))
-    assert.ok(gen, '缺少 image2fix 调用')
-    assert.equal(gen.body.prompt, '把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变')
-    assert.equal(gen.body.image, 'poster.png')
-    assert.equal(gen.body.width, undefined, 'image2fix 不收 width（改图接口，尺寸跟随输入图）')
-    assert.equal(gen.body.height, undefined, 'image2fix 不收 height')
-    assert.ok(!calls.some((call) => call.url.includes('txt2image')), 'image_fix 不应误走文生图端点')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('CV-202 契约：image_fix 缺 filename 报错，不发任何生成请求', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix2-'))
-  try {
-    const calls = stubFetch('https://media.example/out.png')
-    await assert.rejects(
-      () => generateAsset(stubRegistry([], dir), 'image_fix', 'p1', { prompt: '修复文字' }),
-      /缺少必需参数「filename」/,
-    )
-    assert.equal(calls.length, 0, '缺 filename 不应发起任何生成请求')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('CV-202：image_fix 产物尺寸从 PNG 头实测落盘（端点不收 width/height，声明值无意义）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix3-'))
-  try {
-    // 真实 PNG 头：IHDR 宽 0x00000400=1024、高 0x00000300=768。
-    const PNG_BYTES = new Uint8Array([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-      0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x03, 0x00,
-      0x08, 0x06, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
-    ])
-    stubFetch('https://media.example/fixed.png', PNG_BYTES)
-    const registry = stubRegistry([], dir)
-    const result = await generateAsset(registry, 'image_fix', 'p1', {
-      prompt: '修复文字',
-      filename: 'poster.png',
-    })
-    assert.equal(result.width, 1024, '结果回实测宽（非档位声明 1376）')
-    assert.equal(result.height, 768, '结果回实测高（非档位声明 768）')
-    const saved = registry.getWrites()[0].nodes[0]
-    assert.equal(saved.mediaWidth, 1024, '节点 mediaWidth 取实测值')
-    assert.equal(saved.mediaHeight, 768, '节点 mediaHeight 取实测值')
-    assert.equal(saved.kind, 'image')
-    assert.equal(saved.isReference, true, '修复产物默认仍为可复用参考')
+    assert.deepEqual(gen.inputs.map((i) => `${i.role}:${i.asset_id}`), ['image:solo.png'])
+    assert.equal(gen.model, 'image.qwen-image-2.1')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -948,11 +911,12 @@ test('2026-09-11 收敛：inpaint / style_transfer / storyboard_generate / story
   const dir = await mkdtemp(join(tmpdir(), 'cs-removed-'))
   try {
     const names = createStudioTools(stubRegistry([], dir), 0).map((tool) => tool.name)
-    for (const gone of ['inpaint', 'style_transfer', 'storyboard_generate', 'storyboard_split']) {
+    // 迁移 B3-2（拍板 ①）：image_fix（Boogu 改字）随后端 8082 一并下线——新目录无承载模型。
+    for (const gone of ['inpaint', 'style_transfer', 'storyboard_generate', 'storyboard_split', 'image_fix']) {
       assert.ok(!names.includes(gone), `${gone} 不应再注册（共 ${names.length} 个工具）`)
     }
-    // 反证：删除只针对这 4 个，其余工具必须还在。
-    for (const kept of ['image_generate', 'image_fix', 'character_sheet', 'video_generate', 'video_composite', 'music_generation', 'compose_video', 'qc_shot']) {
+    // 反证：删除只针对这批，其余工具必须还在。
+    for (const kept of ['image_generate', 'character_sheet', 'video_generate', 'video_composite', 'music_generation', 'compose_video', 'qc_shot']) {
       assert.ok(names.includes(kept), `${kept} 不应被误删`)
     }
   } finally {
@@ -1158,19 +1122,22 @@ test('CV-239：用户打断（生成中 abort）→ 取消码 CS-GEN-207 原样�
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
       }
-      if (init.method === 'POST' && text.includes('image2videofl2va')) {
-        return { ok: true, status: 202, json: async () => ({ job_id: 'job-abort', status: 'pending' }) }
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        // 迁移 B3-3：业务 API 创建 202 → 轮询循环；打断由 followGeneration 内建
+        //（自动 POST /cancel 后抛取消码）。
+        return { ok: true, status: 202, json: async () => ({ id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'queued', version: 1, progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null }) }
       }
-      if (text.includes('/api/v1/jobs/job-abort/result')) {
-        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-abort', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 }) }
+      if (text.includes('/cancel')) {
+        return { ok: true, status: 202, json: async () => ({ id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'canceled', version: 3, progress: 0, billing_status: 'released', terminal: true, outputs: [], error: null }) }
       }
-      if (text.includes('/api/v1/jobs/job-abort')) {
-        // 第一次状态查询时打断 —— 模拟用户在轮询期间按了停止。
+      if (text.includes('/poll')) {
+        // 第一次轮询时打断 —— 模拟用户在轮询期间按了停止（引擎在步进等待中被
+        // 唤醒 → cancel 远端 → CS-GEN-207）。
         if (!abortArmed) {
           abortArmed = true
           controller.abort()
         }
-        return { ok: true, status: 200, json: async () => ({ job_id: 'job-abort', status: 'in_progress', execution_error: null }) }
+        return { ok: true, status: 200, json: async () => ({ id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'running', version: 1, progress: 10, billing_status: 'held', terminal: false, outputs: [], error: null }) }
       }
       return { ok: false, status: 404 }
     }
@@ -1229,16 +1196,19 @@ test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 s
       }
       const assetHandled = assetUploadBranch(text, init)
       if (assetHandled !== null) return assetHandled
-      if (init.method === 'POST' && text.includes('image2image')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        // 迁移 B3-2：业务 API 创建——首拍 404（legacy 句柄失效）→ 自愈换句柄后二拍成功
+        //（新引擎不自动重试 POST，重试即自愈换键）。
         genCount += 1
-        if (genCount <= 2) {
-          // 前两次 = dramaPost 对 502 的内部自动重试 + 自愈前的首次提交；重传换句柄后第三次才成功。
-          const body = JSON.stringify({ detail: '请求失败: 400 Client Error: Bad Request for url: http://127.0.0.1:8188/prompt' })
-          return { ok: false, status: 502, json: async () => JSON.parse(body), text: async () => body }
+        if (genCount === 1) {
+          return { ok: false, status: 404, json: async () => ({ error: { code: 'not_found', message: 'asset missing' } }), text: async () => '' }
         }
-        return { ok: true, json: async () => ({ full_url: 'https://media.example/out.png' }) }
+        return { ok: true, status: 202, json: async () => GEN_PENDING }
       }
-      if (text === 'https://media.example/out.png') {
+      if (text.includes('/poll')) {
+        return { ok: true, status: 200, json: async () => GEN_DONE }
+      }
+      if (text.includes('/content/')) {
         return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
       }
       return { ok: false, status: 404 }
@@ -1249,7 +1219,7 @@ test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 s
       filename: 'stale.png',
     })
 
-    assert.equal(genCount, 3, '502 内部重试一次 + 自愈换名重试成功，共三次')
+    assert.equal(genCount, 2, '首次提交失败 + 自愈换句柄重试成功，共两次（无 POST 内部重试）')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'), '产物正常落盘')
     const saved = nodes.find((node) => node.id !== 'src1')
     assert.ok(saved, '新图节点已落卡')
@@ -1369,7 +1339,7 @@ test('D-2：video_generate 首尾帧书挡的尾帧节点进血缘（sourceIds �
     const video = nodes.find((n) => n.id !== 'head1' && n.id !== 'tail1')
     assert.ok(video, '视频节点已落卡')
     assert.deepEqual(video.sourceIds, ['head1', 'tail1'], '首帧与尾帧两条血缘都连上（尾帧此前缺失）')
-    assert.equal(calls.some((c) => String(c.url).includes('image2videofl2va')), true, '走首尾帧插值端点')
+    assert.equal(calls.gen.createBodies[0]?.operation, 'image2videofl2va', '首帧+尾帧书挡 = first-last-frame 能力（ordinal 1/2）')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

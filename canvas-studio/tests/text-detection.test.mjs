@@ -192,14 +192,4 @@ test('DEFAULT_TEXT_CONSTRAINT: 逐字还原约束必须覆盖「替换 / 增删 
 
 // ───────────────────────── CV-218：接线守卫 ─────────────────────────
 
-test('接线：runTextAutoFix 必须收下原 prompt，并从它构造修复 prompt', () => {
-  assert.match(HOST_TOOLS_CODE, /async function runTextAutoFix\([\s\S]*?originalPrompt: string/)
-  assert.match(HOST_TOOLS_CODE, /buildTextFixPrompt\(originalPrompt\)/)
-})
-
-test('接线：image_generate 调用点必须把 a.prompt 传进去（漏传 = 退回字符清单形态）', () => {
-  assert.match(
-    HOST_TOOLS_CODE,
-    /runTextAutoFix\(registry, projectId, portOf, result, a\.prompt, decision\.quotedTexts/,
-  )
-})
+// 迁移 B3-2（拍板①）：Boogu 改字特化随后端改版下线，CV-212 自动修复链与接线守卫一并删除。

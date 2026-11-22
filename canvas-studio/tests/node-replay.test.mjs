@@ -100,11 +100,22 @@ function stubMusicFetch() {
   globalThis.fetch = async (url, init = {}) => {
     const text = String(url)
     if (text.includes('/api/v1/health')) return healthOk()
-    if (init.method === 'POST' && text.includes('txt2audio')) {
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
       calls.push({ kind: 'audio', body: JSON.parse(init.body) })
-      return { ok: true, status: 200, json: async () => ({ filename: 'audio_00002_.mp3', full_url: AUDIO_URL }) }
+      return { ok: true, status: 202, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000002', operation: 'txt2audio', status: 'queued', version: 1,
+        progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+      }) }
     }
-    if (text === AUDIO_URL) {
+    if (text.includes('/poll')) {
+      return { ok: true, status: 200, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000002', operation: 'txt2audio', status: 'succeeded', version: 2,
+        progress: 100, billing_status: 'held', terminal: true,
+        outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+        error: null,
+      }) }
+    }
+    if (text.includes('/content/')) {
       calls.push({ kind: 'download' })
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
@@ -145,10 +156,11 @@ test('music_generation 重放：原地重写 + 蛇形参数进请求体 + retryO
     })
 
     const body = calls.find((call) => call.kind === 'audio').body
-    assert.equal(body.caption_prompt, 'lofi hip hop')
-    assert.equal(body.duration, 20, 'duration 应原样回放，不是默认 30')
-    // 0.7.0 对拍：旧节点参数里残留的 bpm（Yue2 工作流不消费）重放时直接忽略
-    assert.equal('bpm' in body, false, 'bpm 是不消费的兼容字段，不许进请求体')
+    // 迁移 B3-2：业务 API input（prompt/lyrics/duration；caption_prompt 等蛇形旧键随 8082 退役）。
+    assert.equal(body.input.prompt, 'lofi hip hop')
+    assert.equal(body.input.duration, 20, 'duration 应原样回放，不是默认 30')
+    // 0.7.0 对拍：旧节点参数里残留的 bpm（工作流不消费）重放时直接忽略
+    assert.equal('bpm' in body.input, false, 'bpm 是不消费的兼容字段，不许进请求体')
     assert.ok(!('retryOf' in body), 'retryOf 是本地锚点，不许进后端请求体')
 
     assert.equal(result.nodeId, 'a1', '重放复用原节点 id')
@@ -214,11 +226,22 @@ function stubSheetFetch() {
   globalThis.fetch = async (url, init = {}) => {
     const text = String(url)
     if (text.includes('/api/v1/health')) return healthOk()
-    if (init.method === 'POST' && text.includes('image2character')) {
-      calls.push({ kind: 'sheet', image: JSON.parse(init.body).image })
-      return { ok: true, status: 200, json: async () => ({ full_url: SHEET_URL, filename: 'sheet-2.png' }) }
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+      calls.push({ kind: 'sheet', image: JSON.parse(init.body).inputs?.[0]?.asset_id })
+      return { ok: true, status: 202, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000003', operation: 'image2character', status: 'queued', version: 1,
+        progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+      }) }
     }
-    if (text === SHEET_URL) {
+    if (text.includes('/poll')) {
+      return { ok: true, status: 200, json: async () => ({
+        id: 'cccccccc-cccc-4ccc-8ccc-000000000003', operation: 'image2character', status: 'succeeded', version: 2,
+        progress: 100, billing_status: 'held', terminal: true,
+        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL }],
+        error: null,
+      }) }
+    }
+    if (text.includes('/content/')) {
       calls.push({ kind: 'download' })
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([5, 5, 5]) }
     }

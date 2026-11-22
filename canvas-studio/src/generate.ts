@@ -18,6 +18,7 @@ import {
   newAssetId,
   sizeForAspectRatio,
 } from './config.js'
+import { BUSINESS_MODEL_CODES } from './config.js'
 import { resolveResolution } from './resolution-resolve.js'
 import { DEFAULT_VIDEO_RESOLUTION_ID, frameOf } from './resolution-tiers.js'
 import type { ProjectRegistry } from './projects.js'
@@ -27,14 +28,26 @@ import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from '.
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, SEED_SHOT_TOOL, STORYBOARD_NODE_TOOL, isShotCard } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_BUSINESS_API_BASE, DEFAULT_DRAMA_API_BASE } from './host-config.js'
-import { DramaClient } from './drama-management.js'
+import { DramaClient, ApiError } from './drama-management.js'
 import { assetKindFromExtension, uploadAssetBytes } from './asset-upload.js'
+import {
+  createGenerationTask,
+  downloadGenerationContent,
+  followGeneration,
+  newIdempotencyKey,
+  IMAGE_CONTENT_LIMITS,
+  type GenerationEngineDeps,
+  type GenerationRef,
+} from './generation-client.js'
+import type { GenerationOperation, GenerationSnapshot } from './contracts/generation.js'
+import { isGenerationId } from './contracts/generation.js'
+import type { CreateGenerationBody } from './generation-client.js'
 import { validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
 import { validateH3ReferenceBudget, validateH3VideoReferences } from './video-reference.js'
 import type { VideoReferenceInput } from './video-reference.js'
 // R-P1-03：图像模型路由统一决策点（endpoint 由纯函数逐次现算，见 model-route.ts）。
-import { normalizeImageModelOverride, routeImageModel } from './model-route.js'
+import { MODEL_ROUTE_TABLE, normalizeImageModelOverride, routeImageModel } from './model-route.js'
 import { extractTextSpec } from './text-detection.js'
 // 帧模式 ↔ 参考模式（r2v）互斥提示：音频与视频参考共用（原挂在 audio-reference 下）。
 import { referenceModeNotice } from './reference-mode.js'
@@ -52,9 +65,8 @@ import { placementResolutionWarning, placementDurationWarning } from './remotion
 import { probeMediaDuration, probeMediaInfo } from './ffmpeg-run.js'
 import { postProcessSpeech } from './speech-post.js'
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
-import { longRequestDispatcher } from './long-request.js'
 // CV-220：宿主侧单通道生成队列——同步单任务后端的并发收敛与位次可见。
-import { withGenerateSlot } from './generate-queue.js'
+import { acquireInFlight } from './generate-queue.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
 import type { VideoCapability } from './providers/types.js'
@@ -69,13 +81,12 @@ import { registerBuiltinVideoProviders } from './providers/index.js'
 // 阶段二：统一错误处理系统 —— throwError 依赖已登记的错误码（副作用自注册 catalog）。
 import { makeCanvasError, sanitizeForUser, throwError } from './error-system.js'
 import { isAssetFileName, resolveAssetPathIn } from './asset-path.js'
-import type { CanvasStudioError } from './error-system.js'
+import { CanvasStudioError } from './error-system.js'
 import './errors/catalog.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
 import { normalizeVideoAspect } from './providers/types.js'
-// Drama 异步任务台账（jobs.json）：job_id 落地 / 状态回写 / 重启恢复（后端 0.5.0）。
-import { isTerminalJobPhase, readDramaJobs, recordDramaJobSubmitted, updateDramaJobStatus } from './video-jobs.js'
-import type { DramaVideoJobRecord } from './video-jobs.js'
+// Drama 异步任务台账（jobs.json）：提交落地 / 状态回写 / 重启恢复（v2 = 业务 API）。
+import { isTerminalJobPhase, readDramaJobs, recordGenerationIntent, recordGenerationSubmitted, updateDramaJobStatus, updateGenerationSnapshot, type DramaVideoJobRecord, type GenerationIntentRecord } from './video-jobs.js'
 // CV-195：抽帧节点（extract_last_frame）的重放适配要把请求转给它的生产函数。
 // 这是一个**双向**依赖（video-frames 也用本模块的 uploadBytesToDrama），ESM 的
 // 函数声明提升让它在运行时无碍 —— 两边都只在函数体内互相调用，没有顶层求值顺序依赖。
@@ -656,92 +667,6 @@ export async function ensureDramaReachable(signal?: AbortSignal): Promise<DramaQ
 }
 
 /**
- * 清缓存后**重探一次**队列深度，用于出错时的现场诊断。
- * 探测本身失败不抛 —— 调用方已经在报错路径上，不能被探针的错误盖掉真因。
- */
-async function probeQueueDepthNow(signal?: AbortSignal): Promise<DramaQueueDepth> {
-  resetDramaProbeCache()
-  try {
-    return await ensureDramaReachable(signal)
-  } catch {
-    return null
-  }
-}
-
-/**
- * 带超时与一次性自动重试的 Drama POST（网络错误 / 502/503/504 时重试）。
- *
- * CV-135：① 按请求注入长超时 dispatcher —— Node 内置 fetch 的隐形 300s 上限会
- * **先于**本函数的 AbortSignal 触发，不抬高它的话 `timeoutMs` 形同虚设（见
- * long-request.ts）；② **本地超时不再重试** —— Drama 是同步阻塞式生成，重试等于
- * 再等一个完整的 timeoutMs（视频 600s → 最坏 20 分钟才报错），而首个超时的原因
- * （后端繁忙 / 时长过长）几乎不会自愈。
- */
-async function dramaPost(
-  endpoint: string,
-  init: RequestInit,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<Response> {
-  // P2 鉴权闸：未登录先拦（零网络、零副作用），客户端弹登录窗后由 agent 重试。
-  requireDramaAuth()
-  // G1 余额闸：只在「确定读到余额见底」时拦（fail-open，见函数注释）。
-  requireCreditsForGeneration()
-  // 探针前置：宕机时在这里就抛中文错误，不进入生成请求的长超时。
-  await ensureDramaReachable(signal)
-  const dispatcher = longRequestDispatcher()
-  let lastError: unknown
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const timeout = AbortSignal.timeout(timeoutMs)
-    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout
-    // dispatcher 取不到时保持 fetch 默认行为（不加该字段），生成主流程不受影响。
-    // P2：Bearer 头在重试循环内每次现取 —— 首次 401 后 client 可能已重推新 token。
-    const requestInit = {
-      ...init,
-      headers: { ...dramaAuthHeaders(), ...(init.headers as Record<string, string> | undefined) },
-      signal: composed,
-    } as RequestInit & { dispatcher?: unknown }
-    if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
-    let response: Response
-    try {
-      response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, requestInit)
-    } catch (cause) {
-      // 用户主动打断不重试、不改写错误 —— 但要**归一成取消码**（CV-239：CS-GEN-207），
-      // 客户端据此移除占位而不是标红「生成失败」（取消不是故障）。
-      if (signal?.aborted) {
-        throw makeCanvasError('CS-GEN-207', { detail: cause instanceof Error ? cause.message : String(cause) })
-      }
-      // 本地超时（timeout 先于用户 signal 触发）：如实报出上限并放弃重试。
-      if (timeout.aborted) {
-        // CV-219：超时是最需要「现场信息」的时刻 —— 重探一次队列深度，把「后端到底
-        // 有没有在忙」讲清楚，而不是含糊地说「可能繁忙」。
-        const depth = await probeQueueDepthNow(signal)
-        const queueNote = depth === null
-          ? '后端队列深度未知'
-          : depth > 0 ? `后端当前有 ${depth} 个任务在执行` : '后端当前空闲'
-        throwError('CS-GEN-204', { n: Math.round(timeoutMs / 1000), note: queueNote })
-      }
-      lastError = cause
-      if (attempt === 0) continue
-      throwError('CS-NET-001', { cause: cause instanceof Error ? cause.message : String(cause) })
-    }
-    // P2：401 = 登录态缺失/失效 —— 判定必须在 try **之外**（放在里面会被上方的
-    // 网络错误分支捕获并按「可重试」处理，401 就变成了 CS-NET-001），也不属于
-    // 可重试的 5xx；立即转 CS-AUTH-001 交给客户端自愈链（静默续期重推 → 仍失败
-    // 弹登录窗）。
-    if (response.status === 401) {
-      throwError('CS-AUTH-001', { detail: 'Drama Backend rejected the bearer token (HTTP 401)' })
-    }
-    if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt === 0) {
-      lastError = new Error(`Drama Backend 暂时不可用（HTTP ${response.status}），已自动重试一次`)
-      continue
-    }
-    return response
-  }
-  throwError('CS-GEN-206', { safe: sanitizeForUser(lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败')), detail: lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败') })
-}
-
-/**
  * 将相对 URL 解析为 loopback 绝对 URL（Host 端 fetch 用）。
  * 浏览器端 <img src> 能自动解析同源相对路径，但 Node 原生 fetch 不支持，
  * 而 image_generate 返回的产物 URL 是相对路径（/canvas-studio/assets/...），
@@ -875,6 +800,251 @@ function dramaGenerationClient(): DramaClient {
     platform: () => process.platform,
     appVersion: () => '0',
   })
+}
+
+/** 生成引擎依赖现取（token 每请求现取——401 自愈链靠 client 刷新后重推）。 */
+function businessEngineDeps(): GenerationEngineDeps {
+  return { client: dramaGenerationClient(), token: () => getAuthSession()?.accessToken ?? '' }
+}
+
+/**
+ * 【台账 v2】business 视频记录的完整恢复（Host 启动 watcher 调用）：
+ * - intent 占位记录（创建响应丢失）→ 按原 key + 原 body **重放创建**（§6.8 幂等纪律）；
+ * - 有 generationId → 从台账 version 游标续 `/poll` 长轮询；
+ * - 终态 succeeded → content 下载 → 共享结算落盘（与正常路径同一份
+ *   `persistGeneratedAsset`，字段口径不漂移）；其余终态只回写台账。
+ */
+export async function resumeBusinessGenerationRecord(
+  registry: ProjectRegistry,
+  record: DramaVideoJobRecord,
+): Promise<void> {
+  const projectId = record.projectId
+  const deps = businessEngineDeps()
+  let snapshot: GenerationSnapshot
+  if (record.intent !== undefined && !isGenerationId(record.jobId)) {
+    const intent = record.intent
+    snapshot = await deps.client.createGeneration(
+      deps.token(),
+      intent.body as CreateGenerationBody,
+      intent.key,
+      intent.clientRunId,
+    )
+    await recordGenerationSubmitted(registry, projectId, {
+      intentKey: intent.key,
+      generationId: snapshot.id,
+      version: snapshot.version,
+    })
+  } else {
+    snapshot = await deps.client.pollGeneration(deps.token(), record.jobId, record.version ?? 0, 25)
+  }
+  const final = await followGeneration(deps, snapshot, {
+    timeoutMs: DRAMA_TIMEOUT_MS.video,
+    onSnapshot: (s) => { void updateGenerationSnapshot(registry, projectId, s.id, s).catch(() => { /* 台账失败不阻断恢复 */ }) },
+  })
+  await updateGenerationSnapshot(registry, projectId, final.id, final).catch(() => {})
+  if (final.status !== 'succeeded') return
+  const media = await downloadBusinessMedia(final, { label: '视频产物（恢复）', video: true })
+  let params: GenerateParams
+  try {
+    params = JSON.parse(record.params) as GenerateParams
+  } catch {
+    params = { prompt: '' }
+  }
+  await persistGeneratedAsset({
+    registry,
+    tool: record.toolName,
+    projectId,
+    params,
+    bytes: media.bytes,
+    dramaFilename: final.id,
+    isVideo: true,
+    size: sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, 'video')),
+    warnings: [],
+  })
+  await updateDramaJobStatus(registry, projectId, final.id, 'settled')
+}
+
+/**
+ * 协议层 ApiError → 工具上下文的 CS 码（调用侧翻译）。401 归一 CS-AUTH-001
+ * （登录自愈链入口码）；其余保留 `httpStatus`——参考自愈（isBadReferenceError）
+ * 按 400/404/5xx 判定「句柄失效值得一轮重传」，结构化状态码是它的判据。
+ */
+function businessErrorToGenerationError(tool: string, cause: unknown): Error {
+  if (cause instanceof ApiError) {
+    if (cause.code === 'unauthenticated' || cause.status === 401) {
+      return makeCanvasError('CS-AUTH-001', { detail: `业务 API 拒绝凭据（HTTP ${cause.status}）` })
+    }
+    return makeCanvasError('CS-GEN-206', {
+      safe: sanitizeForUser(`${tool} 生成失败：${cause.message}`),
+      detail: `${cause.code}（HTTP ${cause.status}）：${cause.message}`,
+      httpStatus: cause.status,
+    })
+  }
+  // 非 ApiError（fetch 的 TypeError 等）= 网络层故障：归一 CS-NET-001（旧 dramaPost
+  // 同码——用户拿到「请检查网络」而不是裸 'fetch failed'）。
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return makeCanvasError('CS-NET-001', { cause: message })
+}
+
+/** 业务 API 生成的一次产出（产物字节 + generation id 作句柄证据）。 */
+interface BusinessGenerationOutcome {
+  readonly bytes: Buffer
+  /** 终态快照的 generation id（落 `dramaFilename`——新 API 的产物没有可复用服务端文件名）。 */
+  readonly generationId: string
+}
+
+/**
+ * 业务 API 生成任务执行（创建 → 轮询到终态 succeeded 快照）。
+ * `label` 给了 = 占用生成槽位（媒体生成语义，沿用「整段生成占一槽」；B3-3 换宽度语义）；
+ * 不给 = 不占槽（理解/识别轻任务，与 callDramaRaw 同口径）。
+ * 幂等键每次现铸：本函数不自动重试 POST（网络重试与自愈换键在调用侧 heal 层做）。
+ */
+async function runBusinessGenerationTask(opts: {
+  tool: string
+  model: string
+  operation: GenerationOperation
+  input?: Record<string, unknown>
+  refs?: GenerationRef[]
+  timeoutMs: number
+  label?: string
+  signal?: AbortSignal
+}): Promise<GenerationSnapshot> {
+  const run = async (): Promise<GenerationSnapshot> => {
+    // G1 余额闸（B4 换 quote 硬闸前的兜底）：确定读到余额 ≤ 0 时拦。
+    requireCreditsForGeneration()
+    const deps = businessEngineDeps()
+    let snapshot: GenerationSnapshot
+    try {
+      snapshot = await createGenerationTask(deps, {
+        model: opts.model,
+        operation: opts.operation,
+        ...(opts.input !== undefined ? { input: opts.input } : {}),
+        refs: opts.refs ?? [],
+        idempotencyKey: newIdempotencyKey(),
+      }, { ...(opts.signal !== undefined ? { signal: opts.signal } : {}) })
+    } catch (cause) {
+      throw businessErrorToGenerationError(opts.tool, cause)
+    }
+    try {
+      const final = await followGeneration(deps, snapshot, {
+        timeoutMs: opts.timeoutMs,
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+      })
+      if (final.status !== 'succeeded') {
+        // 终态非 succeeded（failed/canceled/timeout）：错误详情取 error.code/message，
+        // 不下载输出（§7.6）。
+        const detail = final.error !== null ? `${final.error.code}: ${final.error.message}` : final.status
+        throwError('CS-GEN-206', {
+          safe: sanitizeForUser(`${opts.tool} 生成未成功（${final.status}）：${detail}`),
+          detail: `terminal=${final.status} ${detail}`,
+        })
+      }
+      return final
+    } catch (cause) {
+      // 打断（CS-GEN-207）与超时（CS-PROV-014）已是 CS 码，原样透传。
+      if (cause instanceof CanvasStudioError) throw cause
+      throw businessErrorToGenerationError(opts.tool, cause)
+    }
+  }
+  if (opts.label === undefined) return run()
+  // 迁移 B3-3 队列语义：**在途名额**（acquire 于创建前、release 于终态）——视频跑
+  // 40 分钟只占一个名额，不再挡其它创建；宽度 = min(maxParallel, 套餐并发上限)。
+  const lease = await acquireInFlight(opts.label, opts.signal)
+  try {
+    return await run()
+  } finally {
+    lease.release()
+  }
+}
+
+/** 业务 API 生成的一次产出（产物字节 + generation id 作句柄证据）。 */
+interface BusinessGenerationOutcome {
+  readonly bytes: Buffer
+  /** 终态快照的 generation id（落 `dramaFilename`——新 API 的产物没有可复用服务端文件名）。 */
+  readonly generationId: string
+}
+
+/**
+ * 业务 API 图像链路执行：创建 → 轮询到终态 → 下载首个二进制输出（content 端点）。
+ */
+async function runBusinessImage(
+  tool: string,
+  request: { model: string; operation: GenerationOperation; input: Record<string, unknown>; refs: GenerationRef[] },
+  opts: { label: string; signal?: AbortSignal },
+): Promise<BusinessGenerationOutcome> {
+  const final = await runBusinessGenerationTask({
+    tool,
+    model: request.model,
+    operation: request.operation,
+    input: request.input,
+    refs: request.refs,
+    timeoutMs: DRAMA_TIMEOUT_MS.image,
+    label: opts.label,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  })
+  const deps = businessEngineDeps()
+  const output = final.outputs.find((entry) => entry.content_url !== undefined)
+  if (output?.content_url === undefined) {
+    // 成功却没有二进制输出：契约漂移，宁可报结构异常也不静默。
+    throwError('CS-NET-010')
+  }
+  const bytes = await downloadGenerationContent(deps, final.id, output.ordinal, {
+    ...IMAGE_CONTENT_LIMITS,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  })
+  return { bytes, generationId: final.id }
+}
+
+/** 从终态快照取内联文本输出（image2vl / video2vl；§6.10 文本不调 content 端点）。 */
+function textOutputOf(final: GenerationSnapshot): string {
+  const text = final.outputs.find((entry) => typeof entry.text === 'string')?.text
+  if (text === undefined) throwError('CS-NET-010')
+  return text
+}
+
+/** 从终态快照取内联 JSON 输出的字符串字段（asr2txt 的 txt / txt_word / txt_segment）。 */
+function jsonTextFieldOf(final: GenerationSnapshot, key: string): string {
+  const output = final.outputs.find((entry) => typeof (entry as unknown as Record<string, unknown>)[key] === 'string')
+  const value = output === undefined ? undefined : (output as unknown as Record<string, string>)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+/** MIME → 资产扩展名（content 端点不回文件名，按产物 MIME 定落盘扩展名）。 */
+function extensionForMime(mime: string): string {
+  const table: Record<string, string> = {
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'audio/wav': 'wav',
+    'audio/x-wav': 'wav',
+    'audio/ogg': 'ogg',
+    'audio/webm': 'webm',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'video/webm': 'webm',
+  }
+  return table[mime.toLowerCase()] ?? 'bin'
+}
+
+/**
+ * 下载终态快照的首个二进制输出（音频/视频链路；图片档限长 32MB/4min——
+ * 30s 音乐与 15s 配音都远在限内；视频走 media 档）。
+ */
+async function downloadBusinessMedia(
+  final: GenerationSnapshot,
+  opts: { label: string; video?: boolean; signal?: AbortSignal },
+): Promise<{ bytes: Buffer; ext: string }> {
+  const output = final.outputs.find((entry) => entry.content_url !== undefined)
+  if (output?.content_url === undefined) throwError('CS-NET-010')
+  const deps = businessEngineDeps()
+  const bytes = await downloadGenerationContent(deps, final.id, output.ordinal, {
+    maxBytes: opts.video === true ? MEDIA_DOWNLOAD_MAX_BYTES : IMAGE_DOWNLOAD_MAX_BYTES,
+    timeoutMs: opts.video === true ? MEDIA_DOWNLOAD_TIMEOUT_MS : IMAGE_DOWNLOAD_TIMEOUT_MS,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  })
+  return { bytes, ext: extensionForMime(output.mime_type) }
 }
 
 /**
@@ -1169,24 +1339,6 @@ export async function saveLocalAssetBytes(
 }
 
 /** 统一解析失败响应：优先结构化字段，否则带出响应体片段（便于定位 500 真因）。 */
-async function describeError(response: Response): Promise<string> {
-  let message = `HTTP ${response.status}`
-  try {
-    const text = await response.text()
-    if (text.length > 0) {
-      try {
-        const data = JSON.parse(text) as { error?: { message?: string }; msg?: string; detail?: string }
-        message = data.error?.message || data.msg || data.detail || message
-      } catch {
-        message = text.slice(0, 200)
-      }
-    }
-  } catch {
-    /* keep default */
-  }
-  return message
-}
-
 /**
  * 生成类型的中文标签 —— 队列快照里给人看的那个词（CV-220）。
  *
@@ -1204,70 +1356,6 @@ export function generationLabelOf(endpoint: string): string {
     return '图片生成'
   }
   return '生成'
-}
-
-/**
- * 调用 Drama Backend 生成接口，返回**原始 JSON 响应体**。
- *
- * CV-220：本函数是同步生成的唯一网络入口 —— 图片 / 图内文字修复 / 角色四视图 /
- * 音乐全走这里（视频已改异步，见下）。队列接在这一层，既天然只拦同步 Drama
- * （provider-aware 是**结构**保证，不是分支判断），又保证这条规则只有一份实现。
- *
- * 后端 0.5.0 起视频提交也走本函数（经 `callWithFallbackJson`）——202 任务信封
- * `{job_id, ...}` 不是产物，故返回原始 JSON 由调用方自行解读（产物解析壳在
- * `callDrama`，任务信封解析在 drama adapter）。
- */
-async function callDramaJson(
-  endpoint: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-  kind: keyof typeof DRAMA_TIMEOUT_MS = 'image',
-): Promise<Record<string, unknown>> {
-  return withGenerateSlot(generationLabelOf(endpoint), signal, async () => {
-    const response = await dramaPost(
-      endpoint,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      DRAMA_TIMEOUT_MS[kind],
-      signal,
-    )
-    if (!response.ok) {
-      const detail = await describeError(response)
-      // CV-238：把 HTTP 状态码结构化地带在错误上（params.httpStatus）——0.5.0 后端把
-      // 「参考文件不存在」包成 502 + body detail（“请求失败: 400 Client Error…”），
-      // 消息里不再出现「HTTP 5xx」字样，消息正则会失配；参考图自愈按状态码判定。
-      throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail, httpStatus: response.status })
-    }
-    try {
-      return await response.json() as Record<string, unknown>
-    } catch {
-      // 响应不是合法 JSON：与「缺产物字段」同型，报结构异常。
-      throwError('CS-NET-010')
-    }
-  })
-}
-
-/**
- * 调用 Drama Backend 生成接口，取回产物 URL（`callDramaJson` 的产物解析壳）。
- * 兼容两种响应形态：`{full_url, filename}`（图片 / 音频 / 视频 result）与
- * `{data: [{url}]}`（历史形态）。
- */
-async function callDrama(
-  endpoint: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-  kind: keyof typeof DRAMA_TIMEOUT_MS = 'image',
-): Promise<{ url: string; filename?: string }> {
-  const data = await callDramaJson(endpoint, body, signal, kind)
-  const parsed = data as { full_url?: unknown; filename?: unknown; data?: Array<{ url?: unknown }> }
-  const rawUrl = typeof parsed.full_url === 'string' && parsed.full_url.length > 0
-    ? parsed.full_url
-    : typeof parsed.data?.[0]?.url === 'string' ? parsed.data[0]!.url : undefined
-  if (rawUrl === undefined) throwError('CS-NET-010')
-  return typeof parsed.filename === 'string' ? { url: rawUrl, filename: parsed.filename } : { url: rawUrl }
 }
 
 /**
@@ -1667,13 +1755,18 @@ export async function analyzeImage(
   signal?: AbortSignal,
   heal?: AnalyzeHealContext,
 ): Promise<string> {
-  const call = async (image: string): Promise<string> => {
-    const data = await callDramaRaw(DRAMA_ENDPOINTS.image2vl, {
-      image,
-      prompt,
-      system_prompt: systemPrompt,
-    }, signal)
-    return (data.output ?? data.msg ?? JSON.stringify(data)) as string
+  const call = async (handle: string): Promise<string> => {
+    // 迁移 B3-2：业务 API image.qwen3-vl @ image2vl；文本输出内联在快照（不调 content 端点）。
+    const final = await runBusinessGenerationTask({
+      tool: 'image2vl',
+      model: BUSINESS_MODEL_CODES.image2vl,
+      operation: 'image2vl',
+      input: { prompt, system_prompt: systemPrompt },
+      refs: [{ assetId: handle, role: 'image' }],
+      timeoutMs: DRAMA_TIMEOUT_MS.text,
+      ...(signal !== undefined ? { signal } : {}),
+    })
+    return textOutputOf(final)
   }
   try {
     return await call(filename)
@@ -1697,29 +1790,6 @@ export async function analyzeImage(
  *   传视频档：输入是视频，处理耗时随片长增长（实测 1.65MB 样片 16.7s），文本档的
  *   180s 对长片不够用。
  */
-async function callDramaRaw(
-  endpoint: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal,
-  timeoutMs: number = DRAMA_TIMEOUT_MS.text,
-): Promise<Record<string, unknown>> {
-  const response = await dramaPost(
-    endpoint,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    timeoutMs,
-    signal,
-  )
-  if (!response.ok) {
-    const detail = await describeError(response)
-    throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail })
-  }
-  return response.json() as Promise<Record<string, unknown>>
-}
-
 /**
  * 视频理解（VLM）：调用 Drama Backend 的 video2vl 接口（Qwen3-VL-4B），入参是已上传的
  * 视频文件名，返回逐镜头 / 按时间轴的文本分析。
@@ -1742,13 +1812,18 @@ export async function analyzeVideo(
   signal?: AbortSignal,
   heal?: AnalyzeHealContext,
 ): Promise<string> {
-  const call = async (video: string): Promise<string> => {
-    const data = await callDramaRaw(DRAMA_ENDPOINTS.video2vl, {
-      video,
-      prompt,
-      system_prompt: systemPrompt,
-    }, signal, DRAMA_TIMEOUT_MS.video)
-    return (data.output ?? data.msg ?? JSON.stringify(data)) as string
+  const call = async (handle: string): Promise<string> => {
+    // 迁移 B3-2：业务 API video.qwen3-vl @ video2vl；视频档超时（耗时随片长增长）。
+    const final = await runBusinessGenerationTask({
+      tool: 'video2vl',
+      model: BUSINESS_MODEL_CODES.video2vl,
+      operation: 'video2vl',
+      input: { prompt, system_prompt: systemPrompt },
+      refs: [{ assetId: handle, role: 'video' }],
+      timeoutMs: DRAMA_TIMEOUT_MS.video,
+      ...(signal !== undefined ? { signal } : {}),
+    })
+    return textOutputOf(final)
   }
   try {
     return await call(filename)
@@ -1800,20 +1875,26 @@ export async function transcribeAudio(
   heal?: AnalyzeHealContext,
 ): Promise<AsrRawText> {
   const call = async (target: string): Promise<AsrRawText> => {
-    const body = ASR_VIDEO_EXT.test(target) ? { video: target } : { audio: target }
-    const data = await callDramaRaw(DRAMA_ENDPOINTS.asr2txt, body, signal, DRAMA_TIMEOUT_MS.image)
-    const field = (key: string): string => (typeof data[key] === 'string' ? (data[key] as string) : '')
+    // 迁移 B3-2：role 必须与素材 MIME 一致（视频容器 → video，其余 audio）；**不传 input**。
+    const final = await runBusinessGenerationTask({
+      tool: 'asr2txt',
+      model: BUSINESS_MODEL_CODES.asr2txt,
+      operation: 'asr2txt',
+      refs: [{ assetId: target, role: ASR_VIDEO_EXT.test(target) ? 'video' : 'audio' }],
+      timeoutMs: DRAMA_TIMEOUT_MS.image,
+      ...(signal !== undefined ? { signal } : {}),
+    })
     const out: AsrRawText = {
-      txt: field('txt'),
-      txtWord: field('txt_word'),
-      txtSegment: field('txt_segment'),
+      txt: jsonTextFieldOf(final, 'txt'),
+      txtWord: jsonTextFieldOf(final, 'txt_word'),
+      txtSegment: jsonTextFieldOf(final, 'txt_segment'),
     }
     if (out.txt.trim() === '' && out.txtWord.trim() === '' && out.txtSegment.trim() === '') {
       // 200 但三字段全空 = 识别没吐东西（多为素材无人声），不是网络/后端故障；
       // 直接把原始响应体截一段进 dev 详情，省一轮「到底传了什么」的排查。
       throwError('CS-USER-ERR', {
         message: '识别完成但没有返回任何文本 —— 该素材可能没有可识别的人声（纯音乐 / 静音），或句柄已失效。请确认素材含语音后重试，或先用 upload_image 重新上传。',
-        detail: `asr2txt 空响应：${JSON.stringify(data).slice(0, 500)}`,
+        detail: `asr2txt 空响应：${JSON.stringify(final.outputs).slice(0, 500)}`,
       })
     }
     return out
@@ -2100,18 +2181,13 @@ export async function generateAsset(
     // （见 providers/drama.ts、providers/fal.ts）。后端拒收时由视频自愈摘字段并回
     // warning，不再在此处假定「后端一定不支持」。
   }
-  // CV-219「忙/闲」双态：提交前探一次后端队列深度（探针自带 30s 缓存，与 dramaPost
-  // 内部那次共用，不额外发请求）。后端 0.5.0 起视频改异步（ComfyUI 自行排队），
-  // 图片/音乐仍为同步阻塞——两种形态下「前面排着几个」都是用户最想知道的现场信息，
-  // 走既有 warnings 通道回流给 agent，不新开通道。
-  const queueDepth = await ensureDramaReachable(signal)
-  if ((queueDepth ?? 0) > 0) {
-    warnings.push(
-      `Drama 后端当前有 ${queueDepth} 个任务在执行/排队，本次请求排在其后`
-      + '（视频为异步任务：提交即返回，出片时间 = 队列总耗时；不会丢）。',
-    )
-  }
-  let mediaUrl: string
+  // 迁移 B3-2：CV-219 的提交前探针（/api/v1/health 队列深度）随后端 8082 退役——
+  // 新业务 API 没有 health 端点，「后面排着几个」在异步并发模型下也不再是有效语义
+  //（创建失败会带结构化错误即时反馈，探活由 presign/poll 的退避兜底）。
+  let mediaUrl: string | undefined
+  // 迁移 B3-2：业务 API 链路（图像）直接拿产物字节（content 端点下载），
+  // 共享结算段的 downloadBytes(mediaUrl) 只服务仍走 full_url 的旧链路（视频/fal）。
+  let mediaBytes: Buffer | undefined
   // 生成类节点也持久化后端产物名。CV-155 更正：产物名**不可**直接作下游入参，
   // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
   // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
@@ -2202,134 +2278,61 @@ export async function generateAsset(
     collectReferenceInputs(params.audioRefs ?? [])
   const collectVideoInputs = (): Promise<VideoReferenceInput[]> =>
     collectReferenceInputs(params.videoRefs ?? [])
-  const collectProvidedNames = (): string[] => {
-    const names: string[] = []
-    if (params.filename) names.push(params.filename)
-    if (params.filenames) names.push(...params.filenames)
-    // 参考视频同样纳入自愈：后端 temp/ 清存储后 videoN 句柄会「名字还在、文件没了」，
-    // 与图片共用同一套「按文件名反查节点 → 重传 → 在 body 里替换」的闭环（body 的
-    // 替换是按名字全局替换，故只要名字进表就自动生效）。
-    // **必须追加在末尾**：refreshBySourceUrls 按本表**位次**映射 sourceUrls（只含图），
-    // 插在前面会打乱图的位次。
-    if (params.videoRefs) names.push(...params.videoRefs)
-    // 尾帧（filenameTail，video_generate 书挡）同样纳入自愈：与图片共用同一套
-    // 反查重传闭环；**必须追加在末尾**（refreshBySourceUrls 按位次映射，只含图）。
-    if (params.filenameTail) names.push(params.filenameTail)
-    return names
-  }
-  const reuploadLocalAsset = async (file: string, sig?: AbortSignal): Promise<string> => {
-    const { bytes, ext } = await readLocalAssetBytes(registry, projectId, file)
-    return uploadBytesToDrama(bytes, ext, sig)
-  }
-  /** 按文件名反查节点重传：返回 旧名 → 新名 映射，并回写节点 filename。 */
-  const refreshByCanvasNodes = async (sig?: AbortSignal): Promise<Map<string, string>> => {
-    const mapping = new Map<string, string>()
-    const doc = await registry.readCanvas(projectId)
-    const byFilename = new Map(doc.nodes.map((node) => [node.filename ?? '', node] as const))
-    const patchedNodes = new Map<string, StudioCanvasNode>()
-    for (const name of collectProvidedNames()) {
-      if (mapping.has(name)) continue
-      const node = byFilename.get(name)
-      const file = node?.url?.split('/').pop()
-      if (node === undefined || file === undefined || file.length === 0) continue
-      const fresh = await reuploadLocalAsset(file, sig)
-      mapping.set(name, fresh)
-      patchedNodes.set(node.id, { ...node, filename: fresh })
-    }
-    if (patchedNodes.size > 0) {
-      await registry.writeCanvas(projectId, doc.nodes.map((node) => patchedNodes.get(node.id) ?? node))
-    }
-    return mapping
-  }
-  /** 兜底：模型显式提供 sourceUrls 时按序重传，按位映射到 provided 名字。 */
-  const refreshBySourceUrls = async (sig?: AbortSignal): Promise<Map<string, string>> => {
-    const fresh: string[] = []
-    for (const u of params.sourceUrls ?? []) {
-      const file = u.split('/').pop()
-      if (!file) continue
-      try {
-        fresh.push(await reuploadLocalAsset(file, sig))
-      } catch { /* 单个资产缺失跳过，映射不满时上层抛原始错误 */ }
-    }
-    const mapping = new Map<string, string>()
-    collectProvidedNames().forEach((n, i) => { if (fresh[i] !== undefined) mapping.set(n, fresh[i]!) })
-    return mapping
-  }
-  /**
-   * 参考图失效自愈的公共壳：首次调用失败且疑似「filename 失效」时，按文件名
-   * 反查节点重传（或按 sourceUrls 兜底重传），带新名重试一次。最终调用由
-   * `doCall` 注入 —— 产物壳（`callDrama`）与原始 JSON 壳（`callDramaJson`）
-   * 共用同一份自愈逻辑，两处都判必然漂移。
-   */
+  // A-1 路径 A：本次生成中自愈换名的 旧句柄 → 新句柄 映射（图像 heal 与视频
+  // provider 的 onHealed 共同记账）。落卡时 generationPrompt 与血缘反查据此同步。
   const healedNames = new Map<string, string>()
-  const withReferenceHeal = async <T>(
-    endpoint: string,
-    body: Record<string, unknown>,
-    kind: keyof typeof DRAMA_TIMEOUT_MS,
-    doCall: (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS) => Promise<T>,
-  ): Promise<T> => {
+  /**
+   * 业务 API 参考自愈（迁移 B3-2）：引用句柄（asset_id）失效（400/404/5xx）时按
+   * manifest 反查本地资产重传换新 asset_id，**换新幂等键**重试一次——素材变了
+   * 幂等键必须换（同 key 异 body 服务端 409）。与 withReferenceHeal 同一不变式：
+   * 只救「句柄失效」，参数错误（422）不救；任一引用无法恢复 → 包装成「reference
+   * heal exhausted」的 CS-USER-ERR，原始报错保留在消息尾部。
+   */
+  const runBusinessImageWithHeal = async (
+    tool: string,
+    build: () => { model: string; operation: GenerationOperation; input: Record<string, unknown>; refs: GenerationRef[] },
+    label: string,
+  ): Promise<BusinessGenerationOutcome> => {
+    const request = build()
     try {
-      return await doCall(endpoint, body, kind)
-    } catch (cause) {
-      if (!isBadReferenceError(cause) || collectProvidedNames().length === 0) throw cause
-      let mapping: Map<string, string>
-      try {
-        mapping = await refreshByCanvasNodes(signal)
-        if (mapping.size === 0) mapping = await refreshBySourceUrls(signal)
-      } catch (healCause) {
-        // C-4：自愈阶段（本地资产读取/上传）失败——包一层可行动解释再抛，
-        // 别让用户只看到上传层的原始报错（「图片判失效有点莫名其妙」的来源之一）。
-        throwError('CS-USER-ERR', {
-          message: `参考文件自动恢复失败（${healCause instanceof Error ? healCause.message : String(healCause)}）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${cause instanceof Error ? cause.message : String(cause)}`,
-          detail: 'reference heal failed during refresh',
-        })
+      return await runBusinessImage(tool, request, { label, ...(signal !== undefined ? { signal } : {}) })
+    } catch (error) {
+      if (!isBadReferenceError(error) || request.refs.length === 0) throw error
+      const mapping = new Map<string, string>()
+      const healedRefs: GenerationRef[] = []
+      for (const ref of request.refs) {
+        const fresh = await healReferenceFilename(registry, projectId, ref.assetId, signal)
+        if (fresh === null || fresh === ref.assetId) {
+          throwError('CS-USER-ERR', {
+            message: `参考文件句柄已失效，且画布上找不到可自动恢复的源文件（它可能已被重生成、删除或从未上传成功）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${error instanceof Error ? error.message : String(error)}`,
+            detail: 'reference heal exhausted: no recoverable source',
+          })
+        }
+        mapping.set(ref.assetId, fresh)
+        healedRefs.push({ assetId: fresh, role: ref.role })
       }
-      if (mapping.size === 0) {
-        // C-4：自愈无对象（画布上找不到持有该句柄的节点、sourceUrls 也没给）——
-        // 最常见于「来源图片已被重生成/删除，旧句柄无人持有」。此时把后端 502 原文
-        // 裸抛就是「错误原因很古怪，好像是图没传？」的观感来源：包一层说清真因，
-        // 原始报错保留在消息尾部供排查。
-        throwError('CS-USER-ERR', {
-          message: `参考文件句柄已失效，且画布上找不到可自动恢复的源文件（它可能已被重生成、删除或从未上传成功）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${cause instanceof Error ? cause.message : String(cause)}`,
-          detail: 'reference heal exhausted: no recoverable source',
-        })
-      }
-      // A-1 路径 A：记账换名映射——重试成功后落卡的 generationPrompt 与血缘反查
-      // 必须同步到新句柄（persistGeneratedAsset 读这张表），否则详情显示「已断链」、
-      // 连线缺失，而实际提交用的是新名。
+      // A-1 路径 A：记账换名映射——落卡的 generationPrompt 与血缘反查据此同步。
       for (const [oldN, newN] of mapping) healedNames.set(oldN, newN)
-      let patched = JSON.stringify(body)
-      for (const [oldN, newN] of mapping) patched = patched.split(oldN).join(newN)
-      return doCall(endpoint, JSON.parse(patched) as Record<string, unknown>, kind)
+      return await runBusinessImage(tool, { ...request, refs: healedRefs }, { label, ...(signal !== undefined ? { signal } : {}) })
     }
   }
-  /** 产物壳自愈（图片 / 音乐等同步生成路径，返回 `{url, filename?}`）。 */
-  const callWithFallback = (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS): Promise<{ url: string; filename?: string }> =>
-    withReferenceHeal(endpoint, body, kind, (e, b, k) => callDrama(e, b, signal, k))
-  /** 原始 JSON 壳自愈（视频提交路径，202 任务信封由 drama adapter 解读）。 */
-  const callWithFallbackJson = (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS): Promise<Record<string, unknown>> =>
-    withReferenceHeal(endpoint, body, kind, (e, b, k) => callDramaJson(e, b, signal, k))
 
   if (tool === 'image_generate') {
-    // 0.7.0 对拍：动漫画风不再走独立端点（txt2imageanime 已从后端移除）—— Krea2 Turbo
-    // 靠提示词表达画风，动漫画风直接写进 prompt。
-    // CV-153：后端 `image2image` 当时只有 image1/image2/image3 三个具名槽位，第 4 张会被**静默丢弃**
-    // —— `slice` 不报错、不警告，用户看到的现象只是「风格没生效」而毫无线索（与 CV-145 的
-    // 1×1 占位图同属「证据缺失导致的错误归因」）。这里补显式告警，复用既有 warnings 通道
-    // （renderResult 会渲染成「注意: …」）。
-    // CV-189：后端已扩到 image1~image4 四个具名槽位（krea2_edit 工作流），上限对齐 4；
-    // 留空的 image2~4 后端会自动从工作流排除，超限仍显式告警。
+    // 迁移 B3-2（2026-11-22）：图像链路走业务 API（POST /v1/generations + poll +
+    // content），模型 code 由路由现算（探测报告 docs/api-probe/generation-migration-20261122）。
+    // 参考图上限 4 不变：image2image 目录规格 inputs[] 图 1-4（CV-153/CV-189 的
+    // 具名槽位历史被 inputs[] 白名单取代，超限仍显式告警）。
     const providedRefs = params.filenames ?? []
     const refs = providedRefs.slice(0, 4)
     if (providedRefs.length > refs.length) {
       const dropped = providedRefs.slice(refs.length)
       warnings.push(
-        `参考图最多 4 张生效（后端 image2image 仅 image1~image4），本次已忽略后 ${dropped.length} 张：${dropped.join('、')}`,
+        `参考图最多 4 张生效（image2image 规格上限 4），本次已忽略后 ${dropped.length} 张：${dropped.join('、')}`,
       )
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
-    // R-P1-03：endpoint 由路由现算（带参考 → 图生图；纯文生按「含可显示文字」改道）。
-    // REQ-029 拍板④：节点卡「高级」手动指定在纯文生车道压过文字判据与设置页。
+    // R-P1-03：模型/operation 由路由现算（带参考 → Qwen 图生图；纯文生按「含可显示
+    // 文字」改道）。REQ-029 拍板④：节点卡「高级」手动指定在纯文生车道压过文字判据与设置页。
     const imageOverride = normalizeImageModelOverride(params.modelOverride)
     const route = routeImageModel({
       tool: 'image_generate',
@@ -2337,61 +2340,35 @@ export async function generateAsset(
       hasReferences: hasRef,
       ...(imageOverride !== undefined ? { override: imageOverride } : {}),
     })
-    // REQ-029（CV-281 Step 4）：摄像机/风格前缀注入（仅生成车道；image_fix 不注入）。
+    // REQ-029（CV-281 Step 4）：摄像机/风格前缀注入（仅生成车道）。
     const imagePrompt = composeImagePrompt(params)
-    routeEndpoint = route.endpoint
-    if (hasRef) {
-      // 图生图：image2image（最多 4 张参考，image1~image4）。
-      const imageKeys: Record<string, unknown> = {}
-      if (refs.length > 0) {
-        refs.forEach((image, i) => { imageKeys[`image${i + 1}`] = image })
-      } else if (params.filename !== undefined) {
-        imageKeys.image1 = params.filename
-      }
-      const _r = await callWithFallback(
-        route.endpoint,
-        {
-          prompt: imagePrompt,
-          width: size.width,
-          height: size.height,
-          ...imageKeys,
-        },
-        'image',
+    routeEndpoint = route.model
+    const imageRefs: GenerationRef[] = []
+    if (params.filename !== undefined) imageRefs.push({ assetId: params.filename, role: 'image' })
+    for (const ref of refs) imageRefs.push({ assetId: ref, role: 'image' })
+    if (!hasRef && route.reason === 'text-render') {
+      // 拍板第一版（2026-10-04）：提示词含未被否定的引号文字 → Qwen 文字渲染链路。
+      // agent 无需选对工具——调 image_generate 也会被改道；warnings 让改道可读。
+      warnings.push(
+        `提示词检出待显示的文字（如「${extractTextSpec(params.prompt).renderableTexts[0]}」），`
+        + '已自动改走 Qwen 文字渲染链路（逐字正确，比 Krea2 慢约 20s）。',
       )
-      mediaUrl = _r.url
-      if (_r.filename !== undefined) dramaFilename = _r.filename
-    } else {
-      if (route.reason === 'text-render') {
-        // 拍板第一版（2026-10-04）：提示词含未被否定的引号文字 → Qwen 文字渲染链路。
-        // agent 无需选对工具——调 image_generate 也会被改道；warnings 让改道可读。
-        warnings.push(
-          `提示词检出待显示的文字（如「${extractTextSpec(params.prompt).renderableTexts[0]}」），`
-          + '已自动改走 Qwen 文字渲染链路（逐字正确，比 Krea2 慢约 20s）。',
-        )
-      }
-      // 写实文生图：Krea2 Turbo（krea2_workflow 工作流；0.3.0 起后端切换，
-      // 此前是 nunchaku-z-image-turbo）。后端不支持 negative_prompt（cfg=1.0 结构性失效，
-      // api-probe 已实测），`image_generate` 工具已移除该参数，约束一律写进正向提示词。
-      // R-P1-03：含可显示文字时 route 已改指 txt2image_withtxt（Qwen）。
-      const _r = await callWithFallback(
-        route.endpoint,
-        {
-          prompt: imagePrompt,
-          width: size.width,
-          height: size.height,
-        },
-        'image',
-      )
-      mediaUrl = _r.url
-      if (_r.filename !== undefined) dramaFilename = _r.filename
     }
+    const outcome = await runBusinessImageWithHeal(
+      tool,
+      () => ({
+        model: route.model,
+        operation: route.operation,
+        input: { prompt: imagePrompt, width: size.width, height: size.height },
+        refs: imageRefs,
+      }),
+      '图片生成',
+    )
+    mediaBytes = outcome.bytes
+    dramaFilename = outcome.generationId
   } else if (tool === 'image_generate_withtxt') {
-    // CV-270：文字渲染特化（txt2image_withtxt，Qwen Image 2.1，steps=25）。
-    // **纯文生**：端点没有参考图槽位（带参考图的改字走 image_fix），入参只有
-    // prompt/width/height。
-    // R-P1-03 / C-12：endpoint 不再随工具名写死——路由逐次现算。agent 依据旧判据
-    // （如「提示词含中文」）选了本工具、用户随后删掉文字再重试时，路由现场改道
-    // Krea2，不再「选了就回不去」。
+    // CV-270：文字渲染特化（image.qwen-image-2.1，中文逐字正确）。**纯文生**。
+    // R-P1-03 / C-12：模型不随工具名写死——路由逐次现算（含可显示文字才落 Qwen）。
     // REQ-029 拍板④：节点覆盖同样在本车道生效；摄像机/风格前缀随卡注入。
     const withtxtOverride = normalizeImageModelOverride(params.modelOverride)
     const route = routeImageModel({
@@ -2400,56 +2377,41 @@ export async function generateAsset(
       hasReferences: false,
       ...(withtxtOverride !== undefined ? { override: withtxtOverride } : {}),
     })
-    routeEndpoint = route.endpoint
+    routeEndpoint = route.model
     if (route.reason === 'default-t2i') {
       warnings.push('提示词未检出待显示的文字，已按模型路由改走 Krea2 文生图链路（比 Qwen 快）。')
     }
-    // 探针实测 20.7s（docs/api-probe/txt2image-withtxt-20260930/report.md），
-    // 走 image 档超时（180s）余量充足。
-    const _r = await callWithFallback(
-      route.endpoint,
-      {
-        prompt: composeImagePrompt(params),
-        width: size.width,
-        height: size.height,
-      },
-      'image',
+    const outcome = await runBusinessImageWithHeal(
+      tool,
+      () => ({
+        model: route.model,
+        operation: route.operation,
+        input: { prompt: composeImagePrompt(params), width: size.width, height: size.height },
+        refs: [],
+      }),
+      '文字生图',
     )
-    mediaUrl = _r.url
-    if (_r.filename !== undefined) dramaFilename = _r.filename
+    mediaBytes = outcome.bytes
+    dramaFilename = outcome.generationId
   } else if (tool === 'character_generate') {
-    // 基于角色设计图生成角色立绘图（四视图）：image2character（0.3.0 起 krea2_quadview 工作流，
-    // 产物名 krea2_char_4view_*.png；此前是 qwen_4view_char_2step）。
+    // 基于角色设计图生成角色四视图：image.krea2 @ image2character（恰 1 张参考、无 prompt）。
     if (!params.filename) {
       throwError('CS-PARAM-001', { tool: 'character_generate', param: 'filename' })
     }
     const route = routeImageModel({ tool: 'character_generate', prompt: '', hasReferences: true })
-    routeEndpoint = route.endpoint
-    const _r = await callWithFallback(
-      route.endpoint,
-      { image: params.filename },
-      'image',
+    routeEndpoint = route.model
+    const outcome = await runBusinessImageWithHeal(
+      tool,
+      () => ({
+        model: route.model,
+        operation: route.operation,
+        input: {},
+        refs: [{ assetId: params.filename!, role: 'image' }],
+      }),
+      '角色四视图',
     )
-    mediaUrl = _r.url
-    if (_r.filename !== undefined) dramaFilename = _r.filename
-  } else if (tool === 'image_fix') {
-    // CV-202：图内文字修复（Boogu Edit，image2fix 端点）。**改图接口** —— 请求体
-    // 只有 prompt + image，不收 width/height（产物尺寸跟随输入图，落盘前从 PNG
-    // 头实测，见下方 mediaSize 覆盖）。后端同事用法纪律：prompt 只写文字部分
-    // （skill 侧已固化该规范）；产物名 boogu_* 属「产物名」类不可直接入参（探针
-    // 复证直用 500 快失败，CV-155 同型）。实测耗时 ~68s，image 档超时（360s）内。
-    if (!params.filename) {
-      throwError('CS-PARAM-001', { tool: 'image_fix', param: 'filename' })
-    }
-    const route = routeImageModel({ tool: 'image_fix', prompt: params.prompt, hasReferences: true })
-    routeEndpoint = route.endpoint
-    const _r = await callWithFallback(
-      route.endpoint,
-      { prompt: params.prompt, image: params.filename },
-      'image',
-    )
-    mediaUrl = _r.url
-    if (_r.filename !== undefined) dramaFilename = _r.filename
+    mediaBytes = outcome.bytes
+    dramaFilename = outcome.generationId
   } else if (tool === 'video_generate' || tool === 'video_composite') {
     // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
     // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
@@ -2530,34 +2492,74 @@ export async function generateAsset(
     const ctx: ProviderContext = {
       ...(signal !== undefined ? { signal } : {}),
       timeoutMs: DRAMA_TIMEOUT_MS.video,
-      // Drama 异步轮询节奏：30s / 任务独立计时（批量提交多镜头时不给后端加压）。
-      pollIntervalMs: DRAMA_JOB_POLL_INTERVAL_MS,
-      // 参考图失效自愈闭包（依赖本调用的 registry/projectId/params）以回调注入，
-      // 由 Drama adapter 在 submit 内调用；后端 0.5.0 起返回 202 任务信封的原始
-      // JSON（产物解析移到 drama adapter 的 poll）。
-      dramaPostWithFallback: callWithFallbackJson,
-      // 异步任务端点请求（状态 / 结果 / 取消）：短超时、不占生成队列槽位。
-      dramaJobRequest: (method, path) => dramaJobRequest(method, path, signal),
-      // 台账钩子：adapter 拿到 202 的 job_id 立即回调（落地 jobs.json），
-      // 状态变化时增量回写——客户端重启后 Host 据此恢复轮询并结算节点。
-      onSubmitted: (info) => {
-        trackedJobId = info.jobId
-        enqueueLedger(() => recordDramaJobSubmitted(registry, projectId, {
-          jobId: info.jobId,
-          toolName: tool,
-          params: JSON.stringify(params),
-        }))
-      },
-      onJobUpdate: (update) => {
-        enqueueLedger(() => updateDramaJobStatus(registry, projectId, update.jobId, update.status, {
-          ...(update.executionError !== undefined ? { executionError: update.executionError } : {}),
-        }))
-      },
       // 阶段 4：fal 注入 —— key 解析（空串 = 未配置，adapter 报错）与参考图字节读取
-      // （Drama filename → 本地资产字节 → adapter 内转 base64 data URI）。均为 `?.()`
-      // 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按「未配置」处理。
+      // （本地资产字节 → adapter 内转 base64 data URI）。均为 `?.()` 防御式调用：
+      // 测试注入的 cfg mock 可能缺新字段，缺省按「未配置」处理。
       falApiKey: () => runtime().resolveFalApiKey?.() ?? Promise.resolve(''),
       readReferenceBytes: (ref) => readLocalAssetBytes(registry, projectId, ref.localPath),
+      // 迁移 B3-3（2026-11-22）：视频主链路 = 业务 API 全异步（drama provider 已换
+      // business 实现）。businessRun 闭包 = 在途名额（acquire 创建前 / release 终态）
+      // + 幂等创建（intent 先于 POST 落台账 v2）+ /poll 长轮询（状态增量回写台账）
+      // + content 下载产物字节。legacy 8082 注入面（dramaPostWithFallback/
+      // dramaJobRequest/30s 轮询）随老端口退役，B5 清理批删除。
+      businessRun: async (breq) => {
+        const lease = await acquireInFlight('视频生成', signal)
+        try {
+          const deps = businessEngineDeps()
+          const intentKey = newIdempotencyKey()
+          // intent **先于 POST** 落台账（响应丢失时按原 key+body 重放的唯一凭据）。
+          const persistIntent = (intent: GenerationIntentRecord): void => {
+            enqueueLedger(() => recordGenerationIntent(registry, projectId, {
+              intent,
+              toolName: tool,
+              params: JSON.stringify(params),
+            }))
+          }
+          let snapshot: GenerationSnapshot
+          try {
+            snapshot = await createGenerationTask(deps, {
+              model: breq.model,
+              operation: breq.operation,
+              input: breq.input,
+              refs: [...breq.refs],
+              idempotencyKey: intentKey,
+            }, {
+              ...(signal !== undefined ? { signal } : {}),
+              persistIntent,
+            })
+          } catch (cause) {
+            throw businessErrorToGenerationError(tool, cause)
+          }
+          trackedJobId = snapshot.id
+          enqueueLedger(() => recordGenerationSubmitted(registry, projectId, {
+            intentKey,
+            generationId: snapshot.id,
+            version: snapshot.version,
+          }))
+          const final = await followGeneration(deps, snapshot, {
+            timeoutMs: DRAMA_TIMEOUT_MS.video,
+            ...(signal !== undefined ? { signal } : {}),
+            onSnapshot: (s) => {
+              enqueueLedger(() => updateGenerationSnapshot(registry, projectId, s.id, s).catch(() => { /* 台账失败不阻断 */ }))
+            },
+          }).catch((cause) => {
+            if (cause instanceof CanvasStudioError) throw cause
+            throw businessErrorToGenerationError(tool, cause)
+          })
+          enqueueLedger(() => updateGenerationSnapshot(registry, projectId, final.id, final).catch(() => {}))
+          const media = await downloadBusinessMedia(final, {
+            label: '视频产物',
+            video: true,
+            ...(signal !== undefined ? { signal } : {}),
+          })
+          return { bytes: media.bytes, ext: media.ext, generationId: final.id }
+        } finally {
+          lease.release()
+        }
+      },
+      healBusinessRef: (handle) => healReferenceFilename(registry, projectId, handle, signal),
+      isBadReferenceError,
+      onHealed: (oldHandle, newHandle) => { healedNames.set(oldHandle, newHandle) },
     }
     let outcome: Awaited<ReturnType<typeof runVideo>>
     try {
@@ -2589,9 +2591,16 @@ export async function generateAsset(
         detail: `${detail}（carried: ${carried.join('、')}）`,
       })
     }
-    mediaUrl = outcome.url
-    if (outcome.filename !== undefined) dramaFilename = outcome.filename
-    // 供应商在 submit 阶段产生的非致命提示（时长钳制 / 分辨率升档）汇入结果 warnings。
+    // 迁移 B3-3：business 产物字节已由 content 端点下载（outcome.bytes），跳过
+    // full_url 下载；legacy/fal 路径仍走 mediaUrl。
+    if (outcome.bytes !== undefined) {
+      mediaBytes = Buffer.from(outcome.bytes)
+      dramaFilename = outcome.filename
+    } else {
+      mediaUrl = outcome.url
+      if (outcome.filename !== undefined) dramaFilename = outcome.filename
+    }
+    // 供应商在 submit 阶段产生的非致命提示（音轨开关不受支持 / 参考超限）汇入 warnings。
     if (outcome.warnings !== undefined) warnings.push(...outcome.warnings)
   } else {
     throwError('CS-GEN-208', { tool })
@@ -2599,7 +2608,12 @@ export async function generateAsset(
 
   const finalFilename = dramaFilename
   // CR-010：产物下载带超时与字节上限（视频最慢，用媒体档参数），不再无限阻塞/整读。
-  const bytes = await downloadBytes(mediaUrl, signal, {
+  // 迁移 B3-2：业务 API 链路（图像）的产物字节已在分支内经 content 端点下载；
+  // downloadBytes(full_url) 只服务仍走产物 URL 的旧链路（视频 legacy/fal）。
+  // 旧链路不变式：mediaBytes 为空时必然是 legacy 分支，mediaUrl 必已赋值。
+  const bytes = mediaBytes !== undefined
+    ? mediaBytes
+    : await downloadBytes(mediaUrl!, signal, {
     maxBytes: MEDIA_DOWNLOAD_MAX_BYTES,
     timeoutMs: MEDIA_DOWNLOAD_TIMEOUT_MS,
     label: '产物下载',
@@ -3040,14 +3054,25 @@ export async function generateCharacterSheet(
   // 是 Drama temp/ 临时名，后端重启清存储后「名字还在、文件没了」，实测报笼统的
   // 500 Internal Server Error）。自愈已抽到 healReferenceFilename —— 与 analyzeImage
   // **共用同一份实现**，避免两处各写一遍后再度漂移（CV-116 式）。反查不中时抛原始错误。
-  const fetchSheet = (image: string) => callDrama(DRAMA_ENDPOINTS.character, { image }, signal)
+  // 迁移 B3-2：业务 API image.krea2 @ image2character（恰 1 张参考、无 prompt），
+  // 产物经 content 端点下载（字节直用，跳过 remote URL 二次下载）。
+  const fetchSheet = async (image: string): Promise<BusinessGenerationOutcome> => {
+    const final = await runBusinessImage('character_sheet', {
+      model: MODEL_ROUTE_TABLE.character4v.model,
+      operation: 'image2character',
+      input: {},
+      refs: [{ assetId: image, role: 'image' }],
+    }, { label: '角色四视图', ...(signal !== undefined ? { signal } : {}) })
+    return { bytes: final.bytes, generationId: final.generationId }
+  }
   const sheet = await fetchSheet(params.filename).catch(async (cause) => {
     if (!isBadReferenceError(cause)) throw cause
     const fresh = await healReferenceFilename(registry, projectId, params.filename, signal)
     if (fresh === null) throw cause
     return fetchSheet(fresh)
   })
-  const { url: sheetRemoteUrl, filename: sheetDramaName } = sheet
+  const sheetBytesDirect = sheet.bytes
+  const sheetDramaName = sheet.generationId
 
   // 2) 拼图下载落盘 + 落画布节点（资产卡唯一锚点）。资产卡 id 在此提前生成，
   // 拼图节点携带，保证节点 → 资产卡的双向可追溯。
@@ -3061,9 +3086,7 @@ export async function generateCharacterSheet(
   const assetId = slot.id
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
-  const sheetDownload = await fetch(sheetRemoteUrl, { signal: signal ?? null })
-  if (!sheetDownload.ok) throwError('CS-NET-007', { label: '三视图拼图', status: sheetDownload.status })
-  const sheetBytes = Buffer.from(await sheetDownload.arrayBuffer())
+  const sheetBytes = sheetBytesDirect
   // CV-195：重试时**复用原节点 id**（既作节点 id 也作文件名）。资源路由是
   // no-store，同名文件不会被浏览器缓存 ⇒ 重出后画布上那张图立刻更新；同时资产卡
   // 的锚点节点 id 不变，不会多出第二张卡。
@@ -3384,23 +3407,32 @@ export async function generateMusic(
   // 0.7.0 对拍（2026-09-30）：后端 Yue2 工作流**不消费** bpm / keyscale / language /
   // timesignature（api.md 明文「兼容字段」）—— 请求体只发三个真实生效的参数，
   // 工具层不再声明这四个软参数，「快失败摘字段」降级机制随之退役。
+  // 迁移 B3-2（2026-11-22）：业务 API audio.yue2 @ txt2audio——标准字段
+  // prompt（tags 描述）/ lyrics / duration（bpm/keyscale 等软参数旧后端本就不
+  // 消费，新 API 白名单同样只有这三项）。
   const body: Record<string, unknown> = {
-    caption_prompt: params.captionPrompt,
-    lyrics_prompt: effectiveLyrics,
+    prompt: params.captionPrompt,
+    lyrics: effectiveLyrics,
     duration,
   }
   // CV-127b：txt2audio 实测存在**偶发 500**（同参数一次 200 一次 500）且一律
   // 不返回原因，所以这里保留**同参数**有界重试自愈——纯文本输入同样会失败。
   // 超时沿用 image 档（360s）。
   let attempts = 0
-  let remoteUrl = ''
-  let filename: string | undefined
+  let media: { bytes: Buffer; ext: string } | undefined
   for (;;) {
     attempts += 1
     try {
-      const produced = await callDrama(DRAMA_ENDPOINTS.txt2audio, body, signal)
-      remoteUrl = produced.url
-      filename = produced.filename
+      const final = await runBusinessGenerationTask({
+        tool: 'music_generation',
+        model: BUSINESS_MODEL_CODES.txt2audio,
+        operation: 'txt2audio',
+        input: body,
+        timeoutMs: DRAMA_TIMEOUT_MS.image,
+        label: '音乐生成',
+        ...(signal !== undefined ? { signal } : {}),
+      })
+      media = await downloadBusinessMedia(final, { label: '音频', ...(signal !== undefined ? { signal } : {}) })
       break
     } catch (error) {
       if (attempts >= MUSIC_MAX_ATTEMPTS) throw error
@@ -3429,11 +3461,10 @@ export async function generateMusic(
   }
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
-  const download = await fetch(remoteUrl, { signal: signal ?? null })
-  if (!download.ok) throwError('CS-NET-007', { label: '音频', status: download.status })
-  const bytes = Buffer.from(await download.arrayBuffer())
+  // 迁移 B3-2：产物字节已在分支内经 content 端点下载（扩展名按产物 MIME 定）。
+  const bytes = media!.bytes
   const nodeId = newAssetId()
-  const file = `${nodeId}.mp3`
+  const file = `${nodeId}.${media!.ext}`
   await writeFile(join(directory, file), bytes)
   // CV-246：音乐产物入历史账（失败不阻断主流程）。
   await recordAssetHistory(registry, projectId, { file, tool: 'music_generation', size: bytes.length }).catch(() => {})
@@ -3488,7 +3519,7 @@ export async function generateMusic(
   } else {
     await registry.appendCanvasNode(projectId, node)
   }
-  return { url, filename: filename ?? file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, lyrics: effectiveLyrics, attempts }
+  return { url, filename: file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, lyrics: effectiveLyrics, attempts }
 }
 
 /** CV-271：语音合成入参（`tts_voiceover`，Drama `txt2speech` / VoxCPM2）。 */
@@ -3592,12 +3623,25 @@ export async function generateSpeech(
       normalizeRefaudioError(error)
     }
   }
+  // 迁移 B3-2（2026-11-22）：业务 API audio.voxcpm2 @ txt2speech——标准字段
+  // prompt（合成文本）/ system_prompt（声音设计）；参考音色 = 恰 1 个 audio 引用。
   const body: Record<string, unknown> = {
-    txt_prompt: params.text,
-    ...(params.instructPrompt !== undefined && params.instructPrompt.trim() !== '' ? { instruct_prompt: params.instructPrompt } : {}),
-    ...(refaudio !== undefined && refaudio !== '' ? { refaudio } : {}),
+    prompt: params.text,
+    ...(params.instructPrompt !== undefined && params.instructPrompt.trim() !== '' ? { system_prompt: params.instructPrompt } : {}),
   }
-  const produced = await callDrama(DRAMA_ENDPOINTS.txt2speech, body, signal)
+  const final = await runBusinessGenerationTask({
+    tool: 'tts_voiceover',
+    model: BUSINESS_MODEL_CODES.txt2speech,
+    operation: 'txt2speech',
+    input: body,
+    ...(refaudio !== undefined && refaudio !== ''
+      ? { refs: [{ assetId: refaudio, role: 'audio' as const }] }
+      : {}),
+    timeoutMs: DRAMA_TIMEOUT_MS.image,
+    label: '语音合成',
+    ...(signal !== undefined ? { signal } : {}),
+  })
+  const produced = await downloadBusinessMedia(final, { label: '配音', ...(signal !== undefined ? { signal } : {}) })
   const canvas = await registry.readCanvas(projectId)
   let sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
   if (Array.isArray(params.sourceNodeIds) && params.sourceNodeIds.length > 0) {
@@ -3606,11 +3650,10 @@ export async function generateSpeech(
   }
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
-  const download = await fetch(produced.url, { signal: signal ?? null })
-  if (!download.ok) throwError('CS-NET-007', { label: '配音', status: download.status })
-  const bytes = Buffer.from(await download.arrayBuffer())
+  // 迁移 B3-2：产物字节已在分支内经 content 端点下载。
+  const bytes = produced.bytes
   const nodeId = newAssetId()
-  const file = `${nodeId}.mp3`
+  const file = `${nodeId}.${produced.ext}`
   await writeFile(join(directory, file), bytes)
   await recordAssetHistory(registry, projectId, { file, tool: 'tts_voiceover', size: bytes.length }).catch(() => {})
   // O-09：语速 / 音高在**宿主侧**用 ffmpeg 后处理（后端没有这两个字段）。
@@ -3668,5 +3711,5 @@ export async function generateSpeech(
   } else {
     await registry.appendCanvasNode(projectId, node)
   }
-  return { url, filename: produced.filename ?? file, nodeId: params.retryOf ?? nodeId, ...(probedDuration > 0 ? { duration: probedDuration } : { duration: 0 }), text: params.text, ...(warnings.length > 0 ? { warnings } : {}) }
+  return { url, filename: file, nodeId: params.retryOf ?? nodeId, ...(probedDuration > 0 ? { duration: probedDuration } : { duration: 0 }), text: params.text, ...(warnings.length > 0 ? { warnings } : {}) }
 }

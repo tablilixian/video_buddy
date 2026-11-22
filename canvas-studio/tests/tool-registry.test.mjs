@@ -50,7 +50,7 @@ import { templateChannelEnabled } from '../lib/template-channel.js'
 // 2026-11-12 模板通道临时下线：关闭态该工具不注册 ⇒ 基线 51；开关打开自动回到 52。
 const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
 // RQ-R9/P1-10（2026-11-14）：+validate_manifest（离线体检，复盘 #10）—— 53 / 关模板 52
-const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 54 : 53
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 53 : 52
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -71,7 +71,6 @@ const EXPECTED_TOOL_NAMES = [
   'image2vl',
   // 复刻提效批二：拼贴/精灵图裁切（把「模型自写 52 次 PIL 脚本」收回平台）。
   'image_crop',
-  'image_fix',
   'image_generate',
   // 六大体裁路线 4.2：CSV → chart 数据卡（纯文本解析，零后端槽位）。
   'import_csv',

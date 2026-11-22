@@ -293,8 +293,11 @@ test('参考视频接线：video_composite 独家收参数（CV-269 拆分），
   // 「一段参考视频 + 一段参考音频」会被 audio-reference 判成 audio-only 直接拒。
   assert.match(GENERATE_CODE, /const visualCount = imageCount \+ videoInputs\.length/,
     'audio-only 判定的视觉素材数必须含参考视频')
-  assert.match(GENERATE_CODE, /if \(params\.videoRefs\) names\.push\(\.\.\.params\.videoRefs\)/,
-    '参考视频也要进「参考失效自愈」的名字表')
+  // 迁移 B3-3：自愈换到业务链路（provider 的 healBusinessRef + onHealed 记账），
+  // 注入面守卫 = generate.ts 视频分支必须把 heal/isBadReferenceError 注入 ctx。
+  assert.match(GENERATE_CODE, /healBusinessRef: \(handle\) => healReferenceFilename/,
+    '视频分支必须注入 business 自愈（参考视频/音频失效可恢复）')
+  assert.match(GENERATE_CODE, /isBadReferenceError,/, '视频分支必须注入句柄失效判定')
 })
 
 test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {

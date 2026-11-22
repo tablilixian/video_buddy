@@ -89,7 +89,7 @@
 | ⑦ 上传后的逐镜 | 用户对话「这镜重做」「第 X 镜座位不一致要改」 | `video_generate`/`video_composite` 传 `replaces=<旧版 nodeId>` 旧版自动失效（CV-108） | 用户驱动，无预算 | shot-format.md「镜头衔接」 |
 | ⑦ 上传后的逐镜 | 同一关键帧 + 同参数 + 同样时长重复调 | **自动取代上一版**（不需要显式 replaces） | 无 | toolchain.md §"返工与版本" |
 | ⑨ 视频 | chain 镜衔接未拿到上一镜真实末帧 | 先 `extract_last_frame` 失败 → 重抽 | 重抽 ≤ 2 次 | shot-format.md「镜头衔接 C3」 |
-| 文字类出图（含文字海报 / 招牌） | prompt 出现**未被否定**的引号非 ASCII 文本（CV-212 触发 / CV-218 形态） | image_generate 完成后自动调 `image_fix`，prompt 由 `buildTextFixPrompt(原 prompt)` 抽「文字规格段 + 逐字约束段」，replaces=原图 nodeId | 单次触发，无 budget | `src/text-detection.ts` + `src/host-tools.ts` `runTextAutoFix` |
+| 文字类出图（含文字海报 / 招牌） | prompt 出现**未被否定**的引号非 ASCII 文本 | 路由自动走 Qwen 文字渲染链路（`image.qwen-image-2.1`），产物逐字正确，无修复兜底（迁移 2026-11-22：Boogu 特化下线） | 不适用 | `src/model-route.ts`（探测报告 docs/api-probe/generation-migration-20261122） |
 
 ### B. 触发直接报错（红盒：阻断流，出不了产物）
 
@@ -126,5 +126,5 @@
 | resolution 占坑（drama 侧） | "暂未接入，已忽略" | 写汇总 |
 | 时间轴漂移（CV-142） | "成片真值与请求 / 声明 / 项目目标总时长三者不齐" | `auditTimeline` 自动回 warnings 数组 |
 | **多镜无 BGM 警告** | 现仅在 `hasConcatAudio=false`（用户静音 / 老产物）才抛（CV-209） | 写汇总 |
-| 文字类出图 `image_fix` 失败 | image_fix 后端 500 / 拒接 / 超时 | 工具侧自动回退：返回原图 + warning「CV-212 自动文字修复失败（…），原图保留；如文字渲染异常请手动调 image_fix」；agent 可手动重试 |
+| 文字类出图文字仍错 | Qwen 直出偶发错字 | 用 `image_generate_withtxt` 带原画面描述 + 修正后的文字规格重出（Boogu 改字特化已下线） | 按生成计费 | `src/model-route.ts` |
 | 单节点画布重试（用户侧） | 原地更新 | 不写汇总 |

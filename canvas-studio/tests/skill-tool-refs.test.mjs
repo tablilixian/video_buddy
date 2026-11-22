@@ -101,7 +101,7 @@ const EXEMPT = new Map(Object.entries({
     'upload_video',
   ],
   // ── 组 3：已下线工具的**历史记录**（skill 正文在说明它没了，不是在调用它）
-  'deployed-tool-history': ['write_screenplay'],
+  'deployed-tool-history': ['write_screenplay', 'image_fix'],
   // ── 组 4：工具的**参数名**（出现在取值语境，不是被调用的对象）
   // 注：本组被「豁免表自身不腐烂」断言两次清过 —— CV-318 删 qwen-image-edit-writing
   // 后 guidance_scale 无处出现；CV-321b 把 brand-promo 的 generate_audio 下沉后同样无处出现。

@@ -6,18 +6,14 @@
 
 - **纯文生图**（`image_generate` 不传参考图；动漫画风同样走这里，风格写进 prompt）：加载 `krea2-turbo-writing`。核心 —— 九段式完整场景描述（主体/环境/打光/风格媒介/技术细节/约束）、**禁止传 `negativePrompt`**（Krea2 Turbo cfg=1.0 负向条件结构性失效，实测带负向「排除太阳」仍照画，约束一律改写成正向表述）、画面要出现文字时用引号给出确切文本并锁定字体排版。
 - **图生图 / 改图**（`image_generate` 传参考图、`character_generate`）：加载 `krea2-edit-writing`。核心 —— 指令式四段式（操作 + 目标 + 规格 + **保留子句**），保留子句必写；复杂改动拆成链式多步，每步重申约束。
-- **图内文字修复**（`image_fix`，CV-202）：出图后画面文字出错（错字/乱码）时走本工具，**不要换提示词整图重出**（重出会丢掉已正确的画面）。修复 prompt **只写文字部分**——要修的文字 + 字体/排版/位置锁定，从原出图 prompt 里提取文字那部分描述即可，**不要带场景/角色/画风描述**（改图接口，多余描述会伤及画面）；产物 `boogu_*` 前缀。
+- **图内文字修复**：`image_fix`（Boogu 特化）已随后端改版下线（2026-11-22）——画面文字出错时用 `image_generate_withtxt` 带原画面描述 + 修正后的文字规格重出。
 
-### 含文字图片：Qwen 一步直出为首选，image_fix 只做兜底（CV-212/270 + R-P1-03，必须遵守）
+### 含文字图片：Qwen 一步直出（CV-270 + R-P1-03，必须遵守）
 
-**首选路径（一步直出）**：纯文生图且 prompt 含**要显示到画面上的文字**（引号框住、未被否定）时，Host 逐次调用**现算路由**（R-P1-03，`src/model-route.ts`）自动走 **Qwen 文字渲染链路**（`txt2image_withtxt`，CV-270）——中文逐字正确（探针实测《剑归江湖》四字无错字，约 20s 比 Krea2 慢，无字图不要走）。调 `image_generate` 或 `image_generate_withtxt` **等价**：端点由 Host 按提示词现算，你不必为选端点纠结。命中本路径时产物已是逐字正确，**不会也不会触发 image_fix 兜底**——返回里没有 CV-212 修复 warning 是正常现象，**不要看到没挂修复就再手动补一次 image_fix**。
+**首选路径（一步直出）**：纯文生图且 prompt 含**要显示到画面上的文字**（引号框住、未被否定）时，Host 逐次调用**现算路由**（R-P1-03，`src/model-route.ts`）自动走 **Qwen 文字渲染链路**（`image.qwen-image-2.1`）——中文逐字正确（探针实测《剑归江湖》四字无错字，约 20s 比 Krea2 慢，无字图不要走）。调 `image_generate` 或 `image_generate_withtxt` **等价**：端点由 Host 按提示词现算，你不必为选端点纠结。命中本路径时产物已是逐字正确，文字仍错时带修正后的文字规格重出（无修复兜底）。
 
-**自动兜底（仅两条仍落在 Krea2 的链路）**：「出图后自动挂一次 `image_fix`」的旧策略（CV-212/218）只在以下链路继续生效，其余一律不触发：
+**无自动兜底（迁移 2026-11-22）**：Boogu 改字特化已下线，CV-212 自动修复链随之退役——出图文字仍错时，agent 用 `image_generate_withtxt` 重出（带修正后的文字规格句）。
 
-1. **图生图带字**：`image_generate` 传参考图（产物落 Krea2 Edit）。withtxt 是纯文生端点、没有参考图槽位，**这条路径没有一步直出的替代，先出图再自动修复是设计内行为**——不要在这里反复尝试「直接出」，也不要把两版产物当故障报给用户。
-2. 引号文本命中检测、但路由未走 Qwen 的边界情形（如后续「默认生图模型」设置项显式指配后的组合）。
-
-兜底是否跑了看回包：`warnings` 含 `CV-212/218：…已自动调 image_fix 兜底` = 走了兜底；没有该 warning = 走了 Qwen 直出。**不调用 `image2vl` 校对**（VLM 字形转述不可靠，CV-211 已因此退役）；确需确认文字对错时对落盘产物 `read_image(file_path=…)` 看一眼即可，但**不做「修复 → 再验 → 再修」的复读循环**——修复链是单次设计，屡修不好就上报用户，别自己空转。
 
 **为什么 image_fix 只做兜底（历史沿革，勿回退）**：CV-270（2026-09-30）之前文字图只有 Krea2 一条路、非 ASCII 文字几乎必错，当时的最优解就是出图后自动挂修复；Qwen 文字渲染上线并由 R-P1-03 收进统一路由后，直出成为首选，自动修复降级为上面两条链路的兜底。更早的 CV-211（出图后用 `image2vl` 逐字复述再修）因 VLM 对非英文脚本的字形复述不可靠（实测中日韩/阿拉伯文常丢字、编字，还会把错的「目标字」塞进修复 prompt 改坏原图）已退役，仅存手动模式（见 §与旧 CV-211 的兼容）。
 
@@ -31,15 +27,11 @@
 | `hasNonAscii(text)` | 检查一段字符串是否含 `U+0080` 以上字符（CJK / 阿拉伯 / 西里尔 / 天城 / 泰 / 韩 / 全角标点 / 表情 等） |
 | `shouldAutoFixText(prompt)` | 命中条件：存在**未被否定**的引号文本（`不要"水墨"风格` 这类不算）**且**任一段含非 ASCII |
 | `extractTextSpec(prompt)` | 从原 prompt 抽「文字规格句（含引号文本的句子）+ 逐字约束句 + 占位元素句」 |
-| `buildTextFixPrompt(originalPrompt)` | 构造 image_fix 的修复 prompt = 原 prompt 的**文字规格段 + 逐字约束段**（CV-218 原 prompt 直通） |
 
 #### 兜底链式执行（工具侧自动，仅上述两条兜底链路）
 
 1. **前置 / 出图**：照常 `image_generate`（含引号锁字），拿到产物 URL + nodeId。
-2. **后置触发**（工具自动，agent 无感；R-P1-03 起先重算路由，命中 Qwen 直出即整体跳过）：检测通过 → 立即 `upload_image` 拿句柄 → 调 `image_fix`，prompt 由 `buildTextFixPrompt(**本次的原出图 prompt**)` 抽出、`filename` 传上传句柄、`replaces` 填原图 nodeId（让修复版原子替换原图，不留旧版）。
-3. **失败兜底**：image_fix 失败或返回超时不重试——返回原图 + warning；agent 仍可手动调 `image_fix` 进一步修复，或重出整图（`autoFixText: false` 关闭后可用）。
 
-> **一次 image_generate 至多触发一次 image_fix**——不做修复后 VLM 复读、不做修复循环。规则简单才不会被 VLM 的噪音带偏。
 
 #### 关闭方式
 
@@ -47,7 +39,6 @@
 image_generate({ prompt: '...', autoFixText: false })  // 显式关闭（如大批量无文字图省成本）
 ```
 
-#### image_fix prompt 形态（Boogu Edit 接口特化，CV-218）
 
 由 `buildTextFixPrompt(原出图 prompt)` 构造 —— **不另发明一套措辞，而是从原 prompt 里抽「文字规格段 + 逐字约束段」**。agent 看不到，但要知道大致形态（真实案例）：
 
@@ -68,7 +59,6 @@ image_generate({ prompt: '...', autoFixText: false })  // 显式关闭（如大�
 
 #### 文件名消费注意（CV-155 同型）
 
-`image_fix` 产物名 `boogu_*` 属"后端产物名"——**不能直接当输入**。要把修复版喂给下游：
 - 引用走 `@ref[节点标题]`（Host 会把节点上的产物名自动换成可用句柄）；
 - 或显式 `upload_image(imageUrl=修复版 url)` 拿上传句柄。
 
@@ -76,7 +66,7 @@ image_generate({ prompt: '...', autoFixText: false })  // 显式关闭（如大�
 
 #### 与旧 CV-211 的兼容
 
-旧 CV-211 链仍可作为**手动**模式使用：用户或 agent 显式调用 `image2vl`（如确需逐字校验 Latin 字符的美式/英式写法细节），但**默认路径已切到 CV-212**。工具 `image_fix` 的输入纪律不变（prompt 只写文字部分），只是触发逻辑不再依赖 VLM。
+旧 CV-211 链仍可作为**手动**模式使用：用户或 agent 显式调用 `image2vl` 校验（默认路径 = Qwen 直出）。
 
 硬约束（不依赖 skill 也要遵守）：
 

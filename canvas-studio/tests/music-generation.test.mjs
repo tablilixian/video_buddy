@@ -18,25 +18,38 @@ import { generateMusic } from '../lib/generate.js'
 
 const AUDIO_URL = 'https://media.example/audio_00001_.mp3'
 
+const MUSIC_SNAP_DONE = {
+  id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'succeeded', version: 2,
+  progress: 100, billing_status: 'committed', terminal: true, error: null,
+  outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+}
+const MUSIC_SNAP_PENDING = {
+  id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'queued', version: 1,
+  progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+}
+
 function stubMusicFetch() {
   const calls = []
+  let created = 0
   globalThis.fetch = async (url, init = {}) => {
     const text = String(url)
     if (text.includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
     calls.push({ url: text, body: init.body })
-    if (init.method === 'POST' && text.includes('txt2audio')) {
-      if (JSON.parse(init.body).caption_prompt === 'boom') {
+    // 迁移 B3-2：业务 API 创建/轮询/下载（CV-127b 偶发 500 → prompt==='boom' 时首拍失败）。
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+      created += 1
+      const body = JSON.parse(init.body)
+      if (body.input.prompt === 'boom') {
         return { ok: false, status: 500, text: async () => 'Internal Server Error' }
       }
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ prompt_id: 'p1', filename: 'audio_00001_.mp3', full_url: AUDIO_URL, duration: 15.3 }),
-      }
+      return { ok: true, status: 202, json: async () => MUSIC_SNAP_PENDING }
     }
-    if (text === AUDIO_URL) {
+    if (text.includes('/poll')) {
+      return { ok: true, status: 200, json: async () => MUSIC_SNAP_DONE }
+    }
+    if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
     return { ok: false, status: 404, text: async () => '' }
@@ -66,17 +79,19 @@ test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=
     // 请求体映射：prompt→caption_prompt；lyrics 缺省为 [Instrumental]（CV-127）。
     // 0.7.0 对拍：Yue2 工作流不消费 bpm/keyscale/language/timesignature —— 请求体
     // 只发三个真实生效的参数，多余键一个都不许出现。
-    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
-    assert.equal(body.caption_prompt, 'soft ambient piano, warm pads')
-    assert.equal(body.lyrics_prompt, '[Instrumental]')
-    assert.equal(body.duration, 15)
+    const body = JSON.parse(calls.find((c) => /\/v1\/generations(\?|$)/.test(c.url)).body)
+    assert.equal(body.model, 'audio.yue2')
+    assert.equal(body.operation, 'txt2audio')
+    assert.equal(body.input.prompt, 'soft ambient piano, warm pads')
+    assert.equal(body.input.lyrics, '[Instrumental]')
+    assert.equal(body.input.duration, 15)
     assert.equal('bpm' in body, false)
     assert.equal('keyscale' in body, false)
     assert.equal('language' in body, false)
     assert.equal('timesignature' in body, false)
     // 产物：下载落盘 mp3 + 画布节点（CV-128：独立 kind=audio，不复用 video）。
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/') && result.url.endsWith('.mp3'))
-    assert.equal(result.filename, 'audio_00001_.mp3')
+    assert.match(result.filename, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.mp3$/u, '迁移 B3-2：产物名 = 本地落盘名（新 API 无服务端文件名）')
     // CV-127：结果回显请求规格（duration），供成片对齐。
     assert.equal(result.duration, 15)
     const node = registry.getNodes()[0]
@@ -99,9 +114,9 @@ test('CV-127 music_generation：duration/bpm 缺省回填 30 / 128，显式 lyri
       captionPrompt: 'epic orchestral, building',
       lyricsPrompt: '[Verse]\nhello world',
     })
-    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
-    assert.equal(body.duration, 30)
-    assert.equal(body.lyrics_prompt, '[Verse]\nhello world')
+    const body = JSON.parse(calls.find((c) => /\/v1\/generations(\?|$)/.test(c.url)).body)
+    assert.equal(body.input.duration, 30)
+    assert.equal(body.input.lyrics, '[Verse]\nhello world')
     assert.equal(result.duration, 30)
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -119,16 +134,19 @@ test('CV-127b music_generation：偶发 500 自动重试成功，回显 attempts
       if (text.includes('/api/v1/health')) {
         return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
       }
-      if (init.method === 'POST' && text.includes('txt2audio')) {
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
         calls += 1
         // 首次 500：故意耗时 >2s，模拟「生成过程中崩溃」的慢失败（后端偶发 500 的真实形态）
         if (calls === 1) {
           await new Promise((resolve) => { setTimeout(resolve, 2100) })
           return { ok: false, status: 500, text: async () => 'Internal Server Error' }
         }
-        return { ok: true, status: 200, json: async () => ({ filename: 'a.mp3', full_url: AUDIO_URL }) }
+        return { ok: true, status: 202, json: async () => MUSIC_SNAP_PENDING }
       }
-      if (text === AUDIO_URL) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]) }
+      if (text.includes('/poll')) {
+        return { ok: true, status: 200, json: async () => MUSIC_SNAP_DONE }
+      }
+      if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]) }
       return { ok: false, status: 404, text: async () => '' }
     }
     const registry = stubRegistry(dir)
@@ -146,8 +164,8 @@ test('CV-127b music_generation：显式传空 lyrics 也按纯器乐处理（此
     const calls = stubMusicFetch()
     const registry = stubRegistry(dir)
     await generateMusic(registry, 'p1', { captionPrompt: 'ambient', lyricsPrompt: '' })
-    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
-    assert.equal(body.lyrics_prompt, '[Instrumental]')
+    const body = JSON.parse(calls.find((c) => /\/v1\/generations(\?|$)/.test(c.url)).body)
+    assert.equal(body.input.lyrics, '[Instrumental]')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -160,10 +178,10 @@ test('CV-125 / CV-127b：持续失败时重试耗尽后透传错误，不建节�
     const registry = stubRegistry(dir)
     await assert.rejects(
       generateMusic(registry, 'p1', { captionPrompt: 'boom' }),
-      /Internal Server Error/,
+      /HTTP 500/,
     )
     // CV-127b：同参数重试到上限（共 3 次），耗尽后透传错误
-    assert.equal(calls.filter((c) => c.url.includes('txt2audio')).length, 3)
+    assert.equal(calls.filter((c) => /\/v1\/generations(\?|$)/.test(c.url)).length, 3)
     assert.equal(registry.getNodes().length, 0)
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -285,8 +303,8 @@ test('CV-130：有歌词时原样落进节点 lyrics（画布要显示的就是�
       language: 'zh',
       duration: 60,
     })
-    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
-    assert.equal(body.lyrics_prompt, LYRICS)
+    const body = JSON.parse(calls.find((c) => /\/v1\/generations(\?|$)/.test(c.url)).body)
+    assert.equal(body.input.lyrics, LYRICS)
     // 结果回显（模型据此确认「唱的就是这份词」，不要另编一份）
     assert.equal(result.lyrics, LYRICS)
     // 节点落盘：歌词是作品的一部分，不能只活在请求体里

@@ -143,10 +143,15 @@ export interface VideoRequest {
   readonly generateAudio?: boolean
 }
 
-/** 供应商回传的产物。filename 供下游工具链式引用（Drama 的 result 端点会返回）。 */
+/** 供应商回传的产物。filename 供下游工具链式引用（business = generation id 证据）。 */
 export interface ProviderSettled {
+  /** legacy 供应商回产物 URL；business 供应商产物字节走 content 端点（见 bytes），此字段留空串。 */
   readonly url: string
   readonly filename?: string
+  /** business 供应商：产物字节已在 content 端点下载完成，调用侧跳过 full_url 下载。 */
+  readonly bytes?: Uint8Array
+  /** business 供应商：产物扩展名（按 content 端点 MIME 判定）。 */
+  readonly ext?: string
 }
 
 /**
@@ -244,6 +249,30 @@ export interface ProviderContext {
   readonly readReferenceBytes?: (
     ref: VideoReference,
   ) => Promise<{ bytes: Uint8Array; ext: string }>
+  /**
+   * **业务 API 供应商专用**（迁移 B3-3）：一次完整的视频生成执行——创建（幂等键 +
+   * intent 台账）→ /poll 长轮询到终态 → content 下载产物字节。闭包由 generate.ts
+   * 装配（engine / 台账 / 在途名额 / 参考自愈都在调用上下文里）。
+   */
+  readonly businessRun?: (req: {
+    readonly model: string
+    readonly operation: 'image2videofl2va' | 'image2videoref2va'
+    readonly input: Record<string, unknown>
+    readonly refs: readonly { assetId: string; role: 'image' | 'video' | 'audio' }[]
+  }) => Promise<{ bytes: Uint8Array; ext: string; generationId: string }>
+  /** **业务 API 供应商专用**：引用句柄（asset_id）失效自愈——manifest 反查本地资产重传。 */
+  readonly healBusinessRef?: (handle: string) => Promise<string | null>
+  /** **业务 API 供应商专用**：句柄失效判定（与图像链路同一份实现，generate.ts 注入）。 */
+  readonly isBadReferenceError?: (error: unknown) => boolean
+  /** **业务 API 供应商专用**：自愈换名记账（落卡 generationPrompt/血缘同步用）。 */
+  readonly onHealed?: (oldHandle: string, newHandle: string) => void
+}
+
+/** businessRun 的返回形状（产物字节已下载 + generation id 句柄证据）。 */
+export interface BusinessVideoRunOutcome {
+  readonly bytes: Uint8Array
+  readonly ext: string
+  readonly generationId: string
 }
 
 /** 视频供应商适配器。新增供应商 = 新增一个本接口的实现。 */

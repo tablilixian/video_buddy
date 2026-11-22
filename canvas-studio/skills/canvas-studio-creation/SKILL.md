@@ -51,7 +51,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 
 写图像 / 视频 / 音频 / 镜头提示词前，**先查 `references/toolchain.md` §"能力槽位绑定表"加载对应 skill**，再读 `prompt-writing.md`。**本文有意不点名具体 skill**——新增知识型 skill 只改绑定表一处。
 
-**硬约束**（不加载 skill 也要遵守）：文生图**禁止传 `negativePrompt`**（后端静默丢弃，约束写进正向提示词）；结构性改图走 `image-edit` 槽位，不要用 `image_fix` 硬撑大改。
+**硬约束**（不加载 skill 也要遵守）：文生图**禁止传 `negativePrompt`**（后端静默丢弃，约束写进正向提示词）；结构性改图走 `image-edit` 槽位；图内文字出错走 Qwen 文字渲染重出（`image_fix` 已随后端改版下线）。
 
 ## 标准工作流
 
@@ -67,7 +67,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 5. **定妆锚点**：按 `consistency.md` 执行——有资产卡用其锚点，无卡出定妆照；含明确场景的片子**同时出场景概念图**（第 9 步 Ref2VA 输入）。
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA；仅构图 / 走位需钉死的镜才出姿态关键帧，规则见 `consistency.md`「逐镜出图」。**凡出关键帧必须传 `shotRefs=<该镜分镜卡>`**（分镜卡落地后才有；落地前不得出逐镜图）。
 6a. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 `submit_keyframes_for_approval(summary=…)` 提交并等确认；未出跳过本步；放手跑跳过。
-7. **上传**：对每个镜头图**逐个**调 `upload_image` 拿 filename（同步单任务）。
+7. **上传**：对每个镜头图**逐个**调 `upload_image` 拿素材句柄（异步任务，逐个等结果）。
 8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。**有字幕/台词就必须定配音**（动作在第 2d 步声音规划里执行）：逐步确认下 `ask_user_choice` 问「是否需要配音（推荐：需要）」；放手跑按形态默认（对白片必配、纯图文卡不配）；结论写进 `narration` / `sound`。
 9. **逐镜视频（参考组合优先，批量提交）**：读 `shot-format.md`——**条数纪律（C-16）：一个分镜 = 一条视频**（shot 是分镜内节拍、写进同一条 prompt）；**用户计划优先（C-9）**。默认 `video_composite` 多参考 Ref2VA（**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA；prompt 先按 `video-prompt` 槽位规范重写；**逐镜显式传 `generateAudio=true`**；返工传 `replaces`。**非 chain 镜在同一回合内一次性发出**，chain 镜按链序串行。⚠️ **图文路线（入口分流第 6 条）整步跳过**——直接进第 10 步 `render_composition` 出片。
 10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— **纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`；分屏 / 画中画布局先抄 `layout-recipes.md`）。**代码驱动路线的第一件事不是写 manifest，是先出片**：`scaffold_manifest` 拿骨架后**立刻** `render_composition({quality:"draft"})` 落一条成片（M1 硬线：故事板落地后 20 分钟内），再一轮加一层丰富 —— 等 manifest 写完才渲是 2026-11-05 那次 3h37m 零成片的直接原因（每轮的维度与判据见该片型的分册）。**音轨策略**：装配口径（原生声落位 / BGM 铺底 / 多句旁白 `voiceOverNodeIds`）见第 2d 步与 `audio-first.md`；短 BGM 默认自动补静音并明确告知。**BGM 时长铁律见 `toolchain.md`**；只裁一段用 `cut_audio`。**严禁再从图片重新生成视频。** **改一屏不要重写整份 spec**：用户说「这一屏 / 这段改一句」时用 `patch_spec_section`（`segmentId`，或用画布分镜卡的 `shotNodeId` 靠 `segmentRef` 定位；一次只改一处；传 `writeTo` 一步重编）—— 重写 spec 会让段表与缓存整体失效，把「只改这一段」变成整片重来；而直接改 manifest 会在下次重编时被覆盖。

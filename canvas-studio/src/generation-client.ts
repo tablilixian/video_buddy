@@ -21,6 +21,7 @@ import { ApiError } from './drama-management.js'
 import type { GenerationOperation, GenerationSnapshot, AssetRole } from './contracts/generation.js'
 import {
   buildInputRefs,
+  OPERATION_INPUT_FIELDS,
   validateInputRefs,
 } from './contracts/generation.js'
 import { makeCanvasError } from './error-system.js'
@@ -43,18 +44,19 @@ export interface GenerationRef {
 export interface CreateGenerationRequest {
   readonly model: string
   readonly operation: GenerationOperation
-  readonly input: Record<string, unknown>
+  /** asr2txt 不消费 input（白名单为空，组装时整个键不落）。 */
+  readonly input?: Record<string, unknown>
   readonly refs: ReadonlyArray<GenerationRef>
   /** 幂等键：调用方生成并**先于 POST**持久化（intent）；网络重试必须复用。 */
   readonly idempotencyKey: string
   readonly clientRunId?: string
 }
 
-/** 创建请求体（幂等 intent 的指纹与重放载体）。 */
+/** 创建请求体（幂等 intent 的指纹与重放载体）。asr2txt 不带 `input` 键（§6.5）。 */
 export interface CreateGenerationBody {
   readonly model: string
   readonly operation: string
-  readonly input: Record<string, unknown>
+  readonly input?: Record<string, unknown>
   readonly inputs: readonly { asset_id: string; role: string; ordinal: number }[]
 }
 
@@ -96,7 +98,8 @@ export function buildCreateGenerationBody(request: CreateGenerationRequest): Cre
   return {
     model: request.model,
     operation: request.operation,
-    input: request.input,
+    // asr2txt 的 input 白名单为空：整个 `input` 键不落（§6.5「不传 input」）。
+    ...(OPERATION_INPUT_FIELDS[request.operation].length > 0 ? { input: request.input ?? {} } : {}),
     inputs: refs,
   }
 }
@@ -136,7 +139,7 @@ export async function quoteGenerationCost(
     const quote = await deps.client.quoteGeneration(deps.token(), {
       model: request.model,
       operation: request.operation,
-      input: request.input,
+      ...(request.input !== undefined ? { input: request.input } : {}),
     })
     return quote.estimated_credits
   } catch {

@@ -59,17 +59,26 @@ export interface RunVideoOutcome {
   readonly filename?: string
   /** 供应商在 submit 阶段产生的钳制 / 升档等提示，经 generate.ts 汇入结果 warnings。 */
   readonly warnings?: readonly string[]
+  /** 业务 API 供应商（迁移 B3-3）：产物字节已在 content 端点下载，调用侧跳过 full_url 下载。 */
+  readonly bytes?: Uint8Array
+  /** 业务 API 供应商：产物扩展名（按 content 端点 MIME 判定）。 */
+  readonly ext?: string
 }
 
 /** 把 handle.warnings 拼进产物（exactOptionalPropertyTypes：非空才落字段）。 */
 function outcomeWith(
-  base: { url: string; filename?: string },
+  base: { url: string; filename?: string; bytes?: Uint8Array; ext?: string },
   handle: ProviderHandle,
 ): RunVideoOutcome {
-  if (handle.warnings !== undefined && handle.warnings.length > 0) {
-    return { ...base, warnings: handle.warnings }
+  const withBytes = {
+    ...base,
+    ...(handle.settled?.bytes !== undefined ? { bytes: handle.settled.bytes } : {}),
+    ...(handle.settled?.ext !== undefined ? { ext: handle.settled.ext } : {}),
   }
-  return base
+  if (handle.warnings !== undefined && handle.warnings.length > 0) {
+    return { ...withBytes, warnings: handle.warnings }
+  }
+  return withBytes
 }
 
 /**

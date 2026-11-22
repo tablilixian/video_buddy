@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateAsset } from '../lib/generate.js'
 import { parseProviderParam } from '../lib/providers/selection.js'
-import { createDramaProvider } from '../lib/providers/drama.js'
+import { createBusinessVideoProvider } from '../lib/providers/business.js'
 import { registerProvider, clearProviders, resolveProvider } from '../lib/providers/registry.js'
 
 // ── provider 参数校验 ─────────────────────────────────
@@ -42,7 +42,7 @@ function makeFalProvider() {
 
 test('resolveProvider：显式指定 fal 命中已注册 fal', () => {
   const fal = makeFalProvider()
-  registerProvider(createDramaProvider())
+  registerProvider(createBusinessVideoProvider())
   registerProvider(fal)
   assert.equal(resolveProvider('text-to-video', 'fal'), fal)
   clearProviders()
@@ -60,22 +60,34 @@ function stubFetch() {
     let body = null
     if (typeof init.body === 'string') { try { body = JSON.parse(init.body) } catch { /* keep */ } }
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
+    // 迁移 B3-3：视频主链路 = 业务 API（create 202 → poll → content）。
     if (init.method === 'POST') {
-      if (String(url).includes('/upload')) return { ok: true, json: async () => ({ filename: 'ref.png' }) }
-      if (String(url).includes('image2video')) {
+      if (/\/v1\/generations(\?|$)/.test(String(url))) {
         return {
           ok: true,
           status: 202,
-          json: async () => ({ job_id: jobId, status: 'pending', status_url: `/api/v1/jobs/${jobId}`, cancel_url: `/api/v1/jobs/${jobId}/cancel`, result_url: `/api/v1/jobs/${jobId}/result` }),
+          json: async () => ({
+            id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'image2videofl2va', status: 'queued', version: 1,
+            progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+          }),
         }
       }
-      return { ok: true, json: async () => ({ full_url: 'https://media.example/out.mp4' }) }
+      return { ok: true, json: async () => ({}) }
     }
-    if (String(url).includes(`/api/v1/jobs/${jobId}/result`)) {
-      return { ok: true, status: 200, json: async () => ({ prompt_id: jobId, filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 }) }
+    if (String(url).includes('/poll')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'image2videofl2va', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }),
+      }
     }
-    if (String(url).includes(`/api/v1/jobs/${jobId}`)) {
-      return { ok: true, status: 200, json: async () => ({ job_id: jobId, status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }) }
+    if (String(url).includes('/content/')) {
+      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
     return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
   }
@@ -96,7 +108,7 @@ function stubRegistry(initialNodes, assetsDir) {
 
 test.beforeEach(() => {
   falCalls = []
-  registerProvider(createDramaProvider())
+  registerProvider(createBusinessVideoProvider())
   registerProvider(makeFalProvider())
 })
 test.afterEach(() => { clearProviders() })
@@ -108,7 +120,7 @@ test('默认走 drama：未指定 provider 时调用 Drama 端点、fal 不被�
     const registry = stubRegistry([], dir)
     const result = await generateAsset(registry, 'video_generate', 'p1', { prompt: 'x' })
     assert.equal(falCalls.length, 0, '不应调用 fal')
-    assert.ok(calls.find((c) => c.url.includes('/generate/image2videofl2va')), '应调用 Drama FL2VA')
+    assert.ok(calls.find((c) => c.method === 'POST' && /\/v1\/generations(\?|$)/.test(c.url)), '应调用业务 API 创建')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
@@ -120,7 +132,7 @@ test('覆盖 fal：provider=fal 时走 fal 供应商（Drama 生成端点不被�
     const registry = stubRegistry([], dir)
     const result = await generateAsset(registry, 'video_generate', 'p1', { prompt: 'x', provider: 'fal' })
     assert.equal(falCalls.length, 1, '应调用 fal 一次')
-    assert.equal(calls.find((c) => c.url.includes('/generate/')), undefined, '不应调用 Drama 生成端点')
+    assert.equal(calls.find((c) => c.method === 'POST' && /\/v1\/generations(\?|$)/.test(c.url)), undefined, '不应调用业务 API 创建')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

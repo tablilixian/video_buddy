@@ -32,7 +32,7 @@ import { DeviceRegistry } from './device-registry.js'
 import { installAccountState, markCreditsStale } from './account-state.js'
 import { installBillingState } from './billing-state.js'
 import type { CatalogModel } from './drama-management.js'
-import { setGenerationSettledHook } from './generate-queue.js'
+import { setGenerationSettledHook, setGenerateQueueWidth } from './generate-queue.js'
 import {
   gatewayFingerprint, gatewayProfile, gatewayProviderOf, gatewayRow,
   publishGatewayCredential, readGatewayCatalog,
@@ -356,6 +356,9 @@ export function apply(ctx: Context, config: CanvasStudioConfigValue): void {
     autoSaveInterval: () => source().autoSaveInterval,
   }
   setRuntimeConfig(cfg)
+  // 迁移 B3-3（拍板 ④）：在途任务宽度 = maxParallel 设置项（getter 直读设置，
+  // 设置页改动即时生效）；与套餐 concurrent_generations 的取 min 在 B4 目录接线后收紧。
+  setGenerateQueueWidth(() => source().maxParallel)
 
   // Media generation tools register on the Host (the `tools` service is
   // Host-only); each tool resolves its project from the session workspace.

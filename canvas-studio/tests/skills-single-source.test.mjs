@@ -31,7 +31,10 @@ const REPO_ROOT = resolve(ROOT, '..')
 const SELF_NAME = 'skills-single-source.test.mjs'
 
 /** 被禁止再出现的上游 submodule 名（小写连字符形式；大写品牌名不在此列）。 */
-const FORBIDDEN = ['minimax-h3', 'minimax_h3']
+// 迁移 B3-3（2026-11-22）：`video.minimax_h3` 是**后台官方模型 code**（api(12).md
+// 探针实测，docs/api-probe/generation-migration-20261122/report.md §1），是本仓
+// 业务 API 的合法配置名而非上游 submodule 引用——黑名单收窄为带连字符的上游名。
+const FORBIDDEN = ['minimax-h3']
 
 const SCAN_DIRS = [
   { dir: join(ROOT, 'src'), exts: ['.ts', '.tsx'] },

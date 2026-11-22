@@ -23,6 +23,7 @@ import {
 import { libraryMediaUrl } from '../lib/contracts/asset-library.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
+import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
 import { resolveRefFilenames } from '../lib/reference-resolve.js'
 
 // ---------------------------------------------------------------------------
@@ -383,6 +384,35 @@ function stubFetchCapture() {
       try { body = JSON.parse(init.body) } catch { body = init.body }
     }
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
+    // 迁移 B2/B3-2：上传三段式 + 业务 API 生成分支（@ref 解析现在会先 promote 上传）。
+    const text = String(url)
+    const uploadHandled = assetUploadBranch(text, init)
+    if (uploadHandled !== null) return uploadHandled
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+      return {
+        ok: true,
+        status: 202,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'queued', version: 1,
+          progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+        }),
+      }
+    }
+    if (text.includes('/poll')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }),
+      }
+    }
+    if (text.includes('/content/')) {
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]), text: async () => '' }
+    }
     return {
       ok: true,
       status: 200,
@@ -407,9 +437,9 @@ test('image_generate：@ref[显示名] 自动解析为 Drama 文件名；普通�
       const { calls, restore } = stubFetchCapture()
       try {
         const result = await imgGen.execute({ prompt: '测试', filename: '@ref[角色A]' }, EXEC(dir))
-        const genCall = calls.find((c) => c.body && c.body.image1 !== undefined)
+        const genCall = calls.find((c) => c.method === 'POST' && /\/v1\/generations(\?|$)/.test(c.url))
         assert.ok(genCall, '应有一次携带 image1 的生成请求')
-        assert.equal(genCall.body.image1, 'A.png', '@ref[角色A] 应解析为 Drama 文件名 A.png')
+        assert.equal(genCall.body.inputs[0].asset_id, 'A.png', '@ref[角色A] 应解析为素材句柄（此处即测试桩给的 id 形态）')
         assert.ok(result.url.startsWith('/canvas-studio/assets/'), '产物应为同源相对 URL')
       } finally {
         restore()
@@ -421,8 +451,8 @@ test('image_generate：@ref[显示名] 自动解析为 Drama 文件名；普通�
       const { calls, restore } = stubFetchCapture()
       try {
         await imgGen.execute({ prompt: '测试', filename: 'raw.png' }, EXEC(dir))
-        const genCall = calls.find((c) => c.body && c.body.image1 !== undefined)
-        assert.equal(genCall.body.image1, 'raw.png', '普通文件名应原样透传')
+        const genCall = calls.find((c) => c.method === 'POST' && /\/v1\/generations(\?|$)/.test(c.url))
+        assert.equal(genCall.body.inputs[0].asset_id, 'raw.png', '普通文件名应原样透传')
       } finally {
         restore()
       }
@@ -459,8 +489,8 @@ test('CV-114：@ref[nodeId] 解析为 Drama 文件名（改名/重名不再失�
     const { calls, restore } = stubFetchCapture()
     try {
       await imgGen.execute({ prompt: '测试', filename: '@ref[n2]' }, EXEC(dir))
-      const genCall = calls.find((c) => c.body && c.body.image1 !== undefined)
-      assert.equal(genCall.body.image1, 'two.png', '@ref[nodeId] 应精确到 id 对应节点')
+      const genCall = calls.find((c) => c.method === 'POST' && /\/v1\/generations(\?|$)/.test(c.url))
+      assert.equal(genCall.body.inputs[0].asset_id, 'two.png', '@ref[nodeId] 应精确到 id 对应节点')
     } finally {
       restore()
     }

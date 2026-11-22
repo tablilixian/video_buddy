@@ -146,14 +146,30 @@ function stubMusicFetch() {
     if (text.includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
-    if (init.method === 'POST' && text.includes('txt2audio')) {
+    // 迁移 B3-2：业务 API txt2audio（创建/轮询/content 下载）。
+    if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+      return {
+        ok: true,
+        status: 202,
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'queued', version: 1,
+          progress: 0, billing_status: 'held', terminal: false, outputs: [], error: null,
+        }),
+      }
+    }
+    if (text.includes('/poll')) {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ prompt_id: 'p1', filename: 'audio_00001_.mp3', full_url: AUDIO_URL, duration: 15.3 }),
+        json: async () => ({
+          id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'succeeded', version: 2,
+          progress: 100, billing_status: 'held', terminal: true,
+          outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+          error: null,
+        }),
       }
     }
-    if (text === AUDIO_URL) {
+    if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
     return { ok: false, status: 404, text: async () => '' }

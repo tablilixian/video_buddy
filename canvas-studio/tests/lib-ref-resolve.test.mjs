@@ -28,7 +28,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AssetLibrary } from '../lib/asset-library.js'
-import { minimalPng } from './helpers/generation-stub.mjs'
+import { generationDownloadBranch, minimalPng } from './helpers/generation-stub.mjs'
 import { createStudioTools } from '../lib/host-tools.js'
 import { resetDramaProbeCache } from '../lib/generate.js'
 import { resetLookBudget } from '../lib/look-budget.js'
@@ -67,12 +67,14 @@ const genBranch = (text, init = {}) => {
       status: 200,
       json: async () => ({
         id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'succeeded', version: 2,
-        progress: 100, billing_status: 'held', terminal: true,
-        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+        progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
         error: null,
       }),
     }
   }
+  const handled = generationDownloadBranch(text, { contentBytes: minimalPng() }, genState)
+  if (handled !== null) return handled
   if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng()), text: async () => '' }
   return null
 }
@@ -110,8 +112,8 @@ function stubLibFetch() {
       if (target.includes('/poll')) {
         return {
           id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'txt2image', status: 'succeeded', version: 2,
-          progress: 100, billing_status: 'held', terminal: true,
-          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+          progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
           error: null,
         }
       }

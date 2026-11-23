@@ -1,6 +1,6 @@
 # DramaServer 业务 API 对接文档（canvas-studio 视角）
 
-> **版本:** 1.0.0（迁移 B1–B4 落地，2026-11-22）
+> **版本:** 1.1.0（迁移 B1–B4 落地 2026-11-22；2026-11-23 产物下载换代）
 > **背景:** 生成后端从旧 Drama Backend（`http://117.50.108.73:8082`，`/api/v1/generate/*` 同步单任务）
 > 整体迁移到 **DramaServer 业务 API**（`businessApiBase` 默认 `http://117.50.108.73`，`/v1/*` 全异步）。
 > 旧端口已彻底废弃（拍板 ①），旧契约全文存档于 [api-legacy-8082.md](./api-legacy-8082.md)（仅历史参考）。
@@ -8,6 +8,8 @@
 > [api-probe/generation-migration-20261122/dramaserver-api-12-reference.md](./api-probe/generation-migration-20261122/dramaserver-api-12-reference.md)；
 > 目录实测与字段形状见 [探测报告](./api-probe/generation-migration-20261122/report.md)；
 > 迁移方案与拍板见 [DramaServer-生成面迁移方案-20261122.md](./plans/DramaServer-生成面迁移方案-20261122.md)。
+> 2026-11-23 换代原文与 diff 结论留档于 [api-probe/generation-download-20261123](./api-probe/generation-download-20261123/report.md)
+> （`result_status` / `/download/{ordinal}` / 签名 URL 10 分钟 / 旧 content 兼容）。
 
 ## 1. 基址与鉴权
 
@@ -68,11 +70,18 @@
 - `GET /v1/generations/{id}/poll?after_version=<version>&wait=25s`：**游标只认 `version`**；
   **终态只认 `terminal`**（finalizing/cancel_requested 继续轮）；瞬时错误（网络/429/5xx）
   500ms→12s 退避 + Retry-After 优先；4xx 即停。
-- 打断/墙钟超时：**先 `POST /v1/generations/{id}/cancel` 再抛 CS-GEN-207 / CS-PROV-014**
+- 2026-11-23 换代：`succeeded` 只代表生成+结算完成，媒体可下载还要看 `result_status`：
+  `archiving` 时**即使 terminal 也继续长轮询**；`ready` 才下载；`failed`/`expired`
+  抛 CS-GEN-210/211 且**不自动重生成**（二次扣费）。
+- 打断/墙钟超时：**先 `POST /v1/generations/{id}/cancel` 再抛 CS-GEN-207 / CS-GEN-209**
   （新 API 可撤回在途任务，不留孤儿扣费）。
 - 版本未推进时按 `poll_after_ms`（默认 500ms）步进——防 microtask 空转饿死事件循环。
-- 产物：二进制输出经 `GET /v1/generations/{id}/content/{ordinal}` 流式下载（CR-010 限长）；
-  **文本输出（image2vl/video2vl 的 `text`、asr2txt 的 `txt/txt_word/txt_segment`）内联快照，不调 content**。
+- 产物下载（仅二进制）：`result_status=ready` + 输出带 `download_url` 后，
+  `GET /v1/generations/{id}/download/{ordinal}` 票据 → Host 直连票据里的
+  Blob/CDN 签名 URL（10 分钟有效、不可跟随跳转；401/403 重签一次）→ 流式限长读取
+  （CR-010）。`409 result_not_ready` 防御性回轮询，**不回退 `/content/{ordinal}`**。
+  票据 `size_bytes`/`checksum_sha256` + PNG(IEND)/MP4(moov) 结构双校验，坏件重试 ×2 后 CS-NET-012。
+  **文本输出（image2vl/video2vl 的 `text`、asr2txt 的 `txt/txt_word/txt_segment`）内联快照，不取票、不下载**。
 
 ## 6. 计费与并发
 
@@ -82,7 +91,7 @@
 - **并发宽度** = min(设置页 `maxParallel`，套餐 `concurrent_generations`)，**出厂默认 1**（拍板 ④）；
   套餐值未知时不钳制（硬限制在服务端 409）。语义 = 在途任务数（acquire 创建前 / release 终态）。
 - 台账 `jobs.json` v2：`api:'business'` 记录带 intent（幂等重放凭据）与 version 游标；
-  Host 重启恢复 = intent 占位重放创建 / 有 id 续轮询 → content 下载 → 共享结算。
+  Host 重启恢复 = intent 占位重放创建 / 有 id 续轮询 → 取票直连下载 → 共享结算。
   **v1 旧记录原样保留不处置**（拍板 ③）。
 
 ## 7. 错误码（本仓映射）
@@ -94,10 +103,12 @@
 | 余额不足预估（quote 硬闸） | CS-BILL-002 |
 | 401（登录态） | CS-AUTH-001 |
 | 生成失败/参数/幂等冲突 | CS-GEN-206（带 httpStatus 供参考自愈） |
-| 打断 / 墙钟超时 | CS-GEN-207 / CS-PROV-014 |
+| 打断 / 墙钟超时 | CS-GEN-207 / CS-GEN-209 |
+| 结果文件准备失败 / 已过期 | CS-GEN-210 / CS-GEN-211（不自动重生成） |
+| 下载不完整或校验失败 | CS-NET-012（重试 ×2 后丢弃坏件） |
 | 网络层（fetch 抛错） | CS-NET-001 |
 
-服务端稳定 `error.code`（not_found / conflict / gone / rate_limited / unauthenticated / unavailable）
+服务端稳定 `error.code`（not_found / conflict / gone / result_not_ready / rate_limited / unauthenticated / unavailable）
 按 ApiError 结构化透传，调用侧翻译——不解析文案。
 
 ## 8. 限流

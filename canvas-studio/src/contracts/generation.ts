@@ -11,6 +11,9 @@
  *    / 快照的 `terminal` 字段，不许按 status 字符串自行判断。
  * 3. **轮询游标只认 `version`**（§6.9.2「不能把 progress 或时间戳当游标」）——
  *    长轮询 `after_version` 永远取上一帧快照的 `version`。
+ * 4. **`succeeded` 不等于可下载**（2026-11-23 API 换代 §6.9.3/§6.10）——终态后
+ *    还要看 `result_status`：`archiving` 继续轮询，只有 `ready` 才允许申请下载
+ *    票据；`/content/{ordinal}` 仅旧客户端兼容，**新链路不回退**。
  *
  * 状态机与 operation 矩阵见 api(12).md §6.4/§6.9.3；素材角色规则见 §6.5
  * （`inputs[]` 每项只允许 asset_id/role/ordinal；同 role ordinal 从 1 连续唯一；
@@ -303,16 +306,49 @@ export function isTerminalGenerationStatus(status: GenerationStatus): boolean {
 /** 计费状态（§6.9.3）。 */
 export type GenerationBillingStatus = 'none' | 'held' | 'committed' | 'released'
 
-/** 输出类型（§6.10：image/video/audio 走 content 端点；text/json 内联在快照里）。 */
+/**
+ * 媒体结果准备状态（2026-11-23 换代，§6.9.3）：`succeeded` 只代表生成+结算完成，
+ * 不代表媒体可下载。老快照/非媒体任务该字段为空串（服务端 omitempty）。
+ */
+export const GENERATION_RESULT_STATUSES = ['archiving', 'ready', 'failed', 'expired', ''] as const
+export type GenerationResultStatus = (typeof GENERATION_RESULT_STATUSES)[number]
+
+export function isGenerationResultStatus(value: unknown): value is GenerationResultStatus {
+  return (GENERATION_RESULT_STATUSES as readonly unknown[]).includes(value)
+}
+
+/** 终态为 succeeded 但仍在归档：长轮询不能因 `terminal` 提前结束（§6.9.3）。 */
+export function isArchivingGeneration(snapshot: GenerationSnapshot): boolean {
+  return snapshot.status === 'succeeded' && snapshot.result_status === 'archiving'
+}
+
+/** 长轮询退出条件：`terminal` 之外的唯一例外是 succeeded+archiving。 */
+export function shouldContinuePolling(snapshot: GenerationSnapshot): boolean {
+  return !snapshot.terminal || isArchivingGeneration(snapshot)
+}
+
+/** 只有 ready 且输出带 download_url 才允许走新下载链路（§6.10）。 */
+export function canDownloadGenerationOutputs(snapshot: GenerationSnapshot): boolean {
+  return snapshot.status === 'succeeded'
+    && snapshot.result_status === 'ready'
+    && snapshot.outputs.some((output) => output.download_url !== undefined)
+}
+
+/** 输出类型（§6.10：image/video/audio 走签名下载端点；text/json 内联在快照里）。 */
 export type GenerationOutputType = 'image' | 'video' | 'audio' | 'text' | 'json'
 
-/** 单条输出。二进制输出只有 `content_url`（受保护相对路径，不是 CDN/Provider URL）。 */
+/** 单条输出。二进制输出的 `download_url` 是新链路入口；`content_url` 仅旧客户端兼容。 */
 export interface GenerationOutput {
   readonly ordinal: number
   readonly type: GenerationOutputType
   readonly mime_type: string
-  /** 二进制输出才有；Host 侧按 ordinal 去 content 端点取字节。 */
+  /** 新链路入口（稳定 API 路径）：调用后拿短期 Blob/CDN 签名地址。 */
+  readonly download_url?: string
+  /** 旧客户端兼容端点（新链路不使用；保留解析以兼容老快照）。 */
   readonly content_url?: string
+  /** 产物字节数与 SHA-256（有则用于下载后完整性强校验）。 */
+  readonly size_bytes?: number
+  readonly checksum_sha256?: string
   /** 文本理解（image2vl/video2vl）内联文本。 */
   readonly text?: string
   /** ASR 结构化输出（字段名与旧后端一致，asr-transcript.ts 适配不变）。 */
@@ -338,6 +374,8 @@ export interface GenerationSnapshot {
   readonly model_id?: string
   readonly operation: GenerationOperation
   readonly status: GenerationStatus
+  /** 媒体结果准备状态；老快照缺省空串。 */
+  readonly result_status: GenerationResultStatus
   readonly version: number
   readonly progress: number
   readonly billing_status: GenerationBillingStatus
@@ -369,6 +407,7 @@ export function parseGenerationSnapshot(payload: unknown): GenerationSnapshot | 
     id: string
     operation: GenerationOperation
     status: GenerationStatus
+    result_status: GenerationResultStatus
     version: number
     progress: number
     billing_status: GenerationBillingStatus
@@ -383,6 +422,8 @@ export function parseGenerationSnapshot(payload: unknown): GenerationSnapshot | 
     id: raw['id'],
     operation: raw['operation'],
     status: raw['status'],
+    // 未知/缺失值归空串而不是整帧拒收：老快照没有这个字段，文本任务也没有媒体归档。
+    result_status: isGenerationResultStatus(raw['result_status']) ? raw['result_status'] : '',
     version: raw['version'],
     progress: typeof raw['progress'] === 'number' && Number.isFinite(raw['progress'])
       ? Math.min(100, Math.max(0, raw['progress']))
@@ -399,6 +440,65 @@ export function parseGenerationSnapshot(payload: unknown): GenerationSnapshot | 
   if (typeof raw['created_at'] === 'string') snapshot.created_at = raw['created_at']
   if (typeof raw['updated_at'] === 'string') snapshot.updated_at = raw['updated_at']
   return snapshot
+}
+
+/**
+ * 下载票据（`GET /v1/generations/{id}/download/{ordinal}` 200，§6.10）。
+ * `headers` 里的签名头必须原样带给 Blob/CDN；票据不是媒体字节本身。
+ */
+export interface GenerationDownload {
+  readonly url: string
+  readonly headers: Readonly<Record<string, string>>
+  readonly expires_at: string
+  readonly size_bytes: number
+  readonly mime_type?: string
+  readonly checksum_sha256?: string
+}
+
+/**
+ * 票据里的 URL 是服务端给的、Host 会直接 GET 的地址：只放行 https 或回环 http，
+ * 且禁止 userinfo（与 presign 的 upload_url 同口径，防 SSRF / 凭据外带）。
+ */
+export function isSafeGenerationDownloadUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0) return false
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return false
+  }
+  const loopback = parsed.protocol === 'http:'
+    && ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(parsed.hostname)
+  return (parsed.protocol === 'https:' || loopback)
+    && parsed.username === '' && parsed.password === ''
+}
+
+/** 解析下载票据；url / expires_at / size_bytes 三者任一坏则 null（不猜）。 */
+export function parseGenerationDownload(payload: unknown): GenerationDownload | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  const raw = payload as Record<string, unknown>
+  if (typeof raw['url'] !== 'string' || raw['url'].length === 0) return null
+  if (typeof raw['expires_at'] !== 'string') return null
+  const size = raw['size_bytes']
+  if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) return null
+  const headers: Record<string, string> = {}
+  const rawHeaders = raw['headers']
+  if (rawHeaders !== undefined && rawHeaders !== null && typeof rawHeaders === 'object') {
+    for (const [key, value] of Object.entries(rawHeaders as Record<string, unknown>)) {
+      if (typeof value === 'string') headers[key] = value
+    }
+  }
+  const ticket: {
+    url: string
+    headers: Record<string, string>
+    expires_at: string
+    size_bytes: number
+    mime_type?: string
+    checksum_sha256?: string
+  } = { url: raw['url'], headers, expires_at: raw['expires_at'], size_bytes: size }
+  if (typeof raw['mime_type'] === 'string') ticket.mime_type = raw['mime_type']
+  if (typeof raw['checksum_sha256'] === 'string') ticket.checksum_sha256 = raw['checksum_sha256']
+  return ticket
 }
 
 function parseGenerationError(payload: unknown): GenerationError | null {
@@ -433,7 +533,10 @@ function parseGenerationOutput(payload: unknown): GenerationOutput | null {
     ordinal: number
     type: GenerationOutputType
     mime_type: string
+    download_url?: string
     content_url?: string
+    size_bytes?: number
+    checksum_sha256?: string
     text?: string
     txt?: string
     txt_word?: string
@@ -441,7 +544,10 @@ function parseGenerationOutput(payload: unknown): GenerationOutput | null {
     width?: number
     height?: number
   } = { ordinal, type, mime_type: raw['mime_type'] }
+  if (typeof raw['download_url'] === 'string') output.download_url = raw['download_url']
   if (typeof raw['content_url'] === 'string') output.content_url = raw['content_url']
+  if (typeof raw['size_bytes'] === 'number' && Number.isFinite(raw['size_bytes'])) output.size_bytes = raw['size_bytes']
+  if (typeof raw['checksum_sha256'] === 'string') output.checksum_sha256 = raw['checksum_sha256']
   if (typeof raw['text'] === 'string') output.text = raw['text']
   if (typeof raw['txt'] === 'string') output.txt = raw['txt']
   if (typeof raw['txt_word'] === 'string') output.txt_word = raw['txt_word']

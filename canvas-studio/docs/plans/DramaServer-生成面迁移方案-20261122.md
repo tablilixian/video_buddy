@@ -4,6 +4,9 @@
 > 输入材料：后台《DramaServer 业务 API》api(12).md、参考项目 `参考/reelsbuddy-desktop`、后台补充说明两条
 > （① 资源上传流程改版、以 asset_id 标识资源；② 全部异步 poll，客户端需同步等待就在本地 poll，
 > 未来转向纯异步，须限制客户端同时任务数；视频支持 1:1）。
+> ⚠️ 后续换代：2026-11-23 后端把产物下载从本文的 `/content/{ordinal}` 换成
+> `/download/{ordinal}` 票据 + 签名 Blob/CDN，并新增 `result_status`；现行契约见
+> [../api.md](../api.md) v1.1.0 与 [换代报告](../api-probe/generation-download-20261123/report.md)。
 
 ---
 

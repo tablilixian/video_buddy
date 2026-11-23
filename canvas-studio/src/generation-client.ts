@@ -9,24 +9,43 @@
  *    瞬时错误（网络/429/5xx）指数退避 500ms→12s 封顶 + `Retry-After` 优先 + 抖动、
  *    4xx 业务错误即停；**终态只认 `terminal`**；用户打断尽力 `POST /cancel` 后抛
  *    取消码（CS-GEN-207）——新 API 可以撤回在途任务，不再留孤儿扣费。
- * 3. **下载**：受保护 content 端点流式限长读取（CR-010 语义，实现在 media-download.ts）。
+ * 3. **下载**：`result_status=ready` 后取 `/download/{ordinal}` 票据 → 直连
+ *    Blob/CDN 流式限长读取（CR-010 语义，实现在 media-download.ts），按票据的
+ *    size_bytes/checksum 强校验；旧 content 端点只留 deprecated 兼容方法，不回退。
  *
  * 本模块**不做**业务语义（工具上下文错误文案、台账落盘、产物落卡）——那些在
  * generate.ts 调用侧。协议层错误以 ApiError 原样上抛（结构化 code/status/retryAfter），
  * 调用侧翻译成 CS 码。
  */
-import { randomUUID } from 'node:crypto'
-import type { DramaClient } from './drama-management.js'
+import { createHash, randomUUID } from 'node:crypto'
+import type { DramaClient, OpenedGenerationDownload } from './drama-management.js'
 import { ApiError } from './drama-management.js'
-import type { GenerationOperation, GenerationSnapshot, AssetRole } from './contracts/generation.js'
+import type {
+  GenerationDownload,
+  GenerationOperation,
+  GenerationOutput,
+  GenerationSnapshot,
+  AssetRole,
+} from './contracts/generation.js'
 import {
   buildInputRefs,
+  canDownloadGenerationOutputs,
+  normalizeChecksumHex,
   OPERATION_INPUT_FIELDS,
+  shouldContinuePolling,
   validateInputRefs,
 } from './contracts/generation.js'
 import { makeCanvasError, throwError } from './error-system.js'
 import './errors/catalog.js'
-import { IMAGE_DOWNLOAD_MAX_BYTES, IMAGE_DOWNLOAD_TIMEOUT_MS, MEDIA_DOWNLOAD_MAX_BYTES, MEDIA_DOWNLOAD_TIMEOUT_MS, readBodyLimited } from './media-download.js'
+import {
+  IMAGE_DOWNLOAD_MAX_BYTES,
+  IMAGE_DOWNLOAD_TIMEOUT_MS,
+  MEDIA_DOWNLOAD_MAX_BYTES,
+  MEDIA_DOWNLOAD_TIMEOUT_MS,
+  mp4LooksIntact,
+  pngValidateAndTrim,
+  readBodyLimited,
+} from './media-download.js'
 /** 引擎依赖（由 generate.ts 装配注入，避免模块环）。 */
 export interface GenerationEngineDeps {
   readonly client: DramaClient
@@ -178,7 +197,8 @@ function isRetriableStatus(status: number): boolean {
 }
 
 /**
- * 跟随到终态（`terminal === true`）。返回**终态快照**。
+ * 跟随到可结算快照。返回**终态快照**（2026-11-23 起 `succeeded+archiving` 也会
+ * 继续轮询，直到 result_status 落到 ready/failed/expired）。
  *
  * 轮询游标只认 `version`；等待超时响应仍是 200（不当错误）；4xx 业务错误立即
  * 上抛（重试没有意义）；`cancel_requested` / `finalizing` 继续轮询。
@@ -256,8 +276,9 @@ export async function followGeneration(
     if (opts.onSnapshot !== undefined) {
       await opts.onSnapshot(current)
     }
-    // 终态只认服务端的 `terminal` 标志（§6.9.3：finalizing/cancel_requested 都不是终态）。
-    if (current.terminal === true) {
+    // 2026-11-23 换代：`terminal` 仍是唯一终态标志，但 succeeded+archiving 是
+    // 唯一例外——生成已结算、媒体还在归档，必须继续长轮询（协议层统一判据）。
+    if (!shouldContinuePolling(current)) {
       return current
     }
     // 步进节奏（防饿死事件循环）：版本推进了也要让出一拍 macrotask；版本没推进
@@ -282,17 +303,114 @@ function pace(ms: number, signal: AbortSignal | undefined): Promise<void> {
   })
 }
 
-/** content 下载选项（默认沿用 CR-010 的媒体/图片档）。 */
+/** 下载选项（默认沿用 CR-010 的媒体/图片档）。 */
 export interface DownloadContentOptions {
   readonly signal?: AbortSignal
   readonly maxBytes?: number
   readonly timeoutMs?: number
 }
 
+export interface DownloadGenerationOutputOptions extends DownloadContentOptions {
+  /** 退避参数透传给 409 后的回轮询（测试注入 1ms 免等待）。 */
+  readonly backoffStartMs?: number
+  readonly backoffCapMs?: number
+}
+
+/** 已下载的字节 + 票据元数据（票据给 size_bytes/checksum，供落盘前强校验）。 */
+export interface GeneratedDownloadBytes {
+  readonly bytes: Buffer
+  readonly ticket: GenerationDownload | null
+}
+
 /**
- * 从受保护 content 端点取输出字节（Bearer 由 DramaClient 注入）。
- * 410 gone（结果过期）等状态码由 DramaClient 的错误通道上抛（ApiError），
- * 调用侧翻译成 CS 码。
+ * 新链路下载：`/download/{ordinal}` 取票 → Host 直连 Blob/CDN → 限长读字节。
+ *
+ * `result_status=archiving` 时调用方不得进来；万一票据返 409 result_not_ready
+ * （状态切换竞态），防御性回轮询到 ready 再取一次票——**不回退旧 content**。
+ * 票据的 size_bytes 同时当读侧硬上限，防止签名地址回超长响应。
+ */
+export async function downloadGenerationOutput(
+  deps: GenerationEngineDeps,
+  snapshot: GenerationSnapshot,
+  output: GenerationOutput,
+  opts: DownloadGenerationOutputOptions = {},
+): Promise<GeneratedDownloadBytes> {
+  const label = `生成结果 ${snapshot.id}#${output.ordinal}`
+  const defaultMax = opts.maxBytes ?? MEDIA_DOWNLOAD_MAX_BYTES
+  const followOpts = {
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    ...(opts.backoffStartMs !== undefined ? { backoffStartMs: opts.backoffStartMs } : {}),
+    ...(opts.backoffCapMs !== undefined ? { backoffCapMs: opts.backoffCapMs } : {}),
+  }
+
+  const fetchOnce = async (): Promise<GeneratedDownloadBytes> => {
+    const opened: OpenedGenerationDownload = await deps.client.openGenerationDownload(
+      deps.token(), snapshot.id, output.ordinal,
+    )
+    if (!opened.response.ok) {
+      throwError('CS-NET-007', { label, status: opened.response.status })
+    }
+    const expected = opened.ticket.size_bytes
+    const bytes = await readBodyLimited(opened.response, {
+      maxBytes: expected > 0 ? Math.min(defaultMax, expected) : defaultMax,
+      timeoutMs: opts.timeoutMs ?? MEDIA_DOWNLOAD_TIMEOUT_MS,
+      label,
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    })
+    return { bytes, ticket: opened.ticket }
+  }
+
+  try {
+    return await fetchOnce()
+  } catch (cause) {
+    const notReady = cause instanceof ApiError
+      && (cause.code === 'result_not_ready' || cause.status === 409)
+    if (!notReady) throw cause
+    // 强制再走一轮长轮询：即便快照说 ready，服务端仍可能刚切状态；伪造 archiving
+    // 让 followGeneration 的判据把这一帧纳入等待，直到结果准备真正收敛。
+    const refreshed = await followGeneration(
+      deps,
+      { ...snapshot, result_status: 'archiving' },
+      followOpts,
+    )
+    if (!canDownloadGenerationOutputs(refreshed)) throw cause
+    return fetchOnce()
+  }
+}
+
+/**
+ * 下载字节的强校验：票据 size_bytes / checksum_sha256 + PNG/MP4 结构。
+ * 返回 false 表示这一份字节不可用（调用侧重试 ×2 后抛 CS-NET-012，坏件不落盘）。
+ */
+export function isGenerationOutputBytesIntact(
+  bytes: Buffer,
+  ticket: GenerationDownload | null,
+  mimeType: string,
+): boolean {
+  if (ticket !== null && bytes.length !== ticket.size_bytes) return false
+  if (ticket !== null && ticket.checksum_sha256 !== undefined) {
+    const expected = normalizeChecksumHex(ticket.checksum_sha256)
+    if (expected === null) return false
+    if (createHash('sha256').update(bytes).digest('hex') !== expected) return false
+  }
+  if (mimeType === 'image/png') return pngValidateAndTrim(bytes) !== null
+  if (mimeType === 'video/mp4') return mp4LooksIntact(bytes)
+  return true
+}
+
+/** 结果准备失败/过期 → 稳定的用户文案，不自动重新生成（避免二次扣费）。 */
+export function throwIfResultUnavailable(snapshot: GenerationSnapshot, label: string): void {
+  if (snapshot.result_status === 'failed') throwError('CS-GEN-210', { label })
+  if (snapshot.result_status === 'expired') throwError('CS-GEN-211', { label })
+  if (snapshot.status === 'succeeded' && snapshot.result_status !== 'ready') {
+    throwError('CS-NET-010')
+  }
+}
+
+/**
+ * @deprecated 旧 content 端点（2026-11-23 换代）：新链路只用 downloadGenerationOutput。
+ * 410 gone 等状态码由 DramaClient 的错误通道上抛，调用侧翻译成 CS 码。
  */
 export async function downloadGenerationContent(
   deps: GenerationEngineDeps,

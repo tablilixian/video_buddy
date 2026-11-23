@@ -15,13 +15,14 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateMusic } from '../lib/generate.js'
+import { generationDownloadBranch } from './helpers/generation-stub.mjs'
 
 const AUDIO_URL = 'https://media.example/audio_00001_.mp3'
 
 const MUSIC_SNAP_DONE = {
   id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'succeeded', version: 2,
-  progress: 100, billing_status: 'committed', terminal: true, error: null,
-  outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+  progress: 100, billing_status: 'committed', terminal: true, result_status: 'ready', error: null,
+  outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
 }
 const MUSIC_SNAP_PENDING = {
   id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'queued', version: 1,
@@ -49,6 +50,8 @@ function stubMusicFetch() {
     if (text.includes('/poll')) {
       return { ok: true, status: 200, json: async () => MUSIC_SNAP_DONE }
     }
+    const handled = generationDownloadBranch(text, { contentBytes: new Uint8Array([1, 2, 3]) })
+    if (handled !== null) return handled
     if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }
@@ -146,6 +149,8 @@ test('CV-127b music_generation：偶发 500 自动重试成功，回显 attempts
       if (text.includes('/poll')) {
         return { ok: true, status: 200, json: async () => MUSIC_SNAP_DONE }
       }
+      const handled = generationDownloadBranch(text, { contentBytes: new Uint8Array([1]) })
+      if (handled !== null) return handled
       if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]) }
       return { ok: false, status: 404, text: async () => '' }
     }

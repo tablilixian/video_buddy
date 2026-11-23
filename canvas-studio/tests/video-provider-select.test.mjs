@@ -13,6 +13,7 @@ import { generateAsset } from '../lib/generate.js'
 import { parseProviderParam } from '../lib/providers/selection.js'
 import { createBusinessVideoProvider } from '../lib/providers/business.js'
 import { registerProvider, clearProviders, resolveProvider } from '../lib/providers/registry.js'
+import { generationDownloadBranch, minimalMp4 } from './helpers/generation-stub.mjs'
 
 // ── provider 参数校验 ─────────────────────────────────
 test('parseProviderParam：合法值透传、未提供返回 undefined、非法值抛错', () => {
@@ -80,14 +81,16 @@ function stubFetch() {
         status: 200,
         json: async () => ({
           id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'image2videofl2va', status: 'succeeded', version: 2,
-          progress: 100, billing_status: 'held', terminal: true,
-          outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
+          progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+          outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
           error: null,
         }),
       }
     }
+    const handled = generationDownloadBranch(String(url), { contentBytes: minimalMp4() })
+    if (handled !== null) return handled
     if (String(url).includes('/content/')) {
-      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      return { ok: true, arrayBuffer: async () => new Uint8Array(minimalMp4()) }
     }
     return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
   }

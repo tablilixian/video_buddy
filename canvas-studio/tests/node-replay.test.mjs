@@ -28,7 +28,7 @@ import { generateAsset } from '../lib/generate.js'
 import { isReplayable } from '../lib/node-params.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { assetUploadBranch, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
-import { minimalPng } from './helpers/generation-stub.mjs'
+import { generationDownloadBranch, minimalPng } from './helpers/generation-stub.mjs'
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 
@@ -111,11 +111,15 @@ function stubMusicFetch() {
     if (text.includes('/poll')) {
       return { ok: true, status: 200, json: async () => ({
         id: 'cccccccc-cccc-4ccc-8ccc-000000000002', operation: 'txt2audio', status: 'succeeded', version: 2,
-        progress: 100, billing_status: 'held', terminal: true,
-        outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+        progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+        outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
         error: null,
       }) }
     }
+    // 命中签名 URL 时保留一次 download 计数（原 content 分支的 push 语义）。
+    if (text.startsWith('https://blob.example.test/signed/')) calls.push({ kind: 'download' })
+    const handled = generationDownloadBranch(text, { contentBytes: new Uint8Array([1, 2, 3]) })
+    if (handled !== null) return handled
     if (text.includes('/content/')) {
       calls.push({ kind: 'download' })
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
@@ -237,11 +241,15 @@ function stubSheetFetch() {
     if (text.includes('/poll')) {
       return { ok: true, status: 200, json: async () => ({
         id: 'cccccccc-cccc-4ccc-8ccc-000000000003', operation: 'image2character', status: 'succeeded', version: 2,
-        progress: 100, billing_status: 'held', terminal: true,
-        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL }],
+        progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+        outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL, download_url: '/v1/generations/x/download/0' }],
         error: null,
       }) }
     }
+    // 命中签名 URL 时保留一次 download 计数（原 content 分支的 push 语义）。
+    if (text.startsWith('https://blob.example.test/signed/')) calls.push({ kind: 'download' })
+    const handled = generationDownloadBranch(text, { contentBytes: new Uint8Array(minimalPng(1808, 1024)) })
+    if (handled !== null) return handled
     if (text.includes('/content/')) {
       calls.push({ kind: 'download' })
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng(1808, 1024)) }

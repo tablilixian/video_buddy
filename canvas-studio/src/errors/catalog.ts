@@ -1127,9 +1127,9 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
-    userMessage: '生成产物下载不完整（多次尝试仍被截断），本次结果已丢弃。请直接重新生成；若反复出现请联系开发并附任务时间。',
-    devMessage: 'content 端点下载 {attempts} 次均截断：need≥{need} got {got}（{label}）',
-    recoveryHint: '服务端 content serving 疑似故障——重试同一 generation 无效时建议整单重新生成；持续出现需反馈 DramaServer。',
+    userMessage: '生成产物下载不完整或校验失败（多次尝试仍失败），本次结果已丢弃。请稍后重试；若反复出现请反馈 DramaServer——不要重复生成，以免二次扣费。',
+    devMessage: '产物下载 {attempts} 次均不完整：{label}（末次 {bytes} 字节，结构/票据校验失败）',
+    recoveryHint: '下载链路故障（旧 content 端点 2026-11-23 实测 ~55KB/s + 31s 硬断流；新签名地址则比对 size_bytes/checksum）——同一 generation 重试通常无效；反馈 DramaServer，勿整单重生成（二次扣费且新产物更易截断）。',
   },
   {
     // 业务 API 异步任务超时（迁移 B3-3）：预算内后台未到终态，已自动 cancel。
@@ -1143,6 +1143,33 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '{tool} 超时（{seconds} 秒未完成），已自动取消后台任务。可稍后重试。',
     devMessage: 'generation {label} 超时：{seconds}s 未到终态，已 cancel',
     recoveryHint: '后台排队或执行慢——稍后重试；反复出现按 operation 反馈 DramaServer。',
+  },
+  {
+    // 2026-11-23 换代：succeeded 只代表生成+结算完成；result_status=failed 是
+    // 「媒体归档失败」，与生成失败（CS-GEN-206）是两件事，且**不自动重生成**。
+    code: 'CS-GEN-210',
+    module: 'GEN',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    uiKind: 'terminal',
+    userMessage: '{label}已生成成功，但结果文件准备失败，本次产物不可用。请勿重复生成以免二次扣费；稍后反馈 DramaServer 处理。',
+    devMessage: 'generation result_status=failed: {label}',
+    recoveryHint: 'result_status=failed 是服务端归档失败；重新生成会再扣一次积分，先反馈后端。',
+  },
+  {
+    // 同上：结果文件已过保留期。稳定文案，不自动重生成（用户再请求才算新任务）。
+    code: 'CS-GEN-211',
+    module: 'GEN',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    uiKind: 'terminal',
+    userMessage: '{label}的结果文件已过期，无法下载。不会自动重新生成；如需产物请重新发起生成。',
+    devMessage: 'generation result_status=expired: {label}',
+    recoveryHint: '签名票据/结果保留期由 DramaServer 决定；不自动重生成以免意外扣费。',
   },
   {
     // quote 硬闸（迁移 B4，拍板 ⑤）：预估积分 > 可用余额 → 提交前拦截。

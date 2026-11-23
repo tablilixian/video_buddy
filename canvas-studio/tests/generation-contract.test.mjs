@@ -16,11 +16,17 @@ import {
   buildGenerationInput,
   buildGenerationListQuery,
   buildInputRefs,
+  canDownloadGenerationOutputs,
   formatPollWait,
+  isArchivingGeneration,
   isGenerationId,
+  isGenerationResultStatus,
   isGenerationStatus,
+  isSafeGenerationDownloadUrl,
   isTerminalGenerationStatus,
   normalizeChecksumHex,
+  parseGenerationDownload,
+  shouldContinuePolling,
   parseAssetCompleteResponse,
   parseAssetPresignResponse,
   parseGenerationOutputs,
@@ -178,6 +184,65 @@ test('状态机：finalizing / cancel_requested 不是终态（§6.9.3）', () =
   assert.equal(isGenerationStatus(null), false)
 })
 
+// ── 2026-11-23 换代：result_status / 下载票据 ────────────────────────────────
+
+test('result_status：succeeded+archiving 继续轮询；只有 ready 且有 download_url 才允许下载', () => {
+  const base = { ...CREATE_202_SAMPLE, status: 'succeeded', terminal: true }
+  const archiving = { ...base, result_status: 'archiving' }
+  assert.equal(isGenerationResultStatus('archiving'), true)
+  assert.equal(isGenerationResultStatus('nope'), false)
+  assert.equal(isArchivingGeneration(archiving), true)
+  assert.equal(shouldContinuePolling(archiving), true, 'terminal 也不能提前结束归档等待')
+  const ready = {
+    ...base,
+    result_status: 'ready',
+    outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', download_url: '/v1/generations/x/download/0' }],
+  }
+  assert.equal(shouldContinuePolling(ready), false)
+  assert.equal(canDownloadGenerationOutputs(ready), true)
+  assert.equal(canDownloadGenerationOutputs({ ...ready, result_status: 'archiving' }), false)
+  assert.equal(canDownloadGenerationOutputs({ ...ready, outputs: [] }), false)
+  for (const status of ['failed', 'expired']) {
+    const done = { ...base, result_status: status }
+    assert.equal(shouldContinuePolling(done), false, `${status} 是结果准备终态，不应继续轮询`)
+    assert.equal(canDownloadGenerationOutputs(done), false)
+  }
+})
+
+test('isSafeGenerationDownloadUrl：https / 回环 http 放行；公网 http、userinfo、file 拒收', () => {
+  assert.equal(isSafeGenerationDownloadUrl('https://blob.example.com/signed?x=1'), true)
+  assert.equal(isSafeGenerationDownloadUrl('http://127.0.0.1:9000/signed'), true)
+  assert.equal(isSafeGenerationDownloadUrl('http://localhost:9000/signed'), true)
+  assert.equal(isSafeGenerationDownloadUrl('http://blob.example.com/signed'), false)
+  assert.equal(isSafeGenerationDownloadUrl('file:///tmp/x.mp4'), false)
+  assert.equal(isSafeGenerationDownloadUrl('https://user:pass@blob.example.com/signed'), false)
+  assert.equal(isSafeGenerationDownloadUrl(''), false)
+  assert.equal(isSafeGenerationDownloadUrl(null), false)
+})
+
+test('parseGenerationDownload：200 票据样例通过；缺字段/坏 size_bytes 返回 null', () => {
+  const sample = {
+    url: 'https://blob.example.com/signed?token=abc',
+    headers: { 'x-amz-meta': 'v', skip: 1 },
+    expires_at: '2026-11-23T08:10:00Z',
+    size_bytes: 2474836,
+    mime_type: 'video/mp4',
+    checksum_sha256: 'a'.repeat(64),
+  }
+  const ticket = parseGenerationDownload(sample)
+  assert.equal(ticket.url, sample.url)
+  assert.deepEqual(ticket.headers, { 'x-amz-meta': 'v' }, '非字符串头跳过')
+  assert.equal(ticket.size_bytes, 2474836)
+  assert.equal(ticket.checksum_sha256, sample.checksum_sha256)
+  for (const key of ['url', 'expires_at', 'size_bytes']) {
+    const broken = { ...sample }
+    delete broken[key]
+    assert.equal(parseGenerationDownload(broken), null, `缺 ${key} 应为 null`)
+  }
+  assert.equal(parseGenerationDownload({ ...sample, size_bytes: -1 }), null)
+  assert.equal(parseGenerationDownload('x'), null)
+})
+
 // ── 快照解析 ─────────────────────────────────────────────────────────────────
 
 const CREATE_202_SAMPLE = {
@@ -206,6 +271,12 @@ test('parseGenerationSnapshot：文档 §6.8 的 202 样例原样通过', () => 
   assert.equal(snapshot.error, null)
 })
 
+test('parseGenerationSnapshot：result_status 合法值透传，老快照缺失归空串', () => {
+  assert.equal(parseGenerationSnapshot({ ...CREATE_202_SAMPLE, result_status: 'archiving' }).result_status, 'archiving')
+  assert.equal(parseGenerationSnapshot(CREATE_202_SAMPLE).result_status, '')
+  assert.equal(parseGenerationSnapshot({ ...CREATE_202_SAMPLE, result_status: 'nope' }).result_status, '')
+})
+
 test('parseGenerationSnapshot：关键字段缺失/类型坏一律 null（不猜）', () => {
   for (const key of ['id', 'operation', 'status', 'version', 'terminal', 'outputs']) {
     const broken = { ...CREATE_202_SAMPLE }
@@ -232,7 +303,12 @@ test('parseGenerationSnapshot：error 对象解析；outputs 含二进制/文本
     terminal: true,
     error: { code: 'provider_error', message: 'x' },
     outputs: [
-      { ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0', width: 1024, height: 768 },
+      {
+        ordinal: 0, type: 'image', mime_type: 'image/png',
+        content_url: '/v1/generations/x/content/0',
+        download_url: '/v1/generations/x/download/0',
+        size_bytes: 12, checksum_sha256: 'b'.repeat(64), width: 1024, height: 768,
+      },
       { ordinal: 0, type: 'text', mime_type: 'text/plain', text: '画面中的人物站在窗边。' },
       { ordinal: 0, type: 'json', mime_type: 'application/json', txt: 't', txt_word: 'w', txt_segment: 's' },
     ],
@@ -240,6 +316,9 @@ test('parseGenerationSnapshot：error 对象解析；outputs 含二进制/文本
   assert.equal(snapshot.error.code, 'provider_error')
   assert.equal(snapshot.outputs.length, 3)
   assert.equal(snapshot.outputs[0].content_url, '/v1/generations/x/content/0')
+  assert.equal(snapshot.outputs[0].download_url, '/v1/generations/x/download/0')
+  assert.equal(snapshot.outputs[0].size_bytes, 12)
+  assert.equal(snapshot.outputs[0].checksum_sha256, 'b'.repeat(64))
   assert.equal(snapshot.outputs[1].text, '画面中的人物站在窗边。')
   assert.equal(snapshot.outputs[2].txt_segment, 's')
 })
@@ -397,6 +476,80 @@ test('DramaClient.pollGeneration：URL 带 after_version + wait 钳制；游标�
 test('DramaClient.pollGeneration：非法 generation id 本地 400', async () => {
   const client = fakeClient(async () => new Response('{}', { status: 200 }))
   await assert.rejects(() => client.pollGeneration('tok', '../etc', 0, 0), (e) => e.status === 400)
+})
+
+const DOWNLOAD_TICKET = {
+  url: 'https://blob.example.com/signed?token=abc',
+  headers: { 'x-signed': 'v' },
+  expires_at: '2026-11-23T08:10:00Z',
+  size_bytes: 3,
+  mime_type: 'image/png',
+}
+
+test('DramaClient.generationDownload：Bearer 取票，409 result_not_ready 原样上抛', async () => {
+  let seen
+  const ok = fakeClient(async (url, init) => {
+    seen = { url: String(url), headers: init.headers }
+    return new Response(JSON.stringify(DOWNLOAD_TICKET), { status: 200 })
+  })
+  const ticket = await ok.generationDownload('tok', CREATE_202_SAMPLE.id, 2)
+  assert.equal(ticket.url, DOWNLOAD_TICKET.url)
+  assert.equal(seen.url, `http://biz.test/v1/generations/${CREATE_202_SAMPLE.id}/download/2`)
+  assert.equal(seen.headers.Authorization, 'Bearer tok')
+  const busy = fakeClient(async () => new Response(
+    JSON.stringify({ error: { code: 'result_not_ready', message: 'still archiving' } }),
+    { status: 409 },
+  ))
+  await assert.rejects(
+    () => busy.generationDownload('tok', CREATE_202_SAMPLE.id, 0),
+    (e) => e.code === 'result_not_ready' && e.status === 409,
+  )
+})
+
+test('DramaClient.openGenerationDownload：签名头透传 + 403 重签一次；绝不回退 content', async () => {
+  const urls = []
+  let signedAttempts = 0
+  const client = fakeClient(async (url, init) => {
+    urls.push(String(url))
+    if (String(url).includes('/download/')) {
+      return new Response(JSON.stringify(DOWNLOAD_TICKET), { status: 200 })
+    }
+    signedAttempts += 1
+    assert.equal(init.redirect, 'error')
+    assert.equal(init.headers['x-signed'], 'v')
+    if (signedAttempts === 1) {
+      return new Response(JSON.stringify({ error: { code: 'expired', message: 'signed url expired' } }), { status: 403 })
+    }
+    return new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+  })
+  const opened = await client.openGenerationDownload('tok', CREATE_202_SAMPLE.id, 0)
+  assert.equal(opened.ticket.size_bytes, 3)
+  assert.deepEqual([...new Uint8Array(await opened.response.arrayBuffer())], [1, 2, 3])
+  assert.equal(signedAttempts, 2, '401/403 必须重签一次')
+  assert.equal(urls.length, 4, '两次取票 + 两次签名地址')
+  assert.equal(urls.some((u) => u.includes('/content/')), false)
+})
+
+test('DramaClient.openGenerationDownload：不可信票据 URL 与 409 均不触发 content 回退', async () => {
+  const urls = []
+  const unsafe = fakeClient(async (url) => {
+    urls.push(String(url))
+    return new Response(JSON.stringify({ ...DOWNLOAD_TICKET, url: 'http://blob.example.com/signed' }), { status: 200 })
+  })
+  await assert.rejects(
+    () => unsafe.openGenerationDownload('tok', CREATE_202_SAMPLE.id, 0),
+    (e) => e.code === 'invalid_response' && e.status === 502,
+  )
+  assert.deepEqual(urls, [`http://biz.test/v1/generations/${CREATE_202_SAMPLE.id}/download/0`])
+  const busy = fakeClient(async (url) => {
+    urls.push(String(url))
+    return new Response(JSON.stringify({ error: { code: 'result_not_ready', message: 'archiving' } }), { status: 409 })
+  })
+  await assert.rejects(
+    () => busy.openGenerationDownload('tok', CREATE_202_SAMPLE.id, 0),
+    (e) => e.code === 'result_not_ready' && e.status === 409,
+  )
+  assert.equal(urls.some((u) => u.includes('/content/')), false)
 })
 
 test('DramaClient.listGenerations：坏帧跳过、next_cursor 透传', async () => {

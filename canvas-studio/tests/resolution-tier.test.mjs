@@ -38,6 +38,7 @@ import { createFalProvider, normalizeResolution } from '../lib/providers/fal.js'
 import { runVideo } from '../lib/providers/executor.js'
 import { probeMediaInfo, resolveFfmpegPath } from '../lib/ffmpeg-run.js'
 import { generateAsset } from '../lib/generate.js'
+import { generationDownloadBranch } from './helpers/generation-stub.mjs'
 
 /**
  * H3 推荐分辨率表（megapixels → 输出像素），**硬编码、不引用实现**。
@@ -349,13 +350,15 @@ test('I 视频侧实测为准：落盘取实测 864×480，而非档位声明值
           status: 200,
           json: async () => ({
             id: 'cccccccc-cccc-4ccc-8ccc-000000000009', operation: 'image2videofl2va', status: 'succeeded', version: 2,
-            progress: 100, billing_status: 'held', terminal: true,
-            outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0' }],
+            progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+            outputs: [{ ordinal: 0, type: 'video', mime_type: 'video/mp4', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
             error: null,
           }),
           text: async () => '',
         }
       }
+      const handled = generationDownloadBranch(text, { contentBytes: bytes })
+      if (handled !== null) return handled
       if (text.includes('/content/')) return { ok: true, status: 200, arrayBuffer: async () => bytes, text: async () => '' }
       return { ok: false, status: 404, json: async () => ({}), text: async () => '' }
     }

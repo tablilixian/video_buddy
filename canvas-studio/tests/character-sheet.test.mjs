@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateCharacterSheet } from '../lib/generate.js'
 import { assetUploadBranch, resetAssetUploadStub, ASSET_HANDLE } from './helpers/asset-upload-stub.mjs'
-import { minimalPng } from './helpers/generation-stub.mjs'
+import { generationDownloadBranch, minimalPng } from './helpers/generation-stub.mjs'
 
 const SHEET_URL = 'https://media.example/sheet.png'
 
@@ -29,7 +29,8 @@ const SHEET_PENDING = {
 }
 const SHEET_DONE = {
   ...SHEET_PENDING, status: 'succeeded', version: 2, progress: 100, billing_status: 'held', terminal: true,
-  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL }],
+  result_status: 'ready',
+  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: SHEET_URL, download_url: '/v1/generations/x/download/0' }],
 }
 
 /** character_sheet 专用打桩：image2character 首拍 500（temp 丢失）→ 重传后二拍成功。 */
@@ -54,6 +55,8 @@ function stubCharacterSheetFetch(sheetBytes = minimalPng(1376, 768)) {
     if (text.includes('/poll')) {
       return { ok: true, status: 200, json: async () => SHEET_DONE }
     }
+    const handled = generationDownloadBranch(text, { contentBytes: sheetBytes })
+    if (handled !== null) return handled
     if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => sheetBytes }
     }

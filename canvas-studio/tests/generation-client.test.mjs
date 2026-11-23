@@ -11,16 +11,21 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import {
   buildCreateGenerationBody,
   createGenerationTask,
   downloadGenerationContent,
+  downloadGenerationOutput,
   followGeneration,
+  isGenerationOutputBytesIntact,
   newIdempotencyKey,
   quoteGenerationCost,
+  throwIfResultUnavailable,
 } from '../lib/generation-client.js'
 import { ApiError } from '../lib/drama-management.js'
 import { CanvasStudioError } from '../lib/error-system.js'
+import { minimalMp4, minimalPng } from './helpers/generation-stub.mjs'
 
 const SNAP = (over = {}) => ({
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001',
@@ -37,7 +42,7 @@ const SNAP = (over = {}) => ({
 
 /** 引擎依赖桩：记录全部调用；各方法行为由用例覆写。 */
 function fakeDeps(handlers = {}) {
-  const calls = { create: [], poll: [], cancel: [], content: [] }
+  const calls = { create: [], poll: [], cancel: [], content: [], download: [] }
   const client = {
     async createGeneration(token, body, key, runId) {
       calls.create.push({ token, body, key, runId })
@@ -59,6 +64,10 @@ function fakeDeps(handlers = {}) {
     async openGenerationContent(token, id, ordinal) {
       calls.content.push({ id, ordinal })
       return handlers.content?.({ id, ordinal })
+    },
+    async openGenerationDownload(token, id, ordinal) {
+      calls.download.push({ id, ordinal })
+      return handlers.download?.(calls.download.length, { id, ordinal })
     },
   }
   return { deps: { client, token: () => 'jwt-1' }, calls }
@@ -167,6 +176,29 @@ test('followGeneration：版本推进 + onSnapshot 逐帧回调，terminal 即�
   assert.equal(calls.poll[0].wait, 25)
 })
 
+test('followGeneration：succeeded+archiving 继续轮询到 ready（2026-11-23 换代）', async () => {
+  const { deps, calls } = fakeDeps({
+    poll: (nth) => nth === 1
+      ? SNAP({ version: 2, status: 'succeeded', result_status: 'archiving', terminal: true, progress: 100 })
+      : SNAP({ version: 3, status: 'succeeded', result_status: 'ready', terminal: true, progress: 100 }),
+  })
+  const final = await followGeneration(deps, SNAP(), { backoffStartMs: 1 })
+  assert.equal(final.result_status, 'ready')
+  assert.equal(calls.poll.length, 2, 'archiving 不得因 terminal 提前返回')
+  assert.equal(calls.poll[1].afterVersion, 2)
+})
+
+test('followGeneration：result_status=failed/expired 立即停（不自动重生成）', async () => {
+  for (const resultStatus of ['failed', 'expired']) {
+    const { deps, calls } = fakeDeps({
+      poll: () => SNAP({ version: 2, status: 'succeeded', result_status: resultStatus, terminal: true }),
+    })
+    const final = await followGeneration(deps, SNAP(), { backoffStartMs: 1 })
+    assert.equal(final.result_status, resultStatus)
+    assert.equal(calls.poll.length, 1)
+  }
+})
+
 test('followGeneration：5xx 瞬时错误退避重试后自愈（backoffStart=1ms 免等待）', async () => {
   let n = 0
   const { deps, calls } = fakeDeps({
@@ -229,6 +261,75 @@ test('downloadGenerationContent：字节透传；410 gone → CS-NET-007', async
     () => downloadGenerationContent(gone.deps, 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001', 0),
     (e) => e instanceof CanvasStudioError && e.code === 'CS-NET-007',
   )
+})
+
+// ── 换代后的下载：票据 → Blob/CDN ────────────────────────────────────────────
+
+const READY_SNAP = SNAP({
+  status: 'succeeded', result_status: 'ready', terminal: true, progress: 100,
+  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', download_url: '/v1/generations/x/download/0' }],
+})
+const READY_OUTPUT = READY_SNAP.outputs[0]
+const TICKET = {
+  url: 'https://blob.example.com/signed', headers: {}, expires_at: '2026-11-23T08:10:00Z', size_bytes: 3,
+}
+
+test('downloadGenerationOutput：票据直连字节透传；绝不调用 content 端点', async () => {
+  const { deps, calls } = fakeDeps({
+    download: () => ({
+      response: new Response(new Uint8Array([9, 9, 9]), { status: 200 }),
+      ticket: TICKET,
+    }),
+  })
+  const result = await downloadGenerationOutput(deps, READY_SNAP, READY_OUTPUT)
+  assert.deepEqual([...result.bytes], [9, 9, 9])
+  assert.equal(result.ticket.size_bytes, 3)
+  assert.equal(calls.download.length, 1)
+  assert.equal(calls.content.length, 0)
+})
+
+test('downloadGenerationOutput：409 result_not_ready → 回轮询到 ready 再取票', async () => {
+  const { deps, calls } = fakeDeps({
+    poll: () => ({
+      ...READY_SNAP,
+      version: 3,
+      outputs: [{ ...READY_OUTPUT }],
+    }),
+    download: (nth) => {
+      if (nth === 1) throw new ApiError('result_not_ready', 'still archiving', 409, null)
+      return { response: new Response(new Uint8Array([1, 2, 3]), { status: 200 }), ticket: TICKET }
+    },
+  })
+  const result = await downloadGenerationOutput(deps, READY_SNAP, READY_OUTPUT, { backoffStartMs: 1 })
+  assert.deepEqual([...result.bytes], [1, 2, 3])
+  assert.equal(calls.download.length, 2)
+  assert.equal(calls.poll.length, 1, '409 后必须回轮询，不能立即重踩')
+  assert.equal(calls.content.length, 0)
+})
+
+test('isGenerationOutputBytesIntact：size/checksum + PNG/MP4 结构失败一律判坏', () => {
+  const png = minimalPng()
+  const good = { ...TICKET, size_bytes: png.length, checksum_sha256: createHash('sha256').update(png).digest('hex') }
+  assert.equal(isGenerationOutputBytesIntact(png, good, 'image/png'), true)
+  assert.equal(isGenerationOutputBytesIntact(png.subarray(0, -1), good, 'image/png'), false)
+  assert.equal(isGenerationOutputBytesIntact(png, { ...good, checksum_sha256: 'a'.repeat(64) }, 'image/png'), false)
+  assert.equal(isGenerationOutputBytesIntact(png, null, 'image/png'), true)
+  assert.equal(isGenerationOutputBytesIntact(minimalMp4(), null, 'video/mp4'), true)
+  assert.equal(isGenerationOutputBytesIntact(Buffer.from('broken'), null, 'video/mp4'), false)
+})
+
+test('throwIfResultUnavailable：failed/expired 独立码，未 ready 落契约异常码', () => {
+  for (const [status, code] of [['failed', 'CS-GEN-210'], ['expired', 'CS-GEN-211']]) {
+    assert.throws(
+      () => throwIfResultUnavailable({ ...READY_SNAP, result_status: status }, '图像生成'),
+      (e) => e instanceof CanvasStudioError && e.code === code,
+    )
+  }
+  assert.throws(
+    () => throwIfResultUnavailable({ ...READY_SNAP, result_status: '' }, '图像生成'),
+    (e) => e instanceof CanvasStudioError && e.code === 'CS-NET-010',
+  )
+  assert.doesNotThrow(() => throwIfResultUnavailable(READY_SNAP, '图像生成'))
 })
 
 // ── 幂等键 ───────────────────────────────────────────────────────────────────

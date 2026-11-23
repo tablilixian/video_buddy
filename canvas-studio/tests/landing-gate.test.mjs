@@ -35,7 +35,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
-import { minimalPng } from './helpers/generation-stub.mjs'
+import { generationDownloadBranch, minimalPng } from './helpers/generation-stub.mjs'
 import { createStoryboard, emptyStoryboardSections } from '../lib/contracts/storyboard.js'
 import { LOOK_BUDGET_PER_CYCLE, resetLookBudget } from '../lib/look-budget.js'
 
@@ -83,12 +83,14 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
         status: 200,
         json: async () => ({
           id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2image', status: 'succeeded', version: 2,
-          progress: 100, billing_status: 'held', terminal: true,
-          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+          progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+          outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
           error: null,
         }),
       }
     }
+    const handled = generationDownloadBranch(String(url), { contentBytes: minimalPng() })
+    if (handled !== null) return handled
     if (String(url).includes('/content/')) {
       return { ok: true, arrayBuffer: async () => new Uint8Array(minimalPng()) }
     }

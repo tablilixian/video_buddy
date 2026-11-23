@@ -23,6 +23,7 @@ import type {
   AssetPresignRequest,
   AssetPresignResponse,
   AssetSummary,
+  GenerationDownload,
   GenerationListQuery,
   GenerationQuote,
   GenerationSnapshot,
@@ -31,10 +32,12 @@ import {
   buildGenerationListQuery,
   formatPollWait,
   isGenerationId,
+  isSafeGenerationDownloadUrl,
   isValidGenerationIdempotencyKey,
   modelOperations,
   parseAssetCompleteResponse,
   parseAssetPresignResponse,
+  parseGenerationDownload,
   parseGenerationQuote,
   parseGenerationSnapshot,
 } from './contracts/generation.js'
@@ -42,6 +45,12 @@ import {
 /** 服务端错误信封（api(10).md §6）。 */
 export interface ApiErrorBody {
   error: { code: string; message: string }
+}
+
+/** 已取到票据并直连成功的下载（票据带字节数/校验和，供下载后强校验）。 */
+export interface OpenedGenerationDownload {
+  readonly response: Response
+  readonly ticket: GenerationDownload
 }
 
 /** 业务用户（auth/sync 返回）。 */
@@ -310,10 +319,9 @@ export class DramaClient {
   }
 
   /**
-   * 打开受保护内容端点（`GET /v1/generations/{id}/content/{ordinal}`；§6.10）。
-   *
-   * 返回**原始 Response**（二进制流式读取交给调用方，带 CR-010 限长）——不进
-   * `#request` 的 JSON 通道。410 gone（结果过期）等状态码由调用方按业务分派。
+   * @deprecated 旧客户端兼容端点 `GET /v1/generations/{id}/content/{ordinal}`（§6.10）。
+   * 2026-11-23 换代后新链路**不调用**它，也不在下载失败时回退到这里；方法保留
+   * 仅服务存量测试的旧契约断言，待 B5 清理批移除。
    */
   async openGenerationContent(token: string, id: string, ordinal: number): Promise<Response> {
     if (!isGenerationId(id)) throw new ApiError('invalid_argument', `非法 generation id: ${id}`, 400, null)
@@ -324,6 +332,60 @@ export class DramaClient {
       headers: { Authorization: `Bearer ${token}`, Accept: '*/*' },
     })
     return response
+  }
+
+  /** 申请下载票据（`GET /v1/generations/{id}/download/{ordinal}`；§6.10）。409 原样上抛。 */
+  async generationDownload(token: string, id: string, ordinal: number): Promise<GenerationDownload> {
+    if (!isGenerationId(id)) throw new ApiError('invalid_argument', `非法 generation id: ${id}`, 400, null)
+    if (!Number.isInteger(ordinal) || ordinal < 0) {
+      throw new ApiError('invalid_argument', `非法输出序号: ${ordinal}`, 400, null)
+    }
+    const body = await this.#request<unknown>(
+      token,
+      `/v1/generations/${id}/download/${ordinal}`,
+    )
+    const ticket = parseGenerationDownload(body)
+    if (ticket === null) {
+      throw new ApiError('invalid_response', '下载票据响应缺少 url/expires_at/size_bytes。', 502, null)
+    }
+    return ticket
+  }
+
+  /**
+   * 取票 → 直连 Blob/CDN 取原始 Response（不再走 `/content`）。
+   *
+   * - 票据 URL 先过 https/回环 + 无 userinfo 校验（远端不能决定 Host 向哪里发请求）；
+   * - `redirect:'error'` 不允许签名地址把你带去别处；签名头原样透传；
+   * - 401/403 视为签名过期 → **重签一次**；其它错误（含 409 result_not_ready）
+   *   原样上抛，绝不回退旧 content 端点掩盖问题。
+   */
+  async openGenerationDownload(
+    token: string,
+    id: string,
+    ordinal: number,
+  ): Promise<OpenedGenerationDownload> {
+    let lastError: unknown = null
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const ticket = await this.generationDownload(token, id, ordinal)
+      if (!isSafeGenerationDownloadUrl(ticket.url)) {
+        throw new ApiError('invalid_response', '下载票据里的 url 不是可信地址。', 502, null)
+      }
+      let response: Response
+      try {
+        response = await this.#fetch(ticket.url, {
+          redirect: 'error',
+          headers: { Accept: '*/*', ...ticket.headers },
+        })
+      } catch (cause) {
+        lastError = cause
+        continue
+      }
+      if (response.ok) return { response, ticket }
+      lastError = await parseApiError(response)
+      if (response.status !== 401 && response.status !== 403) break
+    }
+    if (lastError instanceof Error) throw lastError
+    throw new ApiError('download_failed', '下载失败。', 502, null)
   }
 
   /**

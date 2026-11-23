@@ -21,6 +21,7 @@ import { readFile } from 'node:fs/promises'
 import { composedSourceIds } from '../lib/compose-selection.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { generateMusic } from '../lib/generate.js'
+import { generationDownloadBranch } from './helpers/generation-stub.mjs'
 
 // ---------------------------------------------------------------------------
 // CV-204：成片血缘 = 片段 + BGM + 文案（composedSourceIds）
@@ -163,12 +164,14 @@ function stubMusicFetch() {
         status: 200,
         json: async () => ({
           id: 'cccccccc-cccc-4ccc-8ccc-000000000001', operation: 'txt2audio', status: 'succeeded', version: 2,
-          progress: 100, billing_status: 'held', terminal: true,
-          outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0' }],
+          progress: 100, billing_status: 'held', terminal: true, result_status: 'ready',
+          outputs: [{ ordinal: 0, type: 'audio', mime_type: 'audio/mpeg', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
           error: null,
         }),
       }
     }
+    const handled = generationDownloadBranch(text, { contentBytes: new Uint8Array([1, 2, 3]) })
+    if (handled !== null) return handled
     if (text.includes('/content/')) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     }

@@ -194,7 +194,7 @@
 | `sourceUrls` | string[] | 否 | 参考的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（带字幕 / 招牌等文字的关键帧应传） |
 
-**模型**：`image.qwen-image-2.1` @ `txt2image`（业务 API；目录实测唯一带文字渲染的模型），input `prompt` / `width` / `height`；产物以 content 端点字节落盘，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，文字仍出错时用 `image_generate_withtxt` 带修正后的文字规格重出（autoFixText/CV-212 兜底链已随 image_fix 下线退役）。
+**模型**：`image.qwen-image-2.1` @ `txt2image`（业务 API；目录实测唯一带文字渲染的模型），input `prompt` / `width` / `height`；产物以签名下载字节落盘（`result_status=ready` + `/download/{ordinal}` 票据），实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，文字仍出错时用 `image_generate_withtxt` 带修正后的文字规格重出（autoFixText/CV-212 兜底链已随 image_fix 下线退役）。
 
 ---
 
@@ -209,7 +209,7 @@
 | `sourceUrls` | string[] | 否 | 设计图对应的画布产物 URL |
 | `shotRefs` | array | 否 | 关联分镜卡 |
 
-**模型**：`image.krea2` @ `image2character`（恰 1 张参考、无 prompt）；产物以 content 端点字节落盘。
+**模型**：`image.krea2` @ `image2character`（恰 1 张参考、无 prompt）；产物以签名下载字节落盘（`result_status=ready` + `/download/{ordinal}` 票据）。
 
 ---
 

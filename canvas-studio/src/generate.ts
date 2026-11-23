@@ -32,10 +32,12 @@ import { DramaClient, ApiError } from './drama-management.js'
 import { assetKindFromExtension, uploadAssetBytes } from './asset-upload.js'
 import {
   createGenerationTask,
-  downloadGenerationContent,
+  downloadGenerationOutput,
   followGeneration,
+  isGenerationOutputBytesIntact,
   newIdempotencyKey,
   quoteGenerationCost,
+  throwIfResultUnavailable,
   IMAGE_CONTENT_LIMITS,
   type GenerationEngineDeps,
   type GenerationRef,
@@ -993,7 +995,7 @@ interface BusinessGenerationOutcome {
 }
 
 /**
- * 业务 API 图像链路执行：创建 → 轮询到终态 → 下载首个二进制输出（content 端点）。
+ * 业务 API 图像链路执行：创建 → 轮询到可结算 → 取票直连下载首个二进制输出。
  */
 async function runBusinessImage(
   tool: string,
@@ -1012,34 +1014,33 @@ async function runBusinessImage(
     ...(opts.warnings !== undefined ? { warnings: opts.warnings } : {}),
   })
   const deps = businessEngineDeps()
-  const output = final.outputs.find((entry) => entry.content_url !== undefined)
-  if (output?.content_url === undefined) {
-    // 成功却没有二进制输出：契约漂移，宁可报结构异常也不静默。
+  throwIfResultUnavailable(final, opts.label)
+  const output = final.outputs.find((entry) => entry.download_url !== undefined)
+  if (output?.download_url === undefined) {
+    // succeeded+ready 却没有可下载输出：契约漂移，宁可报结构异常也不静默回退 content。
     throwError('CS-NET-010')
   }
-  // 真机实锤（CV-468）：后台 content 端点对较大 PNG 随机截断/混流（同一 generation
-  // 每次下载字节数不同、缺 IEND）——落画布前必须做结构校验，失败重试 ×2；重试后
-  // 仍不完整就丢弃并报 CS-NET-011，绝不静默把坏图落到画布。
+  // 真机实锤（CV-468）：下载链路对较大 PNG 随机截断/混流（同一 generation 每次
+  // 下载字节数不同、缺 IEND）——签名票据又给了 size_bytes/checksum 强校验。
+  // 落画布前两者都过，失败重试 ×2；仍坏就抛 CS-NET-012，绝不静默落坏图。
   const isPng = output.mime_type === 'image/png'
-  const download = async (): Promise<Buffer> =>
-    downloadGenerationContent(deps, final.id, output.ordinal, {
-      ...IMAGE_CONTENT_LIMITS,
-      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-    })
-  let bytes = await download()
-  if (isPng) {
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const trimmed = pngValidateAndTrim(bytes)
-      if (trimmed !== null) {
-        bytes = trimmed
-        break
-      }
-      if (attempt === 3) {
-        throwError('CS-NET-012', { attempts: 3, label: opts.label })
-      }
-      bytes = await download()
+  const download = () => downloadGenerationOutput(deps, final, output, {
+    ...IMAGE_CONTENT_LIMITS,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  })
+  let bytes: Buffer | null = null
+  let lastBytes = 0
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await download()
+    lastBytes = result.bytes.length
+    if (!isGenerationOutputBytesIntact(result.bytes, result.ticket, output.mime_type)) continue
+    const trimmed = isPng ? pngValidateAndTrim(result.bytes) : result.bytes
+    if (trimmed !== null) {
+      bytes = trimmed
+      break
     }
   }
+  if (bytes === null) throwError('CS-NET-012', { attempts: 3, label: opts.label, bytes: lastBytes })
   return { bytes, generationId: final.id, ext: extensionForMime(output.mime_type) }
 }
 
@@ -1077,21 +1078,34 @@ function extensionForMime(mime: string): string {
 }
 
 /**
- * 下载终态快照的首个二进制输出（音频/视频链路；图片档限长 32MB/4min——
- * 30s 音乐与 15s 配音都远在限内；视频走 media 档）。
+ * 下载首个二进制输出（音频/视频链路；图片档限长 32MB/4min，视频走 media 档）。
+ * 2026-11-23 换代：只有 ready 且带 download_url 的产物可取票；票据
+ * size_bytes/checksum + MP4 结构校验失败重试 ×2，抛错发生在落盘与 markJobSettled
+ * 之前，坏产物不会进画布、job 不会记结算。
  */
 async function downloadBusinessMedia(
   final: GenerationSnapshot,
   opts: { label: string; video?: boolean; signal?: AbortSignal },
 ): Promise<{ bytes: Buffer; ext: string }> {
-  const output = final.outputs.find((entry) => entry.content_url !== undefined)
-  if (output?.content_url === undefined) throwError('CS-NET-010')
+  throwIfResultUnavailable(final, opts.label)
+  const output = final.outputs.find((entry) => entry.download_url !== undefined)
+  if (output?.download_url === undefined) throwError('CS-NET-010')
   const deps = businessEngineDeps()
-  const bytes = await downloadGenerationContent(deps, final.id, output.ordinal, {
+  const download = () => downloadGenerationOutput(deps, final, output, {
     maxBytes: opts.video === true ? MEDIA_DOWNLOAD_MAX_BYTES : IMAGE_DOWNLOAD_MAX_BYTES,
     timeoutMs: opts.video === true ? MEDIA_DOWNLOAD_TIMEOUT_MS : IMAGE_DOWNLOAD_TIMEOUT_MS,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   })
+  let bytes: Buffer | null = null
+  let lastBytes = 0
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await download()
+    lastBytes = result.bytes.length
+    if (!isGenerationOutputBytesIntact(result.bytes, result.ticket, output.mime_type)) continue
+    bytes = result.bytes
+    break
+  }
+  if (bytes === null) throwError('CS-NET-012', { attempts: 3, label: opts.label, bytes: lastBytes })
   return { bytes, ext: extensionForMime(output.mime_type) }
 }
 

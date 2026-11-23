@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { createStudioTools } from '../lib/host-tools.js'
 import { queueDepthOf } from '../lib/generate.js'
 import { assetUploadBranch } from './helpers/asset-upload-stub.mjs'
-import { minimalPng } from './helpers/generation-stub.mjs'
+import { generationDownloadBranch, minimalPng } from './helpers/generation-stub.mjs'
 
 /** 工具执行上下文（会话 cwd 绑定项目目录）。 */
 const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(15000) })
@@ -42,7 +42,8 @@ const SNAP = (over = {}) => ({
   progress: 100,
   billing_status: 'committed',
   terminal: true,
-  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0' }],
+  result_status: 'ready',
+  outputs: [{ ordinal: 0, type: 'image', mime_type: 'image/png', content_url: '/v1/generations/x/content/0', download_url: '/v1/generations/x/download/0' }],
   error: null,
   ...over,
 })
@@ -61,12 +62,15 @@ function stubBusiness({ unreachable = false } = {}) {
     if (target.includes('/v1/generations') && method === 'POST') {
       calls.create += 1
       if (unreachable) throw new Error('connect ECONNREFUSED')
-      return { ok: true, status: 202, json: async () => SNAP({ status: 'credit_held', version: 1, terminal: false }) }
+      // pending 帧保留非 ready 语义（不要继承 SNAP 的成功终态 result_status）。
+      return { ok: true, status: 202, json: async () => SNAP({ status: 'credit_held', version: 1, terminal: false, result_status: undefined }) }
     }
     if (target.includes('/poll')) {
       calls.poll += 1
       return { ok: true, status: 200, json: async () => SNAP() }
     }
+    const handled = generationDownloadBranch(target, { contentBytes: minimalPng() }, calls)
+    if (handled !== null) return handled
     if (target.includes('/content/')) {
       calls.content += 1
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(minimalPng()), text: async () => '' }

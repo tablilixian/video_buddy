@@ -899,6 +899,34 @@ function businessErrorToGenerationError(tool: string, cause: unknown): Error {
   return makeCanvasError('CS-NET-001', { cause: message })
 }
 
+/**
+ * 业务 API 终态快照的「生成成功」断言：`status !== 'succeeded'` 一律在**下载之前**
+ * 按后端错误上抛，绝不交给下游当成「产物结构异常」。
+ *
+ * 2026-11-23 真机（会话「小道士夜捉红发女鬼」17:08 / 17:28）：DramaServer 对
+ * image2videoref2va 跑满 ~15.5 分钟就以 `status=timeout` + `error.deadline_exceeded`
+ * 收尾。视频链路当时没有这一步，快照直接进 `downloadBusinessMedia`，而
+ * `throwIfResultUnavailable` 只认 failed/expired/succeeded-未 ready，三个分支全不命中
+ * ⇒ 落到「无 download_url」被判成 `CS-NET-010`「响应结构异常，不做二次扣费重试」。
+ * agent 据此把它当瞬时故障，原样重试同一条 15 分钟任务，连烧两次。
+ *
+ * 与 CS-GEN-209（客户端预算用完、已主动 cancel）分开：后端自己判死的任务必须给
+ * 「减负换参数」的指引（CS-GEN-212），不能让模型原地重试。
+ *
+ * 同一规则只准一份实现：图像链路、视频链路、恢复结算路径共用本函数。
+ */
+function assertGenerationSucceeded(final: GenerationSnapshot, label: string): void {
+  if (final.status === 'succeeded') return
+  const detail = final.error !== null ? `${final.error.code}: ${final.error.message}` : final.status
+  if (final.status === 'timeout' || final.error?.code === 'deadline_exceeded') {
+    throwError('CS-GEN-212', { label, detail })
+  }
+  throwError('CS-GEN-206', {
+    safe: sanitizeForUser(`${label} 生成未成功（${final.status}）：${detail}`),
+    detail: `terminal=${final.status} ${detail}`,
+  })
+}
+
 /** 业务 API 生成的一次产出（产物字节 + generation id 作句柄证据）。 */
 interface BusinessGenerationOutcome {
   readonly bytes: Buffer
@@ -968,13 +996,9 @@ async function runBusinessGenerationTask(opts: {
         ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       })
       if (final.status !== 'succeeded') {
-        // 终态非 succeeded（failed/canceled/timeout）：错误详情取 error.code/message，
-        // 不下载输出（§7.6）。
-        const detail = final.error !== null ? `${final.error.code}: ${final.error.message}` : final.status
-        throwError('CS-GEN-206', {
-          safe: sanitizeForUser(`${opts.tool} 生成未成功（${final.status}）：${detail}`),
-          detail: `terminal=${final.status} ${detail}`,
-        })
+        // 终态非 succeeded（failed/canceled/timeout）：按后端 error.code/message 上抛，
+        // 不下载输出（§7.6）。后端判死（deadline_exceeded）走 CS-GEN-212。
+        assertGenerationSucceeded(final, opts.tool)
       }
       return final
     } catch (cause) {
@@ -1096,6 +1120,11 @@ async function downloadBusinessMedia(
   final: GenerationSnapshot,
   opts: { label: string; video?: boolean; signal?: AbortSignal },
 ): Promise<{ bytes: Buffer; ext: string }> {
+  // 下载段的前置不变量：拿到的必须是**生成成功**的终态快照。缺这一步时后端判死
+  // 的任务会一路落到下面的「无 download_url」分支，被误报成结构异常（见
+  // assertGenerationSucceeded 注释里的真机记录）。本函数也是恢复结算（重启后
+  // 续跑）与音频/配音链路的下载入口，故闸设在这里，四个调用点同一份判据。
+  assertGenerationSucceeded(final, opts.label)
   throwIfResultUnavailable(final, opts.label)
   const output = final.outputs.find((entry) => entry.download_url !== undefined)
   if (output?.download_url === undefined) throwError('CS-NET-010')
@@ -1488,12 +1517,32 @@ export function generationLabelOf(endpoint: string): string {
  * 状态码的错误（上传失败等）才走正则。误判的代价只是多一次重传 + 一次重试，
  * 重试仍失败时抛出的仍是原始错误——两个方向都安全。
  */
+/**
+ * 「已过创建阶段」的错误码：任务已经建好、失败发生在轮询终态或产物下载，
+ * 与参考句柄无关。句柄自愈（`isBadReferenceError`）必须放过它们。
+ */
+const POST_CREATE_ERROR_CODES = new Set([
+  'CS-GEN-209', // 客户端预算用完（已 cancel）
+  'CS-GEN-210', // result_status=failed（服务端归档失败）
+  'CS-GEN-211', // result_status=expired
+  'CS-GEN-212', // 后端判定超时（deadline_exceeded）
+  'CS-NET-010', // 终态不可下载 / 响应结构异常
+  'CS-NET-012', // 产物字节不完整
+])
+
 function isBadReferenceError(e: unknown): boolean {
   if (!(e instanceof Error)) return false
-  const status = (e as CanvasStudioError).params?.httpStatus
+  const csError = e instanceof CanvasStudioError ? e : null
+  const status = csError?.params?.httpStatus
   if (typeof status === 'number') {
     return status === 400 || status === 404 || status >= 500
   }
+  // 「句柄失效」只可能发生在**创建阶段**。下面这些码都是创建成功之后（轮询终态 /
+  // 下载）的产物，重传句柄救不了，而按文案猜会把码改写掉 —— 2026-11-23 真机：
+  // CS-GEN-212 的文案里带「参考图数量」建议，被 `/参考图/` 兜底正则判成句柄失效，
+  // 于是多跑一轮无意义重传，最后包成 CS-USER-ERR「参考文件句柄已失效」，把
+  // 「后端超时」说成「素材失效」，模型照着重传素材。
+  if (csError !== null && POST_CREATE_ERROR_CODES.has(csError.code)) return false
   return /HTTP 400|HTTP 404|HTTP 5\d\d|not (found|exist)|file (not|doesn')|invalid|no (such|file)|internal server error|参考图|filename|image.*(missing|not)/i.test(e.message)
 }
 

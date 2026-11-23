@@ -425,7 +425,10 @@ test('CV-238：looksLikeCanvasNodeId 认节点 id 形态（裸 id / 带扩展名
 test('CV-238：video_generate 的 filename 传节点 id → 发后端之前报 CS-USER-002（可行动），零后端调用', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-cv238-'))
   try {
-    const { registry } = stubRegistry([], dir)
+    // 2026-11-23 收窄：判据从「UUID 形态」改成「本项目画布上真有这个节点」——
+    // 故必须先把节点放进画布，否则「节点 id」无从成立（见下一条用例的反向断言）。
+    const NODE_ID = '3fec15c4-1324-4538-9042-7d0caf50db74'
+    const { registry } = stubRegistry([productNode({ id: NODE_ID, title: '角色锚点' })], dir)
     const tools = createStudioTools(registry, 3005)
     const vg = tools.find((t) => t.name === 'video_generate')
     assert.ok(vg, 'video_generate 工具应存在')
@@ -433,13 +436,47 @@ test('CV-238：video_generate 的 filename 传节点 id → 发后端之前报 C
     const { calls, restore } = stubFetch([])
     try {
       await assert.rejects(
-        vg.execute({ prompt: 'x', filename: '3fec15c4-1324-4538-9042-7d0caf50db74' }, EXEC(dir)),
-        (err) => err.code === 'CS-USER-002' && err.message.includes('画布节点 id'),
+        vg.execute({ prompt: 'x', filename: NODE_ID }, EXEC(dir)),
+        (err) => err.code === 'CS-USER-002' && err.message.includes('画布上的节点 id'),
       )
       assert.equal(
         calls.filter((call) => call.url.includes('/generate/')).length,
         0,
         '被形态校验拦下的调用不应触达后端任何生成端点',
+      )
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 4b. 2026-11-23 真机（会话「小道士夜捉红发女鬼」17:27）：upload_image 刚返回的
+// asset_id 与画布节点 id **完全同形**（都是 UUID）。当时守卫按形态一刀切，把合法
+// 句柄判成「画布节点 id」，而错误文案又让你「先调 upload_image 取句柄」——死循环，
+// 模型为此空转 4 次上传 + 2 次秒败。判据必须是「这个 UUID 真在本项目画布上」。
+// ---------------------------------------------------------------------------
+test('2026-11-23：同形 UUID 但不在画布上（= upload_image 的 asset_id）必须放行到后端', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-user002-asset-'))
+  try {
+    const NODE_ID = '3fec15c4-1324-4538-9042-7d0caf50db74'
+    // 上传返回的 asset_id：同形 UUID，画布上没有这个节点。
+    const ASSET_ID = 'c2700b9e-4dee-4e9b-be77-388bfc3bd514'
+    const { registry } = stubRegistry([productNode({ id: NODE_ID })], dir)
+    const tools = createStudioTools(registry, 3005)
+    const vg = tools.find((t) => t.name === 'video_generate')
+    assert.ok(vg, 'video_generate 工具应存在')
+
+    const { calls, restore } = stubFetch([])
+    try {
+      // 下游打桩可能返回不合法的生成快照，这里只关心「有没有被守卫拦在门口」。
+      await vg.execute({ prompt: 'x', filename: ASSET_ID }, EXEC(dir)).catch(() => {})
+      assert.ok(
+        // 只认「创建任务」那一次 POST（quote 也是 POST /v1/generations/quote，别被它蒙过去）。
+        calls.some((call) => call.method === 'POST' && /\/v1\/generations(\?|$)/.test(call.url)),
+        'asset_id 不是画布节点，必须放行并真正发起生成请求',
       )
     } finally {
       restore()

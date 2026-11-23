@@ -110,6 +110,9 @@ const EXEMPT = new Map(Object.entries({
     'file_path', 'image_url', 'video_url', 'audio_url', 'reference_video',
     'negative_prompt', 'job_id', 'repainting_start',
     'tts_cpm', 'style_transfer', 'image_generate_withtxt',
+    // 2026-11-23：业务 API 生成请求的字段名（`inputs[].asset_id`），skill 用它说明
+    // 「句柄是 UUID、与画布节点 id 同形」——不是工具，是协议字段。
+    'asset_id',
   ],
   // ── 组 4b：工具 action 取值（schema 枚举值不是工具名；3.1 episodic 的 upsert_episode）
   'tool-action-values': ['upsert_episode'],

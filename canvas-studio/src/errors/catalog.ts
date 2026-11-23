@@ -247,7 +247,11 @@ const SPECS: CanvasErrorSpec[] = [
   },
   {
     // CV-238：裸画布节点 id 当 Drama 句柄传（2026-09-24 会话 21 连败的根因形态），
-    // 在发后端之前按形态拦下，报错本身教模型正确取法。
+    // 在发后端之前拦下，报错本身教模型正确取法。
+    // 2026-11-23 更正：判据从「UUID 形态」收窄成「本项目画布上真有这个节点」——
+    // B3 迁移后参考句柄本身就是 asset_id（UUID），纯形态判据会把 upload_image /
+    // @ref 解析出的合法句柄一起拒掉（真机：上传刚拿到的 asset_id 被这条守卫判成
+    // 画布节点 id，而文案又让你「先调 upload_image 取句柄」，成了死循环）。
     code: 'CS-USER-002',
     module: 'USER',
     severity: 'S2',
@@ -256,9 +260,9 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['agent'],
     recoverability: 'guided',
     channel: 'conversation',
-    userMessage: '「{value}」是画布节点 id（或本地产物文件名），不是 Drama Backend 的参考文件句柄，不能直接当 filename 传。请改用 @ref[参考图显示名]，或先调 upload_image 取得 ref-*.png 句柄后再传入。',
+    userMessage: '「{value}」是本项目画布上的节点 id，不是 Drama Backend 的参考句柄，不能直接当 filename 传。请改用 `@ref[{value}]`（Host 会自动换成 asset_id），或直接传 upload_image 返回的 asset_id。',
     devMessage: 'canvas node id passed as Drama filename: {value}',
-    recoveryHint: '用 @ref[显示名] 引用画布参考（Host 会自动换成可用句柄），或 upload_image 后传返回的 ref-* 文件名。',
+    recoveryHint: '`@ref[<画布节点 id>]` 精确引用画布节点（Host 自动换成 asset_id）；upload_image 返回的 asset_id（UUID）本身可直接作 filename。',
   },
 
   // ── F 生成参数校验 + H3 预检 ──────────────────────────────────────────────
@@ -1173,6 +1177,25 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '{label}的结果文件已过期，无法下载。不会自动重新生成；如需产物请重新发起生成。',
     devMessage: 'generation result_status=expired: {label}',
     recoveryHint: '签名票据/结果保留期由 DramaServer 决定；不自动重生成以免意外扣费。',
+  },
+  {
+    // 2026-11-23 真机（会话「小道士夜捉红发女鬼」17:08 / 17:28）：DramaServer 对
+    // image2videoref2va 跑到 ~15.5 分钟就以 status=timeout + error.deadline_exceeded
+    // 收尾。视频链路当时缺「终态必须是 succeeded」的判定，快照落到下载段后被
+    // 「无 download_url」判成 CS-NET-010「响应结构异常」⇒ agent 当成瞬时故障原样
+    // 重试，连烧两条 15 分钟任务。
+    // 与 CS-GEN-209（客户端预算用完、已 cancel）区分：**后端自己判死**的任务原样
+    // 重试几乎必然复发，指引必须是减负换参数，不是「稍后重试」。
+    code: 'CS-GEN-212',
+    module: 'GEN',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    uiKind: 'terminal',
+    userMessage: '{label}被后端判定超时（{detail}），本次没有产出任何产物。原样重试大概率同样超时：请减少参考图数量或缩短时长后再试。',
+    devMessage: 'generation terminal=timeout（后端 deadline_exceeded）：{label} {detail}',
+    recoveryHint: '后端自己放弃的任务不要原地重试：先减负（参考图 4→2、duration 降到 5s、必要时换 video_generate 单首帧通道）；反复出现按 generation id 反馈 DramaServer。',
   },
   {
     // quote 硬闸（迁移 B4，拍板 ⑤）：预估积分 > 可用余额 → 提交前拦截。

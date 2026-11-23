@@ -1202,6 +1202,51 @@ test('换代 L239：视频 result_status=failed → CS-GEN-210 原样透传，�
   }
 })
 
+// 2026-11-23 真机（会话「小道士夜捉红发女鬼」17:08 / 17:28）：DramaServer 对
+// image2videoref2va 跑满 ~15.5 分钟就以 status=timeout + error.deadline_exceeded
+// 收尾。视频链路当时没有「终态必须是 succeeded」的判定，快照直接进下载段，被
+// 「无 download_url」判成 CS-NET-010「响应结构异常」⇒ 模型当成瞬时故障，原样重试
+// 同一条 15 分钟任务，连烧两次。
+// 守卫：后端自己判死 → CS-GEN-212（文案明确劝退原地重试），绝不是 CS-NET-010。
+test('换代 2026-11-23：后端 timeout/deadline_exceeded → CS-GEN-212，不落到 CS-NET-010', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-deadline212-'))
+  const originalFetch = globalThis.fetch
+  try {
+    const registry = stubRegistry([], dir)
+    const dead = {
+      id: 'cccccccc-cccc-4ccc-8ccc-00000000000b', operation: 'image2videoref2va',
+      status: 'timeout', result_status: '', version: 2, progress: 100,
+      billing_status: 'released', terminal: true, outputs: [],
+      error: { code: 'deadline_exceeded', message: 'generation timed out' },
+    }
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        return { ok: true, status: 202, json: async () => ({ ...dead, status: 'queued', version: 1, terminal: false, error: null }) }
+      }
+      if (text.includes('/poll')) return { ok: true, status: 200, json: async () => dead }
+      return { ok: false, status: 404 }
+    }
+    await assert.rejects(
+      generateAsset(registry, 'video_composite', 'p1', { prompt: 'x', filenames: ['ref-1.png'] }),
+      (err) => {
+        assert.equal(err.code, 'CS-GEN-212', `后端判死必须走 212，实际 ${err.code}: ${err.message}`)
+        // 文案必须劝退重试并带上后端错误原文，否则模型只会原地再烧一条 15 分钟任务。
+        assert.match(err.message, /原样重试大概率同样超时/)
+        assert.match(err.message, /deadline_exceeded/)
+        assert.doesNotMatch(err.message, /响应结构异常|重新生成/)
+        return true
+      },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 // ---------------------------------------------------------------------------
 // A-1 路径 A（2026-10-02）：自愈换名后三份记录必须同步——generationPrompt（详情
 // 读数）与血缘反查（连线）用新句柄，与实际提交一致；否则详情显示「已断链」而

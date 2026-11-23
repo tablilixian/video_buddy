@@ -937,9 +937,9 @@ function renderCutAudioResult(_args: unknown, value: unknown): ContentBlock[] {
 
 /**
  * `cut_audio` 入参解析：三种形态都认 —— 画布节点 id、`@ref[显示名]`、项目本地
- * 资产文件名。**不走 `resolveRefValue`**：那条链把引用换成 Drama 后端句柄（`ref-*`）
- * 并可能触发 promote 上传，而裁切只需要本地磁盘文件；这里反其道取节点 `url` 的
- * basename，零网络往返（与 BUG-009「上传永不阻塞公网往返」同一取向）。
+ * 资产文件名。**不走 `resolveRefValue`**：那条链把引用换成 Drama 后端句柄
+ * （asset_id）并可能触发 promote 上传，而裁切只需要本地磁盘文件；这里反其道取节点
+ * `url` 的 basename，零网络往返（与 BUG-009「上传永不阻塞公网往返」同一取向）。
  *
  * @returns 文件名（供 `cutAudioSegment`）与源节点（供血缘 sourceIds；裸文件名无源节点）。
  */
@@ -1406,6 +1406,23 @@ export function assertRenderCompositionProjectId(
   })
 }
 
+/**
+ * `value` 是不是**本项目画布上真实存在**的节点 id（CS-USER-002 的唯一判据）。
+ *
+ * 只比 id、不比形态：`input.asset_id` 与画布节点 id 都是 UUID，形态完全同形，
+ * 形态判据无法区分（2026-11-23 真机：刚上传拿到的 asset_id 被误拦）。带扩展名的
+ * 值（`<nodeId>.png`，画布资产的本地落盘名）按去扩展名后的 stem 判定。
+ */
+async function isProjectNodeId(
+  registry: ProjectRegistry,
+  projectId: string,
+  value: string,
+): Promise<boolean> {
+  const stem = (value.split('/').pop() ?? value).replace(/\.[A-Za-z0-9]+$/, '')
+  const canvas = await registry.readCanvas(projectId)
+  return canvas.nodes.some((node) => node.id === stem)
+}
+
 /** 解析单个 filename 参数：含 @ref token 时解析为 Drama 文件名，否则原样返回。 */
 async function resolveRefValue(
   registry: ProjectRegistry,
@@ -1423,11 +1440,17 @@ async function resolveRefValue(
       const resolved = await resolveRefFilenames(registry, projectId, [bareLib], library, expectKind)
       return resolved[0] as string
     }
-    // CV-238：裸值形态校验 —— 「画布节点 id 当句柄传」（2026-09-24 会话 21 连败根因：
+    // CV-238：裸值校验 —— 「画布节点 id 当句柄传」（2026-09-24 会话 21 连败根因：
     // 模型把资产 URL basename 当 filename，原样穿透到后端拿到不可行动的 502，盲试
-    // 15+ 轮）。在发请求之前拦下，报错本身教模型正确取法。合法裸值（ref-* 句柄、
-    // 产物名等）不命中形态，原样放行维持既有行为。
-    if (looksLikeCanvasNodeId(value)) {
+    // 15+ 轮）。在发请求之前拦下，报错本身教模型正确取法。
+    //
+    // 2026-11-23 收窄成**语义判据**：B3 迁移后参考句柄本身就是 asset_id（UUID），
+    // 与画布节点 id 完全同形。纯形态判据会把 upload_image / @ref 解析出来的合法
+    // 句柄一起拒掉 —— 真机（会话「小道士夜捉红发女鬼」17:27）刚上传拿到的 asset_id
+    // 被这条守卫判成「画布节点 id」，而文案又让模型「先调 upload_image 取句柄」，
+    // 直接形成死循环。改为「该 UUID 真在本项目画布里」才拦：合法裸值（asset_id /
+    // ref-* 句柄 / 产物名）照旧放行。
+    if (looksLikeCanvasNodeId(value) && await isProjectNodeId(registry, projectId, value)) {
       throwError('CS-USER-002', { value })
     }
     return value
@@ -2571,7 +2594,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     defineTool({
       name: 'upload_image',
       description:
-        '将**图片**上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。'
+        '将**图片**上传到 Drama Backend 素材通道，返回该素材的 **asset_id**（UUID 形态，例如 `c2700b9e-4dee-4e9b-be77-388bfc3bd514`）。这个 asset_id 可直接填进其他工具的 filename / filenames 参数。'
+        + '\n\n⚠️ 若图已经在画布上（生成产物、对话附件、参考托盘），**优先用 `@ref[画布节点 id]`**，Host 会自动换成 asset_id，不必重复上传。'
         + '\n\n⚠️ **仅图片**（png / jpg / webp / gif / bmp）。mp4 / mov / mp3 等非图片一律拒收 —— 本工具**只上传、不创建画布节点**：'
         + '要把现成的视频 / 音频挂到画布，用 `attach_canvas_asset`（本地路径 → 画布节点）；视频页链接用 `download_video`。'
         + '\n\nREQ-037/CV-408：传外部图片链接（http/https）时会自动落一个参考图片节点（进素材托盘、可登记故事板 §07）；产物 URL 与重复导入会按 URL 去重，不建新节点。'
@@ -2584,7 +2608,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           type: 'object' as const,
           additionalProperties: false,
           properties: {
-            filename: { type: 'string' as const, description: 'Drama Backend 服务器上的文件名' },
+            filename: { type: 'string' as const, description: 'Drama Backend 素材的 asset_id（UUID）；可直接作其他工具的 filename / filenames' },
           },
         },
         render: renderUploadResult,

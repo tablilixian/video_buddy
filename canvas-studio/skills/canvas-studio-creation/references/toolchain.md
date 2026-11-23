@@ -60,15 +60,17 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 
 | 类别 | 形态 | 来源 | 能否作入参 |
 | --- | --- | --- | --- |
-| **上传句柄** | `ref-xxxxxxxx.png` | `upload_image` 返回，或画布后台回填 | ✅ 所有带文件端点通用 |
+| **参考句柄** | `asset_id`（UUID，如 `c2700b9e-4dee-4e9b-be77-388bfc3bd514`；老通道回 `ref-xxxxxxxx.png`） | `upload_image` 返回，或 `@ref[...]` / `look_card` 解析结果 | ✅ 所有带文件端点通用 |
 | **后端产物名** | `img_01287_.png`、`z-image_00852_.png` | 生成类工具结果里的 `filename` 字段 | ❌ 约 0.1s 内笼统 500 |
 
 后端把「文件不存在」与「服务端错误」统一报成 `Internal Server Error`，所以把产物名当入参**看不出真因**（2026-09-11 实测定案，证据见 `docs/api-probe/archive/2026-09-11-filename-consumability.md`）。
 
 把**产物**喂给下游的合规路径（二选一）：
 
-1. `@ref[节点标题]` —— Host 会把节点上的产物名自动换成句柄（`resolveRefFilenames`），**这是首选**；
-2. `upload_image(imageUrl=产物url)` —— 显式取句柄。
+1. `@ref[节点 id 或标题]` —— Host 会把节点上的产物名自动换成句柄（`resolveRefFilenames`），**这是首选**；
+2. `upload_image(imageUrl=产物url)` —— 显式取句柄（返回 `asset_id`，形如 UUID）。
+
+> ⚠️ 句柄与画布节点 id **形态同形**（都是 UUID）。别拿形态去猜：裸传画布节点 id 会被 `CS-USER-002` 拒绝（判据是「本项目画布上真有这个节点」）；`upload_image` 返回的 `asset_id` 则可以直接当 filename 传。
 
 > 画布节点 `filename` 字段的不变式 = **恒为后端当前可用的名字**：产物节点被引用时会被就地换成句柄。你手里留着的旧产物名不要原样传，用 `@ref` 重新取。
 

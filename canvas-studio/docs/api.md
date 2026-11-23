@@ -73,6 +73,11 @@
 - 2026-11-23 换代：`succeeded` 只代表生成+结算完成，媒体可下载还要看 `result_status`：
   `archiving` 时**即使 terminal 也继续长轮询**；`ready` 才下载；`failed`/`expired`
   抛 CS-GEN-210/211 且**不自动重生成**（二次扣费）。
+- 后端自己判死（终态 `status=timeout`，或 `error.code=deadline_exceeded`）：抛
+  **CS-GEN-212**，文案明确「原样重试大概率同样超时、请先减负」。终态非 `succeeded`
+  的快照一律在下载段之前拦下（`assertGenerationSucceeded`），不会被下游「无
+  download_url」误判成 CS-NET-010「响应结构异常」（2026-11-23 真机：15.5 分钟超时
+  被误报成结构异常，模型原样重试连烧两条视频任务）。
 - 打断/墙钟超时：**先 `POST /v1/generations/{id}/cancel` 再抛 CS-GEN-207 / CS-GEN-209**
   （新 API 可撤回在途任务，不留孤儿扣费）。
 - 版本未推进时按 `poll_after_ms`（默认 500ms）步进——防 microtask 空转饿死事件循环。
@@ -105,6 +110,7 @@
 | 生成失败/参数/幂等冲突 | CS-GEN-206（带 httpStatus 供参考自愈） |
 | 打断 / 墙钟超时 | CS-GEN-207 / CS-GEN-209 |
 | 结果文件准备失败 / 已过期 | CS-GEN-210 / CS-GEN-211（不自动重生成） |
+| 后端判定任务超时（`deadline_exceeded`） | CS-GEN-212（原样重试会复发，先减负换参数） |
 | 下载不完整或校验失败 | CS-NET-012（重试 ×2 后丢弃坏件） |
 | 网络层（fetch 抛错） | CS-NET-001 |
 

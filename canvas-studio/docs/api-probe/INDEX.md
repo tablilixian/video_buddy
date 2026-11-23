@@ -20,6 +20,7 @@
 | [txt2speech-20260930](./txt2speech-20260930/report.md) | 09-30 | `txt2speech`（VoxCPM2）接入实测，tts_voiceover 转真 | api.md 0.4.0（CV-271） |
 | [video-megapixels-regression-20261027](./video-megapixels-regression-20261027/report.md) | 10-27 | **无结论**：mp=1 与对照组 mp=0.4 同报 502（上游 ComfyUI `/prompt` 400）⇒ 后端 H3 工作流当日故障，720P 真实像素仍未实证；附「502 ≠ 请求体被拒」判据补充 | resolution-unify §12.7-1 |
 | [generation-download-20261123](./generation-download-20261123/report.md) | 11-23 | 后端换代：`result_status` + `/download/{ordinal}` 票据直连 Blob/CDN；`succeeded` 不再等于可下载，旧 `/content` 仅兼容 | api.md v1.1.0 |
+| [generation-download-20261123/session-replay-and-fixes](./generation-download-20261123/session-replay-and-fixes.md) | 11-23 | 真机 session 复盘：换代验收通过（旧截断零复发）；修视频 catch 错误码改写 + 产物回执缺绝对路径 + CS-NET-010 文案债 | 待真机完整跑完取号 |
 
 ## 二、已归档复验链（`archive/`，2026-09-10~09-11）
 

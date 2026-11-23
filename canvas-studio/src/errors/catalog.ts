@@ -198,9 +198,12 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['developer'],
     recoverability: 'fatal',
     channel: 'log',
-    userMessage: '生成响应中未找到产物地址（或异步任务标识），后端返回结构异常，请联系开发。',
-    devMessage: 'response 未含 full_url / data[0].url / job_id',
-    recoveryHint: '检查 Drama Backend 生成响应结构是否变化。',
+    userMessage: '产物尚未准备就绪或生成响应结构异常，本次结果不可用。请勿重复生成以免二次扣费；若反复出现请反馈 DramaServer。',
+    // 2026-11-23 换代：此码现也用于「succeeded 但 result_status 非 ready / 无 download_url」
+    // （generation-client.ts throwIfResultUnavailable + generate.ts 下载点）。旧 devMessage
+    // 还停在 legacy 的 full_url/job_id 口径，真机日志（16:06/16:22）据此会误判成创建响应故障。
+    devMessage: '产物不可用：succeeded 但 result_status 非 ready，或终态输出无 download_url（legacy: response 未含 full_url / data[0].url / job_id）',
+    recoveryHint: '检查 generation 快照 result_status 是否为 ready、outputs[].download_url 是否存在；不要重试整单（二次扣费），反馈 DramaServer。',
   },
 
   // ── D 供应商层 ────────────────────────────────────────────────────────────

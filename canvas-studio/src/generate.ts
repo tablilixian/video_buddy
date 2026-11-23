@@ -269,6 +269,15 @@ export interface GenerateParams {
 /** 一次生成的产物描述（返回给模型）。 */
 export interface GenerateResult {
   url: string
+  /**
+   * 产物在项目内的绝对路径（`read_image` / `media_probe` 可直接读）。
+   *
+   * A4/P1-6 真机复盘（2026-11-11）+ 2026-11-23 复发：`url` 是同源相对路径
+   * `/canvas-studio/assets/<projectId>/<file>`，模型把它拼到 cwd 下会多出一层
+   * projectId 目录 ⇒ `cannot read …: not found`，白耗 bash ls + 重读两轮。
+   * 落盘处直接给出绝对路径，模型不必猜；解析失败一律不带（不能毁掉整条回执）。
+   */
+  diskPath?: string
   width: number
   height: number
   duration?: number
@@ -2703,6 +2712,14 @@ export async function generateAsset(
       // 用户打断 / 取消（CS-GEN-207）：**原样透传**，不套「音频参数」指导 ——
       // 打断不是后端错误（CV-239；此前「生成已取消」被包上音频提示，纯属误导）。
       if (signal?.aborted === true) throw error
+      // 2026-11-23 换代实证（真机 L239）：**已归类的 CanvasStudioError 一律原样透传**。
+      // 此前这里无条件套 CS-GEN-206 + 「笼统 500 多半由音频/参考字段导致」，把
+      // CS-GEN-210（result_status=failed，产物归档失败）改写成「生成失败」并给出
+      // 失效的排查方向 —— 业务 API 已拒收 generate_audio（business.ts:76），该字段
+      // 根本没送到后端，不可能是 500 的成因。保留错误码原貌，模型才能按 210 文案
+      // 「反馈 DramaServer、不重生成」正确决策。
+      // 只有未归类的裸错误（legacy/fal 适配器的原始 Error）才走下方音频诊断提示。
+      if (error instanceof CanvasStudioError) throw error
       // 后端尚未开放音频入参时，笼统的 500 会被误读成「参考图失效」或「提示词问题」
       // ——那两条自愈路径都救不了音频字段。此处把音频参数显式点出来，让 agent
       // 能一眼定位到真正原因，而不是在错误方向上反复重试。
@@ -2835,6 +2852,9 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // 同源相对路径：渲染进程与 webServer 同源，相对 URL 自动解析到当前端口，
   // 桌面重启换端口也不失效（此前写死 127.0.0.1:<port> 在端口变化后会 404）。
   const url = `/canvas-studio/assets/${projectId}/${filename}`
+  // 绝对路径随回执一起给模型：相对 URL 拼到 cwd 会多一层 projectId（真机 L72 实测
+  // read_image not found），模型不该猜落盘位置。只在上一步 writeFile 成功后给。
+  const diskPath = join(directory, filename)
 
   // CV-140：把「请求时长」换成「真实时长」。`duration` 是画布角标 / 时间线 /
   // list_shots / 合成时长锚点的共同数据源——存请求值等于拿没校准的尺子量音画
@@ -3068,7 +3088,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
 
   // CV-188：视频侧回**实测**像素（图片侧实测 = 声明，见 P0 探针结论）；
   // `mediaSize` 在探测失败时已回退 `size`，故此处恒有值。
-  const result: GenerateResult = { url, width: mediaSize.width, height: mediaSize.height }
+  const result: GenerateResult = { url, diskPath, width: mediaSize.width, height: mediaSize.height }
   // CV-140：回传真实时长（探测失败时即请求值），下游按它算成片总长。
   if (isVideo && mediaDuration !== undefined) result.duration = mediaDuration
   if (finalFilename !== undefined) result.filename = finalFilename

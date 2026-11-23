@@ -156,6 +156,7 @@ const resultSchema = {
   additionalProperties: false,
   properties: {
     url: { type: 'string' as const, description: '产物托管 URL，可在画布中直接引用' },
+    diskPath: { type: 'string' as const, description: '产物在项目内的绝对路径，read_image / media_probe 可直接读；有值时优先用它，不要把 url 拼到 cwd 后当路径' },
     width: { type: 'integer' as const, description: '产物宽度（像素）。**视频是 ffmpeg 实测的真实产物像素**（与画布节点 mediaWidth 同源；探测不可用时才回退本次档位声明值）；图片侧后端按请求尺寸逐字节出图，两者相等。要判断实际出了多大分辨率，以此为准' },
     height: { type: 'integer' as const, description: '产物高度（像素）。口径同 width' },
     duration: { type: 'number' as const, description: '视频时长（秒）；图片无此项' },
@@ -766,10 +767,15 @@ function renderResult(args: unknown, value: unknown): ContentBlock[] {
     : ''
   const warnings = result.warnings !== undefined && result.warnings.length > 0 ? `；注意: ${result.warnings.join('；')}` : ''
   const nodeId = result.nodeId !== undefined ? `；画布节点 id: ${result.nodeId}` : ''
+  // A4/P1-6（2026-11-11）+ 2026-11-23 复发：url 是同源相对路径，模型拼到 cwd 下
+  // 会多一层 projectId ⇒ read_image not found（真机白耗 bash ls + 重读两轮）。
+  // 生成侧已把落盘绝对路径写进 diskPath，有就给模型，别让它猜。
+  const disk = result.diskPath !== undefined && result.diskPath !== ''
+    ? `；本地路径: ${result.diskPath}（read_image / media_probe 用这个，勿拼 url）` : ''
   const superseded = result.superseded !== undefined && result.superseded.length > 0
     ? `；已取代 ${result.superseded.length} 个旧版本（不再进默认合成）`
     : ''
-  return [{ type: 'text', text: `${draftTag}已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
+  return [{ type: 'text', text: `${draftTag}已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${disk}${nodeId}${superseded}` }]
 }
 
 /** 分镜卡标题（节点血缘里 toolName 为分镜卡（`isShotCard`）的祖先）。 */

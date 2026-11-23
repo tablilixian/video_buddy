@@ -1164,6 +1164,44 @@ test('CV-239：用户打断（生成中 abort）→ 取消码 CS-GEN-207 原样�
   }
 })
 
+// 2026-11-23 真机 L239：video_composite 的 result_status=failed 被外层 catch 套成
+// CS-GEN-206 + 过时「笼统 500 多半由音频/参考字段导致」——错误码失真、方向误导。
+// 修法：CanvasStudioError 原样透传；generateAudio=true 也必须保持 210。
+test('换代 L239：视频 result_status=failed → CS-GEN-210 原样透传，不套音频 500 指导', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-failed210-'))
+  try {
+    const registry = stubRegistry([], dir)
+    const failed = {
+      id: 'cccccccc-cccc-4ccc-8ccc-00000000000a', operation: 'image2videofl2va',
+      status: 'succeeded', result_status: 'failed', version: 2, progress: 100,
+      billing_status: 'committed', terminal: true, outputs: [], error: null,
+    }
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && /\/v1\/generations(\?|$)/.test(text)) {
+        return { ok: true, status: 202, json: async () => ({ ...failed, status: 'queued', result_status: '', version: 1, terminal: false }) }
+      }
+      if (text.includes('/poll')) return { ok: true, status: 200, json: async () => failed }
+      return { ok: false, status: 404 }
+    }
+    await assert.rejects(
+      generateAsset(registry, 'video_composite', 'p1', {
+        prompt: 'x', filenames: ['ref-1.png'], generateAudio: true,
+      }),
+      (err) => {
+        assert.equal(err.code, 'CS-GEN-210', `错误码必须原样透传，实际 ${err.code}: ${err.message}`)
+        assert.doesNotMatch(err.message, /H3 参考素材|笼统 500|参考音频/)
+        return true
+      },
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 // ---------------------------------------------------------------------------
 // A-1 路径 A（2026-10-02）：自愈换名后三份记录必须同步——generationPrompt（详情
 // 读数）与血缘反查（连线）用新句柄，与实际提交一致；否则详情显示「已断链」而

@@ -293,8 +293,33 @@ export async function resolveShotRefs(
   projectId: string,
   refs: readonly unknown[],
 ): Promise<string[]> {
-  const cards = (await registry.readCanvas(projectId)).nodes.filter((node) => isShotCard(node))
+  const map = await resolveShotRefMap(registry, projectId, refs)
   const out: string[] = []
+  // 保持「首次出现顺序」：两个不同写法指向同一张卡时只留一份。
+  for (const id of map.values()) {
+    if (!out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/**
+ * 逐条 `shotRef` → 节点 id 的**映射**版（D-08 逐句绑镜用）。
+ *
+ * 与 {@link resolveShotRefs} 的差别只有返回形态：那条路把一串 ref 压成一个 id 数组，
+ * 丢掉了「哪个 ref 落到哪个 id」的对应关系。`tts_narration` 的 `lines[]` 每段各绑一镜，
+ * 必须逐段保留对应，否则整批旁白会全绑到第一张卡上。
+ *
+ * 一次 `readCanvas` 解析全部 ref（N 段旁白不该读 N 次画布），**且整批先解析完再合成** ——
+ * 第 3 段写错镜号时要在这批花钱之前就报错，而不是等前 2 段落卡、额度已花完才发现。
+ * 匹配规则与 {@link resolveShotRefs} 完全同源（同一个 `pickShotCard`），失败文案也一致。
+ */
+export async function resolveShotRefMap(
+  registry: ProjectRegistry,
+  projectId: string,
+  refs: readonly unknown[],
+): Promise<Map<string, string>> {
+  const cards = (await registry.readCanvas(projectId)).nodes.filter((node) => isShotCard(node))
+  const out = new Map<string, string>()
   for (const ref of refs) {
     const raw = String(ref).trim()
     if (raw === '') continue
@@ -311,7 +336,7 @@ export async function resolveShotRefs(
         detail: `shot card ref not found: ${raw}; cards=${String(cards.length)}`,
       })
     }
-    if (!out.includes(hit.id)) out.push(hit.id)
+    if (!out.has(raw)) out.set(raw, hit.id)
   }
   return out
 }

@@ -85,6 +85,25 @@ function stubSpeechFetch(sink) {
     if (text.startsWith('https://blob.example.test/signed/')) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]), text: async () => '' }
     }
+    // 音色锚重传（`tts_narration` 的 first-line 策略会 promote 第一段产物）：
+    // presign → PUT 直传 → complete 三段。少了这几条，多段旁白在第二段就挂。
+    if (init.method === 'POST' && text.includes('/v1/assets/presign')) {
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          asset: { id: 'dddddddd-dddd-4ddd-8ddd-000000000001', type: 'audio', status: 'pending', filename: 'ref-0000.mp3' },
+          upload_url: 'https://blob.example.test/put/anchor-1',
+          headers: { 'content-type': 'audio/mpeg' },
+        }),
+      }
+    }
+    if (init.method === 'PUT' && text.startsWith('https://blob.example.test/put/')) {
+      return { ok: true, status: 200, text: async () => '' }
+    }
+    if (init.method === 'POST' && text.includes('/v1/assets/complete')) {
+      return { ok: true, status: 200, json: async () => ({ id: 'dddddddd-dddd-4ddd-8ddd-000000000001', status: 'ready', type: 'audio' }) }
+    }
     return { ok: false, status: 404, text: async () => '' }
   }
 }
@@ -114,7 +133,9 @@ async function makeWorkspace(prefix) {
   const tools = createStudioTools(registry, 3005)
   const voice = tools.find(tool => tool.name === 'tts_voiceover')
   assert.ok(voice, 'tts_voiceover 必须已注册')
-  return { dir, registry, project, voice, cards }
+  const narration = tools.find(tool => tool.name === 'tts_narration')
+  assert.ok(narration, 'tts_narration 必须已注册')
+  return { dir, registry, project, voice, narration, cards }
 }
 
 /** 工具执行上下文（`exec.agent.session.header.cwd` 决定项目归属）。 */
@@ -264,6 +285,105 @@ test('D-08 声明落盘：generationPrompt.shotNodeIds 记下绑镜，请求体�
     assert.ok(sink[0].includes('晨雾漫过茶园。'), '合成文本必须照原样进请求体')
     assert.ok(!sink[0].includes('shotNodeIds'),
       'shotNodeIds 是宿主侧血缘声明，**不许**进请求体（后端 txt2speech 没有这个字段）')
+  } finally {
+    await rm(ws.dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// ⑦ 多段旁白：tts_narration 的 lines[].shotRef（逐句绑镜）
+// ---------------------------------------------------------------------------
+
+test('D-08b 契约：tts_narration 的 lines[] 暴露 shotRef（逐句绑镜的唯一入口）', async () => {
+  const ws = await makeWorkspace('cs-narr-bind-schema-')
+  try {
+    const item = ws.narration.parameters.properties.lines.items.properties
+    const param = item.shotRef
+    assert.ok(param, 'lines[].shotRef 必须声明 —— 此前 lines[] 只有 text，多段旁白结构上无法表达「这句属于哪一镜」')
+    assert.equal(param.type, 'string', '逐句绑镜用单值（一句话只属于一镜；一句要跨两镜就该拆成两句）')
+    assert.match(String(param.description), /分镜/u, '参数说明必须写清可传「分镜 N」这类写法')
+    assert.match(String(ws.narration.description), /shotRef/u, '工具描述必须提醒模型逐句传 —— 只加参数不写描述，模型仍然不会用')
+  } finally {
+    await rm(ws.dir, { recursive: true, force: true })
+  }
+})
+
+test('D-08b 端到端：多段旁白逐句各绑自己那一镜，分别落进镜 1 / 镜 2 的行', async () => {
+  const ws = await makeWorkspace('cs-narr-bind-ok-')
+  try {
+    const sink = []
+    stubSpeechFetch(sink)
+    const res = await ws.narration.execute({
+      lines: [
+        { text: '洪水来了，四十昼夜的雨。', shotRef: '分镜 1' },
+        { text: '水势浩大，方舟被水抬起。', shotRef: '分镜 2' },
+      ],
+      fps: 30,
+    }, EXEC(ws.project.dir))
+
+    assert.equal(res.clips.length, 2, '两段旁白应各落一张音频卡')
+    const doc = await ws.registry.readCanvas(ws.project.id)
+    const nodeOf = id => doc.nodes.find(entry => entry.id === id)
+    const [first, second] = res.clips
+    assert.deepEqual(nodeOf(first.nodeId).sourceIds, ['card-1'], '第 1 段只绑镜 1 的卡')
+    assert.deepEqual(nodeOf(second.nodeId).sourceIds, ['card-2'],
+      '第 2 段必须绑镜 2 —— 整批共用第一个 ref 是这里最容易出、也最难看出来的错')
+    assert.deepEqual(JSON.parse(nodeOf(second.nodeId).generationPrompt).shotNodeIds, ['card-2'],
+      '绑镜声明逐段落盘（不是只记第一段的）')
+
+    // 布局侧消费：两段各进自己那一行（此前全部堆在「音频」节）。
+    const layout = computeWaterfallLayout(doc.nodes)
+    const trayOf = shotNo => layout.trays.find(entry => entry.shot === shotNo)
+    assert.ok(trayOf(1).nodeIds.includes(first.nodeId), '第 1 段配音进镜 1 的行')
+    assert.ok(trayOf(2).nodeIds.includes(second.nodeId), '第 2 段配音进镜 2 的行')
+    assert.ok(!trayOf(2).nodeIds.includes(first.nodeId), '第 1 段不许串到镜 2 的行里')
+    assert.ok(!layout.sections.some(section => section.stage === 'audio'), '绑了镜的旁白不再落「音频」节')
+
+    assert.equal(sink.length, 2, '两段 = 两次合成请求')
+    assert.ok(!sink.some(body => body.includes('shotNodeIds')), 'shotNodeIds 是宿主侧声明，不许进请求体')
+  } finally {
+    await rm(ws.dir, { recursive: true, force: true })
+  }
+})
+
+test('D-08b 部分绑镜：没写 shotRef 的段落保持无血缘（整片通铺旁白照旧）', async () => {
+  const ws = await makeWorkspace('cs-narr-bind-mixed-')
+  try {
+    stubSpeechFetch([])
+    const res = await ws.narration.execute({
+      lines: [
+        { text: '镜内旁白。', shotRef: '分镜 1' },
+        { text: '片尾通铺旁白。' },
+      ],
+      fps: 30,
+    }, EXEC(ws.project.dir))
+    const doc = await ws.registry.readCanvas(ws.project.id)
+    const nodeOf = id => doc.nodes.find(entry => entry.id === id)
+    assert.deepEqual(nodeOf(res.clips[0].nodeId).sourceIds, ['card-1'])
+    assert.deepEqual(nodeOf(res.clips[1].nodeId).sourceIds, [],
+      '没写 shotRef 的段落不许被顺手绑上别人的镜')
+  } finally {
+    await rm(ws.dir, { recursive: true, force: true })
+  }
+})
+
+test('D-08b 整批先校验：某段镜号写错时一段都不合成（不烧额度）', async () => {
+  const ws = await makeWorkspace('cs-narr-bind-early-')
+  try {
+    const sink = []
+    stubSpeechFetch(sink)
+    await assert.rejects(
+      () => ws.narration.execute({
+        lines: [{ text: '一', shotRef: '分镜 1' }, { text: '二', shotRef: '分镜 9' }],
+        fps: 30,
+      }, EXEC(ws.project.dir)),
+      /分镜卡「分镜 9」未找到/u,
+      '写错的镜号必须报错（静默丢会让多段旁白默默回到「音频」节）',
+    )
+    assert.equal(sink.length, 0,
+      '整批 ref 必须在任何一段合成之前校验完 —— 否则第 1 段已落卡、额度已花，才发现第 2 段写错')
+    const doc = await ws.registry.readCanvas(ws.project.id)
+    assert.equal(doc.nodes.length, 2, '被拒的调用不得留下音频节点')
   } finally {
     await rm(ws.dir, { recursive: true, force: true })
   }

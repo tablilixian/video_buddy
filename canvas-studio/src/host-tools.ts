@@ -76,7 +76,7 @@ import { findNodeByRef, parseRefTokens } from './reference-token.js'
 // REQ-003（§4.3）：参考句柄解析抽到独立模块 —— 路由侧（resolve-refs）与工具侧共用**同一份**实现。
 // CV-376：`resolveShotRefs`（分镜卡引用）同源搬过去 —— 它与 `@ref` 一样是「句柄 → 节点」的
 // 解析，留在这里只会让两套匹配判据各自漂移；顺带解掉本文件的行数棘轮（4401/4401 加不动）。
-import { resolveRefFilenames, resolveShotRefs } from './reference-resolve.js'
+import { resolveRefFilenames, resolveShotRefMap, resolveShotRefs } from './reference-resolve.js'
 // 既有测试从 host-tools 取这个纯函数（tests/filename-consumability.test.mjs）—— 保持转出。
 export { refCandidatePool } from './reference-resolve.js'
 // REQ-001：全局资产库（`@ref[lib:<id>]` 的解析 / 物化 / usage 回写都在这条链上）。
@@ -3450,6 +3450,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '⚠️ `fps` 必须与成片 `manifest.meta.fps` **完全一致**（24/25/30/60），否则整条旁白按比例错位。'
         + '返回值里 `voiceOver` 的 `src` 已经是同源 URL，**禁止改成 @ref / 节点 id**（manifest 的 `validateAssetRefField` 只认同源 URL）。'
         + '⚠️ **不是事务**：第 k 段失败时前 k-1 段已落卡、额度已花（回滚不退），报错里会给出已完成节点，**不要整批重跑**，用剩下的文本再调一次（锚传已完成的第一段）。'
+        + '**逐句绑镜（镜内旁白必做）**：`lines[k].shotRef` 写这一句属于哪一镜。不写 ⇒ 这段音频的血缘为空 ⇒ 判不到镜，历程视图「一行一镜」里看不到它，全堆进「音频」节。整批 ref 会在**任何一段合成之前**统一校验，写错镜号直接报错、不花钱。'
         + '时长仍由文本决定（无时长参数，按每秒约 4 字估）；要改动已有某段就用 tts_voiceover 的 replaces 原地重配，再回来重跑整批排帧。'
         + '另：要画面里的角色**开口说话（对口型）**不要用 TTS，写 `<d>[语言]原话</d>` 给视频模型。写法见技能 voiceover-writing。'
         + '\n\n' + DRAMA_SERIAL_HINT,
@@ -3464,6 +3465,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               text: { type: 'string' as const, required: true, description: '这一段的台词（要念的话）。不能为空串' },
               gapSeconds: { type: 'number' as const, description: `可选：这一段**之前**的间隔（秒），覆盖全局 gapSeconds。负数 = 与上一段重叠。缺省 ${DEFAULT_VOICE_GAP_SECONDS}` },
               instructPrompt: { type: 'string' as const, description: '可选：这一段单独的声音设计（**一般不要写**——逐段改写会让音色漂移；只在「这一句是耳语」这类真需要时用）' },
+              shotRef: { type: 'string' as const, description: '可选：**这一段旁白属于哪一镜**（「分镜 N · 景别」标题、「分镜 N」镜号、sbRef 里的镜号「S1-Sh1」，或卡节点 id）—— 来自分镜提交的工具结果。**镜内旁白/独白/画外音必须逐段写**，这段才会并进该镜（历程视图一行一镜里排在镜视频之后）；只有整片通铺、不属于任何一镜的旁白才不写' },
             },
           },
           description: `按顺序要念的段（1–${MAX_NARRATION_LINES} 段）。每段一个对象；顺序即时间顺序。拆段按语义断句（一句一口气），不要把一段话切成词组`,
@@ -3486,7 +3488,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       output: { schema: narrationResultSchema, render: renderNarrationResult },
       async execute(args, exec) {
         const a = args as {
-          lines: { text: string; gapSeconds?: number; instructPrompt?: string }[]
+          lines: { text: string; gapSeconds?: number; instructPrompt?: string; shotRef?: string }[]
           voice?: { instructPrompt?: string; refaudio?: string }
           fps: number
           startFrame?: number
@@ -3496,6 +3498,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'tts_narration', false)
+        // D-08 逐句绑镜（2026-11-24）：整批**先解析完再合成**。
+        // ① 一次 `readCanvas` 解掉所有 ref（N 段旁白不该读 N 次画布）；
+        // ② 第 k 段镜号写错时，必须在这一批花钱之前报错 —— 否则前 k-1 段已落卡、
+        //    额度已花，报错只能让人拿着剩下的文本重跑（narration 不是事务）。
+        // 只收集非空 ref；全都空（整片通铺旁白）时一次盘都不读。
+        const lineShotRefs = a.lines.map(line => (typeof line.shotRef === 'string' ? line.shotRef.trim() : ''))
+        const shotRefMap = lineShotRefs.some(ref => ref !== '')
+          ? await resolveShotRefMap(registry, projectId, lineShotRefs.filter(ref => ref !== ''))
+          : new Map<string, string>()
         // 锚只解析一次：N 段共用同一个后端句柄（每段各解析一次会重复 promote，白等网络）。
         const rawRef = a.voice?.refaudio
         const refaudio = rawRef !== undefined && rawRef.trim() !== ''
@@ -3506,11 +3517,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           synthesize: (params) => generateSpeech(registry, projectId, params, exec.signal),
           resolveHandle: (nodeId) => anchorHandleOf(registry, projectId, nodeId, exec.signal),
         }, {
-          lines: a.lines.map((line) => ({
-            text: line.text,
-            ...(line.gapSeconds !== undefined ? { gapSeconds: line.gapSeconds } : {}),
-            ...(line.instructPrompt !== undefined ? { instructPrompt: line.instructPrompt } : {}),
-          })),
+          lines: a.lines.map((line, index) => {
+            const shotCardId = shotRefMap.get(lineShotRefs[index] ?? '')
+            return {
+              text: line.text,
+              ...(line.gapSeconds !== undefined ? { gapSeconds: line.gapSeconds } : {}),
+              ...(line.instructPrompt !== undefined ? { instructPrompt: line.instructPrompt } : {}),
+              // 逐段各绑自己那一镜（不共用），未写 shotRef 的段落保持无血缘（整片通铺旁白）。
+              ...(shotCardId !== undefined ? { shotNodeIds: [shotCardId] } : {}),
+            }
+          }),
           ...(instruct !== undefined || refaudio !== undefined
             ? {
               voice: {

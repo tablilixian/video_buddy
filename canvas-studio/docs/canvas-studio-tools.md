@@ -71,7 +71,7 @@
 | `video_rerender` | video | 同该节点原工具（`fl2va` / `ref2va`） | **同参数升档重出**：只换 `resolution`、提示词零改动、原址覆盖（见 §A9.1） |
 | `music_generation` | audio | `txt2audio` | Yue2 工作流；后端有偶发 500，工具自动重试 |
 | `tts_voiceover` | audio | `txt2speech` | **配音生成**（VoxCPM2，CV-271 占位升真）：`instruct_prompt` 声音设计自然语言写（30 语种 + 9 方言）；**时长由文本决定**；产物实测 mp3 |
-| `tts_narration` | audio | `txt2speech` × N（内部串行） | **多段旁白批量合成 + 帧级排期**（P1-1，2026-10-26）：一次调用合成 N 段并**由代码算好 `audio.voiceOver[]` 的帧号**。音色锚由参数形状强制成立——不传 `voice.refaudio` 就自动拿第一段当锚，后段全部克隆它。不是事务：中途失败时前 k-1 段已花额度，报错列出已完成节点（不要整批重跑） |
+| `tts_narration` | audio | `txt2speech` × N（内部串行） | **多段旁白批量合成 + 帧级排期**（P1-1，2026-10-26）：一次调用合成 N 段并**由代码算好 `audio.voiceOver[]` 的帧号**。音色锚由参数形状强制成立——不传 `voice.refaudio` 就自动拿第一段当锚，后段全部克隆它。**逐句绑镜**：`lines[k].shotRef`（D-08，2026-11-24）——整批 ref 在任何一段合成之前统一校验，写错当批报错、不花钱。不是事务：中途失败时前 k-1 段已花额度，报错列出已完成节点（不要整批重跑） |
 
 ### B. 本地媒体处理（4 个，不调后端）
 
@@ -437,7 +437,7 @@
 **行为要点**：
 - **无时长参数**：合成时长由文本长度决定（中文中速约 4 字/秒）；控时长 = 增删文本。结果里的 `duration` 是 **ffprobe 实测真值**（后端响应的 `duration` 是生成耗时，探针实测与真值差 2.8 倍）；探测失败不伪造（返回 0 / 节点无角标）。
 - **产物实测 mp3**（后端 0.8.0 文档写 flac，以实测为准），`voxcpm_*` 前缀，属产物名类。
-- **绑镜（D-08，2026-11-24）**：配音进镜的唯一通道是 `shotRefs`（`sourceUrls` 反查只能命中 URL，写不出「这是第几镜」）。绑镜的显式声明同时写进 `generationPrompt.shotNodeIds`（与出图 / 出片同口径，供审计与重放）；`replaces` 重配时补传 `shotRefs` 会把卡**并入**既有血缘而不是覆盖（旧的参考链不丢）。
+- **绑镜（D-08，2026-11-24）**：配音进镜的唯一通道是 `shotRefs`（`sourceUrls` 反查只能命中 URL，写不出「这是第几镜」）。绑镜的显式声明同时写进 `generationPrompt.shotNodeIds`（与出图 / 出片同口径，供审计与重放）；`replaces` 重配时补传 `shotRefs` 会把卡**并入**既有血缘而不是覆盖（旧的参考链不丢）。**多段旁白**用 `tts_narration` 的 `lines[k].shotRef`：一次 `readCanvas` 解析全部 ref，**整批先校验再合成**（第 k 段写错时前面一段都不会合成）。
 - **配音节点不能当 `bgmNodeId`**（compose_video 的 amix 只挂 BGM）——要进成片走 `video_generate` / `video_composite` 的 `audioRefs`（官方规格 ≤3 段、合计 ≤15s，先用 `cut_audio` 裁），或作为独立音频交付。
 - **审批门禁**：与 `music_generation` 同列 `FORMAL_TOOLS`（drafting / 审阅态拦）；可重放（`REPLAYABLE_TOOLS` 已含，节点参数蛇形键与后端请求体一致）。
 - 技能配套：`voiceover-writing`（SKILL.md + `references/voice-design.md`），写配音前加载。

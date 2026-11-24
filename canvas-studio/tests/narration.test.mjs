@@ -93,6 +93,22 @@ test('instruct：段级覆盖整片设定，未写的段落落在整片设定上
   assert.deepEqual(calls.map((call) => call.instructPrompt), ['30岁女性，低沉', '同一个女人，耳语', '30岁女性，低沉'])
 })
 
+test('D-08 逐段绑镜：lines[k].shotNodeIds 只递给第 k 段，未写的段落保持无血缘', async () => {
+  // 抓的是「整批共用一个镜」这种看起来没坏、其实全绑错镜的错：
+  // 4 句旁白若都绑到第一张卡，历程视图会把四条配音全堆在镜 1 的行里。
+  const { calls, deps } = fakeDeps([1, 1, 1])
+  await generateNarration(deps, {
+    lines: [
+      { text: '一', shotNodeIds: ['card-1'] },
+      { text: '二（整片通铺）' },
+      { text: '三', shotNodeIds: ['card-3'] },
+    ],
+    fps: 30,
+  })
+  assert.deepEqual(calls.map((call) => call.shotNodeIds), [['card-1'], undefined, ['card-3']],
+    '每段只带自己那一镜的卡 id；未写 shotRef 的段落不许被顺手绑上别人的镜')
+})
+
 test('排期：voiceOver 的 src 是同源 URL、startFrame 由真值算出（不是模型手算）', async () => {
   const { deps } = fakeDeps([2, 1, 1.5])
   const result = await generateNarration(deps, {

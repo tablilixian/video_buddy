@@ -51,6 +51,15 @@ export interface NarrationLine {
   gapSeconds?: number
   /** 本段的声音设计（覆盖 `voice.instructPrompt`；一般不必逐段写）。 */
   instructPrompt?: string
+  /**
+   * 这一段所属的分镜卡节点 id（**已解析**，`shotRef` 的解析在 Host 侧完成）。
+   *
+   * D-08（2026-11-24）：逐句绑镜。此前 `lines[]` 只有文本，整批旁白落下来
+   * `sourceIds` 全空 ⇒ 判不到镜 ⇒ 历程视图「一行一镜」里永远缺配音格，配音全卡在
+   * 「音频」节。这里只负责把已解析的 id 递给 `synthesize`（由 `generateSpeech`
+   * 并入 `sourceIds` + `generationPrompt.shotNodeIds`），本模块不解析、不读画布。
+   */
+  shotNodeIds?: string[]
 }
 
 /** 整条旁白的音色设定（**锚**就在这里）。 */
@@ -204,6 +213,8 @@ export async function generateNarration(deps: NarrationDeps, params: NarrationPa
       ...(anchorRef !== undefined && anchorRef !== '' ? { refaudio: anchorRef } : {}),
       ...(params.speed !== undefined ? { speed: params.speed } : {}),
       ...(params.pitchSemitones !== undefined ? { pitchSemitones: params.pitchSemitones } : {}),
+      // D-08：逐段绑镜（每段各绑自己那一镜，不能整批共用一个 id）。
+      ...(line.shotNodeIds !== undefined && line.shotNodeIds.length > 0 ? { shotNodeIds: line.shotNodeIds } : {}),
     }))
     results.push(result)
     if (index !== 0) continue

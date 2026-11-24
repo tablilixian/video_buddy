@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>整理画布 · 排布方案</title>
+<style>
+  :root{
+    --bg:#0e131d; --bg2:#131a26; --line:#232d3d; --line2:#2e3b50;
+    --txt:#dde5f2; --txt2:#8f9cb2; --txt3:#5f6b80;
+    --plan:#8b7bf0; --card:#f0a63c; --img:#4c9bf5; --vid:#35c08a; --aud:#e05f8a; --film:#f5d13c;
+    --warn:#e2604f; --okc:#4ecb8f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif}
+  header{padding:22px 28px 16px;border-bottom:1px solid var(--line)}
+  h1{margin:0 0 7px;font-size:19px;font-weight:600;letter-spacing:.2px}
+  h1 small{font-weight:400;font-size:12.5px;color:var(--txt3);margin-left:10px}
+  .sub{color:var(--txt2);font-size:13px;max-width:920px}
+  .sub b{color:var(--txt);font-weight:500}
+
+  .bar{display:flex;gap:9px;align-items:center;padding:11px 28px;border-bottom:1px solid var(--line);
+    background:var(--bg2);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+  .btn{background:#1b2433;border:1px solid var(--line2);color:var(--txt2);padding:6px 13px;
+    border-radius:7px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .btn:hover{color:var(--txt);border-color:#3d4d68}
+  .btn.on{background:#1f3a5c;border-color:#3b6ea8;color:#cfe3ff}
+  .stat{font-size:12.5px;color:var(--txt3);margin-left:auto}
+  .stat b{font-variant-numeric:tabular-nums;color:var(--txt2)}
+  .stat .ok{color:var(--okc)}
+
+  main{display:grid;grid-template-columns:1fr 286px;align-items:start}
+  .canvas-wrap{padding:16px 18px 40px;overflow:auto;max-height:calc(100vh - 148px)}
+  svg{display:block;width:100%;height:auto;min-width:1200px}
+
+  aside{border-left:1px solid var(--line);padding:20px 20px 60px;max-height:calc(100vh - 148px);overflow:auto}
+  aside h2{font-size:11.5px;letter-spacing:1.4px;color:var(--txt3);
+    margin:24px 0 10px;font-weight:600}
+  aside h2:first-child{margin-top:0}
+  .rule{background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:9px}
+  .rule b{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  .rule span{font-size:12px;color:var(--txt2);line-height:1.6}
+  .rule em{font-style:normal;color:#7fb2ff}
+  .fix{font-size:12px;color:var(--txt2);padding:8px 0;border-bottom:1px dashed var(--line);line-height:1.55}
+  .fix:last-child{border:0}
+  .fix b{color:var(--txt);font-weight:500}
+  .fix code{font:11px/1.5 ui-monospace,Menlo,monospace;color:#8fb8e8;background:#141d2b;
+    padding:1px 4px;border-radius:3px}
+  table.cmp{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+  table.cmp th,table.cmp td{padding:6px 4px;text-align:left;border-bottom:1px solid var(--line)}
+  table.cmp th{color:var(--txt3);font-weight:500;font-size:11px}
+  table.cmp td.n{font-variant-numeric:tabular-nums;text-align:right}
+  .bad{color:var(--warn)} .good{color:var(--okc)}
+</style>
+</head>
+<body>
+<header>
+  <h1>整理画布 · 点击后的排布 <small>canvas-studio 方案原型</small></h1>
+  <div class="sub">
+    只讲<b>「整理画布」这一个按钮</b>的效果：节点怎么分列、连线往哪走、孤立节点落在哪。
+    数据取自真实项目「生成一段苹果手机广告」——24 个节点、32 条血缘边，节点尺寸按比例归一化，位置规则与真实一致。
+  </div>
+</header>
+
+<div class="bar">
+  <button class="btn on" id="btn-main">新方案</button>
+  <button class="btn" id="btn-now">对比：现状整理</button>
+  <button class="btn" id="btn-orphan">放入 3 个孤立节点</button>
+  <span class="stat" id="stat"></span>
+</div>
+
+<main>
+  <div class="canvas-wrap"><svg id="cv" width="1532" height="1760" viewBox="0 0 1532 1760"></svg></div>
+  <aside>
+    <h2>三条规则</h2>
+    <div class="rule"><b>① 列 = 推进段，X 单向递增</b>
+      <span>输入 → 剧本·定稿 → 分镜 → 每镜产物 → 后期 → 成片，六段固定 X。主链边只连<em>相邻列</em>，所以箭头在结构上不可能右→左。</span></div>
+    <div class="rule"><b>② 行 = 镜号，一镜一带</b>
+      <span>分镜卡与它的产物同 Y，外面套一个虚线框。横向读完一行 = 看完一镜；纵向扫下来 = 全片进度。</span></div>
+    <div class="rule"><b>③ 孤立节点单独一条带</b>
+      <span>画布最底「待归档」，<em>不进任何生产列</em>（否则会被读成某个阶段）。三类原因分列，每条给处置动作。</span></div>
+
+    <h2>这版修掉什么</h2>
+    <div class="fix"><b>定稿掉到最右列</b><br>落位表里没有 <code>seedCanvasFromStoryboard</code>，兜底进成片列 ⇒ 4 条反向边。归到「剧本·定稿」。</div>
+    <div class="fix"><b>文案与成片同列</b><br><code>write_script</code> 与 <code>compose</code> 都落 LANE_FILM ⇒ 文案→成片 竖着画、文案→BGM 反向。拆成「后期」「成片」两列。</div>
+    <div class="fix"><b>无工具名的文本乱落</b><br>「旁白与声音」没有 toolName，掉到最右列，从定稿拉一条横穿全图的线。改为<em>跟随来源同列</em>，短竖线相连。</div>
+    <div class="fix"><b>5 张竖版参考图堆到 7000px 高</b><br>736×1328 的图竖排把画布撑到 7120。收进「参考素材」托盘，2 列网格。</div>
+
+    <h2>边怎么画</h2>
+    <table class="cmp">
+      <tr><th>指标</th><th class="n">现状</th><th class="n">新方案</th></tr>
+      <tr><td>反向边（右→左）</td><td class="n bad">5</td><td class="n good">0</td></tr>
+      <tr><td>同列边（竖线）</td><td class="n bad">6</td><td class="n good">1</td></tr>
+      <tr><td>跨多列长折返</td><td class="n bad">4</td><td class="n good">0</td></tr>
+      <tr><td>组内衍生（角标）</td><td class="n">—</td><td class="n">4</td></tr>
+    </table>
+    <div class="fix" style="border:0;font-size:11.5px;color:var(--txt3);padding-top:9px">
+      32 条边的去向：17 条主链直连 · 1 条同列竖线 · 4 条组内角标 · 10 条弱关系降级为卡上「来源」角标（参考图→视频 5、托盘→卡 4、卡4→文案 1）。
+    </div>
+
+    <h2>还没定</h2>
+    <div class="fix"><b>弱关系降级后怎么找回</b>：卡上「2 个来源」角标点开高亮整条路径，还是 hover 显示？</div>
+    <div class="fix"><b>镜带超过 6 镜</b>：合并成「镜 7–12」一行折叠，还是保持全展开？</div>
+    <div class="fix"><b>参考托盘内是否画衍生线</b>：画会穿图，现在是「衍生自 01」角标。</div>
+    <div class="fix"><b>孤立节点搬不搬</b>：整理时统一收进待归档带（可撤销），还是原地不动只打标记？我倾向前者——「整理」就是要收敛。</div>
+    <div class="fix"><b>参考图自动成组要不要写数据</b>：5 张散图收进托盘需要写 <code>parentId</code>。整理只改坐标是只读操作，改结构就得给撤销。</div>
+  </aside>
+</main>
+
+<script>
+(function(){
+const CV = document.getElementById('cv')
+const STAT = document.getElementById('stat')
+
+/* ================= 几何 ================= */
+const COLS = [
+  {key:'input', no:'01', name:'输入',        w:292},
+  {key:'script',no:'02', name:'剧本 · 定稿',  w:160},
+  {key:'shot',  no:'03', name:'分镜',        w:172},
+  {key:'prod',  no:'04', name:'每镜产物',    w:160},
+  {key:'post',  no:'05', name:'后期',        w:280},
+  {key:'film',  no:'06', name:'成片',        w:160}
+]
+const ORIGIN = 24, COL_GAP = 52
+let accX = ORIGIN
+for (const c of COLS){ c.x = accX; accX += c.w + COL_GAP }
+const CANVAS_W = COLS[COLS.length - 1].x + COLS[COLS.length - 1].w + ORIGIN
+
+const BAND = [
+  {top:66,  h:514, label:'镜 1', note:'2 个产物 · 2 版'},
+  {top:596, h:274, label:'镜 2', note:'1 个产物'},
+  {top:886, h:274, label:'镜 3', note:'1 个产物'},
+  {top:1176,h:274, label:'镜 4', note:'1 个产物'}
+]
+const BAND_X = 566, BAND_W = 412
+const MAIN_BOTTOM = 1450
+const ORPHAN_BOX = {x:ORIGIN, y:1514, w:CANVAS_W - ORIGIN*2, h:206}
+
+/* ================= 节点 ================= */
+const NODES = [
+  {id:'brief',  x:44,   y:100, w:120, h:88,  tone:'plan', ic:'意', t:'创意',            m:'user_brief'},
+  {id:'final',  x:388,  y:100, w:120, h:88,  tone:'plan', ic:'稿', t:'拍摄定稿', m:'锚 · 血缘根'},
+  {id:'voice',  x:388,  y:208, w:120, h:70,  tone:'plan', ic:'白', t:'旁白与声音',       m:'无 toolName'},
+  {id:'card1',  x:600,  y:170, w:132, h:88,  tone:'card', ic:'1', t:'分镜 1', m:'S1-Sh1 · Push in'},
+  {id:'card2',  x:600,  y:700, w:132, h:88,  tone:'card', ic:'2', t:'分镜 2', m:'S1-Sh2 · Dolly in'},
+  {id:'card3',  x:600,  y:990, w:132, h:88,  tone:'card', ic:'3', t:'分镜 3', m:'S1-Sh3 · Push in'},
+  {id:'card4',  x:600,  y:1280,w:132, h:88,  tone:'card', ic:'4', t:'分镜 4', m:'S1-Sh4 · Slow orbit'},
+  {id:'v1',     x:824,  y:100, w:120, h:228, tone:'vid', ic:'▶', t:'镜 1 视频', m:'v1 · 480×912', srcs:2},
+  {id:'v1b',    x:824,  y:340, w:120, h:228, tone:'vid', ic:'▶', t:'镜 1 视频', m:'v2 · 重生成'},
+  {id:'v2',     x:824,  y:630, w:120, h:228, tone:'vid', ic:'▶', t:'镜 2 视频', m:'480×912', srcs:2},
+  {id:'v3',     x:824,  y:920, w:120, h:228, tone:'vid', ic:'▶', t:'镜 3 视频', m:'480×912', srcs:2},
+  {id:'v4',     x:824,  y:1210,w:120, h:228, tone:'vid', ic:'▶', t:'镜 4 视频', m:'480×912', srcs:2},
+  {id:'script', x:1036, y:100, w:240, h:200, tone:'plan', ic:'文', t:'文案',  m:'write_script', srcs:1},
+  {id:'bgm',    x:1036, y:324, w:240, h:84,  tone:'aud', ic:'♪', t:'BGM',  m:'music_generation'},
+  {id:'film',   x:1368, y:786, w:120, h:228, tone:'film', ic:'合', t:'成片', m:'compose · 6 源汇入'}
+]
+const REF_BOX = {x:44, y:208, w:252, h:648}
+const REFS = [
+  {id:'r1', x:52,  y:216, w:113, h:204, t:'Minimalist', src:''},
+  {id:'r2', x:175, y:216, w:113, h:204, t:'色彩 A', src:'01'},
+  {id:'r3', x:52,  y:430, w:113, h:204, t:'色彩 B', src:'01'},
+  {id:'r4', x:175, y:430, w:113, h:204, t:'色彩 C', src:'01'},
+  {id:'r5', x:52,  y:644, w:113, h:204, t:'色彩 D', src:'01'}
+]
+
+/* ================= 工具 ================= */
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+const clip = (s,n) => s.length > n ? s.slice(0,n-1) + '…' : s
+const byId = id => NODES.find(n => n.id === id)
+const cx_ = n => n.x + n.w/2
+const cy_ = n => n.y + n.h/2
+const rx_ = n => n.x + n.w
+const by_ = n => n.y + n.h
+
+function edge(d, cls){
+  const main = cls === 'main'
+  return '<path d="' + d + '" fill="none" stroke="' + (main ? '#8fbaff' : '#7d93b8') + '" stroke-width="'
+    + (main ? 3 : 2.8) + '" stroke-linejoin="round" stroke-linecap="round"/>'
+}
+function head(x, y, dir, color){
+  const c = color || '#8fbaff'
+  const s = 9
+  const p = {
+    r: x+','+y+' '+(x-s*1.7)+','+(y-s)+' '+(x-s*1.7)+','+(y+s),
+    d: x+','+y+' '+(x-s)+','+(y-s*1.7)+' '+(x+s)+','+(y-s*1.7),
+    l: x+','+y+' '+(x+s*1.7)+','+(y-s)+' '+(x+s*1.7)+','+(y+s),
+    u: x+','+y+' '+(x-s)+','+(y+s*1.7)+' '+(x+s)+','+(y+s*1.7)
+  }[dir]
+  return '<polygon points="'+p+'" fill="'+c+'"/>'
+}
+
+/* ================= 绘制：列 ================= */
+function drawColumns(){
+  let s = '<rect x="0" y="0" width="'+CANVAS_W+'" height="1760" fill="#0b1018"/>'
+  /* 顶部推进方向带 */
+  s += '<text x="24" y="21" font-size="10" letter-spacing="1.5" fill="#4a6080">推进方向</text>'
+  s += '<path d="M96 17 H1488" stroke="#2b3d58" stroke-width="1.2" stroke-dasharray="2 9" stroke-linecap="round"/>'
+  s += head(1500, 17, 'r', '#3d5878')
+  COLS.forEach((c, i) => {
+    s += '<rect x="'+c.x+'" y="30" width="'+c.w+'" height="'+(MAIN_BOTTOM-30)+'" rx="10" fill="#101825"/>'
+    s += '<path d="M'+(c.x+10)+' 56 H'+(c.x+c.w-10)+'" stroke="#1e2838" stroke-width="1"/>'
+    s += '<text x="'+c.x+'" y="48" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="#4f607a">'+c.no+'</text>'
+    s += '<text x="'+(c.x+26)+'" y="48" font-size="11.5" font-weight="600" fill="#9db1cd">'+esc(c.name)+'</text>'
+    if (i < COLS.length - 1){
+      s += '<text x="'+(c.x+c.w+COL_GAP/2)+'" y="48" font-size="12" text-anchor="middle" fill="#3d5578">→</text>'
+    }
+  })
+  return s
+}
+
+/* ================= 绘制：镜带 ================= */
+function drawBands(){
+  let s = ''
+  for (const b of BAND){
+    s += '<rect x="'+BAND_X+'" y="'+b.top+'" width="'+BAND_W+'" height="'+b.h+'" rx="11" '
+       + 'fill="rgba(90,150,230,0.05)" stroke="rgba(110,165,240,0.28)" stroke-width="1.2" stroke-dasharray="6 5"/>'
+    s += '<text x="'+(BAND_X+12)+'" y="'+(b.top+17)+'" font-size="10.5" font-weight="600" fill="#6f88ab">'+b.label+'</text>'
+    s += '<text x="'+(BAND_X+BAND_W-12)+'" y="'+(b.top+17)+'" font-size="9.5" text-anchor="end" fill="#4a5a73">'+b.note+'</text>'
+  }
+  return s
+}
+
+/* ================= 绘制：边 ================= */
+function drawEdges(){
+  const out = []
+  const n = id => byId(id)
+
+  /* 1. 创意 → 定稿（相邻列，纯横线） */
+  out.push(edge('M164 144 H388'))
+  out.push(head(388, 144, 'r'))
+
+  /* 2. 定稿 → 旁白（同列竖线） */
+  out.push(edge('M448 188 V208'))
+  out.push(head(448, 208, 'd'))
+
+  /* 3. 定稿 → 4 张分镜卡：一根竖直总线 + 4 个分支 */
+  const trunkX = 544
+  const cardYs = ['card1','card2','card3','card4'].map(id => cy_(n(id)))
+  out.push(edge('M508 144 H'+trunkX+' V'+cardYs[3]))
+  for (const y of cardYs) out.push(edge('M'+trunkX+' '+y+' H600'))
+  for (const y of cardYs) out.push(head(600, y, 'r'))
+
+  /* 4. 分镜卡 → 同镜视频（同带内短横线） */
+  out.push(edge('M732 214 H824'));  out.push(head(824, 214, 'r'))
+  out.push(edge('M732 744 H824'));  out.push(head(824, 744, 'r'))
+  out.push(edge('M732 1034 H824')); out.push(head(824, 1034, 'r'))
+  out.push(edge('M732 1324 H824')); out.push(head(824, 1324, 'r'))
+  /* 镜 1 的第二版视频：卡下缘 → 带内空隙 → 视频左缘 */
+  out.push(edge('M666 258 V454 H824')); out.push(head(824, 454, 'r'))
+
+  /* 5. 汇入成片：所有产物 → 左侧汇合总线 → 成片 */
+  const bus = 1000
+  const film = n('film')
+  const srcYs = ['v1','v1b','v2','v3','v4'].map(id => cy_(n(id)))
+  for (const y of srcYs) out.push(edge('M944 '+y+' H'+bus, 'edge main'))
+  /* 后期两源从卡左缘汇入同一条总线 */
+  out.push(edge('M1036 200 H'+bus, 'edge main'))
+  out.push(edge('M1036 366 H'+bus, 'edge main'))
+  /* 竖总线 */
+  out.push(edge('M'+bus+' 200 V'+srcYs[srcYs.length-1], 'edge main'))
+  /* 进成片 */
+  out.push(edge('M'+bus+' '+cy_(film)+' H'+film.x, 'edge main'))
+  out.push(head(film.x, cy_(film), 'r', '#5b8dd6'))
+
+  return out.join('')
+}
+
+/* ================= 绘制：节点 ================= */
+function drawNode(n){
+  const tone = 'var(--' + n.tone + ')'
+  let s = '<g>'
+  s += '<rect x="'+n.x+'" y="'+n.y+'" width="'+n.w+'" height="'+n.h+'" rx="8" fill="#1a2334" stroke="#303e55"/>'
+  s += '<rect x="'+n.x+'" y="'+n.y+'" width="3.5" height="'+n.h+'" rx="1.7" fill="'+tone+'" opacity="0.95"/>'
+  s += '<circle cx="'+(n.x+18)+'" cy="'+(n.y+18)+'" r="9" fill="'+tone+'" opacity="0.16"/>'
+  s += '<text x="'+(n.x+18)+'" y="'+(n.y+21.5)+'" font-size="9.5" text-anchor="middle" fill="'+tone+'">'+esc(n.ic)+'</text>'
+  s += '<text x="'+(n.x+33)+'" y="'+(n.y+22)+'" font-size="11" font-weight="600" fill="#dce6f4">'+esc(clip(n.t, 8))+'</text>'
+  s += '<text x="'+(n.x+12)+'" y="'+(n.y+40)+'" font-size="9" fill="#67748c">'+esc(clip(n.m, 16))+'</text>'
+  if (n.h > 90){
+    s += '<text x="'+(n.x+12)+'" y="'+(n.y+n.h-12)+'" font-size="9" fill="#556680">'+esc(clip(n.m, 18))+'</text>'
+    s += '<rect x="'+(n.x+10)+'" y="'+(n.y+54)+'" width="'+(n.w-20)+'" height="'+(n.h-100)+'" rx="5" '
+       + 'fill="'+tone+'" opacity="0.05"/>'
+  }
+  if (n.srcs){
+    s += '<rect x="'+(n.x+n.w-30)+'" y="'+(n.y+8)+'" width="22" height="13" rx="3.5" fill="#24324a"/>'
+    s += '<text x="'+(n.x+n.w-19)+'" y="'+(n.y+17.5)+'" font-size="8" text-anchor="middle" fill="#89a9d0">'+n.srcs+' 源</text>'
+  }
+  if (n.badge){
+    s += '<rect x="'+(n.x+n.w-24)+'" y="'+(n.y+9)+'" width="16" height="14" rx="4" fill="#2b3a52"/>'
+    s += '<text x="'+(n.x+n.w-16)+'" y="'+(n.y+19)+'" font-size="8.5" text-anchor="middle" fill="#8fb2dc">'+esc(n.badge)+'</text>'
+  }
+  s += '</g>'
+  return s
+}
+
+function drawRefs(){
+  let s = '<rect x="'+REF_BOX.x+'" y="'+REF_BOX.y+'" width="'+REF_BOX.w+'" height="'+REF_BOX.h+'" rx="10" '
+        + 'fill="rgba(76,155,245,0.05)" stroke="rgba(76,155,245,0.26)"/>'
+  s += '<text x="'+(REF_BOX.x+10)+'" y="'+(REF_BOX.y+16)+'" font-size="9.5" fill="#6f9ace">参考素材 · 5 张</text>'
+  for (const r of REFS){
+    s += '<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" rx="6" fill="#1a2334" stroke="#2c3a52"/>'
+    s += '<rect x="'+r.x+'" y="'+r.y+'" width="2.5" height="'+r.h+'" rx="1.2" fill="var(--img)" opacity="0.9"/>'
+    s += '<text x="'+(r.x+9)+'" y="'+(r.y+15)+'" font-size="9.5" fill="#c3d1e4">'+esc(clip(r.t, 7))+'</text>'
+    s += '<text x="'+(r.x+9)+'" y="'+(r.y+r.h-9)+'" font-size="8.5" fill="#4f5f78">736×1328</text>'
+    if (r.src){
+      s += '<text x="'+(r.x+r.w-8)+'" y="'+(r.y+r.h-9)+'" font-size="8" text-anchor="end" fill="#4a6f9c">衍 '+r.src+'</text>'
+    }
+  }
+  return s
+}
+
+/* ================= 绘制：待归档带 ================= */
+const ORPHANS = [
+  {t:'风格草图 3',  why:'无血缘 · 未被引用', act:'挂到镜 2'},
+  {t:'旧版分镜 2',  why:'sourceIds 指向已删节点', act:'修复血缘 / 归档'},
+  {t:'参考图 07',   why:'分镜卡解析不出镜号', act:'补镜号'}
+]
+
+function drawOrphanBand(showItems){
+  const b = ORPHAN_BOX
+  let s = ''
+  s += '<path d="M'+b.x+' '+(b.y-26)+' H'+(b.x+b.w)+'" stroke="#232d3d" stroke-width="1" stroke-dasharray="3 4"/>'
+  s += '<rect x="'+b.x+'" y="'+b.y+'" width="'+b.w+'" height="'+b.h+'" rx="10" fill="rgba(226,96,79,0.035)" stroke="rgba(226,96,79,0.22)"/>'
+  s += '<text x="'+(b.x+14)+'" y="'+(b.y+20)+'" font-size="11.5" font-weight="600" fill="#c98074">待归档</text>'
+  s += '<text x="'+(b.x+72)+'" y="'+(b.y+20)+'" font-size="9.5" fill="#6d564f">不参与任何生产列 · 不计入顶部进度</text>'
+
+  if (!showItems){
+    s += '<text x="'+(b.x+14)+'" y="'+(b.y+56)+'" font-size="11" fill="#5b6b82">本项目 0 张 —— 24 个节点全部挂得上血缘。</text>'
+    s += '<text x="'+(b.x+14)+'" y="'+(b.y+80)+'" font-size="10" fill="#455467">判据三类：无 sourceIds 且无人引用 · sourceIds 指向已删 id · 是分镜卡但标题解析不出「分镜 N」</text>'
+    s += '<text x="'+(b.x+14)+'" y="'+(b.y+102)+'" font-size="10" fill="#455467">点上方「放入 3 个孤立节点」看它们落在这条带里的样子。</text>'
+    return s
+  }
+
+  ORPHANS.forEach((o, i) => {
+    const x = b.x + 14 + i * 250, y = b.y + 32, w = 234, h = 74
+    s += '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="7" fill="#191f2b" stroke="#333f54"/>'
+    s += '<rect x="'+x+'" y="'+y+'" width="2.5" height="'+h+'" rx="1.2" fill="#5b6577"/>'
+    s += '<text x="'+(x+12)+'" y="'+(y+22)+'" font-size="12" font-weight="600" fill="#b6c3d6">'+esc(o.t)+'</text>'
+    s += '<text x="'+(x+12)+'" y="'+(y+40)+'" font-size="10" fill="#8a7368">'+esc(o.why)+'</text>'
+    s += '<rect x="'+(x+12)+'" y="'+(y+50)+'" width="'+(w-24)+'" height="16" rx="3.5" fill="#222c3c" stroke="#31405a"/>'
+    s += '<text x="'+(x+19)+'" y="'+(y+61.5)+'" font-size="9.5" fill="#7fa3cf">'+esc(o.act)+'</text>'
+  })
+  return s
+}
+
+/* ================= 现状模式（示意） ================= */
+const NOW_BANDS = ['创意·源', '剧本·定妆', '分镜卡', '场景图', '关键帧', '视频·托盘', '末帧', '音乐', '文案·成片']
+function drawNow(){
+  let s = '<rect x="0" y="0" width="1532" height="520" fill="#0b1018"/>'
+  const w = 152, gap = 16, top = 70
+  const x0 = 24
+  NOW_BANDS.forEach((name, i) => {
+    const x = x0 + i * (w + gap)
+    const isProblem = i === 8
+    s += '<rect x="'+x+'" y="'+top+'" width="'+w+'" height="392" rx="9" fill="#101825" '
+       + 'stroke="'+(isProblem ? 'rgba(226,96,79,0.35)' : 'none')+'"/>'
+    s += '<text x="'+(x+10)+'" y="'+(top+18)+'" font-size="10" fill="'+(isProblem ? '#c98074' : '#5a6b84')+'">'
+       + (i+1) + ' · ' + name + '</text>'
+  })
+  const colX = i => x0 + i * (w + gap) + 10
+  const box = (i, y, label, tone, extra) => {
+    const x = colX(i), bw = w - 20, bh = 34
+    let r = '<rect x="'+x+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="6" fill="#1a2334" stroke="#2f3c52"/>'
+    r += '<rect x="'+x+'" y="'+y+'" width="2.5" height="'+bh+'" rx="1.2" fill="var(--'+tone+')"/>'
+    r += '<text x="'+(x+10)+'" y="'+(y+21)+'" font-size="9.5" fill="#c6d3e5">'+label+'</text>'
+    if (extra) r += extra
+    return r
+  }
+  s += box(0, 100, '创意', 'plan')
+  s += box(0, 144, '参考图 ×5', 'img')
+  s += box(1, 100, '（空）', 'plan')
+  s += box(2, 100, '分镜卡 1', 'card')
+  s += box(2, 144, '分镜卡 2', 'card')
+  s += box(2, 188, '分镜卡 3', 'card')
+  s += box(2, 232, '分镜卡 4', 'card')
+  s += box(3, 100, '（泳道空置）', 'img')
+  s += box(5, 100, '托盘 · 视频 ×5', 'vid')
+  s += box(7, 100, 'BGM', 'aud')
+  s += box(8, 100, '拍摄定稿', 'plan')
+  s += box(8, 144, '旁白与声音', 'plan')
+  s += box(8, 188, '文案', 'plan')
+  s += box(8, 232, '成片', 'film')
+
+  /* 反向边：定稿(第9列) → 分镜卡(第3列) */
+  const fromX = colX(8), toX = colX(2) + (w - 20)
+  ;[109, 153, 197, 241].forEach((y, i) => {
+    const sy = 117
+    s += '<path d="M'+fromX+' '+sy+' H'+(fromX-22)+' V'+y+' H'+(toX+30)+'" fill="none" stroke="#e2604f" stroke-width="1.7" opacity="0.9"/>'
+    s += head(toX + 30, y, 'l', '#e2604f')
+  })
+  s += '<text x="24" y="424" font-size="11" fill="#e2604f">4 条反向边：定稿在最右列，分镜卡在第 3 列 —— 每条边都得横穿 6 个泳道折回去。</text>'
+  s += '<text x="24" y="444" font-size="10.5" fill="#8a7268">同一列（第 9 列）塞了 4 种不同阶段的东西：拍摄定稿 · 旁白 · 文案 · 成片。</text>'
+  s += '<text x="24" y="462" font-size="10.5" fill="#8a7268">另有「文案 → BGM」反向、「参考图 ×5」同列纵排把画布撑到 7120px 高。</text>'
+  return s
+}
+
+/* ================= 状态与渲染 ================= */
+const state = { mode:'main', orphan:false }
+
+function render(){
+  if (state.mode === 'now'){
+    CV.setAttribute('height', 490)
+    CV.setAttribute('viewBox', '0 0 1532 490')
+    CV.innerHTML = drawNow()
+    STAT.innerHTML = '现状：32 条边 ｜ 顺向 <b>21</b> · 同列 <b>6</b> · 反向 <b class="bad">5</b>'
+    return
+  }
+  CV.setAttribute('height', 1760)
+  CV.setAttribute('viewBox', '0 0 1532 1760')
+  let s = drawColumns()
+  s += drawBands()
+  s += drawEdges()
+  s += drawRefs()
+  for (const n of NODES) s += drawNode(n)
+  s += drawOrphanBand(state.orphan)
+  CV.innerHTML = s
+  STAT.innerHTML = '新方案：17 条主链直连 · 1 条同列 · 4 条组内角标 ｜ 反向 <b class="ok">0</b>'
+}
+
+document.getElementById('btn-main').onclick = () => {
+  state.mode = 'main'
+  document.getElementById('btn-main').classList.add('on')
+  document.getElementById('btn-now').classList.remove('on')
+  render()
+}
+document.getElementById('btn-now').onclick = () => {
+  state.mode = 'now'
+  document.getElementById('btn-now').classList.add('on')
+  document.getElementById('btn-main').classList.remove('on')
+  render()
+}
+document.getElementById('btn-orphan').onclick = (e) => {
+  state.orphan = !state.orphan
+  e.currentTarget.classList.toggle('on', state.orphan)
+  state.mode = 'main'
+  document.getElementById('btn-main').classList.add('on')
+  document.getElementById('btn-now').classList.remove('on')
+  render()
+}
+
+render()
+})()
+</script>
+</body>
+</html>

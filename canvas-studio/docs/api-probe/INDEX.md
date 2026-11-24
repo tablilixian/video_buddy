@@ -19,6 +19,7 @@
 | [txt2image-withtxt-20260930](./txt2image-withtxt-20260930/report.md) | 09-30 | `image_generate_withtxt`（Qwen Image 2.1）接入实测 | api.md 0.4.0（CV-270） |
 | [txt2speech-20260930](./txt2speech-20260930/report.md) | 09-30 | `txt2speech`（VoxCPM2）接入实测，tts_voiceover 转真 | api.md 0.4.0（CV-271） |
 | [video-megapixels-regression-20261027](./video-megapixels-regression-20261027/report.md) | 10-27 | **无结论**：mp=1 与对照组 mp=0.4 同报 502（上游 ComfyUI `/prompt` 400）⇒ 后端 H3 工作流当日故障，720P 真实像素仍未实证；附「502 ≠ 请求体被拒」判据补充 | resolution-unify §12.7-1 |
+| [content-download-truncation-20261123](./content-download-truncation-20261123/report.md) | 11-23 | **旧 `/content` 端点的死因实测**（换代号的前半段证据）：恒定 ~55 KB/s + 响应开始后 ~31s 硬断流（HTTP 200 + chunked 正常收尾，不是报错）⇒ 单次响应上限 ~1.7 MB，大于它的产物**必然截断缺 `moov`**；`Range` 被完全忽略、客户端降速不延长时间 ⇒ 重试无效。Node fetch 与 curl 同时刻交叉验证 4 个 generation / 每 id 2 轮。探针 `scripts/probe-download-limits.mjs`（只读、token 仅进 Authorization 头） | 触发换代号 `generation-download-20261123`；回归守卫 `tests/video-download-integrity.test.mjs` |
 | [generation-download-20261123](./generation-download-20261123/report.md) | 11-23 | 后端换代：`result_status` + `/download/{ordinal}` 票据直连 Blob/CDN；`succeeded` 不再等于可下载，旧 `/content` 仅兼容 | api.md v1.1.0 |
 | [generation-download-20261123/session-replay-and-fixes](./generation-download-20261123/session-replay-and-fixes.md) | 11-23 | 真机 session 复盘：换代验收通过（旧截断零复发）；修视频 catch 错误码改写 + 产物回执缺绝对路径 + CS-NET-010 文案债 | 待真机完整跑完取号 |
 

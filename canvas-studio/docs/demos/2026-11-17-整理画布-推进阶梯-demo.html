@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>整理画布 · 推进阶梯方案（2026-11-17）</title>
+<style>
+  :root{
+    --bg:#0a0d13; --bg2:#0d1118; --panel:#131822; --panel2:#171d29;
+    --line:#232b3a; --line2:#2e3849; --txt:#e6ebf5; --txt2:#9aa7bd; --txt3:#6b7890;
+    --creative:#7c8aa3; --script:#a78bfa; --card:#f5a623; --kf:#3b82f6;
+    --video:#22b8cf; --audio:#f43f5e; --film:#22c55e; --orphan:#f97362;
+    --warn:#fbbf24; --ok:#34d399;
+    --r:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #131a27 0%, transparent 60%),
+      var(--bg);
+    color:var(--txt);
+    font:13px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{display:grid;grid-template-columns:212px 1fr;min-height:100vh;max-width:1560px;margin:0 auto}
+  /* ---------- 左轨 ---------- */
+  .rail{
+    border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;
+    display:flex;flex-direction:column;gap:6px;background:linear-gradient(180deg,#0b0f16,#090c11);
+  }
+  .brand{font-size:12px;letter-spacing:.14em;color:var(--txt3);text-transform:uppercase;margin:0 0 2px 4px}
+  .brand b{display:block;font-size:15px;letter-spacing:0;color:var(--txt);margin-top:6px}
+  .tab{
+    display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;cursor:pointer;
+    color:var(--txt2);border:1px solid transparent;font-size:13px;user-select:none;
+  }
+  .tab:hover{background:#111722;color:var(--txt)}
+  .tab.on{background:#151c28;border-color:var(--line2);color:var(--txt)}
+  .tab .k{font-size:10px;color:var(--txt3);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .tab.on .k{color:var(--txt2);border-color:var(--line2)}
+  .rail .note{margin-top:auto;font-size:11px;color:var(--txt3);line-height:1.7;border-top:1px solid var(--line);padding-top:12px}
+  .rail .note b{color:var(--txt2);font-weight:600}
+  /* ---------- 主区 ---------- */
+  .main{padding:22px 26px 80px;min-width:0}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:18px}
+  h1{font-size:19px;margin:0 0 6px;letter-spacing:.2px}
+  .sub{color:var(--txt2);font-size:12px;margin:0}
+  .sub code{background:#111826;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;color:#a9b7cf}
+  .pills{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{font-size:11px;border:1px solid var(--line2);border-radius:999px;padding:4px 10px;color:var(--txt2);background:#101620}
+  .pill.ok{color:#8ee6bf;border-color:#1f4d3a;background:#0e1f18}
+  .pill.warn{color:#f6cf7d;border-color:#4d3d1c;background:#1d1710}
+  /* ---------- 设计要点 ---------- */
+  .thesis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 20px}
+  .thesis div{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;background:linear-gradient(180deg,#121824,#0f141d)}
+  .thesis h3{margin:0 0 6px;font-size:12px;color:var(--txt);display:flex;align-items:center;gap:7px}
+  .thesis h3 i{
+    font-style:normal;width:17px;height:17px;border-radius:5px;display:grid;place-items:center;
+    font-size:10px;color:#0a0d13;font-weight:700;background:var(--card);
+  }
+  .thesis div:nth-child(2) h3 i{background:#6ea8fe}
+  .thesis div:nth-child(3) h3 i{background:var(--orphan)}
+  .thesis p{margin:0;font-size:11.5px;color:var(--txt2);line-height:1.65}
+  /* ---------- 视图切换 ---------- */
+  .view{display:none}
+  .view.on{display:block}
+  /* ---------- 顶部阶段轨 ---------- */
+  .track{
+    border:1px solid var(--line);border-radius:var(--r);background:#0f141d;padding:14px 16px 12px;margin-bottom:18px;
+  }
+  .track .row1{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .track .title{font-size:12px;color:var(--txt2)}
+  .track .title b{color:var(--txt);font-size:13px}
+  .bar{flex:1;height:4px;border-radius:99px;background:#1b2331;margin:0 16px;overflow:hidden}
+  .bar i{display:block;height:100%;width:64%;background:linear-gradient(90deg,#2f6fed,#22c55e)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{
+    display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--txt2);
+    border:1px solid var(--line);background:#121924;border-radius:7px;padding:6px 9px;cursor:pointer;
+  }
+  .chip:hover{border-color:var(--line2);color:var(--txt)}
+  .chip .dot{width:6px;height:6px;border-radius:99px;background:var(--creative)}
+  .chip[data-st="done"] .dot{background:var(--ok)}
+  .chip[data-st="running"] .dot{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.16)}
+  .chip[data-st="empty"]{opacity:.55}
+  .chip b{color:var(--txt);font-weight:600}
+  /* ---------- 阶段节 ---------- */
+  .stage-sec{margin-bottom:26px}
+  .stage-hd{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding-left:2px}
+  .stage-hd .idx{
+    width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#0a0d13;
+  }
+  .stage-hd h2{margin:0;font-size:13.5px;letter-spacing:.2px}
+  .stage-hd .desc{font-size:11.5px;color:var(--txt3)}
+  .stage-hd .meta{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txt3)}
+  .stage-hd .meta .st{border:1px solid var(--line);border-radius:5px;padding:1px 7px}
+  .hr{flex:1;height:1px;background:var(--line)}
+  /* ---------- 网格 ---------- */
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .grid.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* ---------- 托盘 ---------- */
+  .tray{border:1px dashed #2a3547;border-radius:12px;padding:12px;background:rgba(20,26,37,.5);position:relative}
+  .tray.running{border-color:#3d5b3a;box-shadow:inset 0 0 0 1px rgba(52,211,153,.08)}
+  .tray.fail{border-color:#5b3230}
+  .tray-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .shotno{font-size:11px;font-weight:700;color:#1a1205;background:var(--card);border-radius:5px;padding:2px 7px}
+  .tray-hd .t{font-size:12px;color:var(--txt);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tray-hd .st{margin-left:auto;font-size:10.5px;color:var(--txt3);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
+  .tray-hd .st.run{color:#8ee6bf;border-color:#1f4d3a}
+  .tray-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .tray .wide{grid-column:1 / -1}
+  /* ---------- 卡片 ---------- */
+  .card{
+    border:1px solid var(--line);border-radius:9px;background:var(--panel);overflow:hidden;
+    display:flex;flex-direction:column;cursor:pointer;position:relative;transition:border-color .12s,transform .12s;
+  }
+  .card:hover{border-color:var(--line2);transform:translateY(-1px)}
+  .card.lit{border-color:#5b8cff;box-shadow:0 0 0 1px rgba(91,140,255,.35)}
+  .thumb{height:66px;position:relative;background:linear-gradient(135deg,#1b2536,#141b27);flex:none;overflow:hidden}
+  .thumb::after{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0);background-size:12px 12px}
+  .thumb .kind{position:absolute;left:7px;top:7px;font-size:10px;color:#cbd6e8;background:rgba(9,13,19,.72);border:1px solid #2a3446;border-radius:4px;padding:1px 5px;z-index:2}
+  .thumb .badge{position:absolute;right:7px;top:7px;font-size:10px;color:#cfe6ff;background:rgba(20,40,70,.8);border:1px solid #2b4a75;border-radius:4px;padding:1px 5px;z-index:2}
+  .thumb.v{background:linear-gradient(135deg,#132c33,#0f1b22)}
+  .thumb.a{height:34px;background:linear-gradient(135deg,#331a24,#1c1218)}
+  .thumb.t{height:52px;background:linear-gradient(135deg,#1e2233,#151a26)}
+  .body{padding:8px 9px 9px;display:flex;flex-direction:column;gap:5px;min-width:0}
+  .name{font-size:11.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .src{
+    display:inline-flex;align-items:center;gap:4px;font-size:10px;color:#9fb4d6;
+    border:1px solid #263449;border-radius:4px;padding:1px 6px;background:#101725;align-self:flex-start;max-width:100%;
+  }
+  .src span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src.hot{color:#cfe0ff;border-color:#3b5c92;background:#132038}
+  .src.orphan{color:#f7b3a6;border-color:#5c3128;background:#1d1311}
+  .foot{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt3)}
+  .foot .d{width:5px;height:5px;border-radius:99px;background:var(--ok)}
+  .foot .d.run{background:var(--warn)}
+  .foot .d.bad{background:#ef4444}
+  /* ---------- 孤立区 ---------- */
+  .orphan-sec{border:1px solid #4a2a26;border-radius:12px;padding:14px;background:linear-gradient(180deg,#1a1214,#12100f)}
+  .orphan-sec .stage-hd h2{color:#ffc9bd}
+  .orphan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .reason{font-size:10px;color:#f0a495;background:#241514;border:1px solid #4a2a26;border-radius:4px;padding:1px 6px;align-self:flex-start}
+  .why{font-size:11px;color:var(--txt2);border-top:1px solid #2a2320;margin-top:8px;padding-top:8px}
+  /* ---------- 血缘视图 ---------- */
+  .focus-wrap{border:1px solid var(--line);border-radius:12px;background:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.045) 1px, transparent 0) 0 0/16px 16px, #0c1017;
+    padding:20px;position:relative;min-height:520px}
+  .lane{display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:center;margin-bottom:16px}
+  .lane .lb{font-size:11px;color:var(--txt3);text-align:right;border-right:1px solid var(--line);padding-right:12px;height:100%;display:flex;align-items:center;justify-content:flex-end}
+  .lane .cells{display:flex;gap:12px;align-items:center;min-height:56px;position:relative}
+  .node{
+    border:1px solid var(--line2);border-radius:8px;background:#131a26;padding:7px 10px;font-size:11.5px;
+    display:flex;align-items:center;gap:8px;white-space:nowrap;position:relative;z-index:2;
+  }
+  .node .ic{width:14px;height:14px;border-radius:4px;display:grid;place-items:center;font-size:9px;color:#0a0d13;font-weight:700;background:var(--creative)}
+  .node.dim{opacity:.34}
+  .node.sel{border-color:#5b8cff;box-shadow:0 0 0 2px rgba(91,140,255,.18)}
+  .link{position:absolute;background:#2b3a52;z-index:1}
+  .link.v{width:1px}
+  .link.h{height:1px}
+  .links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:1}
+  .links path{fill:none;stroke:#40526e;stroke-width:1.5}
+  .links path.lit{stroke:#4a7bd6;stroke-width:2}
+  .links marker path{stroke:none;fill:#4a7bd6}
+  .legend{display:flex;gap:16px;font-size:11px;color:var(--txt3);margin-top:6px}
+  .legend i{display:inline-block;width:18px;height:2px;background:#2b3a52;vertical-align:middle;margin-right:6px}
+  /* ---------- 表格 ---------- */
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--txt3);font-weight:500;font-size:11px;background:#0f141d;position:sticky;top:0}
+  td code{font-size:10.5px;color:#a9bddb;background:#111826;border:1px solid var(--line);border-radius:3px;padding:0 4px}
+  .tag{display:inline-block;font-size:10px;border-radius:4px;padding:0 5px;border:1px solid var(--line2);color:var(--txt2)}
+  .tag.g{color:#8ee6bf;border-color:#1f4d3a}
+  .tag.y{color:#f6cf7d;border-color:#4d3d1c}
+  .tag.r{color:#f7b3a6;border-color:#5c3128}
+  .tbl-wrap{border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:70vh}
+  .hint{font-size:11.5px;color:var(--txt3);margin:10px 2px 0}
+  /* ---------- 说明块 ---------- */
+  .callout{border-left:2px solid #3b5c92;background:#101722;border-radius:0 8px 8px 0;padding:10px 14px;margin:16px 0;font-size:11.5px;color:var(--txt2)}
+  .callout b{color:var(--txt)}
+  .callout.warn{border-color:#8a5a1a;background:#1a1409}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside class="rail">
+    <div class="brand">整理画布<b>推进阶梯</b></div>
+    <div class="tab on" data-view="ladder"><span>推进阶梯</span><span class="k">主</span></div>
+    <div class="tab" data-view="focus"><span>血缘聚焦</span><span class="k">B</span></div>
+    <div class="tab" data-view="orphan"><span>待归档</span><span class="k">C</span></div>
+    <div class="tab" data-view="spec"><span>节点清单</span><span class="k">全集</span></div>
+    <div class="note">
+      方案稿 · 2026-11-17<br>
+      数据基线：真实项目 <b>4 镜 / 24 节点</b>（含 1 个 compose、4 个托盘、8 个文本节点）<br><br>
+      对应诉求：<br>① 推进过程可见<br>② 父子关系可追<br>③ 孤立节点可处置
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="head">
+      <div>
+        <h1>整理画布 · 推进阶梯</h1>
+        <p class="sub">用「项目走到哪一步」组织画布，而不是用「节点是什么类型」；血缘用 <code>来源 chip + 聚焦链路</code> 表达，不再画全屏回环线。</p>
+      </div>
+      <div class="pills">
+        <span class="pill ok">血缘方向恒左→右</span>
+        <span class="pill warn">孤立节点不隐藏</span>
+        <span class="pill">版本折叠 v3 · 2 历史</span>
+      </div>
+    </div>
+
+    <div class="thesis">
+      <div>
+        <h3><i>1</i>推进过程 = 阶段节，不是类型桶</h3>
+        <p>现有历程视图按「创意/分镜/音频/成片/其他」分节，是分类而非流程，还留了个垃圾桶。改为按生产顺序排 6 段，每段写清「这一步在做什么 · 产出几个 · 卡在哪」。</p>
+      </div>
+      <div>
+        <h3><i>2</i>父子关系 = 三层分级，不是全屏连线</h3>
+        <p>同镜靠托盘框；跨一步靠来源 chip（<code>↑ 分镜 3 · 关键帧</code>）；深链靠选中后的聚焦视图。任何一条线都不跨越 3 个以上的节点，杜绝反向回环。</p>
+      </div>
+      <div>
+        <h3><i>3</i>孤立节点 = 显式区域，不是隐藏开关</h3>
+        <p>无血缘、断链（来源已删）、无镜号三类分开列，每条给原因与动作（挂到镜 N / 设为参考 / 归档 / 删除）。默认可见，避免「我的素材去哪了」。</p>
+      </div>
+    </div>
+
+    <!-- ================= A 推进阶梯 ================= -->
+    <section class="view on" id="view-ladder">
+      <div class="callout">
+        <b>页签结构（替换现有的「整理布局 / 历程视图」两个入口）：</b>
+        整理画布页签 = 一个只读投影层 + 两种模式。默认进<b>推进阶梯</b>（本节，按阶段排布、不写盘）；
+        需要手工摆位时切<b>自由画布</b>（写 <code>node.x/y</code>，坐标照旧落盘）。
+        推进阶梯从不改数据 —— 与现有历程视图同一纪律：布局只是投影，切模式不动任何节点。
+      </div>
+      <div class="track">
+        <div class="row1">
+          <div class="title"><b>《静默之光》</b> · 15s 竖版广告 · 4 镜</div>
+          <div class="bar"><i></i></div>
+          <div class="title" style="white-space:nowrap">已产出 <b>18</b> / 24 · <span style="color:#f6cf7d">1 正在生成</span></div>
+        </div>
+        <div class="chips">
+          <div class="chip" data-st="done"><span class="dot"></span>需求 <b>2/2</b></div>
+          <div class="chip" data-st="done"><span class="dot"></span>剧本 <b>2/2</b></div>
+          <div class="chip" data-st="done"><span class="dot"></span>分镜 <b>4/4</b></div>
+          <div class="chip" data-st="running"><span class="dot"></span>关键帧 <b>4/5</b> 生成中</div>
+          <div class="chip" data-st="done"><span class="dot"></span>视频 <b>4/4</b></div>
+          <div class="chip" data-st="done"><span class="dot"></span>音频 <b>1/1</b></div>
+          <div class="chip" data-st="empty"><span class="dot"></span>成片 <b>1 旧版</b></div>
+        </div>
+      </div>
+
+      <!-- 1 需求 -->
+      <div class="stage-sec">
+        <div class="stage-hd">
+          <div class="idx" style="background:var(--creative)">1</div>
+          <h2>需求与输入</h2>
+          <span class="desc">用户原话 · 上传的参考素材</span>
+          <div class="hr"></div>
+          <div class="meta"><span class="st">2 项</span><span>09:12</span></div>
+        </div>
+        <div class="grid g3">
+          <div class="card" data-chain="brief">
+            <div class="thumb t"><span class="kind">需求</span></div>
+            <div class="body">
+              <div class="name">创意：15 秒竖版，极简黑白，只用产品本体的光</div>
+              <div class="src"><span>无来源 · 起点</span></div>
+              <div class="foot"><span class="d"></span>09:12 · 手动</div>
+            </div>
+          </div>
+          <div class="card" data-chain="ref">
+            <div class="thumb"><span class="kind">参考图</span></div>
+            <div class="body">
+              <div class="name">参考：钛金属高光 / 深空黑底</div>
+              <div class="src"><span>无来源 · 用户上传</span></div>
+              <div class="foot"><span class="d"></span>09:14 · 手动</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb t"><span class="kind">剧本</span><span class="badge">v2</span></div>
+            <div class="body">
+              <div class="name">剧本：四幕 · 静 → 亮 → 转 → 定格</div>
+              <div class="src"><span>↑ 创意</span></div>
+              <div class="foot"><span class="d"></span>09:21 · 写剧本</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 规划 -->
+      <div class="stage-sec">
+        <div class="stage-hd">
+          <div class="idx" style="background:var(--script)">2</div>
+          <h2>分镜规划</h2>
+          <span class="desc">拍摄定稿 · 每镜的卡与归属</span>
+          <div class="hr"></div>
+          <div class="meta"><span class="st">4 镜</span><span>09:26</span></div>
+        </div>
+        <div class="grid g3">
+          <div class="card">
+            <div class="thumb t"><span class="kind">定稿</span></div>
+            <div class="body">
+              <div class="name">《静默之光》拍摄定稿 · live</div>
+              <div class="src"><span>↑ 剧本 · 创意</span></div>
+              <div class="foot"><span class="d"></span>09:26 · 血缘根</div>
+            </div>
+          </div>
+          <div class="card" style="grid-column:span 2">
+            <div class="body" style="padding:11px 12px">
+              <div class="name" style="font-size:12px">分镜卡 × 4（下方各镜托盘的头）</div>
+              <div class="foot" style="margin-top:4px">每张卡的来源 = 拍摄定稿；镜号从标题 <code style="color:#a9bddb">分镜 N</code> 解析，解析不出 → 待归档</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 分镜 -->
+      <div class="stage-sec">
+        <div class="stage-hd">
+          <div class="idx" style="background:var(--card)">3</div>
+          <h2>逐镜产出</h2>
+          <span class="desc">一镜一托盘：卡 → 关键帧 → 视频 → 末帧 / 配音</span>
+          <div class="hr"></div>
+          <div class="meta"><span class="st">4 托盘 · 18 项</span><span>09:30–10:12</span></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:1fr;gap:14px">
+          <!-- 托盘 1 -->
+          <div class="tray running">
+            <div class="tray-hd">
+              <span class="shotno">镜 1</span>
+              <span class="t">S1-Sh1 · Push in · 产品从暗处浮出</span>
+              <span class="st run">4/5 · 生成中</span>
+            </div>
+            <div class="tray-grid">
+              <div class="card" data-chain="kf1">
+                <div class="thumb"><span class="kind">关键帧</span></div>
+                <div class="body"><div class="name">关键帧 · 暗场轮廓</div><div class="src"><span>↑ 镜 1 分镜卡</span></div><div class="foot"><span class="d"></span>09:31</div></div>
+              </div>
+              <div class="card" data-chain="v1">
+                <div class="thumb v"><span class="kind">视频</span><span class="badge">5s</span></div>
+                <div class="body"><div class="name">镜 1 · 视频</div><div class="src"><span>↑ 镜 1 关键帧 · 卡</span></div><div class="foot"><span class="d"></span>09:44</div></div>
+              </div>
+              <div class="card">
+                <div class="thumb a"><span class="kind">末帧</span></div>
+                <div class="body"><div class="name">末帧 · 链到镜 2</div><div class="src"><span>↑ 镜 1 视频</span></div><div class="foot"><span class="d"></span>09:45</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 托盘 2 -->
+          <div class="tray">
+            <div class="tray-hd">
+              <span class="shotno">镜 2</span>
+              <span class="t">S1-Sh2 · Dolly in · 光沿边框走一圈</span>
+              <span class="st">3/3</span>
+            </div>
+            <div class="tray-grid">
+              <div class="card" data-chain="kf2">
+                <div class="thumb"><span class="kind">关键帧</span></div>
+                <div class="body"><div class="name">关键帧 · 边框高光</div><div class="src"><span>↑ 镜 2 分镜卡</span></div><div class="foot"><span class="d"></span>09:47</div></div>
+              </div>
+              <div class="card" data-chain="v2">
+                <div class="thumb v"><span class="kind">视频</span><span class="badge">5s</span></div>
+                <div class="body"><div class="name">镜 2 · 视频</div><div class="src"><span>↑ 镜 2 关键帧</span></div><div class="foot"><span class="d"></span>09:58</div></div>
+              </div>
+              <div class="card">
+                <div class="thumb a"><span class="kind">配音</span></div>
+                <div class="body"><div class="name">旁白 · 第 2 句</div><div class="src"><span>↑ 镜 2 视频</span></div><div class="foot"><span class="d"></span>10:01</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 托盘 3 -->
+          <div class="tray">
+            <div class="tray-hd">
+              <span class="shotno">镜 3</span>
+              <span class="t">S1-Sh3 · Push in · 镜头掠过镜头模组</span>
+              <span class="st">3/3</span>
+            </div>
+            <div class="tray-grid">
+              <div class="card" data-chain="kf3">
+                <div class="thumb"><span class="kind">关键帧</span><span class="badge">v3 · 2 历史</span></div>
+                <div class="body"><div class="name">关键帧 · 模组特写</div><div class="src"><span>↑ 镜 3 分镜卡 · 参考图</span></div><div class="foot"><span class="d"></span>10:04</div></div>
+              </div>
+              <div class="card" data-chain="v3">
+                <div class="thumb v"><span class="kind">视频</span><span class="badge">5s</span></div>
+                <div class="body"><div class="name">镜 3 · 视频</div><div class="src"><span>↑ 镜 3 关键帧</span></div><div class="foot"><span class="d run"></span>10:12 · 生成中</div></div>
+              </div>
+              <div class="card">
+                <div class="thumb a"><span class="kind">配音</span></div>
+                <div class="body"><div class="name">旁白 · 第 3 句</div><div class="src"><span>↑ 镜 3 视频</span></div><div class="foot"><span class="d"></span>10:12</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 托盘 4 -->
+          <div class="tray">
+            <div class="tray-hd">
+              <span class="shotno">镜 4</span>
+              <span class="t">S1-Sh4 · Slow orbit · 定格成剪影</span>
+              <span class="st">2/2</span>
+            </div>
+            <div class="tray-grid">
+              <div class="card" data-chain="kf4">
+                <div class="thumb"><span class="kind">关键帧</span></div>
+                <div class="body"><div class="name">关键帧 · 剪影定格</div><div class="src"><span>↑ 镜 4 分镜卡</span></div><div class="foot"><span class="d"></span>10:15</div></div>
+              </div>
+              <div class="card" data-chain="v4">
+                <div class="thumb v"><span class="kind">视频</span><span class="badge">5s</span></div>
+                <div class="body"><div class="name">镜 4 · 视频</div><div class="src"><span>↑ 镜 4 关键帧</span></div><div class="foot"><span class="d"></span>10:26</div></div>
+              </div>
+              <div class="card" style="border-style:dashed;background:transparent;align-items:center;justify-content:center">
+                <div class="body" style="align-items:center;color:var(--txt3);font-size:11px">待补：镜 4 配音</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 音频 -->
+      <div class="stage-sec">
+        <div class="stage-hd">
+          <div class="idx" style="background:var(--audio)">4</div>
+          <h2>音乐与配音汇总</h2>
+          <span class="desc">不进镜的 BGM / 旁白混音</span>
+          <div class="hr"></div>
+          <div class="meta"><span class="st">1 项</span><span>10:20</span></div>
+        </div>
+        <div class="grid g3">
+          <div class="card">
+            <div class="thumb a"><span class="kind">音乐</span><span class="badge">30s</span></div>
+            <div class="body"><div class="name">BGM · 低频脉动</div><div class="src"><span>无来源 · 生成</span></div><div class="foot"><span class="d"></span>10:20</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 成片 -->
+      <div class="stage-sec">
+        <div class="stage-hd">
+          <div class="idx" style="background:var(--film)">5</div>
+          <h2>成片</h2>
+          <span class="desc">终点 · 恒排最后，旧版本折叠进角标</span>
+          <div class="hr"></div>
+          <div class="meta"><span class="st">1 当前版本</span><span>10:28</span></div>
+        </div>
+        <div class="grid g3">
+          <div class="card" data-chain="film" style="border-color:#265c42">
+            <div class="thumb v"><span class="kind">成片</span><span class="badge">v2 · 1 历史</span></div>
+            <div class="body">
+              <div class="name">成片 10-22 16:40 · 15.2s · 1080×1920</div>
+              <div class="src"><span>↑ 镜 1–4 视频 · BGM</span></div>
+              <div class="foot"><span class="d"></span>10:28 · 含 4 段</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6 待归档 -->
+      <div class="stage-sec">
+        <div class="orphan-sec">
+          <div class="stage-hd" style="margin-bottom:12px">
+            <div class="idx" style="background:var(--orphan)">6</div>
+            <h2>待归档 · 4 项</h2>
+            <span class="desc">不在主链上，但绝不隐藏 —— 每条都写清为什么</span>
+            <div class="hr" style="background:#3a2521"></div>
+            <div class="meta"><span class="st" style="border-color:#4a2a26;color:#f0a495">可一键处置</span></div>
+          </div>
+          <div class="orphan-grid">
+            <div class="card"><div class="thumb t"><span class="kind">便签</span></div>
+              <div class="body"><div class="name">竞品光位拆解表</div><div class="reason">无血缘 · 从未被引用</div><div class="foot">09:18 · write_note</div></div>
+            </div>
+            <div class="card"><div class="thumb t"><span class="kind">便签</span></div>
+              <div class="body"><div class="name">色调草案 v1</div><div class="reason">断链 · 来源卡已删</div><div class="foot">09:05 · 手动</div></div>
+            </div>
+            <div class="card"><div class="thumb v"><span class="kind">视频</span></div>
+              <div class="body"><div class="name">参考片片段（用户上传）</div><div class="reason">源素材 · 未进任何镜</div><div class="foot">09:10 · 手动</div></div>
+            </div>
+            <div class="card"><div class="thumb"><span class="kind">图</span></div>
+              <div class="body"><div class="name">关键帧 · 无镜号</div><div class="reason">引用了分镜卡但标题无「分镜 N」</div><div class="foot">10:06 · 需指定镜</div></div>
+            </div>
+          </div>
+          <div class="why">
+            <b style="color:#ffd7cd">处置动作</b>：挂到镜 N（写 parentId + 补镜号）· 设为参考素材（isReference）· 归档（retired，保留可恢复）· 删除（二次确认）。
+            这三类判据与整理布局同源，不新增状态：<code style="color:#a9bddb">sourceIds.length === 0 且未被引用</code>、<code style="color:#a9bddb">sourceIds 指向已删 id</code>、<code style="color:#a9bddb">isShotCard 但标题解析不出镜号</code>。
+            <br><br>
+            <b style="color:#ffd7cd">进度口径</b>：待归档节<b>不计入</b>顶部 <code style="color:#a9bddb">done/total</code> —— 它不进主链，计进去会让"还差 6 个"永远清不掉。节头单独给"4 项待处置"，处理完该节自动塌缩消失。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= B 血缘聚焦 ================= -->
+    <section class="view" id="view-focus">
+      <div class="callout">
+        <b>为什么不做全屏连线：</b>自由画布的血缘边是「来源右缘 → 目标左缘」的贝塞尔曲线，一旦来源被排到目标右侧（例如定稿便签落在成片栏），曲线就会横穿整个画布形成回环 —— 这正是现在整理后「箭头从右往左」的成因。
+        推进阶梯把连线降级为三种低成本表达，只在用户主动选中时才展开单条链。
+      </div>
+      <div class="focus-wrap">
+        <svg class="links" aria-hidden="true"></svg>
+        <div class="lane">
+          <div class="lb">1 · 需求</div>
+          <div class="cells"><div class="node" data-key="brief"><span class="ic" style="background:var(--creative)">需</span>创意：15s 竖版极简黑白</div></div>
+        </div>
+        <div class="lane">
+          <div class="lb">2 · 剧本</div>
+          <div class="cells"><div class="node" data-key="script"><span class="ic" style="background:var(--script)">剧</span>剧本 v2</div></div>
+        </div>
+        <div class="lane">
+          <div class="lb">3 · 定稿</div>
+          <div class="cells"><div class="node" data-key="final"><span class="ic" style="background:var(--script)">稿</span>《静默之光》拍摄定稿</div></div>
+        </div>
+        <div class="lane">
+          <div class="lb">4 · 分镜卡</div>
+          <div class="cells">
+            <div class="node" data-key="card1"><span class="ic" style="background:var(--card)">卡</span>分镜 1</div>
+            <div class="node" data-key="card2"><span class="ic" style="background:var(--card)">卡</span>分镜 2</div>
+            <div class="node" data-key="card3"><span class="ic" style="background:var(--card)">卡</span>分镜 3</div>
+            <div class="node" data-key="card4"><span class="ic" style="background:var(--card)">卡</span>分镜 4</div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lb">5 · 该镜产物</div>
+          <div class="cells">
+            <div class="node" data-key="kf3"><span class="ic" style="background:var(--kf)">帧</span>关键帧 <span style="color:#9fc0ef;font-size:10px">v3 · 1 历史</span></div>
+            <div class="node sel" data-key="v3"><span class="ic" style="background:var(--video)">▶</span>镜 3 视频</div>
+            <div class="node" data-key="voice3"><span class="ic" style="background:var(--audio)">音</span>旁白 3</div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lb">6 · 成片</div>
+          <div class="cells"><div class="node" data-key="film"><span class="ic" style="background:var(--film)">合</span>成片 v2</div></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#4a7bd6"></i>主链：选中「镜 3 视频」的上下游链路</span>
+          <span style="opacity:.55"><i style="background:#2b3a52"></i>非本链（压暗，不消失）</span>
+          <span>所有连线竖向阶梯 + 短直角，跨度不超过一个走廊</span>
+        </div>
+      </div>
+      <div class="callout warn">
+        <b>跨阶段不画线的原因：</b>定稿 → 4 张分镜卡、4 段视频 → 成片，本质是 1:N / N:1 的扇出扇入，画出来必然是 6 条长线交叉。
+        用「阶段节 + 来源 chip + 聚焦链」表达，信息量不丢，读图成本从 O(边数) 降到 O(1)。
+      </div>
+    </section>
+
+    <!-- ================= C 待归档 ================= -->
+    <section class="view" id="view-orphan">
+      <div class="callout">
+        现状：历程视图靠 <code>showText</code> / <code>showAuxiliary</code> 两个开关把文本与辅助卡<b>默认隐藏</b>，孤立节点连"存在过"都看不见。
+        新方案把孤立项做成一个固定节，带原因与动作，且与主链同一种卡片形态。
+      </div>
+      <div class="tbl-wrap" style="max-height:none">
+        <table>
+          <thead><tr><th style="width:26%">节点</th><th style="width:12%">类型</th><th style="width:26%">为什么孤立</th><th>建议动作</th></tr></thead>
+          <tbody>
+            <tr><td>竞品光位拆解表</td><td><span class="tag">便签</span></td><td>无来源、也无下游引用</td><td>设为参考素材 · 归档 · 删除</td></tr>
+            <tr><td>色调草案 v1</td><td><span class="tag">便签</span></td><td>sourceIds 指向已删节点（断链）</td><td>清除断链 · 重新挂到剧本 · 删除</td></tr>
+            <tr><td>参考片片段</td><td><span class="tag">视频 · 手动</span></td><td>用户上传的源素材，未挂任何镜</td><td>设为参考素材（isReference）· 挂到镜 N</td></tr>
+            <tr><td>关键帧 · 模组特写</td><td><span class="tag">图</span></td><td>引用了分镜卡，但卡标题解析不出「分镜 N」</td><td>指定镜号（写 parentId + 标题）· 归档</td></tr>
+            <tr><td>成片 v1</td><td><span class="tag">成片</span></td><td>被 v2 取代（supersededBy）</td><td>折叠进 v2 角标，不占位；点开可回滚</td></tr>
+            <tr><td>空托盘「镜 5 · 素材」</td><td><span class="tag">容器</span></td><td>group 节点但成员为 0</td><td>自动解散（静默）· 保留为空占位</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint">判据全部复用既有字段（<code>sourceIds</code> / <code>supersededBy</code> / <code>isShotCard</code> / <code>parentId</code>），不新增持久化格式；"归档"即 <code>retired: true</code>，可恢复。</div>
+    </section>
+
+    <!-- ================= D 节点清单 ================= -->
+    <section class="view" id="view-spec">
+      <div class="callout">
+        节点全集来自 <code>contracts/canvas.ts</code> 的 7 种 <code>kind</code> × 60+ <code>toolName</code>，下表按「在推进链里的角色」归并，并给出每种在新视图里的展示形态与孤立判据。分镜卡与文本节点的判定必须走 <code>isShotCard</code>（双值兼容），不能散写比较。
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th style="width:11%">kind</th><th style="width:22%">toolName / 来源</th><th style="width:18%">语义</th><th style="width:15%">落哪一节</th><th style="width:16%">卡片形态</th><th>孤立判据</th></tr></thead>
+          <tbody>
+            <tr><td><code>text</code></td><td><code>user_brief</code></td><td>用户创意原话</td><td>1 需求与输入</td><td>文本卡 · 起点标</td><td>—（天然起点）</td></tr>
+            <tr><td><code>text</code></td><td><code>write_screenplay</code></td><td>剧本</td><td>2 分镜规划</td><td>文本卡 · 版本角标</td><td>无下游引用 → 归档</td></tr>
+            <tr><td><code>text</code></td><td><code>seedCanvasFromStoryboard</code></td><td>拍摄定稿（血缘根）</td><td>2 分镜规划</td><td>文本卡 · 「血缘根」标</td><td>—（恒为根）</td></tr>
+            <tr><td><code>text</code></td><td><code>seedStoryboardShot</code> / <code>submit_storyboard_for_approval</code></td><td>分镜卡（托盘头）</td><td>3 逐镜产出</td><td>托盘头 · 镜号徽标</td><td>标题无「分镜 N」→ 待归档</td></tr>
+            <tr><td><code>text</code></td><td><code>write_script</code></td><td>口播 / 字幕文案</td><td>2 或 5（按引用方）</td><td>文本卡 · 默认折叠一行</td><td>无引用 → 待归档</td></tr>
+            <tr><td><code>sticky</code></td><td><code>write_note</code> / 手动</td><td>过程便签、拆解表</td><td>6 待归档（默认）</td><td>便签卡</td><td>无血缘即孤立</td></tr>
+            <tr><td><code>prompt</code></td><td>手动</td><td>提示卡</td><td>6 待归档</td><td>便签卡</td><td>无血缘即孤立</td></tr>
+            <tr><td><code>image</code></td><td><code>image_generate</code>(look)</td><td>定妆 / 基调样张</td><td>2 分镜规划</td><td>缩略图卡</td><td>未绑镜且未被引用</td></tr>
+            <tr><td><code>image</code></td><td><code>character_sheet</code></td><td>角色四视图</td><td>2 分镜规划</td><td>缩略图卡 · 资产标</td><td>无 assetId 且无引用</td></tr>
+            <tr><td><code>image</code></td><td><code>image_generate</code> + shotRefs</td><td>关键帧（绑镜）</td><td>3 逐镜产出</td><td>缩略图卡</td><td>无镜号 → 待归档</td></tr>
+            <tr><td><code>image</code></td><td><code>image_matting</code> / <code>image_crop</code> / <code>image_fix</code> / <code>image_generate_withtxt</code></td><td>加工图 / 文字图</td><td>随来源所在节</td><td>缩略图卡</td><td>无来源 → 待归档</td></tr>
+            <tr><td><code>image</code></td><td><code>extract_last_frame</code>（auxiliary）</td><td>末帧（链帧输入）</td><td>3 逐镜产出</td><td>缩略图 · 默认收起为「+1 辅助」</td><td>无镜号 → 待归档</td></tr>
+            <tr><td><code>video</code></td><td><code>video_generate</code></td><td>镜视频</td><td>3 逐镜产出</td><td>播放卡 · 时长角标</td><td>无镜号 → 待归档</td></tr>
+            <tr><td><code>video</code></td><td><code>video_composite</code></td><td>多参考视频</td><td>3 逐镜产出</td><td>播放卡</td><td>同上</td></tr>
+            <tr><td><code>video</code></td><td><code>video_rerender</code></td><td>升档重出（覆盖旧节点）</td><td>不新增卡</td><td>角标 <code>720p↑</code></td><td>—</td></tr>
+            <tr><td><code>video</code></td><td><code>compose</code> / <code>render_composition</code></td><td>成片</td><td>5 成片</td><td>播放卡 · 版本堆栈</td><td>被取代 → 折叠</td></tr>
+            <tr><td><code>video</code></td><td><code>upload_video</code> / 手动</td><td>参考视频</td><td>1 需求与输入</td><td>播放卡 · 源素材标</td><td>未挂镜即孤立</td></tr>
+            <tr><td><code>audio</code></td><td><code>music_generation</code></td><td>BGM</td><td>4 音乐与配音</td><td>音频条</td><td>未被成片引用</td></tr>
+            <tr><td><code>audio</code></td><td><code>tts_voiceover</code> / <code>tts_narration</code></td><td>配音 / 旁白</td><td>3 逐镜产出（有镜号）</td><td>音频条</td><td>无镜号 → 4 节</td></tr>
+            <tr><td><code>audio</code></td><td><code>cut_audio</code> / 手动上传</td><td>裁切 / 上传音轨</td><td>4 或 1</td><td>音频条</td><td>无来源 → 待归档</td></tr>
+            <tr><td><code>group</code></td><td>自动编组 / 手动托盘</td><td>托盘容器</td><td>不单独成卡</td><td>托盘框</td><td>成员为 0 → 自动解散</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint">
+        当前真实项目实测分布：<code>text 8 · image 5 · video 6 · audio 1 · group 4</code>，其中 5 张图带 <code>isReference</code>、4 张分镜卡带 <code>sbRef</code>、1 个成片带 <code>supersededBy</code>。
+        历史别名（<code>compose</code> / <code>upload</code> / <code>txt2image</code> / <code>image2image</code> / <code>character</code>）同样要按上表归位，否则老项目会掉进"待归档"。
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const tabs = [...document.querySelectorAll('.tab')];
+  const views = {
+    ladder: document.getElementById('view-ladder'),
+    focus: document.getElementById('view-focus'),
+    orphan: document.getElementById('view-orphan'),
+    spec: document.getElementById('view-spec'),
+  };
+  function activate(key) {
+    tabs.forEach(t => t.classList.toggle('on', t.dataset.view === key));
+    Object.entries(views).forEach(([k, el]) => el.classList.toggle('on', k === key));
+    if (key === 'focus') setTimeout(drawFocus, 20);
+  }
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      activate(tab.dataset.view);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+  // #focus / #orphan / #spec 可直达（也方便截图与评审传链接）
+  const initial = (location.hash || '').replace('#', '');
+  if (views[initial] !== undefined && initial !== 'ladder') activate(initial);
+
+  // hover 一张卡 → 同链的卡一起亮（chip / 血缘提示的最小实现）
+  const cards = [...document.querySelectorAll('.card[data-chain]')];
+  cards.forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      const chain = card.dataset.chain;
+      document.querySelectorAll('.card[data-chain="' + chain + '"]').forEach(el => el.classList.add('lit'));
+    });
+    card.addEventListener('mouseleave', () => {
+      document.querySelectorAll('.card.lit').forEach(el => el.classList.remove('lit'));
+    });
+  });
+
+  /* ---------- 血缘聚焦：正交阶梯连线 ----------
+     所有边只走三种形态：①竖向下降 ②走廊内横移 ③同行水平。
+     契约：起点永远在来源的「下缘或右缘」，终点永远在目标的「上缘或左缘」，
+     因此不存在「从右往左」的回环 —— 与自由画布的贝塞尔锚点规则正相反。      */
+  const EDGES = [
+    ['brief', 'script', false],
+    ['script', 'final', false],
+    ['final', 'card1', false],
+    ['final', 'card2', false],
+    ['final', 'card3', true],
+    ['final', 'card4', false],
+    ['card3', 'kf3', true],
+    ['kf3', 'v3', true],
+    ['v3', 'voice3', false],
+    ['v3', 'film', true],
+  ];
+
+  function drawFocus() {
+    const wrap = document.querySelector('.focus-wrap');
+    if (!wrap || wrap.offsetParent === null) return;
+    const svg = wrap.querySelector('.links');
+    const box = wrap.getBoundingClientRect();
+    svg.setAttribute('viewBox', '0 0 ' + box.width + ' ' + box.height);
+    svg.innerHTML = '<defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#4a7bd6"/></marker></defs>';
+    const rectOf = key => {
+      const el = wrap.querySelector('[data-key="' + key + '"]');
+      if (el === null) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left - box.left, y: r.top - box.top, w: r.width, h: r.height };
+    };
+    for (let i = 0; i < EDGES.length; i += 1) {
+      const [from, to, lit] = EDGES[i];
+      const a = rectOf(from), b = rectOf(to);
+      if (a === null || b === null) continue;
+      let d;
+      if (b.y > a.y + a.h - 2) {
+        // 下行：来源下缘中点 → 走廊（逐条错开 4px，避免扇出重叠成一团）→ 目标上缘中点
+        const x1 = a.x + a.w / 2, y1 = a.y + a.h;
+        const x2 = b.x + b.w / 2, y2 = b.y;
+        const midY = y2 - 18; // 扇出共用一个走廊高度：4 条横段视觉上并成一条总线，各自短竖接入
+        if (Math.abs(x1 - x2) < 3) d = 'M ' + x1 + ' ' + y1 + ' L ' + x2 + ' ' + y2;
+        else d = 'M ' + x1 + ' ' + y1 + ' L ' + x1 + ' ' + midY + ' L ' + x2 + ' ' + midY + ' L ' + x2 + ' ' + y2;
+      } else {
+        // 同行：来源右缘中点 → 目标左缘中点
+        const x1 = a.x + a.w, y1 = a.y + a.h / 2;
+        const x2 = b.x, y2 = b.y + b.h / 2;
+        const midX = (x1 + x2) / 2;
+        if (Math.abs(y1 - y2) < 3) d = 'M ' + x1 + ' ' + y1 + ' L ' + x2 + ' ' + y2;
+        else d = 'M ' + x1 + ' ' + y1 + ' L ' + midX + ' ' + y1 + ' L ' + midX + ' ' + y2 + ' L ' + x2 + ' ' + y2;
+      }
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      if (lit) { path.setAttribute('class', 'lit'); path.setAttribute('marker-end', 'url(#ah)'); }
+      svg.appendChild(path);
+    }
+    // 非主链节点压暗（选中 = v3）
+    const alive = new Set(['final', 'card3', 'kf3', 'v3', 'film']);
+    wrap.querySelectorAll('.node').forEach(el => {
+      el.classList.toggle('dim', alive.has(el.dataset.key) === false);
+    });
+  }
+  window.addEventListener('resize', drawFocus);
+  // 首屏若直接落在血缘视图，切完 tab 再测量
+  setTimeout(drawFocus, 60);
+</script>
+</body>
+</html>

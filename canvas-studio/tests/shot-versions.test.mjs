@@ -286,6 +286,51 @@ test('打标：被取代节点写入 supersededBy，其余节点不动', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 2026-11-24：被取代的**占位节点**退出拓扑（清血缘 + retired），有产物的不动
+//
+// 取证：VideoOut/new4 …内 4 画布 3 张「角色 · ROLE A/B/C（待生成）」在真实定妆照
+// 落盘后仍是 定稿→占位 的边（占位 url 缺失、尺寸停在 260×200）；整理又把占位钉到
+// 取代者正下方，而取代者与定稿同在「剧本·定妆」栏 ⇒ 3 条同列斜穿边。
+// ---------------------------------------------------------------------------
+
+function placeholderNode(overrides = {}) {
+  return {
+    id: 'ph-1',
+    kind: 'image',
+    x: 0, y: 0, width: 260, height: 200,
+    createdAt: 1,
+    title: '角色 · ROLE A（待生成）',
+    toolName: 'character_sheet',
+    origin: 'agent',
+    // 占位 = 没有 url（判据与 asset-capture 的产物登记同源）。
+    sourceIds: ['anchor-1'],
+    ...overrides,
+  }
+}
+
+test('打标：被取代的占位清空 sourceIds 并置 retired（退出拓扑）', () => {
+  const nodes = [placeholderNode({ id: 'ph-1' }), shotNode({ id: 'real-1' })]
+  const patched = applySupersede(nodes, 'real-1', ['ph-1'])
+  assert.deepEqual(patched[0].sourceIds, [],
+    '占位的「定稿→待生成卡」边必须清掉，否则整理后成同列斜穿')
+  assert.equal(patched[0].retired, true, '占位灰显')
+  assert.equal(patched[0].supersededBy, 'real-1', '取代关系仍保留（版本链与恢复要用）')
+  assert.equal(nodes[0].sourceIds.length, 1, '不改原数组')
+})
+
+test('打标：有产物的被取代节点不动血缘（版本栈要能回看这一版来自哪）', () => {
+  const oldImg = shotNode({ id: 'img-old', kind: 'image', url: '/assets/old.png', sourceIds: ['anchor-1'] })
+  const patched = applySupersede([oldImg], 'img-new', ['img-old'])
+  assert.deepEqual(patched[0].sourceIds, ['anchor-1'], '有 url 的图不清血缘')
+  assert.equal(patched[0].retired, undefined, '有 url 的图不灰显')
+
+  const oldVideo = shotNode({ id: 'v1', sourceIds: ['card-1'] })
+  const patched2 = applySupersede([oldVideo], 'v2', ['v1'])
+  assert.deepEqual(patched2[0].sourceIds, ['card-1'], '视频版本链不受影响')
+  assert.equal(patched2[0].retired, undefined)
+})
+
+// ---------------------------------------------------------------------------
 // 工具层：合成默认选片 + list_shots
 // ---------------------------------------------------------------------------
 function stubRegistry(nodes, dir) {

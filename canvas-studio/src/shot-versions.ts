@@ -300,7 +300,31 @@ export function planSupersede(
   return { version: maxVersion + 1, supersedeIds: [...ids] }
 }
 
-/** 给被取代节点打上 `supersededBy`（返回新数组，不改原数组）。 */
+/**
+ * 占位节点：**已建卡但还没出产物**（`character_sheet` 的「角色 · ROLE A（待生成）」，
+ * 以及任何 `kind='image'` 且没有 `url` 的图节点）。
+ *
+ * 为什么按 `url === undefined` 判而不是按标题里的「待生成」：标题是给人看的、可被
+ * 改写；`url` 缺失是「这张卡还没有产物」的结构事实，与 `asset-capture` 的产物登记
+ * 判据同源。
+ */
+function isPlaceholderNode(node: StudioCanvasNode): boolean {
+  return node.kind === 'image' && (node.url === undefined || node.url === '')
+}
+
+/**
+ * 给被取代节点打上 `supersededBy`（返回新数组，不改原数组）。
+ *
+ * 2026-11-24（用户拍板）：被取代的**占位节点**额外做两件事 —— 清空 `sourceIds`、
+ * 置 `retired: true`。根因是真实产物落盘后占位仍挂着「定稿 → 待生成卡」的边：
+ * 整理会把占位钉在取代者正下方，而取代者（定妆照同样是 `character_sheet`）与定稿
+ * 同在「剧本·定妆」栏 ⇒ 那条边成同列斜穿；实测一张 41 节点画布因此多出 3 条边、
+ * 3 张「待生成」废卡。清边 + 灰显让占位退出拓扑，而不是靠「隐藏废弃素材」开关
+ * 藏起来（该开关默认关，所以用户一直看得见它们）。
+ *
+ * **有产物的被取代节点行为不变**（镜位重出 / 版本栈 / `compose` 旧版）：它们的边
+ * 是「这一版来自哪」的历史，版本栈浮层还要按它回看，绝不能顺手清。
+ */
 export function applySupersede(
   nodes: readonly StudioCanvasNode[],
   newId: string,
@@ -308,7 +332,13 @@ export function applySupersede(
 ): StudioCanvasNode[] {
   const set = new Set(supersedeIds)
   if (set.size === 0) return [...nodes]
-  return nodes.map((node) => (set.has(node.id) ? { ...node, supersededBy: newId } : node))
+  return nodes.map((node) => {
+    if (!set.has(node.id)) return node
+    if (isPlaceholderNode(node)) {
+      return { ...node, supersededBy: newId, sourceIds: [], retired: true }
+    }
+    return { ...node, supersededBy: newId }
+  })
 }
 
 /** 沿 `supersededBy` 追到当前有效版（脏数据成环时返回 undefined）。 */

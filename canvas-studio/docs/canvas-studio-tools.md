@@ -432,10 +432,12 @@
 | `refaudio` | string | 否 | 参考音频（上传句柄或 `@ref[音频节点标题]`），提供后克隆其音色。**克隆通道未实测**（探针只测声音设计路径） |
 | `replaces` | string | 否 | 要重配的已有音频节点 id——**原地重写**（保留节点与血缘），改词重配时传 |
 | `sourceUrls` / `sourceNodeIds` | array | 否 | 血缘箭头（与 `music_generation` 同款） |
+| `shotRefs` | array | 否 | **这句配音属于哪一镜**（「分镜 N · 景别」标题 /「分镜 N」镜号 / `S1-Sh1` / 节点 id）—— 走 `resolveShotRefs` 解析成卡节点 id 后并入 `sourceIds`。绑了镜才进该镜那一行（历程视图一行一镜的配音格）；不绑只落「音频」节。整片通铺旁白才不传（D-08，2026-11-24） |
 
 **行为要点**：
 - **无时长参数**：合成时长由文本长度决定（中文中速约 4 字/秒）；控时长 = 增删文本。结果里的 `duration` 是 **ffprobe 实测真值**（后端响应的 `duration` 是生成耗时，探针实测与真值差 2.8 倍）；探测失败不伪造（返回 0 / 节点无角标）。
 - **产物实测 mp3**（后端 0.8.0 文档写 flac，以实测为准），`voxcpm_*` 前缀，属产物名类。
+- **绑镜（D-08，2026-11-24）**：配音进镜的唯一通道是 `shotRefs`（`sourceUrls` 反查只能命中 URL，写不出「这是第几镜」）。绑镜的显式声明同时写进 `generationPrompt.shotNodeIds`（与出图 / 出片同口径，供审计与重放）；`replaces` 重配时补传 `shotRefs` 会把卡**并入**既有血缘而不是覆盖（旧的参考链不丢）。
 - **配音节点不能当 `bgmNodeId`**（compose_video 的 amix 只挂 BGM）——要进成片走 `video_generate` / `video_composite` 的 `audioRefs`（官方规格 ≤3 段、合计 ≤15s，先用 `cut_audio` 裁），或作为独立音频交付。
 - **审批门禁**：与 `music_generation` 同列 `FORMAL_TOOLS`（drafting / 审阅态拦）；可重放（`REPLAYABLE_TOOLS` 已含，节点参数蛇形键与后端请求体一致）。
 - 技能配套：`voiceover-writing`（SKILL.md + `references/voice-design.md`），写配音前加载。

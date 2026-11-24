@@ -139,7 +139,10 @@ export const FILE_WHITELIST = {
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，
   // 3620 → 3687 显式登记；超时复用 image 档，不新增档位。
-  'src/generate.ts': 3687,
+  // D-08（2026-11-24）：配音绑镜 —— SpeechParams.shotNodeIds 声明 + 血缘并入 + 重配合并
+  // + 绑镜声明落 generationPrompt，+26（3973 → 3999）。消化路径：语音（含 narration 逐段
+  // 透传）整段外提到 `speech.ts` 时一并搬走。
+  'src/generate.ts': 3999,
   // CV-382（2026-10-29）：资产路由流式化 +39 净行（52 增 13 删，≤60 预算内），显式登记；
   // 阶段 2 按域拆分时随 routes 段消化。
   // 订阅与积分（2026-11-02）：/canvas-studio/billing 前缀三分派 +105（含 sendBillingFailure），

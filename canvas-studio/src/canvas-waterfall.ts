@@ -10,11 +10,18 @@
  *     不做第二份解析。
  *
  * 形态（交互原型 `docs/demos/canvas-waterfall-demo-2026-10-26/` 定稿）：
- *   纵向单列 feed，节 = ① 创意 → ② 分镜（每镜一个托盘，托盘头 = 分镜卡）
+ *   纵向单列 feed，节 = ① 创意 → ② 分镜（**一行一镜**的行式表格）
  *   → ③ 音频 → ④ 成片 → ⑤ 其他（兜底，绝不丢节点）。空节自动塌缩。
  *   节内按 手动 order（waterfallOrder）→ createdAt 排序；被取代节点紧跟其
  *   取代者。文本类（创意需求/剧本/口播文案/便签/提示卡）与辅助卡（末帧）
  *   默认不进布局（用户拍板 2026-10-26），分镜卡除外——它是托盘归属锚点。
+ *
+ * 分镜节「一行一镜」（用户拍板 2026-11-24，见
+ *   `docs/plans/历程视图-分镜一行一镜-方案-20261124.md`）：
+ *   行 = 镜，行框即该镜容器；行内单排网格，格序 卡 → 关键帧 → 末帧 → 视频 → 配音
+ *   → 其余按 createdAt；行内上限 4 格，第 5 件折到**同一行框内**的第二排。
+ *   分镜卡从「108 高头带」变成网格第 1 格（与媒体等高），音频也是普通格
+ *   （不再是独占整行横条）；行框宽统一到节宽（表格感），高度随内容。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isShotCard, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
@@ -62,10 +69,13 @@ export interface WaterfallSection {
   box: WaterfallBox
 }
 
-/** 一个镜的托盘：分镜卡（头）+ 镜内产物。box 含托盘框（渲染层据此画框）。 */
+/**
+ * 一个镜的托盘 = 一行（一行一镜的行式表格）。box 含行框（渲染层据此画框），
+ * 宽度统一到节宽、高度随行内内容（单排恒 `PAD*2 + cellH`）。
+ */
 export interface WaterfallTray {
   shot: number
-  /** 托盘头部的分镜卡 id（该镜没有分镜卡时为 undefined）。 */
+  /** 该镜的分镜卡 id（= 行内第一格；该镜没有分镜卡时为 undefined）。 */
   cardId?: string
   /** 镜内全部节点 id（卡在前，其余按 role 排列）。 */
   nodeIds: readonly string[]
@@ -154,9 +164,6 @@ const SECTION_GAP = 72
 export const SECTION_HEAD_H = 56
 /** 托盘内边距。 */
 const TRAY_PAD = 16
-/** 托盘头（分镜卡）保留高度。真实文本卡要露出「标题 + 两行正文」：
- *  chrome 48（头 26 + 脚 22）+ 正文 padding 24 + 两行 ≈ 36 ⇒ 108。 */
-const TRAY_HEAD_H = 108
 /** 托盘之间的纵向间距。 */
 const TRAY_GAP = 24
 /** 音频缩略盒高 = 音频卡**真实固有高度**（480×168 契约卡）。2026-10-27 修正：
@@ -177,8 +184,13 @@ const ROLE = { keyframe: 1, video: 2, lastframe: 3, voice: 4 } as const
 /** 标准缩略盒高：媒体 16:9（竖版按真实比例派生、封顶），音频矮条，文本卡定高。
  *  REQ-036 复核（2026-10-27）：竖版素材（如 768×1376）此前被硬塞 16:9 格，
  *  渲染层 object-fit:cover 把它裁成中间横带 —— 这里改按 mediaWidth/mediaHeight
- *  感知方向；两字段缺失（未加载/老数据）时维持 16:9 缺省，行为不变。 */
+ *  感知方向；两字段缺失（未加载/老数据）时维持 16:9 缺省，行为不变。
+ *  REQ-036 一行一镜（2026-11-24）：分镜卡不再占 108 头带，改网格第一格并与
+ *  媒体同高 —— 必须先判 `isShotCard`（它是 text 节点，否则会被下面的 TEXT_H 吃掉）。
+ *  音频仍返回固有高 AUDIO_H（480×168 契约卡，卡内部不随盒压缩），行内按
+ *  「盒高不足该排高就纵向居中」处理（见 {@link gridLayout} 的 centerVertically）。 */
 function cellHeightOf(node: StudioCanvasNode, cellW: number): number {
+  if (isShotCard(node)) return Math.round(cellW * 9 / 16)
   if (node.kind === 'audio') return AUDIO_H
   if (node.kind === 'text' || node.kind === 'sticky' || node.kind === 'prompt') return TEXT_H
   const { mediaWidth, mediaHeight } = node
@@ -304,6 +316,7 @@ function classifyNode(
 function gridLayout(
   cells: readonly { id: string; height: number }[],
   cellW: number,
+  options: { centerVertically?: boolean } = {},
 ): { offsets: Map<string, { x: number; y: number }>; width: number; height: number } {
   const offsets = new Map<string, { x: number; y: number }>()
   if (cells.length === 0) return { offsets, width: 0, height: 0 }
@@ -321,7 +334,9 @@ function gridLayout(
     cells.forEach((cell, index) => {
       if (Math.floor(index / columns) !== row) return
       const offset = offsets.get(cell.id)!
-      offset.y = cursorY
+      // 居中：矮格（音频 168 落在媒体排 214 里）纵向居中，不留顶对齐的豁口。
+      const slack = options.centerVertically === true ? Math.max(0, height - cell.height) : 0
+      offset.y = cursorY + Math.round(slack / 2)
     })
     cursorY += height + GAP
   }
@@ -466,48 +481,39 @@ export function computeWaterfallLayout(
           .filter(item => item !== card)
           .sort((left, right) => (left.role ?? 9) - (right.role ?? 9)
             || compareSectionKey(sectionSortKeyOf(left.node, byId, orderRank), sectionSortKeyOf(right.node, byId, orderRank)))
-        // REQ-036 复核对齐原型（2026-10-27）：配音/音频**独占整行**铺满托盘内宽
-        // （紧凑横条），其余（关键帧/视频/末帧/多余卡）进统一网格。
-        const gridItems = others.filter(item => item.node.kind !== 'audio')
-        const audioItems = others.filter(item => item.node.kind === 'audio')
+        // 一行一镜（2026-11-24 拍板）：卡是**网格第一格**（不再是 108 高头带），音频也是
+        // 普通格（不再独占整行横条）—— 两类都进 gridItems，格序靠 role 保证
+        // 卡(0) → 关键帧(1) → 视频(2) → 末帧(3) → 配音(4) → 其余按 createdAt。
+        const gridItems = card !== undefined ? [card, ...others] : others
         const cells = gridItems.map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW) }))
-        const grid = gridLayout(cells, cellW)
-        const innerWidth = Math.max(grid.width, cellW)
-        const width = TRAY_PAD * 2 + innerWidth
-        // 音频整行：紧跟网格下方逐条纵排（每条 AUDIO_H 高，行间距同 GAP；网格为空时顶格起排）。
-        const audioOffsets = new Map<string, { x: number; y: number }>()
-        let audioY = grid.height > 0 && audioItems.length > 0 ? grid.height + GAP : 0
-        for (const item of audioItems) {
-          audioOffsets.set(item.node.id, { x: 0, y: audioY })
-          audioY += AUDIO_H + GAP
-        }
-        const contentHeight = audioItems.length > 0 ? audioY - GAP : grid.height
-        const height = TRAY_HEAD_H + TRAY_PAD + contentHeight + TRAY_PAD
-        const offsets = new Map([...grid.offsets, ...audioOffsets])
-        const memberIds = [
-          ...(card !== undefined ? [card.node.id] : []),
-          ...cells.map(cell => cell.id),
-          ...audioItems.map(item => item.node.id),
-        ]
+        // centerVertically：音频 168 落在 214 的媒体排里纵向居中（卡内部布局不动）。
+        const grid = gridLayout(cells, cellW, { centerVertically: true })
+        // 行高 = 内边距 + 网格高 + 内边距（单排 246；折行时随内容变高，不强制等高）。
+        const height = TRAY_PAD + grid.height + TRAY_PAD
+        const memberIds = gridItems.map(item => item.node.id)
         return {
           shot,
           ...(card !== undefined ? { cardId: card.node.id } : {}),
           nodeIds: memberIds,
           stats: statsOf(memberIds, byId),
-          width,
+          /** 内容宽（未统一）：节宽 = 全部托盘取 max 后回填（见下）。 */
+          width: TRAY_PAD * 2 + grid.width,
           height,
-          offsets,
+          offsets: grid.offsets,
         }
       })
+      // 行框统一到节宽（表格感）：先算 sectionWidth，再回填每个托盘 —— 不按内容缩，
+      // 否则「只有一条视频的镜」又变回细长条（本需求要根治的形态）。
       const width = Math.max(...trayPlans.map(tray => tray.width))
-      const height = trayPlans.reduce((sum, tray) => sum + tray.height, 0) + TRAY_GAP * (trayPlans.length - 1)
+      const traysPlanned = trayPlans.map(tray => ({ ...tray, width }))
+      const height = traysPlanned.reduce((sum, tray) => sum + tray.height, 0) + TRAY_GAP * (traysPlanned.length - 1)
       plans.push({
         stage,
-        nodeIds: trayPlans.flatMap(tray => [...tray.nodeIds]),
-        stats: statsOf(trayPlans.flatMap(tray => [...tray.nodeIds]), byId),
+        nodeIds: traysPlanned.flatMap(tray => [...tray.nodeIds]),
+        stats: statsOf(traysPlanned.flatMap(tray => [...tray.nodeIds]), byId),
         width,
         height,
-        trays: trayPlans,
+        trays: traysPlanned,
       })
       continue
     }
@@ -553,23 +559,14 @@ export function computeWaterfallLayout(
           stats: tray.stats,
           box,
         })
-        if (tray.cardId !== undefined) {
-          positions.set(tray.cardId, { x: box.x + TRAY_PAD, y: box.y })
-          boxes.set(tray.cardId, {
-            x: box.x + TRAY_PAD, y: box.y, width: box.width - TRAY_PAD * 2, height: TRAY_HEAD_H,
-          })
-        }
+        // 一行一镜：卡与全部产物都由**网格格位**定位（不再有头带 / 音轨条两套口径），
+        // 格宽恒 = cellW；盒高按各自的 cellHeightOf（音频 168 居中在 214 排里）。
         for (const [id, offset] of tray.offsets) {
-          positions.set(id, { x: box.x + TRAY_PAD + offset.x, y: box.y + TRAY_HEAD_H + TRAY_PAD + offset.y })
+          const cellX = box.x + TRAY_PAD + offset.x
+          const cellY = box.y + TRAY_PAD + offset.y
+          positions.set(id, { x: cellX, y: cellY })
           const node = byId.get(id)!
-          // 音频整行铺满托盘内宽（与网格格位不同宽）。
-          const isAudioRow = node.kind === 'audio'
-          boxes.set(id, {
-            x: box.x + TRAY_PAD + offset.x,
-            y: box.y + TRAY_HEAD_H + TRAY_PAD + offset.y,
-            width: isAudioRow ? box.width - TRAY_PAD * 2 : cellW,
-            height: cellHeightOf(node, cellW),
-          })
+          boxes.set(id, { x: cellX, y: cellY, width: cellW, height: cellHeightOf(node, cellW) })
         }
         trayY += tray.height + TRAY_GAP
       }

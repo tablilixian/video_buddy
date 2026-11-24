@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分镜 · 一行一镜 · 布局预览</title>
+<style>
+  :root{
+    --bg:#0a0a0c;
+    --dot:rgba(255,255,255,.05);
+    --panel:#101114;
+    --row:#101114;
+    --cell:#17181c;
+    --cell-hi:#1d1f24;
+    --line:rgba(255,255,255,.075);
+    --line-strong:rgba(255,255,255,.12);
+    --txt:#e7e8ea;
+    --txt-2:#9ba0a8;
+    --txt-3:#6b7078;
+    --green:#3ddc97;
+    --green-line:rgba(61,220,151,.30);
+    --green-soft:rgba(61,220,151,.10);
+    --amber:#e5b567;
+    --cell-w:380px;
+    --cell-h:214px;
+    --gap:24px;
+    --pad:16px;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font:13px/1.5 ui-sans-serif,-apple-system,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  body{min-height:100vh}
+
+  /* ---------- 顶栏 ---------- */
+  header{position:sticky;top:0;z-index:20;background:rgba(10,10,12,.88);
+    backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand b{font-size:13.5px;font-weight:600;letter-spacing:.2px}
+  .brand span{font-size:11px;color:var(--txt-3)}
+  .seg{display:flex;background:#17181c;border:1px solid var(--line);border-radius:9px;padding:2px}
+  .seg button{all:unset;cursor:pointer;padding:5px 11px;border-radius:7px;font-size:11.5px;
+    color:var(--txt-2);white-space:nowrap}
+  .seg button:hover{color:var(--txt)}
+  .seg button[aria-pressed="true"]{background:#26282e;color:var(--txt);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+  .ctl{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txt-3)}
+  input[type=range]{width:110px;accent-color:#4a9d7a}
+  .spacer{flex:1}
+  .metric{display:flex;align-items:center;gap:14px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--txt-3);white-space:nowrap}
+  .metric b{color:var(--green);font-weight:600}
+  .metric .warn{color:var(--amber)}
+
+  /* ---------- 舞台 ---------- */
+  #stage{position:relative;padding:26px 20px 80px;
+    background-image:radial-gradient(var(--dot) 1px,transparent 1px);
+    background-size:22px 22px;background-position:0 0;min-height:calc(100vh - 96px)}
+  #viewport-line{position:absolute;top:0;bottom:0;width:1px;background:rgba(229,181,103,.28);
+    pointer-events:none;display:none}
+  #viewport-line::after{content:"视口 1600";position:absolute;top:6px;left:6px;font:10px/1 ui-monospace,monospace;
+    color:rgba(229,181,103,.65);white-space:nowrap}
+  body.show-vp #viewport-line{display:block}
+
+  /* ---------- 节 ---------- */
+  .section{position:relative}
+  .sec-head{display:flex;align-items:center;gap:9px;height:34px;margin-bottom:10px}
+  .sec-head .t{font-size:11.5px;font-weight:600;color:var(--green);letter-spacing:.3px}
+  .sec-head .n{font:11px/1 ui-monospace,monospace;color:var(--txt-3)}
+  .sec-head .done{font-size:10.5px;color:var(--txt-3);border:1px solid var(--line);
+    border-radius:5px;padding:2px 6px}
+  .sec-head .bar-mini{flex:1;height:2px;border-radius:2px;background:rgba(61,220,151,.22);max-width:240px}
+
+  /* ---------- 行（= 一镜） ---------- */
+  .rows{display:flex;flex-direction:column;gap:var(--gap)}
+  .row{position:relative;display:flex;flex-direction:column;
+    padding:var(--pad);border:1px solid var(--green-line);border-radius:14px;
+    background:linear-gradient(180deg,rgba(61,220,151,.035),rgba(255,255,255,.012));
+    box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
+  .row::before{content:"";position:absolute;left:-1px;top:18px;bottom:18px;width:2px;border-radius:2px;
+    background:rgba(61,220,151,.35)}
+  .cells{display:grid;gap:var(--gap);
+    grid-template-columns:repeat(var(--cols,4),var(--cell-w))}
+  .row.audio-strip .cells{grid-template-columns:repeat(3,var(--cell-w))}
+  .strip{margin-top:10px;display:flex;align-items:center;gap:10px;height:54px;padding:0 12px;
+    border:1px solid var(--line);border-radius:9px;background:#141519}
+
+  /* ---------- 格 ---------- */
+  .cell{position:relative;width:var(--cell-w);height:var(--cell-h);border-radius:var(--radius);
+    overflow:hidden;background:var(--cell);border:1px solid var(--line)}
+  .cell:hover{border-color:var(--line-strong)}
+  .cell img,.cell video{display:block;width:100%;height:100%;object-fit:cover;background:#0e0f11}
+  .chip{position:absolute;top:8px;left:8px;z-index:3;font-size:10px;line-height:1;
+    padding:4px 7px;border-radius:5px;background:rgba(8,9,11,.72);color:#d6d8dc;
+    border:1px solid rgba(255,255,255,.10);backdrop-filter:blur(6px);white-space:nowrap}
+  .chip.ok{color:#9ff0c9;border-color:rgba(61,220,151,.35);background:rgba(12,32,24,.78)}
+  .corner{position:absolute;right:8px;bottom:8px;z-index:3;font:10px/1 ui-monospace,monospace;
+    color:#cfd2d7;padding:3px 6px;border-radius:4px;background:rgba(8,9,11,.66)}
+  .hist{position:absolute;right:8px;top:8px;z-index:3;font-size:10px;line-height:1;padding:4px 6px;
+    border-radius:5px;background:rgba(8,9,11,.72);border:1px solid rgba(255,255,255,.10);
+    color:var(--txt-2);backdrop-filter:blur(6px)}
+  .missing{background:
+      repeating-linear-gradient(45deg,rgba(255,255,255,.022) 0 8px,transparent 8px 16px),#131417;
+    border-style:dashed;border-color:rgba(255,255,255,.16);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:var(--txt-3)}
+  .missing .plus{width:24px;height:24px;border-radius:50%;border:1px dashed rgba(255,255,255,.24);
+    display:grid;place-items:center;font-size:14px;color:var(--txt-3)}
+  .missing .lab{font-size:10.5px}
+  .missing .sub{font-size:10px;color:#4d525a}
+
+  /* ---------- 分镜卡 ---------- */
+  .card{display:flex;flex-direction:column;padding:11px 12px 10px;background:var(--cell);
+    cursor:pointer}
+  .card:hover{background:var(--cell-hi)}
+  .card .hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .card .no{font-size:11px;font-weight:600;color:#dfe2e6;letter-spacing:.2px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .card .dur{font:10px/1 ui-monospace,monospace;color:var(--txt-3);flex:none}
+  .card .tags{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+  .tag{font-size:9.5px;line-height:1;padding:3.5px 6px;border-radius:4px;
+    background:rgba(61,220,151,.10);color:#8fe0bb;border:1px solid rgba(61,220,151,.18)}
+  .tag.grey{background:rgba(255,255,255,.045);color:var(--txt-2);border-color:var(--line)}
+  .card .body{margin-top:7px;font-size:11.5px;line-height:1.66;color:#b7bcc3;letter-spacing:.1px;
+    display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,#000 70%,transparent 100%)}
+  .card .ft{margin-top:auto;padding-top:6px;display:flex;justify-content:space-between;
+    font:10px/1 ui-monospace,monospace;color:#565b63}
+
+  /* ---------- 音频格 ---------- */
+  .audio{display:flex;flex-direction:column;justify-content:space-between;padding:11px 12px;
+    cursor:pointer;background:linear-gradient(180deg,#161a19,#141619)}
+  .audio:hover{background:linear-gradient(180deg,#18201d,#161a19)}
+  .audio .hd{display:flex;justify-content:space-between;align-items:center}
+  .audio .hd .t{font-size:11px;color:#cfd4d2}
+  .audio .hd .d{font:10px/1 ui-monospace,monospace;color:var(--txt-3)}
+  .wave{display:flex;align-items:center;gap:2px;height:118px;margin:2px 0}
+  .wave i{flex:1;background:linear-gradient(180deg,#4ade80,#2a8f63);border-radius:1px;opacity:.62}
+  .audio:hover .wave i{opacity:.85}
+  .audio .ft{display:flex;justify-content:space-between;align-items:center;
+    font:10px/1 ui-monospace,monospace;color:#565b63}
+  .playbig{position:absolute;inset:0;display:grid;place-items:center;z-index:2;pointer-events:none}
+  .playbig span{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:12px;
+    color:#eaf6f0;background:rgba(8,12,10,.45);border:1px solid rgba(255,255,255,.26);backdrop-filter:blur(4px);
+    opacity:0;transition:opacity .16s ease}
+  .cell:hover .playbig span{opacity:1}
+  .play{width:22px;height:22px;border-radius:50%;border:1px solid rgba(61,220,151,.35);
+    background:rgba(61,220,151,.12);display:grid;place-items:center;color:#8fe0bb;font-size:9px}
+  .audio.playing .play{background:rgba(61,220,151,.3);color:#0b1712}
+
+  /* ---------- 底部浮层 ---------- */
+  #sheet{position:fixed;right:0;top:0;bottom:0;width:420px;background:#0f1013;
+    border-left:1px solid var(--line-strong);transform:translateX(100%);
+    transition:transform .22s ease;z-index:40;display:flex;flex-direction:column}
+  #sheet.open{transform:none}
+  #sheet .sh{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;
+    justify-content:space-between;align-items:center}
+  #sheet .sh b{font-size:12px}
+  #sheet .sd{padding:14px 16px;overflow:auto;font-size:12px;line-height:1.78;color:#c3c8cf}
+  #sheet .sd h4{margin:16px 0 6px;font-size:10.5px;color:var(--green);font-weight:600;letter-spacing:.5px}
+  #sheet .sd p{margin:0 0 10px}
+  #sheet .x{all:unset;cursor:pointer;color:var(--txt-3);font-size:16px;padding:2px 6px}
+  .hint{position:absolute;right:20px;bottom:18px;font-size:10.5px;color:#4d525a}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand"><b>分镜 · 一行一镜</b><span>真实项目数据 · 4 镜</span></div>
+    <div class="seg" id="mode">
+      <button data-m="row4" aria-pressed="true">实际 4 格</button>
+      <button data-m="row5" aria-pressed="false">满配 5 格</button>
+      <button data-m="strip" aria-pressed="false">3 格 + 音轨条</button>
+    </div>
+    <div class="ctl">格宽
+      <input id="cw" type="range" min="280" max="400" step="10" value="370">
+      <span id="cwv" style="font-family:ui-monospace,monospace">370</span>
+    </div>
+    <div class="ctl"><label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+      <input id="vp" type="checkbox"> 视口参考线</label></div>
+    <div class="spacer"></div>
+    <div class="metric">
+      <span>节宽 <b id="mw">1624</b></span>
+      <span>行高 <b id="mh">246</b></span>
+      <span>4 行总高 <b id="mt">1056</b></span>
+      <span id="mfit">—</span>
+    </div>
+  </div>
+</header>
+
+<main id="stage">
+  <div id="viewport-line"></div>
+  <section class="section">
+    <div class="sec-head">
+      <span class="t">分镜</span>
+      <span class="n" id="seccount">4 镜 · 12 卡</span>
+      <span class="bar-mini"></span>
+      <span class="done">全部完成</span>
+    </div>
+    <div class="rows" id="rows"></div>
+  </section>
+  <div class="hint">点击分镜卡看全文 · 点击画面播放视频 · 点击音轨播放配音</div>
+</main>
+
+<aside id="sheet">
+  <div class="sh"><b id="sh-title">镜头</b><button class="x" id="sh-close">×</button></div>
+  <div class="sd" id="sh-body"></div>
+</aside>
+
+<script>
+const SHOTS = [
+  {
+    n: 1, ref: 'S1-Sh1', scene: 'S1 雨起 · 水涨',
+    size: '大远景', move: '极缓慢向前推进 dolly in', dur: '7.5s', frames: '180 帧 · 24fps', voice: 'V1',
+    text: '暴雨如注的下午，天光被厚云压成铅灰。画面中央偏右，巨大的歌斐木方舟船壳停在原村落的低地上，雨水顺着涂黑的船板往下淌。浊水已经漫过土坯屋的平屋顶，只余下几处屋角的方形轮廓露出水面，像一排沉下去的碑。方舟被水从下方抬起，船体一侧离地，几根垫木脱开漂走。挪亚站在敞开的侧门口，披着粗羊毛斗篷，一手扶着门框，回身看向舱内的暗处，雨水顺着他灰白的胡须滴落。水面上漂着断裂的木梁与陶罐碎片。远处山际线已经被雨幕吞掉，没有一处可以依靠的岸。',
+    sound: '持续密集的雨声压在一切之上；水面闷响；船木受压时发出的低沉开裂与呻吟；一个极轻的、被雨声盖过大半的木梁撞击声；无人声',
+    img: 'assets/shot1.png', imgRes: '1376×768', imgHist: 1,
+    video: 'assets/shot1.mp4', vDur: '8.0s', vRes: '864×528', vHist: 0,
+    audio: 'assets/vo1.mp3', aDur: '5.59s'
+  },
+  {
+    n: 2, ref: 'S1-Sh2', scene: 'S1 雨起 · 水涨',
+    size: '中近景', move: '手持轻微摇晃，转向窗洞', dur: '7.5s', frames: '180 帧 · 24fps', voice: 'V2',
+    text: '方舟内部的第二层舱室，单薄的天光从高处的方形窗洞漏进来，落在满是潮气的地板上，没有油灯。挪亚背对镜头，跪坐在窗洞下方，粗麻内袍的下摆浸湿了一截。他抬起手，把一只灰白鸽子的翅膀收拢在自己掌心里，动作极慢极稳。鸽子颈羽蓬乱，爪子上挂着水。他侧过脸看向窗洞外的雨，深陷的眼里没有剧烈的悲喜，只有一种被熬干了的等待。舱壁上挂着一串皮酒袋，大半是瘪的。背景的木梁上还留着敲进半截的木橛与一圈圈旧绳痕。',
+    sound: '雨点打在船顶上的钝响，比外面闷；舱内木板的吱嘎；鸽子翅羽摩擦掌心的细响；衣料摩擦；呼吸声被刻意压低',
+    img: 'assets/shot2.png', imgRes: '1376×768', imgHist: 0,
+    video: 'assets/shot2.mp4', vDur: '8.0s', vRes: '864×528', vHist: 0,
+    audio: 'assets/vo2.mp3', aDur: '4.75s'
+  },
+  {
+    n: 3, ref: 'S2-Sh3', scene: 'S2 鸽归 · 虹现',
+    size: '特写', move: '固定，浅景深', dur: '7.5s', frames: '180 帧 · 24fps', voice: 'V3',
+    text: '画面只落在窗洞边缘与一双手上。灰白的鸽子从雨里穿过窗洞飞回，翅膀还在滴水，收翼落在挪亚摊开的掌心。鸽喙里衔着一片小小的橄榄叶，叶面新绿、边缘被雨打得发亮，是整部片子里第一处真正的绿色。挪亚的拇指极轻地移到叶柄上，停住——他没有摘下来，只是让它留在喙边。手背上凸起的青筋、指甲缝里的黑色沥青、掌心的老茧和潮气全都清晰可见。窗洞之外是一片模糊的灰色雨幕，看不出任何陆地。',
+    sound: '雨声骤然弱下去，只剩檐口滴水；鸽子收翼的一声扑扇；一片叶子落进口中的极轻声响；挪亚一次很深的吸气，像终于敢呼吸',
+    img: 'assets/shot3.png', imgRes: '1376×768', imgHist: 0,
+    video: 'assets/shot3.mp4', vDur: '8.0s', vRes: '864×528', vHist: 0,
+    audio: 'assets/vo3.mp3', aDur: '5.09s'
+  },
+  {
+    n: 4, ref: 'S2-Sh4', scene: 'S2 鸽归 · 虹现',
+    size: '大远景', move: '缓慢上摇后固定', dur: '7.5s', frames: '180 帧 · 24fps', voice: 'V4',
+    text: '雨停了。方舟的甲板边缘，挪亚背对镜头站着，粗羊毛斗篷被风掀起一角，手里托着那只刚放开的鸽子，它已经飞起，变成画面上一条向上的白线。他抬起头往上看。铅灰的云层正在裂开一道竖向的缝，光从缝里垂下来，落在被水淹没的坡地与残存的橄榄树冠上。随着镜头继续上抬，那道缝的对面浮出一段极淡的虹——不饱和、边缘被水汽磨得发虚，横跨整片水面，一端没入浑水，另一端落在水雾深处。甲板上抱着膝坐着的几个人只是抬头看着，没有人说话，也没有人跪下。画面最后停在这条弧线与水面之间的空处。',
+    sound: '雨停后的大段安静；风穿过船板缝隙的低啸；远处水面极轻的波纹拍击声；鸽子振翅远去的声音逐渐消失；一段没说完的、悬着的气息',
+    img: 'assets/shot4.png', imgRes: '1376×768', imgHist: 3,
+    video: 'assets/shot4.mp4', vDur: '8.0s', vRes: '864×528', vHist: 1,
+    audio: 'assets/vo4.mp3', aDur: '4.08s'
+  }
+];
+
+/* 波形示意：固定伪随机，保证每次刷新一致 */
+function waveBars(seed, n = 44) {
+  let s = seed * 9301 + 49297, out = [];
+  for (let i = 0; i < n; i++) {
+    s = (s * 9301 + 49297) % 233280;
+    const base = 0.25 + (s / 233280) * 0.7;
+    const env = Math.sin((i / n) * Math.PI) * 0.55 + 0.55;
+    out.push(Math.max(6, Math.round(base * env * 84)));
+  }
+  return out;
+}
+
+let MODE = 'row4';
+let CW = 370;
+
+function cellCols() { return MODE === 'row5' ? 5 : (MODE === 'strip' ? 3 : 4); }
+function rowHeight() {
+  const ch = Math.round(CW * 9 / 16);
+  return MODE === 'strip' ? 16 + ch + 10 + 54 + 16 : 32 + ch;
+}
+
+function cardHTML(s) {
+  return `<div class="cell card" data-shot="${s.n}">
+    <div class="hd"><span class="no">分镜 ${s.n} · ${s.ref}</span><span class="dur">${s.dur}</span></div>
+    <div class="tags"><span class="tag">${s.size}</span><span class="tag grey">${s.move}</span></div>
+    <div class="body">${s.text.replace(/——/g, '——')}</div>
+    <div class="ft"><span>${s.frames}</span><span>旁白 ${s.voice}</span></div>
+  </div>`;
+}
+
+function imgHTML(s) {
+  const hist = s.imgHist ? `<span class="hist">v${s.imgHist + 1} · ${s.imgHist} 历史</span>` : '';
+  return `<div class="cell">
+    <img src="${s.img}" alt="镜 ${s.n} 关键帧" loading="lazy">
+    <span class="chip">关键帧</span>${hist}
+    <span class="corner">${s.imgRes}</span>
+  </div>`;
+}
+
+function missingHTML(label, sub) {
+  return `<div class="cell missing"><div class="plus">+</div>
+    <div class="lab">${label}</div><div class="sub">${sub}</div></div>`;
+}
+
+function videoHTML(s) {
+  const hist = s.vHist ? `<span class="hist">v${s.vHist + 1} · ${s.vHist} 历史</span>` : '';
+  return `<div class="cell">
+    <video src="${s.video}" poster="assets/poster${s.n}.jpg" preload="metadata" playsinline muted loop></video>
+    <div class="playbig"><span>▶</span></div>
+    <span class="chip ok">镜视频 ${s.vDur}</span>${hist}
+    <span class="corner">${s.vRes}</span>
+  </div>`;
+}
+
+function audioHTML(s) {
+  const bars = waveBars(s.n).map(h => `<i style="height:${h}px"></i>`).join('');
+  return `<div class="cell audio" data-audio="${s.audio}" data-n="${s.n}">
+    <div class="hd"><span class="t">配音 · 旁白 ${s.voice}</span><span class="d">${s.aDur}</span></div>
+    <div class="wave">${bars}</div>
+    <div class="ft"><span class="play">▶</span><span>mp3 · 48k</span></div>
+  </div>`;
+}
+
+function stripHTML(s) {
+  const bars = waveBars(s.n + 7, 90).map(h => `<i style="height:${Math.round(h * 0.32)}px"></i>`).join('');
+  return `<div class="strip" data-audio="${s.audio}" data-n="${s.n}">
+    <span class="play">▶</span>
+    <span style="font-size:11px;color:#cfd4d2;white-space:nowrap">配音 · 旁白 ${s.voice}</span>
+    <div class="wave" style="height:28px;flex:1">${bars}</div>
+    <span style="font:10px/1 ui-monospace,monospace;color:#6b7078;white-space:nowrap">${s.aDur}</span>
+  </div>`;
+}
+
+function render() {
+  document.documentElement.style.setProperty('--cell-w', CW + 'px');
+  document.documentElement.style.setProperty('--cell-h', Math.round(CW * 9 / 16) + 'px');
+  document.documentElement.style.setProperty('--cols', cellCols());
+
+  document.getElementById('rows').innerHTML = SHOTS.map(s => {
+    const cells = [cardHTML(s), imgHTML(s)];
+    if (MODE === 'row5') cells.push(missingHTML('末帧', '待生成'));
+    cells.push(videoHTML(s));
+    if (MODE !== 'strip') cells.push(audioHTML(s));
+    return `<article class="row${MODE === 'strip' ? ' audio-strip' : ''}">
+      <div class="cells">${cells.join('')}</div>
+      ${MODE === 'strip' ? stripHTML(s) : ''}
+    </article>`;
+  }).join('');
+
+  const cols = cellCols();
+  const w = cols * CW + (cols - 1) * 24 + 32;
+  const h = rowHeight();
+  document.getElementById('mw').textContent = w;
+  document.getElementById('mh').textContent = h;
+  document.getElementById('mt').textContent = h * 4 + 24 * 3;
+  const fit = document.getElementById('mfit');
+  if (w > 1600) { fit.className = 'warn'; fit.textContent = `超视口 ${w - 1600}px`; }
+  else { fit.className = ''; fit.textContent = `视口余 ${1600 - w}px`; }
+  document.getElementById('cwv').textContent = CW;
+  document.getElementById('seccount').textContent = `4 镜 · ${4 * cols} 卡`;
+
+  document.getElementById('viewport-line').style.left = (20 + 1600) + 'px';
+  bind();
+}
+
+function bind() {
+  document.querySelectorAll('.card').forEach(el => {
+    el.onclick = () => openSheet(Number(el.dataset.shot));
+  });
+  document.querySelectorAll('video').forEach(v => {
+    v.onclick = () => { v.paused ? v.play() : v.pause(); };
+    v.onmouseenter = () => v.play().catch(() => {});
+    v.onmouseleave = () => { v.pause(); v.currentTime = 0; };
+  });
+  document.querySelectorAll('[data-audio]').forEach(el => {
+    el.onclick = () => {
+      const a = el.dataset.audio;
+      if (current && current.src.endsWith(a)) { current.pause(); current = null; return; }
+      if (current) current.pause();
+      current = new Audio(a);
+      current.play().catch(() => {});
+    };
+  });
+}
+
+let current = null;
+
+function openSheet(n) {
+  const s = SHOTS.find(x => x.n === n);
+  document.getElementById('sh-title').textContent = `分镜 ${s.n} · ${s.ref} · ${s.scene}`;
+  document.getElementById('sh-body').innerHTML = `
+    <h4>景别与运镜</h4><p>${s.size} · ${s.move}<br>${s.dur} · ${s.frames}</p>
+    <h4>画面</h4><p>${s.text}</p>
+    <h4>声音设计</h4><p>${s.sound}</p>
+    <h4>本镜素材</h4><p>关键帧 ${s.imgRes}${s.imgHist ? `（含 ${s.imgHist} 个历史版本）` : ''}<br>
+      镜视频 ${s.vDur} · ${s.vRes}${s.vHist ? `（含 ${s.vHist} 个历史版本）` : ''}<br>
+      配音 ${s.aDur} · 旁白 ${s.voice}</p>`;
+  document.getElementById('sheet').classList.add('open');
+}
+
+document.getElementById('sh-close').onclick = () => document.getElementById('sheet').classList.remove('open');
+document.getElementById('mode').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  MODE = b.dataset.m;
+  [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+};
+document.getElementById('cw').oninput = e => { CW = Number(e.target.value); render(); };
+document.getElementById('vp').onchange = e => document.body.classList.toggle('show-vp', e.target.checked);
+
+/* URL 参数：?mode=row4|row5|strip&w=380&vp=1 —— 便于直接开某个方案 */
+const q = new URLSearchParams(location.search);
+if (q.get('mode') && ['row4','row5','strip'].includes(q.get('mode'))) {
+  MODE = q.get('mode');
+  [...document.getElementById('mode').children].forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.m === MODE)));
+}
+if (q.get('w')) { CW = Number(q.get('w')); document.getElementById('cw').value = CW; }
+if (q.get('vp') === '1') { document.getElementById('vp').checked = true; document.body.classList.add('show-vp'); }
+
+render();
+</script>
+</body>
+</html>

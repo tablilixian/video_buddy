@@ -24,6 +24,9 @@ export interface WaterfallStatusBarProps {
   stats: WaterfallStats
   /** 非空节（chips 数据源，布局产出顺序）。 */
   sections: readonly WaterfallSection[]
+  /** 镜数（= 布局产出的托盘数，渲染层派生）。REQ-036 一行一镜（2026-11-24）：
+   *  分镜 chip 不再显示 `done/total`（节点数会被读成「N 个分镜」），改显示镜数。 */
+  shotCount: number
   /** 活动行文案（布局产出；null = 空闲）。 */
   activity: string | null
   /** 「文本类」开关现值（view.waterfallShowText）。 */
@@ -48,7 +51,7 @@ function chipStateClass(section: WaterfallSection): string {
 }
 
 export function WaterfallStatusBar(props: WaterfallStatusBarProps): ReactElement {
-  const { stats, sections, activity, showText, showAuxiliary, followNew, onToggleShowText, onToggleShowAuxiliary, onToggleFollow, onRevealSection } = props
+  const { stats, sections, shotCount, activity, showText, showAuxiliary, followNew, onToggleShowText, onToggleShowAuxiliary, onToggleFollow, onRevealSection } = props
   const pct = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0
   return (
     <div className="csWfBar">
@@ -102,7 +105,9 @@ export function WaterfallStatusBar(props: WaterfallStatusBarProps): ReactElement
               onClick={() => { onRevealSection(section.stage) }}
             >
               <span className="csWfBarDot" aria-hidden="true" />
-              {section.title} {section.stats.done}/{section.stats.total}
+              {/* 分镜 chip 说「镜」，其余节仍说 done/total（REQ-036 §4.8：同一个词
+                  「分镜」在故事板里指场数，这里若继续打节点数会被读成镜数）。 */}
+              {section.stage === 'shots' ? `${section.title} ${shotCount} 镜` : `${section.title} ${section.stats.done}/${section.stats.total}`}
             </button>
           ))}
         </div>

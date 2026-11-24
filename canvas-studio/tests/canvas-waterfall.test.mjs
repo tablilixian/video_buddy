@@ -80,9 +80,10 @@ test('REQ-036 分镜托盘：同镜聚合、镜号升序、卡为头、镜内产
   assert.deepEqual(layout.trays.map(tray => tray.shot), [1, 2], '镜号升序')
   assert.equal(trayOf(layout, 1).cardId, 'card1', '镜 1 卡为头')
   assert.equal(trayOf(layout, 2).cardId, 'card2', '镜 2 卡为头')
-  // 镜内产物按 role：关键帧 → 视频 → 末帧 → 配音（卡在头部不算格）。
+  // 镜内产物按 role：关键帧 → 视频 → 末帧 → 配音（卡为第一格，参与同一次排序）。
   const tray2Ids = trayOf(layout, 2).nodeIds
   const idx = (id) => tray2Ids.indexOf(id)
+  assert.equal(tray2Ids[0], 'card2', '卡是第一格（不再是头带）')
   assert.ok(idx('kf2') < idx('video2'), '关键帧在视频前')
   assert.ok(idx('video2') < idx('frame2'), '视频在末帧前')
   assert.ok(idx('frame2') < idx('voice2'), '末帧在配音前')
@@ -90,8 +91,54 @@ test('REQ-036 分镜托盘：同镜聚合、镜号升序、卡为头、镜内产
   assert.ok(layout.boxes.get('kf2').y < layout.boxes.get('video2').y
     || (layout.boxes.get('kf2').y === layout.boxes.get('video2').y
       && layout.boxes.get('kf2').x < layout.boxes.get('video2').x), '网格次序可读')
-  // 卡的盒子 = 托盘头部区（高 = TRAY_HEAD_H 语义：比缩略格矮）。
-  assert.ok(layout.boxes.get('card2').height < layout.boxes.get('kf2').height, '卡为扁头部')
+  // REQ-036 一行一镜（2026-11-24）：卡与媒体同高（TRAY_HEAD_H 已退役），与同镜视频同 y。
+  assert.equal(layout.boxes.get('card2').height, layout.boxes.get('kf2').height, '卡与媒体等高')
+  assert.equal(layout.boxes.get('card2').height, Math.round(360 * 9 / 16), '卡高 = 媒体 16:9 格高')
+  assert.equal(layout.boxes.get('card2').y, layout.boxes.get('video2').y, '卡与视频同排')
+})
+
+test('REQ-036 一行一镜：卡在网格首格、同排同 y 且 x 递增；行框宽统一到节宽、高 = PAD*2 + cellH', () => {
+  // 2026-11-24 用户拍板：分镜节从「每镜一个扁头带 + 产物竖排」改成一行一镜的行式表格。
+  const cellW = 380
+  const card1 = cardNode('card1', 1)
+  const kf1 = node('kf1', { toolName: 'image_generate', sourceIds: ['card1'], createdAt: 1 })
+  const video1 = videoNode('video1', { sourceIds: ['card1'], createdAt: 2 })
+  const voice1 = node('voice1', { kind: 'audio', toolName: 'tts_voiceover', sourceIds: ['card1'], createdAt: 3 })
+  // 镜 2 只有卡 + 一条视频 —— 产物少的镜，行框宽度不许缩回内容宽（否则细长条重现）。
+  const card2 = cardNode('card2', 2)
+  const video2 = videoNode('video2', { sourceIds: ['card2'], createdAt: 4 })
+  const layout = computeWaterfallLayout([card1, kf1, video1, voice1, card2, video2], { thumbWidth: cellW })
+  const pos = (id) => layout.positions.get(id)
+
+  assert.deepEqual([...trayOf(layout, 1).nodeIds], ['card1', 'kf1', 'video1', 'voice1'], '格序：卡 → 关键帧 → 视频 → 配音')
+  assert.equal(pos('card1').y, pos('kf1').y, '卡与关键帧同一排')
+  assert.equal(pos('card1').y, pos('video1').y, '卡与同镜视频同一 y（不再是头带 + 网格两段）')
+  assert.ok(pos('card1').x < pos('kf1').x && pos('kf1').x < pos('video1').x, 'x 递增：卡 < 帧 < 视频')
+
+  const cellH = Math.round(cellW * 9 / 16)
+  const sectionWidth = 4 * cellW + 3 * 24 + 32
+  const tray1 = trayOf(layout, 1)
+  const tray2 = trayOf(layout, 2)
+  assert.equal(tray1.box.width, sectionWidth, '4 格行 = 节宽（1624 @380 档）')
+  assert.equal(tray2.box.width, sectionWidth, '2 格行也铺到节宽（不从内容缩）')
+  assert.equal(tray1.box.height, 32 + cellH, '行高 = PAD*2 + cellH = 246')
+  assert.equal(tray2.box.height, 32 + cellH, '单排行等高')
+  assert.equal(layout.boxes.get('card1').height, cellH, '卡与媒体等高（TRAY_HEAD_H 退役）')
+
+  // 配音是行内普通格：宽 = cellW（不再是托盘内宽），盒高仍给足固有 168 并居中。
+  assert.equal(layout.boxes.get('voice1').width, cellW, '配音格宽 = cellW')
+  assert.equal(layout.boxes.get('voice1').height, 168, '配音盒高 = 168（卡内部布局不动）')
+  assert.ok(layout.boxes.get('voice1').y > layout.boxes.get('video1').y, '168 居中在 214 的媒体排里')
+
+  // 第 5 件折到**同一行框内**的第二排，行框随之变高（一行=一镜不破）。
+  const frame1 = node('frame1', { toolName: 'extract_last_frame', sourceIds: ['video1'] })
+  const five = computeWaterfallLayout([card1, kf1, video1, voice1, frame1], { showAuxiliary: true, thumbWidth: cellW })
+  const folded = trayOf(five, 1)
+  assert.equal(folded.nodeIds.length, 5, '5 件仍属同一个托盘的成员')
+  assert.equal(five.positions.get('frame1').y, five.positions.get('card1').y, '第 4 件仍在第一排')
+  assert.ok(five.positions.get('voice1').y > five.positions.get('card1').y, '第 5 件落到第二排')
+  assert.ok(five.boxes.get('voice1').y + 168 <= folded.box.y + folded.box.height, '第二排仍在行框内')
+  assert.ok(folded.box.height > tray1.box.height, '折行后行框变高（不强制等高）')
 })
 
 test('REQ-036 血缘消费：视频←卡、末帧←视频、绑镜图是关键帧（共享语义的一份实现）', () => {
@@ -200,7 +247,13 @@ test('REQ-036 音频格高：瀑布流盒高给足音频卡固有高度 168，�
   const card = cardNode('card1', 1)
   const layout = computeWaterfallLayout([bgm, card, voice])
   assert.equal(layout.boxes.get('bgm').height, 168, '音频节网格格高 = 168')
-  assert.equal(layout.boxes.get('voice').height, 168, '托盘内音频整行高 = 168')
+  // REQ-036 一行一镜（2026-11-24）：配音是行内普通格，格宽 = cellW（不再铺满内宽），
+  // 盒高仍给足固有 168 —— 落在媒体排（203）里纵向居中，卡内部布局不动。
+  assert.equal(layout.boxes.get('voice').width, 360, '托盘内配音格宽 = cellW')
+  assert.equal(layout.boxes.get('voice').height, 168, '托盘内配音盒高 = 168（居中在媒体排里）')
+  const tray = trayOf(layout, 1)
+  assert.ok(layout.boxes.get('voice').y > layout.boxes.get('card1').y, '居中：比同排媒体格低一点')
+  assert.ok(layout.boxes.get('voice').y + 168 < tray.box.y + tray.box.height, '配音仍在行框内')
 })
 
 test('REQ-036 纯度：入参不被修改；空输入返回空布局', () => {

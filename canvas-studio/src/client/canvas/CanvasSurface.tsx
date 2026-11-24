@@ -1284,6 +1284,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     return projected
   }, [waterfallLayout, ordered])
+  // REQ-036 一行一镜（2026-11-24）：「分镜 8/8」的 8 是**节点数**，与故事板里的
+  // 「分镜」= 场数不同口径，会被读成「8 个分镜」。计数文案改双口径：镜数 = 托盘数
+  // （渲染层从 trays 派生，布局输出契约不加字段），卡数 = 节内节点数。
+  const waterfallShotCount = waterfallLayout?.trays.length ?? 0
   // ref 容器与 layoutTargets 在上方（viewRef 旁）声明 —— 这里只做渲染期回填。
   waterfallNodesRef.current = waterfallNodes
   // REQ-036 P1：进入历程视图时适配一次内容（投影盒为界）；退出不劫持视口，
@@ -1652,7 +1656,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               pointerEvents: 'none',
             }}
           >
-            {section.title} · {section.stats.done}/{section.stats.total}
+            {section.stage === 'shots'
+              ? `${section.title} · ${waterfallShotCount} 镜 · ${section.stats.total} 卡`
+              : `${section.title} · ${section.stats.done}/${section.stats.total}`}
             {section.stats.running > 0 ? ' · 生成中' : ''}
             {section.stats.failed > 0 ? ` · ${section.stats.failed} 失败` : ''}
           </div>
@@ -1752,27 +1758,35 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </span>
         ))}
         {/* REQ-036：历程模式下托盘「镜 N」角标 —— 复用 csShotChip 胶囊样式。
-            位置 = 托盘框**右上**（translateX(-100%) 右缘对齐框内缘）：头卡 chrome
-            标题在左（真机标题五花八门，压角必遮字 —— CV-252 的教训在这里重现），
-            右端恒空旷；不挂框外顶部（托盘间距 24px 不够 chip 高度）。 */}
-        {waterfallOn && waterfallLayout?.trays.map(tray => (
-          <span
-            key={`wf-tray-chip-${tray.shot}`}
-            aria-hidden
-            className="csShotChip"
-            style={{
-              position: 'absolute',
-              left: tray.box.x + tray.box.width - 8,
-              top: tray.box.y + 3,
-              transform: 'translateX(-100%)',
-              pointerEvents: 'none',
-            }}
-          >
-            镜 {tray.shot} · {tray.stats.done}/{tray.stats.total}
-            {tray.stats.running > 0 ? ' · 生成中' : ''}
-            {tray.stats.failed > 0 ? ` · ${tray.stats.failed} 失败` : ''}
-          </span>
-        ))}
+            位置 = 行框内**最后一个格的右边界**（REQ-036 一行一镜 2026-11-24：行框
+            宽度统一到节宽后，贴 `box.x + box.width` 会甩到内容右侧的大片留白里）。
+            纵向仍在行框顶（第一格上方 16px 内边距带）；行内取不到格位时兜底贴框内缘。 */}
+        {waterfallOn && waterfallLayout?.trays.map(tray => {
+          let lastCellRight = 0
+          for (const id of tray.nodeIds) {
+            const cell = waterfallLayout.boxes.get(id)
+            if (cell !== undefined) lastCellRight = Math.max(lastCellRight, cell.x + cell.width)
+          }
+          const anchorRight = lastCellRight > 0 ? lastCellRight : tray.box.x + tray.box.width - 8
+          return (
+            <span
+              key={`wf-tray-chip-${tray.shot}`}
+              aria-hidden
+              className="csShotChip"
+              style={{
+                position: 'absolute',
+                left: anchorRight - 8,
+                top: tray.box.y + 3,
+                transform: 'translateX(-100%)',
+                pointerEvents: 'none',
+              }}
+            >
+              镜 {tray.shot} · {tray.stats.done}/{tray.stats.total}
+              {tray.stats.running > 0 ? ' · 生成中' : ''}
+              {tray.stats.failed > 0 ? ` · ${tray.stats.failed} 失败` : ''}
+            </span>
+          )
+        })}
         {linkLine !== null && (
           <svg className="csEdges" width={1} height={1}>
             {/* CV-038：起草线与正式边共用同一条贝塞尔，落定前后不再跳变。 */}
@@ -1791,6 +1805,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         <WaterfallStatusBar
           stats={waterfallLayout.stats}
           sections={waterfallLayout.sections}
+          shotCount={waterfallShotCount}
           activity={waterfallLayout.activity}
           showText={view.waterfallShowText === true}
           showAuxiliary={showAuxiliaryProp}

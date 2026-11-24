@@ -3389,6 +3389,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
       description:
         '生成配音（**CV-271 占位升真**：Drama txt2speech / VoxCPM2）——把一段文本合成语音，音频节点自动落画布。'
         + '⚠️ **反判据（REQ-017）**：要画面里的角色开口说这句话（对白，要口型）→ **不要用本工具**，把 `<d>[语言]原话</d>` 写进视频提示词（h3-prompt-writing），角色原生说出口；本工具产的是独立配音音频（旁白/画外音/配音资产），进不了口型。'
+        + '**这句话属于某一镜时必须传 `shotRefs`**（「分镜 N · 景别」标题 / 「分镜 N」镜号 / 节点 id）：配音按镜绑定后才会进该镜那一行（历程视图「一行一镜」的配音格、排在该镜视频之后）；不绑就只落「音频」节，用户会看到「这镜没有配音」。**只有整片通铺、不属于任何单镜的旁白才不传**——拿不准就传。'
         + '**instruct_prompt 声音设计**用自然语言写（语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言，支持 30 种语言 + 9 种中文方言，如「60岁女人笑着说，慢速，四川话」）；'
         + '写法见技能 voiceover-writing——写配音前先加载它。'
         + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'
@@ -3409,13 +3410,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         replaces: { type: 'string' as const, description: '可选：要重配的已有音频节点 id —— 传入后**原地重写**该节点（保留节点位置与血缘，替换音频与文本），不堆新卡；改词重配时应传' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
         sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集）' },
+        shotRefs: { type: 'array' as const, description: '可选：**这句配音属于哪一镜**（「分镜 N · 景别」标题、「分镜 N」镜号、sbRef 里的镜号「S1-Sh1」，或节点 id）—— 来自分镜提交的工具结果。传了画布就把配音并进该镜（历程视图一行一镜里排在镜视频之后）；镜内旁白/台词/画外音都应传，整片通铺旁白才不传' },
       },
       output: { schema: speechResultSchema, render: renderSpeechResult },
       async execute(args, exec) {
-        const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; speed?: number; pitchSemitones?: number; sourceUrls?: string[]; sourceNodeIds?: string[] }
+        const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; speed?: number; pitchSemitones?: number; sourceUrls?: string[]; sourceNodeIds?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'tts_voiceover', false)
         const refaudio = a.refaudio !== undefined ? await resolveRefValue(registry, projectId, a.refaudio, library, 'audio') : undefined
+        // D-08（2026-11-24）：配音**没有**绑镜入口是真缺陷 —— 图片/视频都有 shotRefs，
+        // 唯独配音只能靠 sourceUrls / sourceNodeIds 自己拼，模型无从知道「这句属于哪一镜」
+        // ⇒ 4 条旁白全部留在「音频」节，历程视图的镜行永远缺配音格。
+        // 与出图/出片同一条通道：`resolveShotRefs` 把「分镜 2」这类写法解析成卡节点 id，
+        // 交给 generateSpeech 并入 sourceIds（绑镜语义单列一支，见 SpeechParams.shotNodeIds）。
+        // 解析失败直接抛（`CS-USER-ERR`）—— 静默丢绑镜会让缺陷以「查不出原因」的形态复现。
+        const shotNodeIds = Array.isArray(a.shotRefs) && a.shotRefs.length > 0
+          ? await resolveShotRefs(registry, projectId, a.shotRefs)
+          : []
         return generateSpeech(registry, projectId, {
           text: a.text,
           ...(a.instructPrompt !== undefined ? { instructPrompt: a.instructPrompt } : {}),
@@ -3425,6 +3436,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(a.replaces !== undefined ? { retryOf: a.replaces } : {}),
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
+          ...(shotNodeIds.length > 0 ? { shotNodeIds } : {}),
         }, exec.signal)
       },
     }),

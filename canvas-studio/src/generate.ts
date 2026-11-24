@@ -3797,6 +3797,13 @@ export interface SpeechParams {
   sourceUrls?: string[]
   /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
   sourceNodeIds?: string[]
+  /**
+   * D-08（2026-11-24）：**显式绑镜声明** —— 调用方（`tts_voiceover` 的 `shotRefs`）已经
+   * `resolveShotRefs` 解析成**分镜卡节点 id**。落血缘的语义与 sourceNodeIds 相同，单列
+   * 一支只为两件事：① 「这句属于哪一镜」是设计声明，与「泛指来源」区分开；
+   * ② 落盘时写进 `generationPrompt.shotNodeIds`，审计/重放能看清当初声明的哪一镜。
+   */
+  shotNodeIds?: string[]
   /** CV-195：节点级重试的原地重写目标（节点 id）。只由 `generateAsset` 的重放适配传入。 */
   retryOf?: string
 }
@@ -3900,10 +3907,21 @@ export async function generateSpeech(
   const produced = await downloadBusinessMedia(final, { label: '配音', ...(signal !== undefined ? { signal } : {}) })
   const canvas = await registry.readCanvas(projectId)
   let sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
-  if (Array.isArray(params.sourceNodeIds) && params.sourceNodeIds.length > 0) {
+  // 显式声明两支同权：`shotNodeIds`（绑镜）与 `sourceNodeIds`（泛指来源）一起并入，
+  // 去重后过滤指向已删节点的幽灵 id（与 music_generation 同口径）。
+  const declaredIds = [...new Set([...(params.shotNodeIds ?? []), ...(params.sourceNodeIds ?? [])])]
+  if (declaredIds.length > 0) {
     const validIds = new Set(canvas.nodes.map(n => n.id))
-    sourceIds = mergeSourceIds(sourceIds, params.sourceNodeIds.filter(id => validIds.has(id)))
+    sourceIds = mergeSourceIds(sourceIds, declaredIds.filter(id => validIds.has(id)))
   }
+  // D-08（2026-11-24）：绑镜的**显式声明**随节点落盘 —— 与出图/出片同口径
+  // （`generationPrompt.shotNodeIds`，见 shot-versions.ts `shotAnchorCardsOf`）。
+  // 只用来看「这条配音当初声明的哪一镜」，**不进请求体**（后端没有该字段）。
+  const generationPrompt = JSON.stringify(
+    params.shotNodeIds !== undefined && params.shotNodeIds.length > 0
+      ? { ...body, shotNodeIds: params.shotNodeIds }
+      : body,
+  )
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   // 迁移 B3-2：产物字节已在分支内经 content 端点下载。
@@ -3954,9 +3972,16 @@ export async function generateSpeech(
     origin: 'agent',
     sourceIds,
     operationType: 'text-to-audio',
-    generationPrompt: JSON.stringify(body),
+    generationPrompt,
   }
   if (params.retryOf !== undefined) {
+    // D-08：改词重配时若**显式绑了镜**，把分镜卡并进既有血缘 —— 是「补上」不是「覆盖」：
+    // 旧血缘里可能还连着关键帧/参考图，直接换成新的会莫名断掉用户已经看到的连线。
+    // 没绑镜则一个血缘字段都不动（存量节点重配行为完全不变）。
+    const previous = canvas.nodes.find(entry => entry.id === params.retryOf)
+    const retrySourceIds = params.shotNodeIds !== undefined && params.shotNodeIds.length > 0
+      ? mergeSourceIds(previous?.sourceIds ?? [], sourceIds)
+      : undefined
     await overwriteNodeAsset(registry, projectId, params.retryOf, {
       url,
       ...(probedDuration > 0 ? { duration: probedDuration } : {}),
@@ -3964,7 +3989,8 @@ export async function generateSpeech(
       toolName: 'tts_voiceover',
       generationId: final.id,
       operationType: 'text-to-audio',
-      generationPrompt: JSON.stringify(body),
+      generationPrompt,
+      ...(retrySourceIds !== undefined ? { sourceIds: retrySourceIds } : {}),
     })
   } else {
     await registry.appendCanvasNode(projectId, node)

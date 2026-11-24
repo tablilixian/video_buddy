@@ -317,30 +317,87 @@ export function parseEbur128IntegratedLufs(stderr: string): number | undefined {
 }
 
 /**
- * 探测一个**本地媒体文件**的综合响度（ITU-R BS.1770 integrated LUFS）。
+ * 从 `ffmpeg -af ebur128=peak=true` 的 stderr 解析**真峰**（True peak, dBTP）。
  *
- * Q1 响度闸的数据源：复刻 / 广告片场景里响度直接决定观感对齐（甜品复刻会话实测：
- * 成片 -15.3 LUFS vs 原片 -11.4，无人发现）。**绝不抛错**：无声 / ffmpeg 不可用 /
- * 解析失败一律返回 `undefined`，由调用方按「未测得」跳过。
+ * 输出形状（ffmpeg 6/7 实测，2026-11-24 本机 `sine` + volume 样本）：
  *
- * 成本：完整解码一遍音轨（15s 片 ≈ 亚秒级），只在有音轨的成片上调用。
+ * ```
+ *   True peak:
+ *     Peak:      -27.1 dBFS
+ * ```
+ *
+ * 三个坑：① 实时行里有 `TPK: -27.1 -27.1 dBFS`（每声道两个值），**不能**在全文里
+ * 找第一个 `Peak:`/`TPK:`；② `LRA low: / LRA high:` 也在 Summary 里，但它们不是
+ * `Peak:`；③ 静音时输出 `Peak: -inf dBFS`，`Number('-inf')` 为 NaN ⇒ 按未测得处理。
+ * 因此锚定**最后一个 `True peak:` 段**，只在其后取 `Peak:` 行。
  */
+export function parseEbur128TruePeakDbtp(stderr: string): number | undefined {
+  const anchor = stderr.lastIndexOf('True peak:')
+  if (anchor < 0) return undefined
+  const match = /^\s*Peak:\s+(-?\d+(?:\.\d+)?)\s+dBFS\s*$/mu.exec(stderr.slice(anchor))
+  if (match === null) return undefined
+  const value = Number(match[1])
+  return Number.isFinite(value) ? value : undefined
+}
+
+/** 一次 ebur128 解码能拿到的全部响度结论（缺字段 = 该项未测得，不是 0）。 */
+export interface LoudnessProbeResult {
+  /** 产物是否真有音轨（`ffmpeg -i` 的 `Audio:` 行）。无音轨时另两项必然缺省。 */
+  hasAudio: boolean
+  /** 综合响度（ITU-R BS.1770 integrated LUFS）。 */
+  lufs?: number
+  /** 真峰（dBTP；ffmpeg 报的是相对满刻度的 dBFS，数值口径与 dBTP 一致）。 */
+  truePeakDbtp?: number
+}
+
+/**
+ * 探测一个**本地媒体文件**的响度：有无音轨 + 综合 LUFS + 真峰。
+ *
+ * Q1 响度闸 / A1 交付闸的数据源：复刻 / 广告片场景里响度直接决定观感对齐（甜品复刻
+ * 会话实测：成片 -15.3 LUFS vs 原片 -11.4，无人发现）；A1 另需真峰判削波（`-1.5 dBTP`
+ * 上限，削波不可逆）。**绝不抛错**：ffmpeg 不可用 / 解码失败一律返回空结论（`hasAudio`
+ * 也报 true —— 因为「测不到」不等于「没有」，别把环境问题判成废片），由调用方按
+ * 「未测得」跳过。
+ *
+ * 为什么先单跑一次 `ffmpeg -i`：无音轨的产物跑 ebur128 会白解码一遍视频再报错；
+ * `-i` 不解码、几十毫秒，先把「本来就没有音轨」这件事判掉。
+ *
+ * 成本：完整解码一遍音轨（15s 片 ≈ 亚秒级）。`peak=true` 比 `peak=none` 多一次真峰
+ * 重采样，仍在同一遍解码里，不额外跑 ffmpeg。
+ */
+export async function probeLoudness(
+  path: string,
+  ffmpegPath?: string,
+  signal?: AbortSignal,
+): Promise<LoudnessProbeResult> {
+  try {
+    const resolved = resolveFfmpegPath(ffmpegPath)
+    const head = await runFfmpeg(resolved, ['-i', path], FFMPEG_TIMEOUT_MS, signal)
+    if (!parseFfmpegStreams(head.stderr).hasAudio) return { hasAudio: false }
+    // `-vn` 跳过视频解码（只解码音轨）。
+    const probe = await runFfmpeg(
+      resolved,
+      ['-i', path, '-vn', '-af', 'ebur128=peak=true', '-f', 'null', '-'],
+      FFMPEG_TIMEOUT_MS,
+      signal,
+    )
+    const lufs = parseEbur128IntegratedLufs(probe.stderr)
+    const truePeakDbtp = parseEbur128TruePeakDbtp(probe.stderr)
+    return {
+      hasAudio: true,
+      ...(lufs !== undefined ? { lufs } : {}),
+      ...(truePeakDbtp !== undefined ? { truePeakDbtp } : {}),
+    }
+  } catch {
+    return { hasAudio: true }
+  }
+}
+
+/** 只要综合响度时的薄封装（既有调用点与测试共用同一实现，不另跑一遍 ffmpeg）。 */
 export async function probeLoudnessLufs(
   path: string,
   ffmpegPath?: string,
   signal?: AbortSignal,
 ): Promise<number | undefined> {
-  try {
-    const resolved = resolveFfmpegPath(ffmpegPath)
-    // `-vn` 跳过视频解码（只解码音轨）；无音轨时 ffmpeg 报错退出 ⇒ catch 返回 undefined。
-    const probe = await runFfmpeg(
-      resolved,
-      ['-i', path, '-vn', '-af', 'ebur128=peak=none', '-f', 'null', '-'],
-      FFMPEG_TIMEOUT_MS,
-      signal,
-    )
-    return parseEbur128IntegratedLufs(probe.stderr)
-  } catch {
-    return undefined
-  }
+  return (await probeLoudness(path, ffmpegPath, signal)).lufs
 }

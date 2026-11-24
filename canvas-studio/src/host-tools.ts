@@ -41,7 +41,7 @@ import { readProjectSpec, runShotRender } from './shot-render.js'
 import { sampleSegmentFrame } from './shot-frames.js'
 import type { SegmentPointer } from './segment-artifacts.js'
 import { concatShots } from './shot-concat.js'
-import { probeMediaInfo } from './ffmpeg-run.js'
+import { probeLoudness, probeMediaInfo } from './ffmpeg-run.js'
 import { saveLocalAssetBytes } from './generate.js'
 import { sessionKeyOf } from './tool-error-boundary.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
@@ -4059,9 +4059,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             const anchor = readAnchorState(registry.projectDir(projectId))
             const project = await registry.getProject(projectId)
             const target = typeof project?.plan?.targetDuration === 'number' ? project.plan.targetDuration : null
+            const finalSource = resolveAssetPathIn(registry.assetsDir(projectId), job.assetFile)
+            // A1（2026-11-24）：交付前实测成片响度 + 真峰 + 有无音轨。
+            // 为什么在这里量：`media-probe` 早就把 lufs 测出来了，却只写进拆解表、从没
+            // 拿它做阈值判断 —— 2026-11-04 科普 0.1 那次「TTS −27 LUFS → 成片 −22 → 
+            // loudnorm 重混 → −14，自检全绿但片子是废的」缺的就是这一行判断。
+            // probe 绝不抛；失败即「未测得」（卡里单列 unmeasured，不当成合格）。
+            const loudnessProbe = await probeLoudness(finalSource)
             delivery = writeDeliverable({
               projectDir: registry.projectDir(projectId),
-              sourceFile: resolveAssetPathIn(registry.assetsDir(projectId), job.assetFile),
+              sourceFile: finalSource,
               url: job.url,
               assetFile: job.assetFile,
               nodeId: composedNode?.id ?? null,
@@ -4075,6 +4082,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               anchorVersion: anchor.versions.at(-1)?.version ?? null,
               targetDurationSec: target,
               openIssues: anchor.openIssues ?? null,
+              // A1：`expectsAudio` 取自这次渲染**声明**的音轨构成（'none' = 本来就无声片）。
+              // 声明有轨而实测无轨是真矛盾（旁白/BGM 全丢），那是硬 blocker；判定全在
+              // deliverable.ts 的 evaluateLoudnessGate（纯函数，可反向变异）。
+              loudness: {
+                lufs: loudnessProbe.lufs ?? null,
+                truePeakDbtp: loudnessProbe.truePeakDbtp ?? null,
+                hasAudio: loudnessProbe.hasAudio,
+                expectsAudio: audioComposition !== 'none',
+              },
               // R11-B2：段产物清单进卡 —— 压缩丢上下文后，磁盘上的卡才是「哪一段是哪个
               // 文件」的唯一答案（只在回执里说一次等于一次性信息）。
               ...(shotPointers.length > 0 ? { segments: shotPointers } : {}),
@@ -4088,6 +4104,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               deliveredWithGaps: false,
               durationMismatch: false,
               deltaSec: null,
+              rejected: false,
+              finalIsStale: false,
+              loudness: null,
               note: `权威交付前置读取失败（成片不受影响）：${cause instanceof Error ? cause.message : String(cause)}`,
             }
           }

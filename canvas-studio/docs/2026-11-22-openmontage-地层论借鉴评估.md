@@ -109,6 +109,13 @@ OpenMontage 的产物是「一个目录 + 一份发布包」，人通过终端�
 
 #### A1 · 交付阈值闸
 
+> **✅ 已落地（2026-11-24，待真机验收）** —— `deliverable.ts` 新增纯函数 `evaluateLoudnessGate`
+> + card.json 的 `verdict` / `loudnessCheck` 两段；`ffmpeg-run.ts` 的 `probeLoudness` 一次解码
+> 同时出 LUFS 与真峰（`ebur128=peak=true`）；交付调用点在 `host-tools.ts` 落盘前实测成片。
+> 判据分级按**可不可逆**：真峰 > −1.5 dBTP、声明有轨而实测无轨 = 硬拒收（不覆盖 final.mp4，
+> 卡照写并标 `finalIsStale`）；响度超 −16±2 只标注（loudnorm 能修）。**首尾静音那一条没做**
+> （评估里本就标「只标注不拒收」，最低价值，留给后续）。测试 `tests/deliver-loudness-gate.test.mjs`。
+
 **现状证据**：`media-probe.ts:47-49` 已经在量 `lufs`（ITU-R BS.1770 integrated），量不到还分了两种人话原因（`'无音轨'` / `'ebur128 测量失败'`，见 :150-155）。但这个值在 `src` 里只有两个消费者：`storyboard-render.ts:454` 把它**写进拆解表**，`storyboard-diff.ts:216` 把它**做前后对比**。**没有任何一处拿它做阈值判断。**
 
 **这不是理论风险，已经付过学费**：`docs/2026-11-04-科普0.1验收分析报告.md:263` 记录的同一次事故——TTS 素材仅 −27 LUFS → 成片 −22.0 LUFS → 整体 loudnorm 到 −16 后重混 → 最终 −14.0。整个过程自检全过。

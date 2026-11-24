@@ -14,6 +14,7 @@
 import { DramaClient, ApiError, type CatalogModel, type CreditBalance, type CreditLedgerEntry } from './drama-management.js'
 import { getAuthSession } from './auth-session.js'
 import { quoteFingerprint, quoteRequestFor } from './credit-quote.js'
+import { ageDaysOf, breakdownOf, estimatePrice, loadPriceTable } from './price-table.js'
 import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams, GenerationSpendView } from './contracts/account.js'
 
 /** 目录缓存 TTL（毫秒）。 */
@@ -381,14 +382,18 @@ export async function generationSpend(ids: readonly string[]): Promise<Generatio
 // 报价是**纯计算**（不建任务、不冻结），所以不需要登录态以外的状态机；但它会被
 // 「拖时长滑块」「连续改档位」高频触发，所以要有缓存与在飞去重。缓存键是计价
 // 指纹（不含 prompt，见 `credit-quote.ts`）——同一指纹 5 分钟内直接返回。
+//
+// 拿不到 quote 时**不返回「不知道」**，而是用本地价目表算一个近似值并标
+// `source: 'table'`（B2 离线兜底）。展示优先级恒为 quote > 表推算（标「约」）> —。
 interface QuoteCacheEntry {
-  readonly credits: number
-  readonly model: string
-  readonly operation: string
+  /** 服务端报价结果（**只缓存 `source: 'quote'`**，理由见 `fallback` 的注释）。 */
+  readonly view: AccountQuoteView
   readonly at: number
 }
 const quoteCache = new Map<string, QuoteCacheEntry>()
 const quoteInFlight = new Map<string, Promise<AccountQuoteView>>()
+/** 已告警过的 operation：价目表与服务端不符时每个只报一次，不刷日志。 */
+const driftWarned = new Set<string>()
 
 /**
  * 报一次价。**永不抛错**：报价失败不该让路由 500，也不该阻断提交（生成链的
@@ -397,24 +402,43 @@ const quoteInFlight = new Map<string, Promise<AccountQuoteView>>()
 export function quoteCredits(params: CreditQuoteParams): Promise<AccountQuoteView> {
   const d = deps
   const token = getAuthSession()?.accessToken ?? ''
-  const empty = (code: string, message: string): AccountQuoteView => ({
-    model: null, operation: null, credits: null, fetchedAt: null, error: { code, message },
-  })
-  if (d === null || !d.enabled()) return Promise.resolve(empty('account_disabled', '管理面未启用，无法报价。'))
-  if (token === '') return Promise.resolve(empty('unauthenticated', '登录后才能报价。'))
-  if (disabled || creditsDisabled) return Promise.resolve(empty('account_disabled', '账号受限，已停止业务请求。'))
-
+  // 请求体与价目表先算好：兜底路径必须用**同一份** request —— 模型/operation/尺寸
+  // 与真发出去的那次一模一样，否则兜底算的是另一笔钱。
   const request = quoteRequestFor(params)
+  const table = loadPriceTable()
+
+  /**
+   * 兜底：本地价目表推算。
+   *
+   * 三个刻意的选择：
+   * 1. **保留 `error`** —— 它就是「为什么这是估算」的解释，UI 挂进 title；
+   * 2. **不进缓存** —— 估算值一旦缓存 5 分钟，网络恢复后仍显示旧推算；重试成本
+   *    很低（失败是毫秒级），宁可每次都先去拿真报价；
+   * 3. `credits` 仍可能是 `null`（表里没有这个 operation / 请求缺尺寸）——
+   *    那才是真正的「不知道」，UI 显示 `—`。
+   */
+  const fallback = (code: string, message: string): AccountQuoteView => {
+    const estimate = estimatePrice(request, table)
+    return {
+      model: request.model,
+      operation: request.operation,
+      credits: estimate === null ? null : estimate.credits,
+      source: estimate === null ? null : 'table',
+      breakdown: estimate === null ? null : estimate.lines,
+      tableAgeDays: estimate?.ageDays ?? (table === null ? null : ageDaysOf(table.sampledAt)),
+      fetchedAt: estimate === null ? null : new Date().toISOString(),
+      error: { code, message },
+    }
+  }
+
+  if (d === null || !d.enabled()) return Promise.resolve(fallback('account_disabled', '管理面未启用，无法报价。'))
+  if (token === '') return Promise.resolve(fallback('unauthenticated', '尚未登录；显示的是本地价目表估算。'))
+  if (disabled || creditsDisabled) return Promise.resolve(fallback('account_disabled', '账号受限；显示的是本地价目表估算。'))
+
   const key = quoteFingerprint(params)
   const hit = quoteCache.get(key)
   if (hit !== undefined && Date.now() - hit.at < QUOTE_TTL_MS) {
-    return Promise.resolve({
-      model: hit.model,
-      operation: hit.operation,
-      credits: hit.credits,
-      fetchedAt: new Date(hit.at).toISOString(),
-      error: null,
-    })
+    return Promise.resolve({ ...hit.view, fetchedAt: new Date(hit.at).toISOString() })
   }
   // 在飞去重：三个 chip 与「重出按钮」可能同一瞬间问同一个指纹。
   const pending = quoteInFlight.get(key)
@@ -428,30 +452,38 @@ export function quoteCredits(params: CreditQuoteParams): Promise<AccountQuoteVie
         input: request.input,
       })
       const at = Date.now()
+      const lines = breakdownOf(request, quote.estimated_credits, table, at)
+      if (lines === null && table !== null && !driftWarned.has(request.operation)) {
+        // 表存在却复算不出同一个数 ⇒ 后端改价了。每个 operation 只报一次：这是
+        // 运维信号（该重跑 probe-pricing），不是用户可见的错误。
+        driftWarned.add(request.operation)
+        d.log.warn(
+          `[canvas-studio] 价目表与 ${request.operation} 的服务端报价不符，明细拆解已关闭`
+          + '（重跑 node scripts/probe-pricing.mjs）',
+        )
+      }
+      const view: AccountQuoteView = {
+        model: request.model,
+        operation: request.operation,
+        credits: quote.estimated_credits,
+        source: 'quote',
+        breakdown: lines,
+        tableAgeDays: table === null ? null : ageDaysOf(table.sampledAt, at),
+        fetchedAt: new Date(at).toISOString(),
+        error: null,
+      }
       if (quoteCache.size >= QUOTE_CACHE_MAX) {
         // 简单淘汰：删最早插入的一条（够用，不值得为 100 条写 LRU）。
         const oldest = quoteCache.keys().next()
         if (!oldest.done) quoteCache.delete(oldest.value)
       }
-      quoteCache.set(key, { credits: quote.estimated_credits, model: request.model, operation: request.operation, at })
-      return {
-        model: request.model,
-        operation: request.operation,
-        credits: quote.estimated_credits,
-        fetchedAt: new Date(at).toISOString(),
-        error: null,
-      }
+      quoteCache.set(key, { view, at })
+      return view
     } catch (cause) {
       const code = cause instanceof ApiError ? cause.code : 'network_error'
       const message = cause instanceof Error ? cause.message : String(cause)
-      d.log.warn(`[canvas-studio] 报价失败（${code}）：${message}`)
-      return {
-        model: request.model,
-        operation: request.operation,
-        credits: null,
-        fetchedAt: null,
-        error: { code, message },
-      }
+      d.log.warn(`[canvas-studio] 报价失败（${code}），已降级为价目表估算：${message}`)
+      return fallback(code, message)
     } finally {
       quoteInFlight.delete(key)
     }
@@ -540,6 +572,7 @@ export function notifyAuthCleared(): void {
   ledgerError = null
   ledgerDisabled = false
   quoteCache.clear()
+  driftWarned.clear()
 }
 
 /** bootstrap 主体：sync（用户 + 设备登记）→ models（目录）→ 回调。 */

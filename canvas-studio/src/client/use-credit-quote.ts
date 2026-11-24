@@ -17,21 +17,29 @@
  * ## 三态语义（与 Host 契约对齐）
  *
  * - `loading`：在飞且没有旧值 ⇒ 显示 `…`；
- * - `ok`：拿到数 ⇒ 显示精确值；
- * - `failed`：没拿到 ⇒ 有旧值显示「约 N」并标灰（title 挂原因），没旧值显示 `—`。
+ * - `ok`：拿到数 ⇒ 按 `source` 决定精确还是「约」——
+ *   - `quote`：服务端报价，精确值；
+ *   - `table`：Host 用本地价目表推算的兜底值（B2），**必须**带「约」并说明表龄。
+ * - `failed`：没有任何数 ⇒ `—`（`stale` 为真时才沿用同一组参数的旧值）。
  *
  * **失败绝不阻断提交**：预估是装饰性读数，Host 侧的 quote 硬闸也是 fail-open。
  */
 import { useEffect, useRef, useState } from 'react'
 import { fetchStudioAccountQuote } from './api.js'
-import type { CreditQuoteParams } from '../contracts/account.js'
+import type { CreditBreakdownLine, CreditPriceSource, CreditQuoteParams } from '../contracts/account.js'
 
 export interface CreditQuoteState {
   /** `idle` = 没有可报的参数（如空节点）；`loading` = 在飞且无旧值。 */
   readonly status: 'idle' | 'loading' | 'ok' | 'failed'
-  /** 预估积分（服务端 4 位小数原样）；null = 没有数。 */
+  /** 预估积分（服务端 4 位小数原样 / 本地复算到同一精度）；null = 没有数。 */
   readonly credits: number | null
-  /** 显示的是上一组参数留下的值（标灰 + 「约」）。 */
+  /** 数字来源（`table` ⇒ 估算，必须显示成「约」）。 */
+  readonly source: CreditPriceSource | null
+  /** 逐行拆解（Host 复算校验通过的才给）；null = 没有可信拆解。 */
+  readonly lines: readonly CreditBreakdownLine[] | null
+  /** 本地价目表的表龄（天）；null = 没有表或本数不是表算的。 */
+  readonly tableAgeDays: number | null
+  /** 显示的是**不精确**的数（表估算，或同一组参数的旧报价）。 */
   readonly stale: boolean
   /** 失败原因（给 title 用，不弹错）。 */
   readonly error: string | null
@@ -42,6 +50,8 @@ export interface CreditQuoteState {
 interface CacheEntry {
   readonly credits: number
   readonly model: string
+  readonly lines: readonly CreditBreakdownLine[] | null
+  readonly tableAgeDays: number | null
   readonly at: number
 }
 
@@ -72,8 +82,12 @@ function fingerprintOf(params: CreditQuoteParams): string {
   ].join('|')
 }
 
-const IDLE: CreditQuoteState = { status: 'idle', credits: null, stale: false, error: null, model: null }
-const LOADING: CreditQuoteState = { status: 'loading', credits: null, stale: false, error: null, model: null }
+const IDLE: CreditQuoteState = {
+  status: 'idle', credits: null, source: null, lines: null, tableAgeDays: null, stale: false, error: null, model: null,
+}
+const LOADING: CreditQuoteState = {
+  status: 'loading', credits: null, source: null, lines: null, tableAgeDays: null, stale: false, error: null, model: null,
+}
 
 /** 内部状态多带一个 `key`：用来判断「这个数是不是当前参数的」。 */
 interface StoredState extends CreditQuoteState {
@@ -84,7 +98,16 @@ interface StoredState extends CreditQuoteState {
 function freshCache(key: string): CreditQuoteState | undefined {
   const hit = cache.get(key)
   if (hit === undefined || Date.now() - hit.at >= CACHE_TTL_MS) return undefined
-  return { status: 'ok', credits: hit.credits, stale: false, error: null, model: hit.model }
+  return {
+    status: 'ok',
+    credits: hit.credits,
+    source: 'quote',
+    lines: hit.lines,
+    tableAgeDays: hit.tableAgeDays,
+    stale: false,
+    error: null,
+    model: hit.model,
+  }
 }
 
 /**
@@ -125,7 +148,17 @@ export function useCreditQuote(params: CreditQuoteParams | null): CreditQuoteSta
     const expired = cache.get(key)
     setStored(expired === undefined
       ? { ...LOADING, key }
-      : { key, status: 'ok', credits: expired.credits, stale: true, error: null, model: expired.model })
+      : {
+          key,
+          status: 'ok',
+          credits: expired.credits,
+          source: 'quote',
+          lines: expired.lines,
+          tableAgeDays: expired.tableAgeDays,
+          stale: true,
+          error: null,
+          model: expired.model,
+        })
     const controller = new AbortController()
     let active = true
     const timer = setTimeout(() => {
@@ -140,18 +173,43 @@ export function useCreditQuote(params: CreditQuoteParams | null): CreditQuoteSta
               key,
               status: 'failed',
               credits: null,
+              source: null,
+              lines: null,
+              tableAgeDays: view.tableAgeDays,
               stale: false,
               error: view.error?.message ?? '报价暂不可用',
               model: null,
             })
             return
           }
-          if (cache.size >= CACHE_MAX) {
-            const oldest = cache.keys().next()
-            if (!oldest.done) cache.delete(oldest.value)
+          // `table` = Host 用本地价目表推算的兜底值。它**不写缓存**：网络恢复后
+          // 应该尽快换回真报价，把估算钉在缓存里 5 分钟是最糟的一种「准确」。
+          if (view.source === 'quote') {
+            if (cache.size >= CACHE_MAX) {
+              const oldest = cache.keys().next()
+              if (!oldest.done) cache.delete(oldest.value)
+            }
+            cache.set(key, {
+              credits: view.credits,
+              model: view.model ?? '',
+              lines: view.breakdown,
+              tableAgeDays: view.tableAgeDays,
+              at: Date.now(),
+            })
           }
-          cache.set(key, { credits: view.credits, model: view.model ?? '', at: Date.now() })
-          setStored({ key, status: 'ok', credits: view.credits, stale: false, error: null, model: view.model })
+          setStored({
+            key,
+            status: 'ok',
+            credits: view.credits,
+            source: view.source,
+            lines: view.breakdown,
+            tableAgeDays: view.tableAgeDays,
+            // 表算的永远是「约」；quote 的才是精确值。
+            stale: view.source === 'table',
+            // 估算时 error 是「为什么这是估算」的原因，留着给 title。
+            error: view.error?.message ?? null,
+            model: view.model,
+          })
         } catch (cause) {
           // abort = 换参数了，这次结果没人要；不要写成 failed（会闪一下「暂不可用」）。
           if (!active) return
@@ -162,6 +220,9 @@ export function useCreditQuote(params: CreditQuoteParams | null): CreditQuoteSta
             // 只有**同一组参数**的成功值才允许降级成「约 N」：跨档位的旧数不是近似，
             // 是另一个价（720P 21.14 与 1080P 41.78 差一倍），宁可不显示。
             credits: previous.key === key ? previous.credits : null,
+            source: previous.key === key ? previous.source : null,
+            lines: previous.key === key ? previous.lines : null,
+            tableAgeDays: previous.key === key ? previous.tableAgeDays : null,
             stale: previous.key === key && previous.credits !== null,
             error: message,
             model: previous.key === key ? previous.model : null,

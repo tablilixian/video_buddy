@@ -300,8 +300,13 @@ test('quote：图片按 Host 现推的参数报价（client 传的 model/input �
     })
     assert.equal(res.status, 200)
     assert.equal(res.body.credits, 21.1354)
+    assert.equal(res.body.source, 'quote', '有服务端报价时绝不能用表推算顶替')
     assert.equal(res.body.model, 'image.krea2')
     assert.equal(res.body.operation, 'txt2image')
+    // 拆解是**校验通过**才给的：复算 21.1354 必须与 quote 一致。
+    assert.ok(Array.isArray(res.body.breakdown), '表与报价一致时应给逐行拆解')
+    const total = res.body.breakdown.reduce((sum, line) => sum + line.credits, 0)
+    assert.ok(Math.abs(total - 21.1354) < 1e-6, `拆解加总 ${total} 必须等于总数 21.1354`)
     const sent = JSON.parse(fetchCalls[0].body)
     assert.deepEqual(Object.keys(sent).sort(), ['input', 'model', 'operation'], 'quote 只收 model/operation/input')
     assert.equal(sent.model, 'image.krea2', '模型由 Host 现推，不信 client 传的')
@@ -331,31 +336,36 @@ test('quote：同指纹命中 Host 缓存，改 prompt 不重报、改时长必�
   }
 })
 
-test('quote：服务端 429 也回 200 + credits=null + error（不阻断提交）', async () => {
+test('quote：服务端 429 回 200 + 价目表兜底（source=table，保留 error 说明原因）', async () => {
   resetAll()
   const restore = installFetchStub()
   installDeps()
   setAuthSession({ accessToken: 'tok-1', expiresAt: null, userId: 'u-1', email: null })
   try {
     fetchMode = 'quote-fail'
+    // music 30s × 1 = 30：兜底值必须等于真价，否则「约」会骗人。
     const res = await call('POST', { path: QUOTE_PATH, body: { kind: 'audio', audioFn: 'music', duration: 30 } })
     assert.equal(res.status, 200, '报价失败不是 HTTP 失败（生成链 fail-open 依赖这条）')
-    assert.equal(res.body.credits, null, 'null = 不知道，绝不能写成 0（0 是真实的价）')
-    assert.equal(res.body.error.code, 'rate_limited')
+    assert.equal(res.body.source, 'table', '兜底必须自报来源：UI 靠它决定标「约」')
+    assert.equal(res.body.credits, 30)
+    assert.equal(res.body.error.code, 'rate_limited', 'error 保留 = 「为什么这是估算」的解释')
+    assert.ok(Array.isArray(res.body.breakdown) && res.body.breakdown.length > 0, '兜底也要能给拆解')
+    assert.equal(typeof res.body.tableAgeDays, 'number')
   } finally {
     restore()
     resetAll()
   }
 })
 
-test('quote：未登录回 200 + unauthenticated（零请求，UI 显示「暂不可用」）', async () => {
+test('quote：未登录回 200 + unauthenticated，但数字仍来自价目表（零请求）', async () => {
   resetAll()
   const restore = installFetchStub()
   installDeps()
   try {
     const res = await call('POST', { path: QUOTE_PATH, body: { kind: 'image' } })
     assert.equal(res.status, 200)
-    assert.equal(res.body.credits, null)
+    assert.equal(res.body.source, 'table', '预估不需要登录：本地表就能算')
+    assert.equal(res.body.credits, 21.1354, '720P 16:9 = 1376×768 的面积价')
     assert.equal(res.body.error.code, 'unauthenticated')
     assert.equal(fetchCalls.length, 0)
   } finally {

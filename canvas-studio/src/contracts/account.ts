@@ -83,18 +83,57 @@ export interface CreditQuoteParams {
 }
 
 /**
+ * 这个数字是**哪来的**。
+ *
+ * - `quote`：服务端报价（与实扣一分不差）；
+ * - `table`：本地价目表推算（`capabilities/pricing.json`，quote 不可用时的兜底）。
+ *
+ * 两者的展示纪律完全不同：`table` 必须显示成「约 N」且说明表龄，**绝不允许**
+ * 伪装成精确值（后端改价时它不是「旧价」，是「猜的价」）。
+ */
+export type CreditPriceSource = 'quote' | 'table'
+
+/**
+ * 明细里的一行拆解（B 层）。
+ *
+ * `credits` 可以是 0 —— 「清晰度 1080P / 不计价」这种行**必须存在**：它纠正的是
+ * 旧 UI「清晰度 +6 / +14」的错觉，删掉它用户会继续以为分辨率要加钱。
+ */
+export interface CreditBreakdownLine {
+  /** 计价维度（「时长」「画面面积」「固定价」「清晰度」）。 */
+  readonly label: string
+  /** 这个数怎么算出来的（「15s × 6」「1376×768 = 1.06MP × 0.00002」）。 */
+  readonly detail: string
+  readonly credits: number
+}
+
+/**
  * 一次报价的结果。
  *
- * `credits` 为 `null` 表示**这次没报出来**（网络 / 未登录 / 服务端拒），此时 UI
- * 必须显式区分「暂不可用」与「0 积分」——0 是一个真实的价（`release` 之后重报
- * 也可能给 0），`null` 才是「不知道」。
+ * `credits` 为 `null` 表示**这次没报出来**（网络 / 未登录 / 服务端拒 / 价目表里
+ * 没有这个 operation），此时 UI 必须显式区分「暂不可用」与「0 积分」——0 是一个
+ * 真实的价（`release` 之后重报也可能给 0），`null` 才是「不知道」。
  */
 export interface AccountQuoteView {
   /** 报价用的模型 code（UI 可显示「按 image.krea2 计价」；null = 未算出）。 */
   readonly model: string | null
   readonly operation: string | null
-  /** 预估积分（服务端 4 位小数原样返回，**不四舍五入**）。 */
+  /** 预估积分（4 位小数；`quote` 原样返回，`table` 由本地复算出同一精度）。 */
   readonly credits: number | null
+  /**
+   * 数字来源；`null` = 没有任何来源（`credits` 必为 null）。
+   *
+   * `table` 是 quote 不可用时的本地推算，UI 必须降级成「约 N」并说明表龄。
+   */
+  readonly source: CreditPriceSource | null
+  /**
+   * 逐行拆解；`null` = 没有可信拆解（价目表缺失，或复算与服务端报价对不上）。
+   *
+   * 对不上时**宁可不给拆解**：一份加总不等于总数的明细，比没有明细更糟。
+   */
+  readonly breakdown: readonly CreditBreakdownLine[] | null
+  /** 价目表的表龄（天）；`null` = 没有表。用于把「约」说得更具体。 */
+  readonly tableAgeDays: number | null
   readonly fetchedAt: string | null
   readonly error: { code: string; message: string } | null
 }

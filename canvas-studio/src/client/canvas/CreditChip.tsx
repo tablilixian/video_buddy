@@ -13,17 +13,18 @@
  * | 情况 | 读数 | 语义 |
  * |---|---|---|
  * | 在飞、无旧值 | `…` | 正在问服务端 |
- * | 有数 | `30` / `21.1354` | 服务端报价（与实扣一分不差） |
- * | 失败但有旧值 | `约 30`（标灰） | 上一次成功的数，仅供参考 |
- * | 失败且无旧值 | `—` | 不知道，不猜 |
+ * | 服务端报价 | `30` / `21.1354` | 与实扣一分不差 |
+ * | 价目表兜底（B2） | `约 90`（标灰） | quote 不可用，本地按采样价推算 |
+ * | 同一组参数的旧报价 | `约 30`（标灰） | 上次成功的数，仅供参考 |
+ * | 没有任何数 | `—` | 不知道，不猜 |
  *
- * 「约」不只是文案：它是**唯一**允许出现「不精确数字」的形态。价目表兜底（B 层）
- * 也要走这一档，绝不允许把推算值渲染成精确值。
+ * 「约」不只是文案：它是**唯一**允许出现「不精确数字」的形态。价目表兜底与过期
+ * 缓存都走这一档，绝不允许把推算值渲染成精确值。
  */
 import type { ReactElement } from 'react'
 import { useSyncExternalStore } from 'react'
 import { formatCredits } from '../../account-format.js'
-import type { CreditQuoteParams } from '../../contracts/account.js'
+import type { CreditBreakdownLine, CreditPriceSource, CreditQuoteParams } from '../../contracts/account.js'
 import { getCreditsState, subscribeCredits } from '../credits-store.js'
 import { formatQuoteCredits, useCreditQuote } from '../use-credit-quote.js'
 
@@ -34,12 +35,18 @@ export interface CreditChipProps {
   hint?: string
 }
 
-/** 预估读数（渲染 + title 文案）的唯一实现，两种壳子共用。 */
-function useCreditChipReading(params: CreditQuoteParams | null, hint: string | undefined): {
+interface CreditChipReading {
   shown: string
   stale: boolean
   title: string
-} {
+  /** 逐行拆解；null = 没有可信拆解（表缺失/后端改价时不硬凑）。 */
+  lines: readonly CreditBreakdownLine[] | null
+  source: CreditPriceSource | null
+  tableAgeDays: number | null
+}
+
+/** 预估读数（渲染 + title 文案）的唯一实现，两种壳子共用。 */
+function useCreditChipReading(params: CreditQuoteParams | null, hint: string | undefined): CreditChipReading {
   const quote = useCreditQuote(params)
   // 预估与余额同屏：用户真正的决策依据是「花得起吗」，不是单个数字。
   // 余额走 credits-store（Host 的 TTL 由它自己判），这里只读快照。
@@ -55,6 +62,11 @@ function useCreditChipReading(params: CreditQuoteParams | null, hint: string | u
   const parts: string[] = []
   if (quote.status === 'loading') {
     parts.push('正在向服务端报价…')
+  } else if (quote.credits !== null && quote.source === 'table') {
+    // 兜底值：说清「这是本地算的」，并给出表龄 —— 「约 90」配「3 天前采样」
+    // 与配「两个月前采样」是两种可信度。
+    parts.push(`本地价目表估算 ${formatQuoteCredits(quote.credits)} 积分（服务端报价暂不可用，仅供参考）`)
+    if (quote.tableAgeDays !== null) parts.push(`价目表采样于 ${quote.tableAgeDays} 天前`)
   } else if (quote.credits !== null && !quote.stale) {
     parts.push(`本次预计消耗 ${formatQuoteCredits(quote.credits)} 积分（服务端报价，与实扣一致）`)
   } else if (quote.credits !== null) {
@@ -70,6 +82,9 @@ function useCreditChipReading(params: CreditQuoteParams | null, hint: string | u
     shown,
     stale: quote.stale || quote.status === 'failed',
     title: parts.join(' · '),
+    lines: quote.lines,
+    source: quote.source,
+    tableAgeDays: quote.tableAgeDays,
   }
 }
 
@@ -93,10 +108,11 @@ export interface CreditChipButtonProps extends CreditChipProps {
   open: boolean
   onToggle(): void
   /**
-   * 弹层里的**事实**行（模型 / 时长 / 画幅 / 清晰度…）。
+   * 弹层里的**参数**行（模型 / 画幅 / 清晰度 / 参考个数…）。
    *
-   * 刻意只放事实、不放「各项多少积分」：后端只给总数，逐项拆解必须等价目表
-   * （方案 B 层）。自己乘一遍加出来的明细与实扣对不上时，用户会以为被多扣了。
+   * 与拆解行分工明确：拆解行回答「这些钱怎么算出来的」，参数行回答「我提交的
+   * 到底是什么」。两者都不可少 —— 只有金额没有参数，用户核对不了是不是选错了档；
+   * 只有参数没有金额，用户仍然不知道为什么是这个价。
    */
   rows: ReadonlyArray<readonly [string, string]>
   /** 弹层脚注（口径说明）。 */
@@ -123,8 +139,26 @@ export function CreditChipButton(props: CreditChipButtonProps): ReactElement {
       </button>
       {props.open && (
         <span className="csChipPop csCreditPop">
+          {reading.lines !== null && reading.lines.length > 0 && (
+            <>
+              {reading.lines.map(line => (
+                <span className="csCreditRow csCreditRowCalc" key={`calc:${line.label}`}>
+                  <span className="csCreditRowLabel">
+                    {line.label}
+                    <span className="csCreditRowDetail">{line.detail}</span>
+                  </span>
+                  <span className="csCreditRowValue">
+                    {/* 0 分项写成「不计价」而不是 0：它是**结论**（分辨率不加钱），
+                        不是「这一项算出来是零」。 */}
+                    {line.credits === 0 ? '不计价' : formatQuoteCredits(line.credits)}
+                  </span>
+                </span>
+              ))}
+              <span className="csCreditRowSplit" />
+            </>
+          )}
           {props.rows.map(([label, value]) => (
-            <span className="csCreditRow" key={label}>
+            <span className="csCreditRow csCreditRowFact" key={label}>
               <span className="csCreditRowLabel">{label}</span>
               <span className="csCreditRowValue">{value}</span>
             </span>
@@ -133,7 +167,11 @@ export function CreditChipButton(props: CreditChipButtonProps): ReactElement {
             <span>本次预估</span>
             <span>{reading.shown}</span>
           </span>
-          <span className="csCreditFoot">{props.foot}</span>
+          <span className="csCreditFoot">
+            {reading.lines !== null && reading.lines.length > 0
+              ? '金额按服务端报价逐项拆解；生成结束后以实际结算为准。'
+              : props.foot}
+          </span>
         </span>
       )}
     </span>

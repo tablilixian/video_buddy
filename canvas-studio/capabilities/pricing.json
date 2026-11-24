@@ -1,0 +1,91 @@
+{
+  "schema": "canvas-studio/pricing/v1",
+  "sampled_at": "2026-11-24T11:20:00.000+08:00",
+  "source": "manual-seed: docs/plans/积分预估与实扣展示方案-20261124.md §1.1（真机逐点 quote 采样反推）",
+  "endpoint": "POST /v1/generations/quote",
+  "note": "本表只做两件事：quote 不可用时给近似值（永远标「约」）、quote 可用时把总数拆成单项。绝不覆盖服务端报价。运行 node scripts/probe-pricing.mjs 可重新采样并覆盖本文件（source 会变成 probe-pricing.mjs）。",
+  "rules": [
+    {
+      "operation": "txt2image",
+      "models": ["image.krea2", "image.qwen-image-2.1"],
+      "basis": "pixels",
+      "rate": 0.00002,
+      "multiplier": 1,
+      "samples": 10,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "image2image",
+      "models": ["image.qwen-image-2.1"],
+      "basis": "pixels",
+      "rate": 0.00002,
+      "multiplier": 1.25,
+      "samples": 3,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "image2character",
+      "models": ["image.krea2"],
+      "basis": "flat",
+      "rate": 30,
+      "samples": 2,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "image2vl",
+      "models": ["image.qwen3-vl"],
+      "basis": "flat",
+      "rate": 4,
+      "samples": 1,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "video2vl",
+      "models": ["video.qwen3-vl"],
+      "basis": "flat",
+      "rate": 8,
+      "samples": 1,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "image2videofl2va",
+      "models": ["video.minimax_h3"],
+      "basis": "seconds",
+      "rate": 6,
+      "samples": 5,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "image2videoref2va",
+      "models": ["video.minimax_h3"],
+      "basis": "seconds",
+      "rate": 6,
+      "samples": 1,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "txt2audio",
+      "models": ["audio.yue2"],
+      "basis": "seconds",
+      "rate": 1,
+      "samples": 4,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "txt2speech",
+      "models": ["audio.voxcpm2"],
+      "basis": "flat",
+      "rate": 3,
+      "samples": 2,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    },
+    {
+      "operation": "asr2txt",
+      "models": ["audio.fast-whisper"],
+      "basis": "flat",
+      "rate": 3,
+      "samples": 1,
+      "sampledAt": "2026-11-24T11:20:00.000+08:00"
+    }
+  ]
+}

@@ -464,6 +464,11 @@ export async function fetchStudioAccountQuote(
       model: null,
       operation: null,
       credits: null,
+      // 连 Host 都没通（本地路由挂了/被拦）⇒ 没有报价也没有价目表：Host 是价目表的
+      // 唯一读取点，这一层不退化成「第二份本地表」。
+      source: null,
+      breakdown: null,
+      tableAgeDays: null,
       fetchedAt: null,
       error: { code: 'network_error', message: cause instanceof Error ? cause.message : String(cause) },
     }

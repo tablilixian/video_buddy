@@ -33,6 +33,7 @@
   "files": [
     "cordis.patch.yml",
     "assets/**",
+    "capabilities/pricing.json",
     "lib/**",
     "skills/**",
     "README.md"

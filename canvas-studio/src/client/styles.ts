@@ -10854,6 +10854,12 @@ button.csNodeHeadAlert:hover {
 .csCreditRowTotal { border-top: 1px solid #2d343f; margin-top: 3px; padding-top: 8px; color: #ffd3a6; }
 .csCreditRowTotal .csCreditRowValue { font-size: 14px; font-weight: 600; }
 .csCreditFoot { font-size: 10px; color: #6b737f; padding: 6px 9px 2px; line-height: 1.5; }
+/* 拆解行（B1）：左侧两行——维度名 + 算式；右侧是这一项的积分。 */
+.csCreditRowCalc .csCreditRowLabel { display: flex; flex-direction: column; gap: 1px; white-space: normal; overflow: visible; text-overflow: clip; min-width: 0; }
+.csCreditRowDetail { font-size: 10px; color: #8a919d; font-variant-numeric: tabular-nums; }
+/* 参数行（模型/画幅/参考…）：不与金额抢注意力，整行降一档灰。 */
+.csCreditRowFact, .csCreditRowFact .csCreditRowValue { color: #9aa2ad; }
+.csCreditRowSplit { display: block; height: 1px; background: #262c35; margin: 5px 9px; }
 
 /* 摄像机标记 chip（演示 cam-chip：开启后挂输入框上方，悬停出 × 移除）。 */
 .csCamMarkerRow { display: flex; padding: 0 0 8px; }

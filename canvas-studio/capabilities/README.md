@@ -23,6 +23,23 @@
 | `verified.date` | ✓ | 复核日期（ISO）；**测试闸：>90 天未复核即红** —— 过期说明模型规格可能已漂移 |
 | `verified.confidence` | ✓ | `high` / `medium` / `low` |
 
+## pricing.json（积分价目表 —— 与本目录的模型条目是两回事）
+
+`models/*.json` 记「模型能做什么」，`pricing.json` 记「后端怎么收钱」。它是积分
+**兜底估算**与**明细拆解**的唯一数据源（消费方 `src/price-table.ts`）。
+
+- 结构：`{ schema, sampled_at, source, rules[], staleRules?, drift?, evidence? }`。
+  `rules` 以 **`operation` 为键**（「同 operation 同价」是实测事实，按模型分行会造出
+  一堆只能人工同步的重复规则），每条带 `basis`（`pixels` / `seconds` / `flat`）、
+  `rate`、`multiplier?`、`models[]`、`sampledAt`。
+- **不许手改数字**：`node scripts/probe-pricing.mjs` 逐点调 `POST /v1/generations/quote`
+  采样并反推，写回本文件。手改既不会让服务端少收钱，也会被下次采样覆盖。
+- 新鲜度：`sampled_at` 超过 7 天，Host 会把兜底值标成「约」并挂上表龄
+  （`src/price-table.ts` 的 `MAX_TABLE_AGE_DAYS`）。
+- 打包：`package.json` 的 `files` 必须含 `capabilities/pricing.json` —— 运行时由
+  `lib/price-table.js` 按相对路径读取，**漏了它离线兜底会静默失效**（表现为详情里
+  只剩总数、断网只有 `—`）。
+
 ## 消费方
 
 - `plan_generation_units`（S3）的切分上限参数与 `multi_shot` 语义；

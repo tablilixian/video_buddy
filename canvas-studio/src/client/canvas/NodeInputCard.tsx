@@ -2095,13 +2095,14 @@ export function NodeInputCard(props: NodeInputCardProps) {
           </div>
           <div className="csInputCardFootRight">
             <span className="csInputPill csInputPillIcon" title="提示词增强：功能挂 REQ-003 Step 4 拍板，当前置灰（偏差登记 §九）">✦</span>
-            {/* 预估：服务端报价（视频 = 时长 × 6，清晰度不影响计价）。弹层只列事实行。 */}
+            {/* 预估：服务端报价（视频 = 时长 × 6，清晰度不影响计价）。
+                弹层 = chip 内部的金额拆解行（价目表）+ 这里的参数行。 */}
             <CreditChipButton
               params={videoQuoteParams}
               open={openPop === 'credit'}
               onToggle={() => { togglePop('credit') }}
               rows={videoCreditRows}
-              foot="数字来自服务端报价（与实扣一致）。视频按时长计价，清晰度不影响；逐项金额拆解待价目表上线。"
+              foot="数字来自服务端报价（与实扣一致）；报价不可用时显示本地价目表估算并标「约」。视频按时长计价，清晰度不影响。"
             />
             <button
               type="button"

@@ -174,10 +174,11 @@ export function estSecondsOf(n: number): number {
   return n ? Math.max(1, Math.round(n / 5)) : 0
 }
 
-/** 消耗积分：基准 2 + 每 20 字 1 分；没写正文不消耗（演示稿 creditCost :1338）。 */
-export function creditCostOf(n: number): number {
-  return n ? 2 + Math.ceil(n / 20) : 0
-}
+// 2026-11-24 退役：按字数算积分的公式（基准 2 + 每 20 字 1 分）。
+// 它与后端实价无关 —— 实测 TTS 100 字报 7、实扣 3（+133%），音乐报 2+N、实扣
+// 「秒 × 1」。积分读数现在只有一个来源：服务端 `POST /v1/generations/quote`
+// （client 侧入口 `use-credit-quote.ts`）。
+// 保留 `estSecondsOf`：它算的是**真的会提交的 duration**（音乐时长），不是钱。
 
 // ==================== 参考音色 `local:` 约定（REQ-032 §六 / Step 3）====================
 

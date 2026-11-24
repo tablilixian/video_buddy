@@ -10784,6 +10784,10 @@ button.csNodeHeadAlert:hover {
 .csInputPillIcon { width: 30px; padding: 0; justify-content: center; flex: 0 0 auto; color: #6b737f; }
 .csInputCredits { color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32); }
 .csInputCredits .csInputCreditsNum { color: #ffb066; font-variant-numeric: tabular-nums; }
+/* 报价失败 / 显示的是上一次的数：降饱和 + 虚线边框。「约」不只是文案，颜色也要说
+   清楚这不是精确值 —— 精确值与推算值长得一样时，用户会按错的数做决定。 */
+.csInputCreditsStale { color: #b9b2a8; background: rgba(160, 150, 140, .10); border-color: rgba(160, 150, 140, .28); border-style: dashed; }
+.csInputCreditsStale .csInputCreditsNum { color: #cfc7bb; }
 .csInputSend {
   width: 34px; height: 34px; border-radius: 50%; border: 0; background: #ffb066; color: #161a1f;
   cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;

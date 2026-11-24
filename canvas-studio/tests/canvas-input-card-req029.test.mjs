@@ -124,9 +124,10 @@ test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板
   // 老节点兼容（N1）：没有 styleId 时按前缀反查，认不出才回落「风格」。
   assert.match(card, /promptValueOf\(node, 'styleId'\) \|\| styleIdOfPrefix\(stylePrefix\)/, '老节点（只有 stylePrefix）必须走兼容反查，不得直接漂回「风格」')
   assert.match(card, /commitPrompt\('cameraPrefix'/, '摄像机必须写 cameraPrefix 参数')
-  // 积分（拍板⑦）：前端估算 + 「预估」标注。
-  assert.match(card, /CREDIT_ESTIMATE/, '积分必须是前端占位估算表')
-  assert.match(card, /· 预估/, '积分读数必须带「预估」标注')
+  // 积分（2026-11-24 起）：前端价目表退役，读数一律走服务端报价。
+  assert.match(card, /imageQuoteParams: CreditQuoteParams = \{/, 'image 积分读数必须声明报价参数')
+  assert.doesNotMatch(card, /CREDIT_ESTIMATE/, '前端占位价目表必须退役（与实价最大偏 −49%）')
+  assert.match(card, /<CreditChip params=\{imageQuoteParams\}/, 'image chip 必须交给 CreditChip 渲染')
   // 摄像机四列可选值逐字取自演示。
   assert.match(card, /潘那维申 DXL2/, '相机列必须含演示值')
   assert.match(card, /阿莱大师定焦/, '镜头列必须含演示值')
@@ -231,8 +232,9 @@ test('REQ-032 audio 交互：fn 切换/清空/歌词确定走 toast，文本域 
   const fnMenuBlock = card.slice(card.indexOf('csAudioFnMenus'), card.indexOf('csAudioLayerRow'))
   assert.equal(fnMenuBlock.includes('✓'), false, 'fn 菜单块不许出现对勾字符（演示无对勾）')
   assert.equal(fnMenuBlock.includes('csModelCheck'), false, 'fn 菜单块不许复用模型对勾类')
-  // 积分 title 拍板⑤附时长估算。
-  assert.match(card, /预计约 \$\{audioEst\} 秒（按字数估算）/, '积分 title 必须带预计秒数')
+  // 积分读数附时长估算（2026-11-24 起读数走服务端报价，时长仍要说清）。
+  assert.match(card, /预计约 \$\{audioEst\} 秒/, '积分 hint 必须带预计秒数')
+  assert.match(card, /<CreditChip\n\s+params=\{audioQuoteParams\}/, 'audio chip 必须交给报价组件')
   // 正文 placeholder 按 fn 分支。
   assert.match(card, /const audioBodyPlaceholder = audio\.fn === 'design' \? '音色文案，3秒以上' : '要合成的正文。'/, 'placeholder 必须按 fn 分支')
   // 托盘/prompt 区对 audio 跳过。

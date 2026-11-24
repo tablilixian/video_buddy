@@ -37,7 +37,8 @@ import { startLoopback, consumePendingCallback, loopbackActive, stopLoopback } f
 import { setAuthSession, clearAuthSession } from './auth-session.js'
 // 管理面编排（方案 P2/CV-356）：会话推送触发 auth/sync + 目录拉取（fire-and-forget）。
 // 余额（CV-358）：会话推送后预取，读路径见 `GET /canvas-studio/account/credits`。
-import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView } from './account-state.js'
+import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView, refreshLedger, ledgerView, quoteCredits } from './account-state.js'
+import { parseQuoteParams } from './credit-quote.js'
 // 订阅与积分（方案 20261102）：Host 编排 + 协议错误类型（按 status/code 直出）。
 import { ApiError } from './drama-management.js'
 import { refreshBilling, billingView, createBillingCheckout, createBillingPortalSession, resetBilling } from './billing-state.js'
@@ -292,6 +293,19 @@ const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 const ROUTE_STORAGE_INFO = '/canvas-studio/storage-info'
 // CV-358：管理面余额只读面（左栏余额卡的数据来源）。只读 ⇒ requestAllowed。
 const ROUTE_ACCOUNT_CREDITS = '/canvas-studio/account/credits'
+/**
+ * 积分流水只读面（账务页 + 实扣回填）。与余额同一个命名空间：
+ * `GET ?more=1` 按游标追加下一页，`GET ?refresh=1` 绕 Host 的 60s TTL。
+ */
+const ROUTE_ACCOUNT_LEDGER = '/canvas-studio/account/ledger'
+/**
+ * 预估报价面（`POST`）：client 拿不到 token，报价只能 Host 代调；请求体是声明式
+ * 参数（`CreditQuoteParams`），模型/input 由 Host 的 `credit-quote.ts` 现推。
+ *
+ * 语义上是**只读**（quote 不建任务、不冻结），但要用 POST 传 body ⇒ 走
+ * `mutationAllowed` 的同源校验。许可是「本地同源」，不是「写动作」。
+ */
+const ROUTE_ACCOUNT_QUOTE = '/canvas-studio/account/quote'
 /**
  * 订阅与积分（方案 `订阅与积分接入方案-20261102.md`）。
  *
@@ -1181,6 +1195,61 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       } catch (cause) {
         // refreshCredits 自身不抛；这是 HTTP 面的最后一道兜底。
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分读取失败，请稍后重试。')
+      }
+    }}),
+
+    // 积分流水只读面。与余额同款纪律：失败不 500 —— 视图里带 `error` 并保留旧条目，
+    // 账务页因此能显示「这是 60s 前的账 + 一次读取失败的原因」，比一张错误卡有用。
+    // `?more=1` = 用户点「加载更多」：显式动作，绕 TTL 直接翻页。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ACCOUNT_LEDGER, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'account ledger is read-only' })
+        return
+      }
+      const query = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams
+      const more = query.get('more') === '1'
+      const force = more || query.get('refresh') === '1'
+      try {
+        await refreshLedger(force, more)
+        if (!res.destroyed) sendJson(res, 200, ledgerView())
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分流水读取失败，请稍后重试。')
+      }
+    }}),
+
+    // 预估报价面。**永不 5xx**：报价失败是「暂不可用」，视图里带 `error`、`credits:null`
+    // —— 生成链的 quote 硬闸本来就是 fail-open（CS-BILL-002），UI 侧也不该因为报价
+    // 坏了就拦下提交（A-4 验收用例）。只有「请求体不是报价参数」才是 400。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ACCOUNT_QUOTE, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'account quote only supports POST' })
+        return
+      }
+      if (!mutationAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio quote requires a local same-origin request' })
+        return
+      }
+      try {
+        const controller = new AbortController()
+        req.once('aborted', () => controller.abort())
+        const body = await readJson(req, controller.signal)
+        const params = parseQuoteParams(body)
+        if (params === null) {
+          sendJson(res, 400, { error: 'quote requires kind: image | video | audio' })
+          return
+        }
+        const view = await quoteCredits(params)
+        if (!res.destroyed) sendJson(res, 200, view)
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分报价失败，请稍后重试。')
       }
     }}),
 

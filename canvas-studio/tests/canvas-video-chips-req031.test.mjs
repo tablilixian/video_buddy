@@ -50,21 +50,21 @@ test('REQ-031 spec chip：画幅三选 + 时长六档写数字 + 清晰度内部
   assert.match(card, /跟随项目 \/ 默认/, '菜单必须有回退到继承的入口')
 })
 
-test('REQ-031 积分明细：演示 costRows 公式逐行 + 脚注 + 预估', async () => {
+test('REQ-031 积分读数：走服务端报价，明细只列事实行（不再前端乘除）', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  assert.match(card, /\['模型基准 · MiniMax H3', 20\]/, '基准行必须 = H3 20')
-  assert.match(card, /Math\.max\(0, duration - 5\) \* 2/, '时长加长必须 = (dur−5)×2（演示公式）')
-  assert.match(card, /VIDEO_RES_COST: Readonly<Record<string, number>> = \{ '480p': 0, '720p': 6, '1080p': 14 \}/, '清晰度计价必须 = 演示 RES_COST 逐值（键 = 规范档位键）')
-  assert.match(card, /图片参考 ×\$\{images\}/, '图片参考计价行必须存在')
-  assert.match(card, /images \* 2/, '图片参考单价 = 2')
-  assert.match(card, /videos \* 6/, '视频参考单价 = 6')
-  assert.match(card, /audios \* 3/, '音频参考单价 = 3')
-  assert.match(card, /\['首帧参考', 2\]/, '首帧参考计价 = 2')
-  assert.match(card, /\['尾帧参考', 3\]/, '尾帧参考计价 = 3')
-  assert.match(card, /\['原生音频', 8\]/, '原生音频计价 = 8')
-  assert.match(card, /本次消耗/, '明细必须有「本次消耗」合计行')
-  assert.match(card, /数字为基准积分；时长、清晰度、参考素材与音频会另行结算。/, '脚注必须逐字取演示')
-  assert.match(card, /· 预估/, '读数必须标「预估」（拍板⑦）')
+  const chip = await read('src/client/canvas/CreditChip.tsx')
+  // 视频读数 = 可展开 chip（弹层要解释「这个数怎么来的」）。
+  assert.match(card, /<CreditChipButton/, '视频 chip 必须走可展开的报价组件')
+  assert.match(card, /const videoQuoteParams: CreditQuoteParams = \{[\s\S]*?kind: 'video'[\s\S]*?duration,[\s\S]*?videoMode:/, '视频报价参数必须带 kind/duration/videoMode')
+  // 计价只有时长一维 ⇒ 明细里列事实，不列「各项多少钱」。
+  assert.match(card, /不影响计价/, '弹层必须明说清晰度不影响视频计价（旧 UI 多收的就是这笔）')
+  assert.doesNotMatch(card, /模型基准 · MiniMax H3/, '旧「模型基准 20」行必须退役')
+  assert.doesNotMatch(card, /images \* 2|videos \* 6|audios \* 3/, '按个计价（图×2/视频×6/音频×3）后端无实现，必须退役')
+  assert.doesNotMatch(card, /\['原生音频', 8\]/, '「原生音频 +8」后端无实现，必须退役')
+  assert.doesNotMatch(card, /Math\.max\(0, duration - 5\) \* 2/, '「时长每多 1s +2」与实价（每秒 6）不符，必须退役')
+  // 读数形态：标「预估」+ 服务端报价来源。
+  assert.match(chip, /· 预估/, '读数必须标「预估」')
+  assert.match(chip, /服务端报价/, 'title 必须说明数字来自服务端报价')
 })
 
 test('REQ-031 摄像机标记 chip：开启后挂输入框上方，× 移除', async () => {
@@ -87,7 +87,7 @@ test('REQ-031 image 形态零改动：既有 chips 分支原样保留', async ()
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   assert.match(card, /MODEL_OPTIONS: readonly \{ value: string; label: string; hint: string \}\[\]/, 'image 模型高级三选仍在')
   assert.match(card, /commitPrompt\('modelOverride', option\.value\)/, 'image 模型覆盖通路不变')
-  assert.match(card, /CREDIT_ESTIMATE: Readonly<Record<string, number>> = \{ '480p': 15, '720p': 25, '1080p': 40 \}/, 'image 积分估算表不变（键随档位改名同步）')
+  assert.match(card, /<CreditChip params=\{imageQuoteParams\}/, 'image 积分读数必须走服务端报价（前端价目表 2026-11-24 退役）')
   // 双分支结构：image 走条件分支，video 走新分支。
   assert.match(card, /\{form === 'image' \? \(/, '底栏必须按形态双分支')
 })

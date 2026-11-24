@@ -13,7 +13,7 @@ import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import type { StudioStorageInfo } from '../storage-info.js'
-import type { AccountCreditsView } from '../contracts/account.js'
+import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from '../contracts/account.js'
 import type {
   BillingCheckoutRequest,
   BillingCheckoutSession,
@@ -403,7 +403,7 @@ export async function fetchStudioGenerateQueue(
 export type { StudioStorageDraftStats, StudioStorageInfo, StudioStorageProjectEntry } from '../storage-info.js'
 
 /** 管理面余额视图（形状在 src/contracts/account.ts 定义，路由与 UI 共用同一来源）。 */
-export type { AccountCreditsView } from '../contracts/account.js'
+export type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from '../contracts/account.js'
 
 /**
  * 管理面余额（CV-358，左栏余额卡）。`force` ⇒ 带 `?refresh=1` 绕 Host 的 30s TTL。
@@ -420,6 +420,54 @@ export async function fetchStudioAccountCredits(
     cache: 'no-store',
     ...(signal === undefined ? {} : { signal }),
   }))
+}
+
+/**
+ * 积分流水（账务页 + 实扣回填）。`more` ⇒ 按 Host 手里的游标追加下一页。
+ *
+ * 与余额同样的失败语义：向上抛，让调用方区分「读到空账」与「没读到」。
+ */
+export async function fetchStudioAccountLedger(
+  options: { force?: boolean; more?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<AccountLedgerView> {
+  const query = options.more === true ? '?more=1' : options.force === true ? '?refresh=1' : ''
+  return readJson<AccountLedgerView>(await fetch(`/canvas-studio/account/ledger${query}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * 预估报价（`POST /canvas-studio/account/quote`）。
+ *
+ * **不抛错**：报价是装饰性读数，失败要降级成「暂不可用」而不是让整个芯片炸掉。
+ * Host 侧也是同一套语义（永远 200 + `error` 字段），这里再兜一层网络异常。
+ */
+export async function fetchStudioAccountQuote(
+  params: CreditQuoteParams,
+  signal?: AbortSignal,
+): Promise<AccountQuoteView> {
+  try {
+    const response = await fetch('/canvas-studio/account/quote', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      ...(signal === undefined ? {} : { signal }),
+    })
+    return await readJson<AccountQuoteView>(response)
+  } catch (cause) {
+    // abort 不是失败：调用方已换参数，这个结果没人要了。原样抛出交给 hook 判定。
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    return {
+      model: null,
+      operation: null,
+      credits: null,
+      fetchedAt: null,
+      error: { code: 'network_error', message: cause instanceof Error ? cause.message : String(cause) },
+    }
+  }
 }
 
 /**

@@ -115,6 +115,35 @@ export interface CreditBalance {
   lots: { id: string; source: string; granted: number; remaining: number; status: string }[] | null
 }
 
+/**
+ * 一条积分流水（`GET /v1/credits/ledger` 的 `entries[]`，2026-11-24 实测形状）。
+ *
+ * `entry_type` 刻意**不枚举**：后端已在用 `hold` / `commit` / `release` / `grant`
+ * 等值，未来还会加。写死联合类型的结果是「新增一种条目，整页解析失败」，而这一页
+ * 本来只需要把它原样显示出来。
+ */
+export interface CreditLedgerEntry {
+  id: number
+  /** 未知值原样保留（UI 显示原文，不 switch 到空）。 */
+  entry_type: string
+  /** **带符号**：`commit` 为负（真实消耗）、`release` 为 0（退款）、`grant` 为正。 */
+  amount: number
+  lot_id: string
+  hold_id?: string
+  /** 生成类条目才有；LLM 条目只有 `llm_request_id`（没有 generation_id）。 */
+  generation_id?: string
+  llm_request_id?: string
+  lot_balance_after: number
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+
+/** 一页流水（`cursor` = 上一页最后一条的 `id`，exclusive；`null` = 到底）。 */
+export interface CreditLedgerPage {
+  entries: CreditLedgerEntry[]
+  next_cursor: string | null
+}
+
 /** 保留服务端稳定错误码，调用方按 code 分派而不是解析文案。 */
 export class ApiError extends Error {
   readonly code: string
@@ -196,6 +225,34 @@ export class DramaClient {
   /** 积分余额（仅展示语义，不做生成前预检）。 */
   async creditBalance(token: string): Promise<CreditBalance> {
     return this.#request<CreditBalance>(token, '/v1/credits/balance')
+  }
+
+  /**
+   * 积分流水（`GET /v1/credits/ledger`，倒序：最新在前）。
+   *
+   * 三个**实测**约束（2026-11-24，`docs/plans/积分预估与实扣展示方案-20261124.md` §1.2）：
+   * 1. `limit` 服务端上限 **200**（传 500 被夹到 200）——本地先夹到 [1,200]，省一次
+   *    静默截断；
+   * 2. `generation_id` / `entry_type` 查询参数**被服务端忽略**（传了也返回全量）
+   *    ⇒ 调用方只能全量拉回来自己按 `generation_id` 建索引，本方法刻意不暴露这两个
+   *    参数（暴露了会让人以为过滤生效）；
+   * 3. `cursor` = 上一页最后一条的 `id`（exclusive），不是时间戳。
+   *
+   * 解析**不校验字段**：`entry_type` 未知值原样保留，`metadata` 透传——服务端新增
+   * 一种条目不该让整页读空（契约见 `contracts/account.ts`）。
+   */
+  async creditLedger(
+    token: string,
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<CreditLedgerPage> {
+    const params = new URLSearchParams()
+    if (options.limit !== undefined) {
+      const limit = Number.isFinite(options.limit) ? Math.round(options.limit) : 50
+      params.set('limit', String(Math.min(200, Math.max(1, limit))))
+    }
+    if (options.cursor !== undefined && options.cursor !== '') params.set('cursor', options.cursor)
+    const query = params.toString()
+    return this.#request<CreditLedgerPage>(token, query === '' ? '/v1/credits/ledger' : `/v1/credits/ledger?${query}`)
   }
 
   // ── 生成面业务 API（api(12).md §6，迁移方案 B1）───────────────────────────

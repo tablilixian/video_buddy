@@ -8,13 +8,15 @@ import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-
 import { CHROME_CARD_WIDTH, CHROME_CARD_WIDTH_AUDIO } from '../../canvas-aspect.js'
 import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
-import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, toLocalRef, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
+import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct, dimOf, estSecondsOf, layerDims, stripWs, toLocalRef, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { RESOLUTION_DISPLAY, resolutionDisplay, resolutionDisplaysFor, resolutionUpgradeTargets } from '../../resolution-display.js'
 import { resolveResolution } from '../../resolution-resolve.js'
 import type { ResolutionId } from '../../resolution-tiers.js'
 import { styleIdOfPrefix, visualStyleOf } from '../../visual-styles.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
+import { CreditChip, CreditChipButton } from './CreditChip.js'
+import type { CreditQuoteParams } from '../../contracts/account.js'
 import { StylePicker } from './StylePicker.js'
 import { StyleHintBar } from './StyleHintBar.js'
 import { VoiceLayerPop } from './VoiceLayerPop.js'
@@ -299,8 +301,18 @@ const CAMERA_APERTURES = ['f/1.4', 'f/2', 'f/2.8', 'f/4', 'f/8', 'f/16'] as cons
 /** 演示默认：潘那维申 DXL2 · 阿莱大师定焦 · 标准 35mm · 中光圈。 */
 const CAMERA_DEFAULT = { body: 0, lens: 0, focal: 2, aperture: 3 } as const
 
-/** 积分预估占位表（拍板⑦：无结算后端，数值为前端占位常量，标「预估」）。 */
-const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '720p': 25, '1080p': 40 }
+/**
+ * 积分读数（2026-11-24 起）：**不再有前端价目表**。
+ *
+ * 此前有三套前端价目（本文件一张按档位表、一张按行明细表，加上 `voice-dims` 里
+ * 按字数算的公式）和真机实价全部对不上：15s 视频报 46、实扣 90
+ * （−49%），TTS 100 字报 7、实扣 3（+133%）。根因不是数值错，是**两套计价**——
+ * 前端自己乘除，后端按 quote 结算。
+ *
+ * 现在读数只有一个来源：`POST /canvas-studio/account/quote`（Host 代调后端
+ * `POST /v1/generations/quote`，实测与 commit 一分不差）。参数从这里传出去，
+ * 读数由 {@link CreditChip} / {@link CreditChipButton} 统一渲染。
+ */
 
 /** H3 官方分路上限与合计（与 `video-reference.ts` 常量同源口径）。 */
 const VIDEO_CAPS = { images: 9, videos: 3, audios: 3, total: 12 } as const
@@ -322,9 +334,6 @@ const VIDEO_RATIOS = [
 
 /** 时长预设六档（拍板④；全部 ≤ H3 maxDur 15s；写 duration 参数走 Host clampDuration）。 */
 const VIDEO_DURATIONS = [4, 6, 8, 10, 12, 15] as const
-
-/** 清晰度计价（演示 RES_COST 逐值：480P=0 / 720P=6 / 1080P=14，按内部键）。 */
-const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '720p': 6, '1080p': 14 }
 
 /**
  * 图片节点的清晰度菜单 = **图片视图**（720P / 1080P，无 480P）。
@@ -717,7 +726,18 @@ export function NodeInputCard(props: NodeInputCardProps) {
     ? stripWs(audio.free).length + stripWs(audio.lyrics).length
     : bodyCharCount(audio.body)
   const audioEst = estSecondsOf(audioChars)
-  const audioCredit = creditCostOf(audioChars)
+  /**
+   * 音频预估参数：`music` 按时长（秒 × 1），`voice` / `design` 走 `txt2speech` 固定价。
+   *
+   * 时长取 `audioEst`（发送时 music 正是把它当 duration 提交，见 `send` 的
+   * `D-MusicDur` 分支），所以这里报的价与真正提交的那一次同参数。
+   */
+  const audioQuoteParams: CreditQuoteParams | null = audioEst === 0
+    // 没写正文 = 不可提交，报价也就没有意义（显示 `—` 而不是报一个 0 或固定价）。
+    ? null
+    : audio.fn === 'music'
+      ? { kind: 'audio', audioFn: 'music', prompt: audio.free, lyrics: audio.lyrics, duration: audioEst }
+      : { kind: 'audio', audioFn: audio.fn, prompt: audio.body }
   // 发送前校验（产品收严：探针实证 host 重放缺 txt_prompt 直接 422 —— voice/design
   // 正文必填；music 描述必填与演示 generate 同文案）。
   const audioIssue: string | null = !isAudio ? null
@@ -920,9 +940,30 @@ export function NodeInputCard(props: NodeInputCardProps) {
       ? `${CAMERA_BODIES[next.body]} · ${CAMERA_LENSES[next.lens]} · ${CAMERA_FOCALS[next.focal]} · ${CAMERA_APERTURES[next.aperture]}`
       : '')
   }
-  const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['720p'] ?? 25
+  // ---- 预估积分参数（三形态共用一套推导，读数由 CreditChip 渲染）----
+  //
+  // 这里只声明「要生成什么」，模型/input/单价全在 Host（`src/credit-quote.ts`）现推。
+  // 图片按**面积**计价 ⇒ 只需要档位 + 画幅 + 有没有参考图（参考会改走 image2image，
+  // 同尺寸 ×1.25）；prompt 只影响模型路由（Krea2 / Qwen 同价）。
+  const promptText = promptValueOf(node, 'prompt')
+  // 工具名只认这三条（角色四视图固定 30，与面积无关）；其余（历史 image_fix 等）按
+  // 文生/图生处理 —— 那些链路已下线，报个价总比不报好。
+  const imageTool = node.toolName === 'character_generate'
+    ? 'character_generate' as const
+    : node.toolName === 'image_generate_withtxt'
+      ? 'image_generate_withtxt' as const
+      : 'image_generate' as const
+  const imageQuoteParams: CreditQuoteParams = {
+    kind: 'image',
+    prompt: promptText,
+    resolution,
+    aspectRatio,
+    imageTool,
+    ...(refCount > 0 ? { hasImages: true } : {}),
+    ...(modelOverride === 'textRender' || modelOverride === 'krea2' ? { modelOverride } : {}),
+  }
 
-  // ---- video 形态底栏（CV-282 Step 2）：时长读数 + 积分明细（演示 costRows 公式）----
+  // ---- video 形态底栏（CV-282 Step 2）：时长读数 + 积分读数 ----
   const durationRaw = generationParamOf(rawRef.current, 'duration')
   const duration = typeof durationRaw === 'number' ? durationRaw : 5
   const generationParamCount = (key: string): number => {
@@ -930,29 +971,44 @@ export function NodeInputCard(props: NodeInputCardProps) {
     return Array.isArray(value) ? value.filter(item => typeof item === 'string').length : 0
   }
   const generationParamHas = (key: string): boolean => typeof generationParamOf(rawRef.current, key) === 'string'
-  /** 演示 costRows() 逐行（H3 单模型口径）；明细行弹层 + 合计，数值为前端估算（拍板⑦标「预估」）。 */
-  const creditRows: readonly [string, number][] = (() => {
-    if (!isVideo) return []
-    const rows: Array<[string, number]> = [['模型基准 · MiniMax H3', 20]]
-    const durationAdd = Math.max(0, duration - 5) * 2
-    if (durationAdd > 0) rows.push([`时长加长 · ${duration}s`, durationAdd])
-    const resCost = VIDEO_RES_COST[resolution] ?? 0
-    if (resCost > 0) rows.push([`清晰度 · ${resolutionDisplay(resolution).label}`, resCost])
+  // 视频计价只有**时长**一维（6 积分/秒，实测 480P 与 1080P 同价）⇒ 参数只带时长与模式。
+  const videoQuoteParams: CreditQuoteParams = {
+    kind: 'video',
+    prompt: promptText,
+    resolution,
+    aspectRatio,
+    duration,
+    videoMode: mode === 'fl' ? 'fl' : 'omni',
+  }
+  /**
+   * 明细弹层里的**事实行**（不是金额行）。
+   *
+   * 后端只给总数，逐项金额必须等价目表（方案 B 层）。这里列「模型 / 时长 / 画幅 /
+   * 清晰度 / 参考个数」，让用户能核对「我提交的是什么」，而不是看一串自己乘出来、
+   * 与实扣对不上的数。清晰度行**明确标注不影响计价** —— 那正是旧 UI 多收的钱。
+   */
+  const videoCreditRows: ReadonlyArray<readonly [string, string]> = (() => {
+    const rows: Array<readonly [string, string]> = [
+      ['模型', 'MiniMax H3'],
+      ['时长', `${duration}s`],
+      ['画幅', aspectRatio],
+      ['清晰度', `${resolutionDisplay(resolution).label}（不影响计价）`],
+    ]
     if (mode === 'fl') {
-      if (generationParamHas('filename')) rows.push(['首帧参考', 2])
-      if (generationParamHas('filenameTail')) rows.push(['尾帧参考', 3])
+      const frames = [generationParamHas('filename') ? '首帧' : null, generationParamHas('filenameTail') ? '尾帧' : null]
+        .filter((item): item is string => item !== null)
+      if (frames.length > 0) rows.push(['参考帧', frames.join(' + ')])
     } else {
       const images = generationParamCount('filenames')
       const videos = generationParamCount('videoRefs')
       const audios = generationParamCount('audioRefs')
-      if (images > 0) rows.push([`图片参考 ×${images}`, images * 2])
-      if (videos > 0) rows.push([`视频参考 ×${videos}`, videos * 6])
-      if (audios > 0) rows.push([`音频参考 ×${audios}`, audios * 3])
+      const refs = [images > 0 ? `图 ${images}` : null, videos > 0 ? `视频 ${videos}` : null, audios > 0 ? `音频 ${audios}` : null]
+        .filter((item): item is string => item !== null)
+      if (refs.length > 0) rows.push(['参考素材', refs.join(' · ')])
     }
-    if (audioOn) rows.push(['原生音频', 8])
+    if (audioOn) rows.push(['原生音频', '开'])
     return rows
   })()
-  const creditTotal = isVideo ? creditRows.reduce((sum, row) => sum + row[1], 0) : credits
   /** 摄像机弹出层（image/video 两形态共用，副文案按形态区分）。 */
   const cameraPopNode = (subtitle: string) => (
     <span className="csChipPop csChipPopCamera">
@@ -1728,9 +1784,8 @@ export function NodeInputCard(props: NodeInputCardProps) {
         </div>
         <div className="csInputCardFootRight">
           <span className="csInputPill csInputPillIcon" title="提示词增强：功能挂 REQ-003 Step 4 拍板，当前置灰（偏差登记 §九）">✦</span>
-          <span className="csInputPill csInputCredits" title="积分：纯展示占位（拍板⑦），按档位前端估算，无真实结算">
-            ✦ <span className="csInputCreditsNum">{credits}</span> · 预估
-          </span>
+          {/* 预估：服务端报价（图片按像素面积计价，与实扣一分不差）。 */}
+          <CreditChip params={imageQuoteParams} hint="按服务端报价；生成结束后以实际结算为准" />
           <button
             type="button"
             className="csInputSend"
@@ -1855,15 +1910,13 @@ export function NodeInputCard(props: NodeInputCardProps) {
             )}
           </div>
           <div className="csInputCardFootRight">
-            {/* 积分 chip（拍板⑤：标题附「预计约 N 秒」时长估算；0 字不消耗）。 */}
-            <span
-              className="csInputPill csInputCredits"
-              title={audioCredit > 0
-                ? `本次消耗 ${audioCredit} 积分 · 基准 2 + 文本每 20 字 1 分 · 预计约 ${audioEst} 秒（按字数估算）`
-                : '填写文本后计算消耗积分'}
-            >
-              ✦ <span className="csInputCreditsNum">{audioCredit}</span> · 预估
-            </span>
+            {/* 预估：服务端报价（TTS / 音色设计固定价，音乐按时长）。0 字不报（`—`）。 */}
+            <CreditChip
+              params={audioQuoteParams}
+              hint={audioEst === 0
+                ? '填写文本后才有报价'
+                : `预计约 ${audioEst} 秒（音乐按时长计价；语音合成 / 音色设计为固定价）`}
+            />
             <button
               type="button"
               className="csInputSend"
@@ -2042,31 +2095,14 @@ export function NodeInputCard(props: NodeInputCardProps) {
           </div>
           <div className="csInputCardFootRight">
             <span className="csInputPill csInputPillIcon" title="提示词增强：功能挂 REQ-003 Step 4 拍板，当前置灰（偏差登记 §九）">✦</span>
-            <span className="csInputSel">
-              <button
-                type="button"
-                className={openPop === 'credit' ? 'csInputPill csInputCredits csInputPillOn' : 'csInputPill csInputCredits'}
-                title="积分：纯展示占位（拍板⑦），按演示 costRows 公式前端估算"
-                onClick={() => { togglePop('credit') }}
-              >
-                ✦ <span className="csInputCreditsNum">{creditTotal}</span> · 预估
-              </button>
-              {openPop === 'credit' && (
-                <span className="csChipPop csCreditPop">
-                  {creditRows.map(([label, value]) => (
-                    <span className="csCreditRow" key={label}>
-                      <span className="csCreditRowLabel">{label}</span>
-                      <span className="csCreditRowValue">{value}</span>
-                    </span>
-                  ))}
-                  <span className="csCreditRow csCreditRowTotal">
-                    <span>本次消耗</span>
-                    <span>{creditTotal}</span>
-                  </span>
-                  <span className="csCreditFoot">数字为基准积分；时长、清晰度、参考素材与音频会另行结算。</span>
-                </span>
-              )}
-            </span>
+            {/* 预估：服务端报价（视频 = 时长 × 6，清晰度不影响计价）。弹层只列事实行。 */}
+            <CreditChipButton
+              params={videoQuoteParams}
+              open={openPop === 'credit'}
+              onToggle={() => { togglePop('credit') }}
+              rows={videoCreditRows}
+              foot="数字来自服务端报价（与实扣一致）。视频按时长计价，清晰度不影响；逐项金额拆解待价目表上线。"
+            />
             <button
               type="button"
               className="csInputSend"

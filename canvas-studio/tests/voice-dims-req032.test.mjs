@@ -17,7 +17,7 @@ import { readFile } from 'node:fs/promises'
 import {
   AUDIO_FNS, DIMS, LAYERS, LAYER_ORDER, LOCAL_REF_PREFIX,
   audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct,
-  creditCostOf, dimOf, estSecondsOf, isLocalRef, layerDims, stripLocalRef, stripWs, toLocalRef,
+  dimOf, estSecondsOf, isLocalRef, layerDims, stripLocalRef, stripWs, toLocalRef,
 } from '../lib/voice-dims.js'
 
 const read = async (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8')
@@ -105,14 +105,22 @@ test('REQ-032 净字口径：stripWs 全去空白；bodyCharCount 返回去空�
   assert.equal(bodyCharCount('   \n\t'), 0, '纯空白必须 0 净字')
 })
 
-test('REQ-032 时长/积分：与后端真值对拍（139 净字 → 28s / 10 分）', () => {
+test('REQ-032 时长：与后端真值对拍（139 净字 → 28s）', () => {
   assert.equal(estSecondsOf(0), 0, '没写正文不估时长')
-  assert.equal(creditCostOf(0), 0, '没写正文不消耗')
   assert.equal(estSecondsOf(139), 28, '探针真值：139 净字 → round(139/5)=28s（后端 27.55s，误差 <1%）')
-  assert.equal(creditCostOf(139), 9, '2 + ceil(139/20)=2+7=9 分')
   assert.equal(estSecondsOf(1), 1, '有正文至少 1 秒')
-  assert.equal(creditCostOf(20), 3, '恰好 20 字 = 2 + 1')
-  assert.equal(creditCostOf(21), 4, '21 字进位 = 2 + 2')
+})
+
+/**
+ * 2026-11-24：`creditCostOf` 退役（2 + ceil(n/20) 与后端实价无关，实测 TTS 100 字
+ * 报 7 / 实扣 3）。这条守卫防它被「顺手加回来」—— 积分读数只能来自服务端 quote。
+ */
+test('积分离散公式已退役：voice-dims 不得再导出 creditCostOf', async () => {
+  const module = await import('../lib/voice-dims.js')
+  assert.equal('creditCostOf' in module, false, '积分公式必须退役（价由服务端 quote 给，不在前端乘除）')
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  assert.doesNotMatch(card, /creditCostOf/, '输入卡不得回退到字数公式')
+  assert.doesNotMatch(card, /CREDIT_ESTIMATE|VIDEO_RES_COST/, '前端价目表必须整块退役')
 })
 
 // ==================== REQ-032 / CV-287 Step 3：参考音色 `local:` 约定 ====================

@@ -11,9 +11,10 @@
  * - `500` 记日志不重试。
  * bootstrap 失败不回滚登录态；目录有 TTL（5min），TTL 内的重推只发布凭据不重拉。
  */
-import { DramaClient, ApiError, type CatalogModel, type CreditBalance } from './drama-management.js'
+import { DramaClient, ApiError, type CatalogModel, type CreditBalance, type CreditLedgerEntry } from './drama-management.js'
 import { getAuthSession } from './auth-session.js'
-import type { AccountCreditsView } from './contracts/account.js'
+import { quoteFingerprint, quoteRequestFor } from './credit-quote.js'
+import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from './contracts/account.js'
 
 /** 目录缓存 TTL（毫秒）。 */
 const CATALOG_TTL_MS = 5 * 60_000
@@ -24,6 +25,19 @@ const DEFAULT_BACKOFF_MS = 30_000
  * 连点与页面切回时的一串重复请求，又不会让「刚扣完费」看起来没有反应。
  */
 const CREDITS_TTL_MS = 30_000
+/**
+ * 流水缓存 TTL（毫秒）。比余额长一倍：流水变化慢（只有生成/充值时才有新条目），
+ * 但单页 200 条体积比余额大一个量级，不值得按余额的节奏反复拉。
+ */
+const LEDGER_TTL_MS = 60_000
+/** 单页条数：服务端上限 200（实测），默认取一半——首屏够看且不吃满带宽。 */
+const LEDGER_PAGE_SIZE = 50
+/** 内存里最多留多少条（分页追加的上限；超出丢最旧的，UI 只展示最近这些）。 */
+const LEDGER_MAX_ENTRIES = 200
+/** 报价缓存 TTL：价目表由后端控制，5 分钟内复用同一组参数的报价是安全的。 */
+const QUOTE_TTL_MS = 5 * 60_000
+/** 报价缓存上限（防「用户一直拖时长」把 Map 拖成内存泄漏）。 */
+const QUOTE_CACHE_MAX = 100
 
 export interface AccountStateDeps {
   /** 启用闸：`businessApiBase` 非空 && `supabaseUrl` 非空（live 读取，设置变更即时生效）。 */
@@ -151,7 +165,175 @@ async function fetchCredits(d: AccountStateDeps, token: string): Promise<void> {
  */
 export function markCreditsStale(): void {
   creditsStale = true
+  // 流水与余额是同一件事的两个面：余额变了流水必然也变了。一起标陈旧，否则
+  // 用户点开流水看到的是「余额已扣、流水里没有这笔」。
+  ledgerStale = true
 }
+
+// ── 流水（积分账务页 / 实扣回填的数据源）─────────────────────────────────────
+//
+// 与余额同一套纪律（TTL / 在飞去重 / 403 停手 / 失败留旧值），刻意**不新写一份**
+// 状态机：两处各判一次「该不该发请求」，迟早漂移。
+/** 已加载的条目（最新在前；逐页追加，超过上限丢最旧的）。 */
+let ledgerEntries: CreditLedgerEntry[] = []
+/** 下一页游标；`null` = 到底（或从未读过）。 */
+let ledgerCursor: string | null = null
+/** `ledgerEntries` 的时刻（epoch ms）；0 = 从未读到。 */
+let ledgerFetchedAt = 0
+/** 被生成结束标记为陈旧：下一次读取绕 TTL。 */
+let ledgerStale = false
+let ledgerError: { code: string; message: string } | null = null
+/** 403：账号受限后不再发业务请求（与余额同闸）。 */
+let ledgerDisabled = false
+let ledgerInFlight: Promise<void> | null = null
+
+/** 读流水（`force=false` 时 TTL 内复用；`more=true` 时按游标追加下一页）。 */
+export function refreshLedger(force: boolean, more = false): Promise<void> {
+  const d = deps
+  const token = getAuthSession()?.accessToken ?? ''
+  if (d === null || token === '' || !d.enabled() || disabled || ledgerDisabled) return Promise.resolve()
+  if (ledgerInFlight !== null) return ledgerInFlight
+  if (more && ledgerCursor === null) return Promise.resolve()
+  if (!more && !force && !ledgerStale && ledgerFetchedAt !== 0 && Date.now() - ledgerFetchedAt < LEDGER_TTL_MS) {
+    return Promise.resolve()
+  }
+  ledgerInFlight = fetchLedger(d, token, more).finally(() => { ledgerInFlight = null })
+  return ledgerInFlight
+}
+
+async function fetchLedger(d: AccountStateDeps, token: string, more: boolean): Promise<void> {
+  try {
+    const page = await clientOf(d).creditLedger(token, {
+      limit: LEDGER_PAGE_SIZE,
+      ...(more && ledgerCursor !== null ? { cursor: ledgerCursor } : {}),
+    })
+    // 只认数组形状：服务端加字段可以放过，但「entries 不是数组」说明契约变了，
+    // 这时候保留旧条目比清空更有用（下一行 error 会说明为什么没更新）。
+    if (!Array.isArray(page.entries)) {
+      throw new ApiError('invalid_response', '流水响应缺少 entries 数组。', 502, null)
+    }
+    const merged = more ? [...ledgerEntries, ...page.entries] : [...page.entries]
+    ledgerEntries = merged.length > LEDGER_MAX_ENTRIES ? merged.slice(0, LEDGER_MAX_ENTRIES) : merged
+    // 追加后游标可能指向已丢弃的条目，但那是服务端游标、与本地上限无关；
+    // 继续翻页仍是对的（用户要的是「更早的账」，不是「本地缓存那一页之后」）。
+    ledgerCursor = page.next_cursor
+    ledgerFetchedAt = Date.now()
+    ledgerStale = false
+    ledgerError = null
+  } catch (cause) {
+    if (cause instanceof ApiError) {
+      ledgerError = { code: cause.code, message: cause.message }
+      if (cause.status === 403) {
+        ledgerDisabled = true
+        d.log.warn(`[canvas-studio] 流水读取被拒（${cause.code}）：账号受限，停止业务请求`)
+        return
+      }
+      d.log.warn(`[canvas-studio] 流水读取失败（${cause.code}）：${cause.message}`)
+      return
+    }
+    ledgerError = { code: 'network_error', message: cause instanceof Error ? cause.message : String(cause) }
+    d.log.warn(`[canvas-studio] 流水读取异常：${ledgerError.message}`)
+  }
+}
+
+/** 读当前流水视图（纯读，无副作用）。 */
+export function ledgerView(): AccountLedgerView {
+  const d = deps
+  return {
+    enabled: d !== null && d.enabled(),
+    signedIn: getAuthSession() !== null,
+    disabled: ledgerDisabled,
+    entries: ledgerEntries,
+    hasMore: ledgerCursor !== null,
+    fetchedAt: ledgerFetchedAt === 0 ? null : new Date(ledgerFetchedAt).toISOString(),
+    error: ledgerError,
+  }
+}
+
+// ── 报价（预估积分的唯一出口）────────────────────────────────────────────────
+//
+// 报价是**纯计算**（不建任务、不冻结），所以不需要登录态以外的状态机；但它会被
+// 「拖时长滑块」「连续改档位」高频触发，所以要有缓存与在飞去重。缓存键是计价
+// 指纹（不含 prompt，见 `credit-quote.ts`）——同一指纹 5 分钟内直接返回。
+interface QuoteCacheEntry {
+  readonly credits: number
+  readonly model: string
+  readonly operation: string
+  readonly at: number
+}
+const quoteCache = new Map<string, QuoteCacheEntry>()
+const quoteInFlight = new Map<string, Promise<AccountQuoteView>>()
+
+/**
+ * 报一次价。**永不抛错**：报价失败不该让路由 500，也不该阻断提交（生成链的
+ * quote 硬闸本来就是 fail-open，见 `generate.ts` 的 CS-BILL-002 注释）。
+ */
+export function quoteCredits(params: CreditQuoteParams): Promise<AccountQuoteView> {
+  const d = deps
+  const token = getAuthSession()?.accessToken ?? ''
+  const empty = (code: string, message: string): AccountQuoteView => ({
+    model: null, operation: null, credits: null, fetchedAt: null, error: { code, message },
+  })
+  if (d === null || !d.enabled()) return Promise.resolve(empty('account_disabled', '管理面未启用，无法报价。'))
+  if (token === '') return Promise.resolve(empty('unauthenticated', '登录后才能报价。'))
+  if (disabled || creditsDisabled) return Promise.resolve(empty('account_disabled', '账号受限，已停止业务请求。'))
+
+  const request = quoteRequestFor(params)
+  const key = quoteFingerprint(params)
+  const hit = quoteCache.get(key)
+  if (hit !== undefined && Date.now() - hit.at < QUOTE_TTL_MS) {
+    return Promise.resolve({
+      model: hit.model,
+      operation: hit.operation,
+      credits: hit.credits,
+      fetchedAt: new Date(hit.at).toISOString(),
+      error: null,
+    })
+  }
+  // 在飞去重：三个 chip 与「重出按钮」可能同一瞬间问同一个指纹。
+  const pending = quoteInFlight.get(key)
+  if (pending !== undefined) return pending
+
+  const job = (async (): Promise<AccountQuoteView> => {
+    try {
+      const quote = await clientOf(d).quoteGeneration(token, {
+        model: request.model,
+        operation: request.operation,
+        input: request.input,
+      })
+      const at = Date.now()
+      if (quoteCache.size >= QUOTE_CACHE_MAX) {
+        // 简单淘汰：删最早插入的一条（够用，不值得为 100 条写 LRU）。
+        const oldest = quoteCache.keys().next()
+        if (!oldest.done) quoteCache.delete(oldest.value)
+      }
+      quoteCache.set(key, { credits: quote.estimated_credits, model: request.model, operation: request.operation, at })
+      return {
+        model: request.model,
+        operation: request.operation,
+        credits: quote.estimated_credits,
+        fetchedAt: new Date(at).toISOString(),
+        error: null,
+      }
+    } catch (cause) {
+      const code = cause instanceof ApiError ? cause.code : 'network_error'
+      const message = cause instanceof Error ? cause.message : String(cause)
+      d.log.warn(`[canvas-studio] 报价失败（${code}）：${message}`)
+      return {
+        model: request.model,
+        operation: request.operation,
+        credits: null,
+        fetchedAt: null,
+        error: { code, message },
+      }
+    } finally {
+      quoteInFlight.delete(key)
+    }
+  })()
+  quoteInFlight.set(key, job)
+  return job
+}
+
 
 /**
  * 套餐并发上限（entitlement.features.concurrent_generations，B4）。
@@ -221,6 +403,15 @@ export function notifyAuthCleared(): void {
   creditsStale = false
   creditsError = null
   creditsDisabled = false
+  // 流水同理：上一个账号的账不能留给下一个人看。报价缓存也清 —— 价格本身与
+  // 账号无关，但「登出后还能秒回报价」会让人误以为报价不需要登录。
+  ledgerEntries = []
+  ledgerCursor = null
+  ledgerFetchedAt = 0
+  ledgerStale = false
+  ledgerError = null
+  ledgerDisabled = false
+  quoteCache.clear()
 }
 
 /** bootstrap 主体：sync（用户 + 设备登记）→ models（目录）→ 回调。 */

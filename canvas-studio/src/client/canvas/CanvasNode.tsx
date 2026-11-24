@@ -16,6 +16,8 @@ import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
 import type { CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT, kindAccentOf } from './labels.js'
 import { useWaveBars } from '../use-waveform.js'
+import { useGenerationSpend } from '../spend-store.js'
+import { formatQuoteCredits } from '../use-credit-quote.js'
 
 /**
  * Tool names for the transient (loading) node titles.
@@ -399,6 +401,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const showAudioMix = node.audioComposition !== undefined
   const showDuration = node.kind === 'video' && durationLabel !== null
   const showDims = mediaDims !== null
+  // 实扣角标（2026-11-24）：只读流水里的 commit 金额，节点本身不存数字。
+  // 老节点（无 generationId）恒为 unknown ⇒ 什么都不渲染，逐像素不变。
+  const spend = useGenerationSpend(node.generationId)
   /* CV-289：resize 手柄扩到音频卡。isMedia 本身不能扩——672/801 两处渲染分支
      （媒体窗口 / 失败告警）按 image‖video 取镜，audio 有自己的体区分支，
      误扩会把 mp3 塞进 <video> 标签。音频在 resize 手势里走自由缩放
@@ -1010,6 +1015,16 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             {/* CV-089：分辨率（图片视频都用；与时长同排，便于左右扫读）。 */}
             {showDims && mediaDims !== null && (
               <span className="csNodeMediaDims">{mediaDims.width} × {mediaDims.height}</span>
+            )}
+            {/* 2026-11-24：本次生成**真实消耗**（流水 commit 金额）。只在已结算时
+                出现——「结算中」放脚部会让一排卡片反复闪，详情面板里说更合适。 */}
+            {spend.phase === 'settled' && spend.credits !== null && (
+              <span
+                className="csNodeSpend"
+                title={`本次生成实际消耗 ${formatQuoteCredits(spend.credits)} 积分（服务端流水结算）`}
+              >
+                ✦ {formatQuoteCredits(spend.credits)}
+              </span>
             )}
             {/* C10：卡自带读数（不依赖媒体加载）—— 分镜卡的「3.2s」声明时长、
                 文案卡的「128 字」。派生口径在 node-presentation，纯函数可直测。 */}

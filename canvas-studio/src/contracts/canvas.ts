@@ -198,6 +198,21 @@ export interface StudioCanvasNode {
   createdAt: number
   /** Producing tool name (image_generate / video_generate / video_composite). */
   toolName?: string
+  /**
+   * 业务 API 的生成 id（`GenerationSnapshot.id`，视频侧同 `jobs.json` 的 jobId）。
+   *
+   * 它是「这个节点到底花了多少积分」的**唯一索引键**：真实消耗只存在于
+   * `GET /v1/credits/ledger` 的 `commit` 条目上（该条目带 `generation_id`），
+   * 生成快照本身只有 `billing_status`、没有金额。
+   *
+   * **刻意不在此存 `credits` 金额**：账本只有一份。任务失败会 `release` 全额退回，
+   * 账本里那笔就归零了；节点上若复制了一个数字，它会永远显示「花了 30」——
+   * 第二份账本必然漂移，而漂移方向正好是多算用户的钱。实扣除 UI 按需向
+   * `POST /canvas-studio/account/spend` 批量派生（Host 从 ledger 索引）。
+   *
+   * 纯增量字段：老节点没有它 ⇒ 不显示消耗，不参与任何回写。
+   */
+  generationId?: string
   /** The `tool/call` event id that produced this node (retry anchor). */
   runId?: string
   /** Where the node came from: an agent tool call or a manual action. */

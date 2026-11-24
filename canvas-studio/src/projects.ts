@@ -521,12 +521,17 @@ export class ProjectRegistry {
           // R11-B3：`segmentRef` 同款 —— 客户端不认识 spec 段表，拖一下画布就会冲掉
           // 「这张卡是哪一段」的唯一线索，段级 patch 随即退化成「整份 spec 重写」。
           const keepSegmentRef = prior.segmentRef !== undefined && prior.segmentRef !== node.segmentRef
-          if (!keepFilename && !keepSbRef && !keepSegmentRef) return node
+          // 2026-11-24：`generationId` 同款 —— 客户端根本不认识它（渲染层没有这个字段的
+          // 读写路径），拖一下画布就会把「这个节点花了多少积分」的唯一索引键冲掉，
+          // 表现为「生成完有消耗，拖一下画布消耗就没了」。
+          const keepGenerationId = prior.generationId !== undefined && prior.generationId !== node.generationId
+          if (!keepFilename && !keepSbRef && !keepSegmentRef && !keepGenerationId) return node
           return {
             ...node,
             ...(keepFilename ? { filename: prior.filename } : {}),
             ...(keepSbRef ? { sbRef: prior.sbRef } : {}),
             ...(keepSegmentRef ? { segmentRef: prior.segmentRef } : {}),
+            ...(keepGenerationId ? { generationId: prior.generationId } : {}),
           }
         })
     // Host writes omit `view`; keep whatever view the last client save left.

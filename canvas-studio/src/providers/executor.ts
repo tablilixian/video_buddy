@@ -63,6 +63,15 @@ export interface RunVideoOutcome {
   readonly bytes?: Uint8Array
   /** 业务 API 供应商：产物扩展名（按 content 端点 MIME 判定）。 */
   readonly ext?: string
+  /**
+   * 业务 API 的 generation id（落节点 `generationId`，积分流水的索引键）。
+   *
+   * 只填 business 供应商：判据是 `settled.bytes` 存在（只有它会在 submit 内
+   * 下载产物）。legacy/fal 的 `handle.token` 是 ComfyUI prompt_id / fal 请求
+   * 基址，**不是** generation id —— 拿它去流水里查必然查不到，填了只会让
+   * 每个旧链路节点显示一个查不到账的 id。
+   */
+  readonly generationId?: string
 }
 
 /** 把 handle.warnings 拼进产物（exactOptionalPropertyTypes：非空才落字段）。 */
@@ -74,6 +83,7 @@ function outcomeWith(
     ...base,
     ...(handle.settled?.bytes !== undefined ? { bytes: handle.settled.bytes } : {}),
     ...(handle.settled?.ext !== undefined ? { ext: handle.settled.ext } : {}),
+    ...(handle.settled?.bytes !== undefined ? { generationId: handle.token } : {}),
   }
   if (handle.warnings !== undefined && handle.warnings.length > 0) {
     return { ...withBytes, warnings: handle.warnings }

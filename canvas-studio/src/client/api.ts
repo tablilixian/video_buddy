@@ -13,7 +13,7 @@ import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import type { StudioStorageInfo } from '../storage-info.js'
-import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from '../contracts/account.js'
+import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams, GenerationSpendView } from '../contracts/account.js'
 import type {
   BillingCheckoutRequest,
   BillingCheckoutSession,
@@ -403,7 +403,7 @@ export async function fetchStudioGenerateQueue(
 export type { StudioStorageDraftStats, StudioStorageInfo, StudioStorageProjectEntry } from '../storage-info.js'
 
 /** 管理面余额视图（形状在 src/contracts/account.ts 定义，路由与 UI 共用同一来源）。 */
-export type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from '../contracts/account.js'
+export type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams, GenerationSpendView } from '../contracts/account.js'
 
 /**
  * 管理面余额（CV-358，左栏余额卡）。`force` ⇒ 带 `?refresh=1` 绕 Host 的 30s TTL。
@@ -467,6 +467,39 @@ export async function fetchStudioAccountQuote(
       fetchedAt: null,
       error: { code: 'network_error', message: cause instanceof Error ? cause.message : String(cause) },
     }
+  }
+}
+
+/**
+ * 批量实扣查询（`POST /canvas-studio/account/spend`）。
+ *
+ * **不抛错**：与报价同款纪律 —— 查不到实扣是常态（账未落库 / 超出缓存窗口），
+ * 失败要降级成「不显示数字」而不是让节点卡片炸掉。
+ */
+export async function fetchStudioAccountSpend(
+  ids: readonly string[],
+  signal?: AbortSignal,
+): Promise<GenerationSpendView> {
+  const failed = (message: string): GenerationSpendView => ({
+    enabled: true,
+    signedIn: true,
+    credits: {},
+    pending: [],
+    fetchedAt: null,
+    error: { code: 'network_error', message },
+  })
+  try {
+    const response = await fetch('/canvas-studio/account/spend', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+      ...(signal === undefined ? {} : { signal }),
+    })
+    return await readJson<GenerationSpendView>(response)
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    return failed(cause instanceof Error ? cause.message : String(cause))
   }
 }
 

@@ -12,6 +12,8 @@ import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS, kindAccentOf } from './lab
 import { clipboardEnv } from './clipboard-env.js'
 import { PromptEditor } from './PromptEditor.js'
 import { ReferenceSlotEditor } from './ReferenceSlotEditor.js'
+import { useGenerationSpend } from '../spend-store.js'
+import { formatQuoteCredits } from '../use-credit-quote.js'
 
 /** 抽屉高度的下限：再矮就连表头都放不下。 */
 const MIN_DRAWER_HEIGHT = 148
@@ -99,6 +101,8 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
     onReferenceToChat, onDownload, libraryAssets, onResolveRefs,
   } = props
   const rootRef = useRef<HTMLElement>(null)
+  // 实扣（2026-11-24）：金额是从服务端流水派生的，节点上只存 generationId。
+  const spend = useGenerationSpend(node.generationId)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(node.title ?? '')
   // CV-198：复制反馈改成三态 —— 此前是布尔，失败时（`.then` 不执行）按钮永远停在
@@ -299,6 +303,26 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
             <div className="csDetailRow">
               <span className="csDetailLabel">时长</span>
               <span className="csDetailValue">{node.duration}s</span>
+            </div>
+          )}
+          {/* 2026-11-24：本笔真实消耗。有 generationId 才显示这一行 —— 老节点
+              （legacy/fal 链路、手写标注、导入素材）没有可查的账，凭空多一行「—」
+              只会让人以为账丢了。 */}
+          {node.generationId !== undefined && (
+            <div className="csDetailRow">
+              <span className="csDetailLabel">消耗积分</span>
+              <span
+                className="csDetailValue"
+                title={spend.phase === 'settled'
+                  ? '服务端流水里的结算金额（任务失败会自动释放，那时这里会回落）'
+                  : spend.phase === 'pending'
+                    ? '已提交，服务端还在结算，稍后自动更新'
+                    : '服务端最近 200 笔流水里没有这一笔（更早的账不再随画布展示）'}
+              >
+                {spend.phase === 'settled' && spend.credits !== null
+                  ? formatQuoteCredits(spend.credits)
+                  : spend.phase === 'pending' ? '结算中…' : '—'}
+              </span>
             </div>
           )}
           {node.error !== undefined && (

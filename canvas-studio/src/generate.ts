@@ -99,6 +99,7 @@ import { extractLastFrame } from './video-frames.js'
 import { dramaAuthHeaders, getAuthSession, isDramaAuthRequired } from './auth-session.js'
 // G1 余额门禁（方案 20261102 §7）：只读 Host 侧已缓存的余额视图，零额外网络。
 import { creditsView } from './account-state.js'
+import { estimateCreditNote, noteGenerationSettled } from './credit-settle.js'
 import { formatCredits } from './account-format.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
@@ -856,6 +857,8 @@ export async function resumeBusinessGenerationRecord(
   })
   await updateGenerationSnapshot(registry, projectId, final.id, final).catch(() => {})
   if (final.status !== 'succeeded') return
+  // 恢复结算也要登记：这条路径的「生成结束」发生在重启之后，账可能刚落下。
+  await noteGenerationSettled(undefined, null, final.id, null)
   const media = await downloadBusinessMedia(final, { label: '视频产物（恢复）', video: true })
   let params: GenerateParams
   try {
@@ -870,6 +873,7 @@ export async function resumeBusinessGenerationRecord(
     params,
     bytes: media.bytes,
     dramaFilename: final.id,
+    generationId: final.id,
     isVideo: true,
     size: sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, 'video')),
     warnings: [],
@@ -986,10 +990,10 @@ async function runBusinessGenerationTask(opts: {
     } catch (cause) {
       throw businessErrorToGenerationError(opts.tool, cause)
     }
-    // 预估积分随 warnings 回流（结果文本可读）；结算金额以服务端为准。
-    if (estimated !== null && opts.warnings !== undefined) {
-      opts.warnings.push(`本次生成预估消耗 ${Math.round(estimated * 10000) / 10000} 积分（提交时冻结，任务失败自动释放；以服务端结算为准）。`)
-    }
+    // 预估积分随 warnings 回流（结果文本可读）。**先按预估写**：提交这一刻服务端
+    // 还没结算，任何「实际」都是编的。生成成功后下面再按流水改写成实扣。
+    const estimateNote = estimateCreditNote(estimated)
+    if (estimateNote !== null && opts.warnings !== undefined) opts.warnings.push(estimateNote)
     try {
       const final = await followGeneration(deps, snapshot, {
         timeoutMs: opts.timeoutMs,
@@ -1000,6 +1004,10 @@ async function runBusinessGenerationTask(opts: {
         // 不下载输出（§7.6）。后端判死（deadline_exceeded）走 CS-GEN-212。
         assertGenerationSucceeded(final, opts.tool)
       }
+      // 登记「这笔账迟些要对」：此刻服务端的 commit 多半还没落库，所以这里**不等**
+      // （等就是拿生成耗时换一个查不到的号码）。客户端来要实扣时才现查流水。
+      // 实扣回填：拿到了就把「预估」那句换成真数（拿不到保留预估，不编造）。
+      await noteGenerationSettled(opts.warnings, estimateNote, final.id, estimated)
       return final
     } catch (cause) {
       // 打断（CS-GEN-207）与超时（CS-PROV-014）已是 CS 码，原样透传。
@@ -2352,6 +2360,13 @@ export async function generateAsset(
   // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
   // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
   let dramaFilename: string | undefined
+  // 业务 API 的 generation id（落节点 `generationId`，见 contracts/canvas.ts 该字段注）。
+  //
+  // 为什么不复用 `dramaFilename` 判：legacy/fal 链路的 `dramaFilename` 是 ComfyUI
+  // 产物名，与后端生成 id 毫无关系；拿它当积分流水的索引键会静默查不到账
+  //（流水按 `generation_id` 匹配），表现为「所有旧链路节点都显示不出消耗」。
+  // ⇒ 只在这条链真的知道生成 id 的地方显式赋值，不知道就留 undefined。
+  let generationId: string | undefined
   // BUG-019：图像分支的路由证据（routeImageModel 现算的 Drama 端点），随节点
   // 落 `routeModel` 字段 —— 路由断言 / 产物索引读结构化字段，不再从 filename
   // 猜（不同后端对图片端点回的 filename 形态不同：产物名或 ref-* 句柄，
@@ -2535,6 +2550,7 @@ export async function generateAsset(
     mediaBytes = outcome.bytes
     mediaExt = outcome.ext
     dramaFilename = outcome.generationId
+    generationId = outcome.generationId
   } else if (tool === 'image_generate_withtxt') {
     // CV-270：文字渲染特化（image.qwen-image-2.1，中文逐字正确）。**纯文生**。
     // R-P1-03 / C-12：模型不随工具名写死——路由逐次现算（含可显示文字才落 Qwen）。
@@ -2563,6 +2579,7 @@ export async function generateAsset(
     mediaBytes = outcome.bytes
     mediaExt = outcome.ext
     dramaFilename = outcome.generationId
+    generationId = outcome.generationId
   } else if (tool === 'character_generate') {
     // 基于角色设计图生成角色四视图：image.krea2 @ image2character（恰 1 张参考、无 prompt）。
     if (!params.filename) {
@@ -2583,6 +2600,7 @@ export async function generateAsset(
     mediaBytes = outcome.bytes
     mediaExt = outcome.ext
     dramaFilename = outcome.generationId
+    generationId = outcome.generationId
   } else if (tool === 'video_generate' || tool === 'video_composite') {
     // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
     // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
@@ -2690,9 +2708,9 @@ export async function generateAsset(
             available: String(Math.round(balance.available_balance * 10000) / 10000),
           })
         }
-        if (estimated !== null) {
-          warnings.push(`本次生成预估消耗 ${Math.round(estimated * 10000) / 10000} 积分（提交时冻结，任务失败自动释放；以服务端结算为准）。`)
-        }
+        // 先按预估写；生成成功后按流水改写成实扣（见 credit-settle.ts）。
+        const videoEstimateNote = estimateCreditNote(estimated)
+        if (videoEstimateNote !== null) warnings.push(videoEstimateNote)
         const lease = await acquireInFlight('视频生成', signal)
         try {
           const deps = businessEngineDeps()
@@ -2742,6 +2760,7 @@ export async function generateAsset(
             video: true,
             ...(signal !== undefined ? { signal } : {}),
           })
+          await noteGenerationSettled(warnings, videoEstimateNote, final.id, estimated)
           return { bytes: media.bytes, ext: media.ext, generationId: final.id }
         } finally {
           lease.release()
@@ -2794,6 +2813,8 @@ export async function generateAsset(
     if (outcome.bytes !== undefined) {
       mediaBytes = Buffer.from(outcome.bytes)
       dramaFilename = outcome.filename
+      // executor 只对 business 供应商填 `generationId`（判据 = settled.bytes）。
+      generationId = outcome.generationId
     } else {
       mediaUrl = outcome.url
       if (outcome.filename !== undefined) dramaFilename = outcome.filename
@@ -2827,6 +2848,7 @@ export async function generateAsset(
     params,
     bytes,
     dramaFilename: finalFilename,
+    ...(generationId !== undefined ? { generationId } : {}),
     // BUG-019：图像路由证据随节点落盘（视频分支为 undefined，不落）。
     ...(routeEndpoint !== undefined ? { routeModel: routeEndpoint } : {}),
     ...(mediaExt !== undefined ? { ext: mediaExt } : {}),
@@ -2850,6 +2872,13 @@ interface PersistAssetOptions {
   /** 已下载的产物字节（下载由调用方完成：正常路径走 mediaUrl，恢复路径走 result.full_url）。 */
   readonly bytes: Uint8Array
   readonly dramaFilename?: string | undefined
+  /**
+   * 业务 API 的 generation id（落节点 `generationId`）。
+   *
+   * 只有业务链路知道它；legacy/fal 与「旧台账恢复结算」路径没有 ⇒ 缺省 undefined
+   * = 节点不带该字段（也就不会去流水里查一个不存在的 id）。
+   */
+  readonly generationId?: string | undefined
   /**
    * BUG-019：图像路由证据（generateAsset 图像分支现算的 Drama 端点）。随节点
    * 落 `routeModel`；恢复结算路径与视频分支无此上下文，缺省不落。
@@ -2879,7 +2908,7 @@ interface PersistAssetOptions {
  * 与「正常生成的节点」字段口径必然分叉。
  */
 async function persistGeneratedAsset(options: PersistAssetOptions): Promise<GenerateResult> {
-  const { registry, tool, projectId, params, bytes, dramaFilename, routeModel, isVideo, size, warnings, healedNames, ext, signal } = options
+  const { registry, tool, projectId, params, bytes, dramaFilename, generationId, routeModel, isVideo, size, warnings, healedNames, ext, signal } = options
   const finalFilename = dramaFilename
 
   // CV-099 的单镜兜底（时长钳制）依赖项目 plan：结算可由恢复路径触发（无原调用
@@ -3024,6 +3053,9 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
     createdNodeId = await overwriteNodeAsset(registry, projectId, params.retryOf, {
       url,
       ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
+      // 重出 = 新的一笔账：覆盖掉旧 id，否则「重试后耗多少」会永远显示第一次的数
+      //（旧 generationId 指向的那笔 commit 与本次无关）。
+      ...(generationId !== undefined ? { generationId } : {}),
       // BUG-019：重试原地重写同样刷新路由证据（路由按当次提交现算，可能改道）。
       ...(routeModel !== undefined ? { routeModel } : {}),
       width: display.width,
@@ -3082,6 +3114,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
       height: display.height,
       createdAt: Date.now(),
       toolName: tool,
+      ...(generationId !== undefined ? { generationId } : {}),
       runId: assetId,
       origin: 'agent',
       sourceIds,
@@ -3332,6 +3365,7 @@ export async function generateCharacterSheet(
     ...(sheetSize !== null ? { mediaWidth: sheetSize.width, mediaHeight: sheetSize.height } : {}),
     createdAt: Date.now(),
     toolName: 'character_sheet',
+    generationId: sheet.generationId,
     runId: sheetNodeId,
     origin: 'agent',
     sourceIds,
@@ -3350,6 +3384,7 @@ export async function generateCharacterSheet(
       width: sheetBox.width,
       height: sheetBox.height,
       ...(sheetSize !== null ? { mediaWidth: sheetSize.width, mediaHeight: sheetSize.height } : {}),
+      generationId: sheet.generationId,
       generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
     })
   } else {
@@ -3625,6 +3660,9 @@ export async function generateMusic(
   // 超时沿用 image 档（360s）。
   let attempts = 0
   let media: { bytes: Buffer; ext: string } | undefined
+  // 最后一次**成功**那笔的 generation id（同参数重试期间前几次 500 不产生产物；
+  // 取成功那次才对得上流水里的 commit）。
+  let musicGenerationId: string | undefined
   for (;;) {
     attempts += 1
     try {
@@ -3638,6 +3676,7 @@ export async function generateMusic(
         ...(signal !== undefined ? { signal } : {}),
       })
       media = await downloadBusinessMedia(final, { label: '音频', ...(signal !== undefined ? { signal } : {}) })
+      musicGenerationId = final.id
       break
     } catch (error) {
       if (attempts >= MUSIC_MAX_ATTEMPTS) throw error
@@ -3711,6 +3750,7 @@ export async function generateMusic(
     // 纯器乐存 [Instrumental] 占位串，UI 侧识别后渲染成「纯器乐」。
     lyrics: effectiveLyrics,
     toolName: 'music_generation',
+    ...(musicGenerationId !== undefined ? { generationId: musicGenerationId } : {}),
     runId: nodeId,
     origin: 'agent',
     sourceIds,
@@ -3728,6 +3768,7 @@ export async function generateMusic(
       declaredDuration: duration,
       lyrics: effectiveLyrics,
       toolName: 'music_generation',
+      ...(musicGenerationId !== undefined ? { generationId: musicGenerationId } : {}),
       operationType: 'text-to-audio',
       generationPrompt: JSON.stringify(body),
     })
@@ -3908,6 +3949,7 @@ export async function generateSpeech(
     // 复用歌词位显示「念的是什么」：卡片首行摘要 + 播放器窗口全文（与音乐同通道）。
     lyrics: params.text,
     toolName: 'tts_voiceover',
+    generationId: final.id,
     runId: nodeId,
     origin: 'agent',
     sourceIds,
@@ -3920,6 +3962,7 @@ export async function generateSpeech(
       ...(probedDuration > 0 ? { duration: probedDuration } : {}),
       lyrics: params.text,
       toolName: 'tts_voiceover',
+      generationId: final.id,
       operationType: 'text-to-audio',
       generationPrompt: JSON.stringify(body),
     })

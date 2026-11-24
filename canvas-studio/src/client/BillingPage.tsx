@@ -12,10 +12,12 @@
  * 文案纪律：所有用户可见文字都在这里，**不出现英文 code**；服务端 message 只用于
  * 开发者排查（`title`），不直接展示。
  */
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { formatCredits, formatPrice } from '../account-format.js'
+import type { CreditLedgerEntry } from '../contracts/account.js'
 import type { BillingCreditPack, BillingPlan, BillingSnapshot } from '../contracts/billing.js'
+import { getLedgerState, refreshLedger, subscribeLedger } from './ledger-store.js'
 import type { BillingState } from './billing-store.js'
 import { canBuy, hasIdempotencyKey } from './billing-store.js'
 // 文案映射与用户菜单共用一份（唯一实现点，避免两处对同一订阅给出不同叫法）。
@@ -43,6 +45,138 @@ function dateTimeLabel(iso: string | undefined): string {
   const date = new Date(time)
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/**
+ * 流水条目的中文名。
+ *
+ * 契约里 `entry_type` 刻意**不枚举**（后端已经在加新类型），所以查不到就原样显示
+ * ——「条目类型多了个 `refund`」的后果应该是「多一行写着 refund」，而不是整页渲染
+ * 空白。
+ */
+const ENTRY_LABELS: Readonly<Record<string, string>> = {
+  grant: '积分发放',
+  hold: '冻结',
+  commit: '生成消耗',
+  release: '退回',
+}
+
+/** 流水金额（`commit` 是负数、`grant` 是正数，符号本身就是语义，不在这里翻转）。 */
+function amountLabel(entry: CreditLedgerEntry): string {
+  const value = entry.amount
+  if (!Number.isFinite(value)) return '—'
+  const sign = value < 0 ? '−' : value > 0 ? '+' : ''
+  return `${sign}${formatQuoteAmount(Math.abs(value))}`
+}
+
+/**
+ * 金额显示：**4 位小数**（与预估同口径）。
+ *
+ * 不用 `formatCredits` 的取整：流水是账本，把 −21.1354 显示成 −21 会让用户对不上
+ * 余额的最后两位，而「为什么差 0.1354」是最难解释的一类客服问题。
+ */
+function formatQuoteAmount(value: number): string {
+  return value.toFixed(4)
+}
+
+/** 冻结条目上真正被占住的金额（`amount` 恒为 0，冻结数在 metadata 里）。 */
+function holdAmountOf(entry: CreditLedgerEntry): number | null {
+  const meta = entry.metadata
+  if (meta === undefined || meta === null) return null
+  const frozen = meta['frozen_amount']
+  return typeof frozen === 'number' && Number.isFinite(frozen) ? Math.abs(frozen) : null
+}
+
+function LedgerSection(): ReactElement {
+  const state = useSyncExternalStore(subscribeLedger, getLedgerState, getLedgerState)
+  const view = state.view
+  const entries = view?.entries ?? []
+
+  // 打开账务页才拉流水：这些条目在别处不显示，没必要随页面存活一直轮询。
+  useEffect(() => { void refreshLedger(false) }, [])
+
+  if (view !== null && view.enabled === false) {
+    return (
+      <section className="csBillSection">
+        <h3 className="csBillSectionTitle">积分流水</h3>
+        <p className="csBillHint">当前构建未配置账号与计费服务，流水不可用。</p>
+      </section>
+    )
+  }
+  if (view !== null && !view.signedIn) {
+    return (
+      <section className="csBillSection">
+        <h3 className="csBillSectionTitle">积分流水</h3>
+        <p className="csBillHint">登录后可查看积分流水。</p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="csBillSection">
+      <h3 className="csBillSectionTitle">积分流水</h3>
+      {state.failure !== null && (
+        <div className="csBillNotice csBillNoticeWarn">无法连接本地服务：{state.failure}</div>
+      )}
+      {view?.error != null && (
+        <div className="csBillNotice csBillNoticeWarn" title={view.error.message}>
+          流水读取失败，下方可能是上次成功获取的记录。
+        </div>
+      )}
+
+      {entries.length === 0 ? (
+        <p className="csBillHint">
+          {state.loading
+            ? '正在读取…'
+            : view?.error != null ? '暂时读不到流水，点右上角刷新重试。' : '还没有积分记录。生成图片或视频后，这里会逐笔列出消耗。'}
+        </p>
+      ) : (
+        <>
+          <div className="csLedgerHead" aria-hidden="true">
+            <span>时间</span>
+            <span>类型</span>
+            <span className="csLedgerAmount">积分</span>
+            <span className="csLedgerAmount">余额</span>
+          </div>
+          <ul className="csLedgerList">
+            {entries.map((entry) => {
+              const frozen = entry.entry_type === 'hold' ? holdAmountOf(entry) : null
+              return (
+                <li className="csLedgerRow" key={entry.id}>
+                  <span className="csLedgerTime">{dateTimeLabel(entry.created_at)}</span>
+                  <span className="csLedgerKind" data-kind={entry.entry_type}>
+                    {ENTRY_LABELS[entry.entry_type] ?? entry.entry_type}
+                  </span>
+                  <span
+                    className="csLedgerAmount csLedgerValue"
+                    data-kind={entry.entry_type}
+                    title={frozen !== null ? `冻结 ${formatQuoteAmount(frozen)} 积分（尚未结算）` : undefined}
+                  >
+                    {frozen !== null ? `冻结 ${formatQuoteAmount(frozen)}` : amountLabel(entry)}
+                  </span>
+                  <span className="csLedgerAmount csLedgerBalance">{formatQuoteAmount(entry.lot_balance_after)}</span>
+                </li>
+              )
+            })}
+          </ul>
+          {view?.hasMore === true && (
+            <button
+              type="button"
+              className="csBillBtn"
+              disabled={state.loadingMore}
+              onClick={() => { void refreshLedger(false, true) }}
+            >
+              {state.loadingMore ? '读取中…' : '加载更早的记录'}
+            </button>
+          )}
+          <p className="csBillHint">
+            流水由服务端记账：「冻结」是提交时占住的额度，「生成消耗」才是真正扣掉的；
+            任务失败会自动退回，那一笔会显示为「退回」。
+          </p>
+        </>
+      )}
+    </section>
+  )
 }
 
 export function BillingPage(props: BillingPageProps): ReactElement {
@@ -177,6 +311,8 @@ export function BillingPage(props: BillingPageProps): ReactElement {
             </strong>
           </div>
         </section>
+
+        <LedgerSection />
 
         <section className="csBillSection">
           <h3 className="csBillSectionTitle">当前订阅</h3>

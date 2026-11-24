@@ -27,6 +27,7 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 // CV-358：生成彻底结束后刷一次余额（扣费在服务端，Host 拿不到结算时刻）。
 import { refreshCreditsAfterGeneration } from './credits-store.js'
+import { invalidateSpendCache } from './spend-store.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJobViews, registerStoryboardUserRefs, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
@@ -1570,6 +1571,9 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       // 还没结算；「队列彻底空闲」才是我们这边唯一可靠的结束信号。
       // （内部还会 6s 后复检一次，兜住异步结算。）
       refreshCreditsAfterGeneration()
+      // 同一时刻把「还没对上号」的节点实扣重新问一遍：服务端的 commit 通常在这
+      // 个窗口里落库，晚一次就问不到当笔的数（要等用户再打开详情）。
+      invalidateSpendCache()
       return
     }
     const state = generationQueueStateOf(snapshot)

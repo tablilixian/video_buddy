@@ -3585,8 +3585,18 @@ img.csNodeMedia {
       不受翻转影响（画面翻转、读数不翻转，这才是对的）。
    时长数字必须等宽：它每帧都在变（拖播放头 / 播放中），比例数字会让整行左右抖。 */
 .csNodeDuration,
-.csNodeMediaDims {
+.csNodeMediaDims,
+.csNodeSpend {
   font-variant-numeric: tabular-nums;
+}
+
+/* 2026-11-24：本次生成的真实消耗（流水 commit 金额）。
+   刻意**不**用积分 chip 的琥珀底色：那是「预估/待花」的视觉语汇，而这里是
+   「已经花掉的」，混用会让用户以为画布上摆着一排还没付的钱。
+   用正文色的低一档 + 前导 ✦，与 duration/dims 同族但可区分。 */
+.csNodeSpend {
+  color: color-mix(in srgb, var(--dsw-alias-label-secondary) 82%, var(--cs-accent, #7c6cff));
+  white-space: nowrap;
 }
 
 .csNodeGroup {
@@ -11573,6 +11583,76 @@ button.csNodeHeadAlert:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
+}
+
+/* ── 积分流水（2026-11-24）─────────────────────────────────────────────────
+   四列固定轨道：时间 / 类型 / 积分 / 余额。用 grid 而不是 flex —— 金额列必须
+   右对齐且等宽，flex 下每行的位数不同就会错位，账本一错位就没法扫读。
+   窄屏（<520px）把时间列压窄，金额列仍是 auto：宁可时间折行，也不让数字换行。 */
+.csLedgerHead,
+.csLedgerRow {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.1fr) minmax(64px, .8fr) auto auto;
+  gap: 10px;
+  align-items: baseline;
+}
+.csLedgerHead {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 0 2px 2px;
+}
+.csLedgerList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+.csLedgerRow {
+  padding: 8px 10px;
+  font-size: 12px;
+  /* 行间分隔线用 border-top 而不是 gap：账本要的是「一条一条」，不是「一堆卡片」。 */
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.csLedgerRow:first-child {
+  border-top: 0;
+}
+.csLedgerTime {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csLedgerKind {
+  color: var(--dsw-alias-label-secondary);
+}
+/* 金额与余额必须等宽且右对齐：流水是拿来核对的，数字不能左右跳。 */
+.csLedgerAmount {
+  min-width: 92px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.csLedgerValue {
+  color: var(--dsw-alias-label-primary);
+}
+/* 真扣钱 vs 只是占住额度：冻结用弱色，别让人把 hold 当成已花的钱。 */
+.csLedgerValue[data-kind='hold'] {
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 收入（充值/发放/退回）用品牌强调色：符号已经区分方向，这里只做视觉锚点。 */
+.csLedgerValue[data-kind='grant'],
+.csLedgerValue[data-kind='release'] {
+  color: color-mix(in srgb, var(--cs-accent, #7c6cff) 78%, var(--dsw-alias-label-primary));
+}
+.csLedgerBalance {
+  color: var(--dsw-alias-label-tertiary);
+  min-width: 84px;
 }
 
 .csBillCard {

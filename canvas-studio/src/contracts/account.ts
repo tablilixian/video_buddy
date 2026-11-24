@@ -98,3 +98,24 @@ export interface AccountQuoteView {
   readonly fetchedAt: string | null
   readonly error: { code: string; message: string } | null
 }
+
+/**
+ * 批量实扣视图（`POST /canvas-studio/account/spend`）。
+ *
+ * 数据源是流水里的 `commit` 条目，**不是**节点上存的数字 —— 节点只存
+ * `generationId`，金额每次按需派生（理由见 `contracts/canvas.ts` 该字段注）。
+ *
+ * 三态纪律：`credits` 里没有这个 id 就是**不知道**（更早的账超出了本地缓存的
+ * 200 条 / 不是业务 API 链路生成的节点），不能显示成 0。`pending` 是其中
+ * 「确实登记过、只是服务端还没结算」的那部分，UI 可以显示「结算中…」。
+ */
+export interface GenerationSpendView {
+  readonly enabled: boolean
+  readonly signedIn: boolean
+  /** generation id → 实扣积分（绝对值，4 位小数原样）。 */
+  readonly credits: Readonly<Record<string, number>>
+  /** 还在对账中的 generation id（服务端 commit 未落库）。 */
+  readonly pending: readonly string[]
+  readonly fetchedAt: string | null
+  readonly error: { code: string; message: string } | null
+}

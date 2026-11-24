@@ -37,7 +37,7 @@ import { startLoopback, consumePendingCallback, loopbackActive, stopLoopback } f
 import { setAuthSession, clearAuthSession } from './auth-session.js'
 // 管理面编排（方案 P2/CV-356）：会话推送触发 auth/sync + 目录拉取（fire-and-forget）。
 // 余额（CV-358）：会话推送后预取，读路径见 `GET /canvas-studio/account/credits`。
-import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView, refreshLedger, ledgerView, quoteCredits } from './account-state.js'
+import { notifyAuthSession, notifyAuthCleared, refreshCredits, creditsView, refreshLedger, ledgerView, quoteCredits, generationSpend } from './account-state.js'
 import { parseQuoteParams } from './credit-quote.js'
 // 订阅与积分（方案 20261102）：Host 编排 + 协议错误类型（按 status/code 直出）。
 import { ApiError } from './drama-management.js'
@@ -306,6 +306,9 @@ const ROUTE_ACCOUNT_LEDGER = '/canvas-studio/account/ledger'
  * `mutationAllowed` 的同源校验。许可是「本地同源」，不是「写动作」。
  */
 const ROUTE_ACCOUNT_QUOTE = '/canvas-studio/account/quote'
+// 2026-11-24：批量实扣查询（节点角标 / 详情面板 / 结果文本共用）。
+// 只读业务 API 的流水、不产生任何写动作，但走 POST 是因为要带一批 id。
+const ROUTE_ACCOUNT_SPEND = '/canvas-studio/account/spend'
 /**
  * 订阅与积分（方案 `订阅与积分接入方案-20261102.md`）。
  *
@@ -1250,6 +1253,40 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         if (!res.destroyed) sendJson(res, 200, view)
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分报价失败，请稍后重试。')
+      }
+    }}),
+
+    // 批量实扣：`{ ids: string[] }` → `{ credits: {id: 金额}, pending: [...] }`。
+    // 与报价同款「永不 5xx」纪律：查不到是**常态**（账还没落库 / 超出本地缓存窗口），
+    // 不是异常。只有请求体本身不合法才 400。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ACCOUNT_SPEND, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'account spend only supports POST' })
+        return
+      }
+      if (!mutationAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio spend requires a local same-origin request' })
+        return
+      }
+      try {
+        const controller = new AbortController()
+        req.once('aborted', () => controller.abort())
+        const body = await readJson(req, controller.signal)
+        const raw = (body as { ids?: unknown }).ids
+        const ids = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : null
+        if (ids === null) {
+          sendJson(res, 400, { error: 'spend requires ids: string[]' })
+          return
+        }
+        // 上限 200：一次画布视图最多这么多节点，再多说明调用方在滥用入口。
+        const view = await generationSpend(ids.slice(0, 200))
+        if (!res.destroyed) sendJson(res, 200, view)
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分查询失败，请稍后重试。')
       }
     }}),
 

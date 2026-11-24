@@ -256,6 +256,8 @@ import { UserCard } from './UserCard.js'
 // CV-358：左栏余额卡（管理面 `/v1/credits/balance` 的真实数据）。
 import { CreditsCard } from './CreditsCard.js'
 import { getCreditsState, refreshCredits, resetCredits, subscribeCredits, type CreditsState } from './credits-store.js'
+import { resetSpend } from './spend-store.js'
+import { resetLedger } from './ledger-store.js'
 // 订阅与积分（方案 20261102）：状态机在 billing-store，页面只读。
 import { BillingPage } from './BillingPage.js'
 import { statusLabel } from './billing-copy.js'
@@ -701,6 +703,10 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     if (auth.status === 'signed-out') {
       resetCredits()
+      // 实扣缓存同理：它是按 generation id 索引的金额，换账号后继续展示就是拿
+      // 上一个账号的账冒充这一位用户的消费。
+      resetSpend()
+      resetLedger()
       // 订阅/积分快照必须一起清：不清就是下一个登录者看到上一个账号的套餐。
       resetBillingStore()
     }

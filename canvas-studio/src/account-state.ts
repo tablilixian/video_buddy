@@ -14,7 +14,7 @@
 import { DramaClient, ApiError, type CatalogModel, type CreditBalance, type CreditLedgerEntry } from './drama-management.js'
 import { getAuthSession } from './auth-session.js'
 import { quoteFingerprint, quoteRequestFor } from './credit-quote.js'
-import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams } from './contracts/account.js'
+import type { AccountCreditsView, AccountLedgerView, AccountQuoteView, CreditQuoteParams, GenerationSpendView } from './contracts/account.js'
 
 /** 目录缓存 TTL（毫秒）。 */
 const CATALOG_TTL_MS = 5 * 60_000
@@ -38,6 +38,29 @@ const LEDGER_MAX_ENTRIES = 200
 const QUOTE_TTL_MS = 5 * 60_000
 /** 报价缓存上限（防「用户一直拖时长」把 Map 拖成内存泄漏）。 */
 const QUOTE_CACHE_MAX = 100
+/**
+ * 实扣查询的最小强制刷新间隔（毫秒）。
+ *
+ * 生成结束后账是**陆续**落库的，客户端又会在画布上同时点开若干节点；没有这道闸，
+ * 每个节点都会戳一次流水接口。1.5s 足够挡掉同一批节点的连环查询，又不至于让
+ * 「刚生成完的那一笔」等太久。
+ */
+const SPEND_FETCH_MIN_INTERVAL_MS = 1_500
+/**
+ * generation id 形状闸（UUID）。
+ *
+ * 它挡的是**旧链路**的 `dramaFilename`（ComfyUI 产物名 / fal 请求基址）被误当
+ * 索引键传进来：那些值在流水里永远匹配不到，多查一次就是白发一个请求。
+ */
+const GENERATION_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/**
+ * 待对账集合上限。
+ *
+ * 轻任务（理解 / 识别）也会登记，但它们不落画布节点、永远不会有人来要数字 ——
+ * 不设上限就是一条只进不出的内存增长。超出丢最早的那个（它已经过了「客户端会来
+ * 问」的时间窗）。
+ */
+const SPEND_PENDING_MAX = 500
 
 export interface AccountStateDeps {
   /** 启用闸：`businessApiBase` 非空 && `supabaseUrl` 非空（live 读取，设置变更即时生效）。 */
@@ -250,6 +273,109 @@ export function ledgerView(): AccountLedgerView {
   }
 }
 
+// ── 实扣解析（generationId → 真实消耗）──────────────────────────────────────
+//
+// 「这个节点到底花了多少」**只有**一个真相源：`GET /v1/credits/ledger` 里那条
+// `entry_type='commit'` 的负数。生成快照（`GET /v1/generations/{id}`）只有
+// `billing_status`（held/committed/released），**没有金额字段** —— 这一点是 2026-11-24
+// 实测确认的，也是参考工程 reelsbuddy 至今显示不出本笔实扣的原因。
+//
+// 所以这里不做「生成时把金额抄一份到节点上」：抄一份就等于维护第二本账，而任务
+// 失败会 `release` 全额退回，抄下来的数字不会跟着归零 —— 漂移方向正好是多算用户的钱。
+// 派生读永远不会与账本不一致，代价是更早的账（超出内存里那 200 条）查不到，UI 显示「—」。
+/** 已生成、但账还没对上号的 generation id（生成结束时登记）。 */
+const spendPending = new Set<string>()
+/** 上一次为「查实扣」而强制刷流水的时刻（epoch ms）；0 = 从未。 */
+let lastSpendFetchAt = 0
+
+/**
+ * 登记「这笔账迟些要对」（生成成功后调用，`generate.ts` 的两条结算路径）。
+ *
+ * 只登记 id、标流水陈旧，**不发请求**：此刻服务端的 `commit` 多半还没落库，立刻问
+ * 一定是空手而归。真正的查询发生在客户端来要数字的时候（那时已经过了几百毫秒）。
+ */
+export function markGenerationSpendPending(generationId: string): void {
+  if (!GENERATION_ID_SHAPE.test(generationId)) return
+  spendPending.add(generationId)
+  ledgerStale = true
+  if (spendPending.size > SPEND_PENDING_MAX) {
+    const oldest = spendPending.values().next()
+    if (!oldest.done) spendPending.delete(oldest.value)
+  }
+}
+
+/** 从已加载的流水里挑出这些 generation 的 commit 金额（绝对值）。 */
+function commitCreditsIndex(wanted: ReadonlySet<string>): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const entry of ledgerEntries) {
+    const generation = entry.generation_id
+    if (generation === undefined || !wanted.has(generation)) continue
+    // 只认 commit：`hold` 是冻结（还没扣）、`release` 是退回（不计消耗）、
+    // `grant` 是充值（正数，与生成无关）。
+    if (entry.entry_type !== 'commit') continue
+    const credits = Math.abs(entry.amount)
+    // 同一 generation 出现多条 commit 时取**绝对值最大**的那条，不是求和：
+    // 求和会把「重试产生的重复条目」翻倍计费，而取最大在最常见的单条结算下
+    // 完全等价 —— 宁可少算也不要多算。
+    const prior = out.get(generation)
+    if (prior === undefined || credits > prior) out.set(generation, credits)
+  }
+  return out
+}
+
+/**
+ * 批量查实扣（`POST /canvas-studio/account/spend` 的实现）。
+ *
+ * 三态语义与报价一致：**查不到 ≠ 0**。`credits` 里没有的 id 就是「不知道」，
+ * `pending` 里的才是「还在对账中」（生成刚结束、commit 还没落库）。
+ */
+export async function generationSpend(ids: readonly string[]): Promise<GenerationSpendView> {
+  const d = deps
+  /** 每次现读，不在开头快照：下面那次 `await refreshLedger` 正是在改这几个字段。 */
+  const head = (): Pick<GenerationSpendView, 'enabled' | 'signedIn' | 'fetchedAt' | 'error'> => ({
+    enabled: d !== null && d.enabled(),
+    signedIn: getAuthSession() !== null,
+    fetchedAt: ledgerFetchedAt === 0 ? null : new Date(ledgerFetchedAt).toISOString(),
+    error: ledgerError,
+  })
+  const base = head()
+  if (d === null || !base.enabled || !base.signedIn) {
+    return { ...base, credits: {}, pending: [] }
+  }
+  const wanted = new Set(ids.filter((id) => GENERATION_ID_SHAPE.test(id)))
+  if (wanted.size === 0) return { ...base, credits: {}, pending: [] }
+
+  let index = commitCreditsIndex(wanted)
+  // 值不值得打一次网络：有缺失，且（从未读过 / 流水已被标记陈旧 / 这个 id 本来就是
+  // 我们登记过的待对账项）。三者任一成立才是「新的账可能刚到」。
+  const missing = [...wanted].filter((id) => !index.has(id))
+  const worthFetching = missing.length > 0
+    && (ledgerFetchedAt === 0 || ledgerStale || missing.some((id) => spendPending.has(id)))
+  if (worthFetching && Date.now() - lastSpendFetchAt >= SPEND_FETCH_MIN_INTERVAL_MS) {
+    lastSpendFetchAt = Date.now()
+    // 阻塞等待（一次本机 → 业务 API 的往返）：本次响应就要用这批数字，先返回旧的
+    // 再异步补会让 UI 闪一下「—」。在飞去重由 refreshLedger 自己保证（并发节点合并）。
+    await refreshLedger(true)
+    index = commitCreditsIndex(wanted)
+  }
+
+  const credits: Record<string, number> = {}
+  const pending: string[] = []
+  for (const id of wanted) {
+    const hit = index.get(id)
+    if (hit !== undefined) {
+      credits[id] = hit
+      // 对上号就从待对账集合里摘掉（集合不会无限增长，也不会重复打网）。
+      spendPending.delete(id)
+      continue
+    }
+    if (spendPending.has(id)) pending.push(id)
+  }
+  // 重新读一次头：刚才那趟请求可能刚把流水刷成功（或刷失败），开头的快照已经
+  // 过时 —— 拿旧快照会让「读失败的账」显示成「读成功但没有记录」。
+  return { ...head(), credits, pending }
+}
+
 // ── 报价（预估积分的唯一出口）────────────────────────────────────────────────
 //
 // 报价是**纯计算**（不建任务、不冻结），所以不需要登录态以外的状态机；但它会被
@@ -407,6 +533,8 @@ export function notifyAuthCleared(): void {
   // 账号无关，但「登出后还能秒回报价」会让人误以为报价不需要登录。
   ledgerEntries = []
   ledgerCursor = null
+  spendPending.clear()
+  lastSpendFetchAt = 0
   ledgerFetchedAt = 0
   ledgerStale = false
   ledgerError = null

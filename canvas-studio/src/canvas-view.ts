@@ -5,7 +5,7 @@
  * tsc emit (`lib/canvas-view.js`) is directly testable under `node --test`.
  */
 import type { StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
-import { VIEW_DEFAULTS, isShotCard, SEED_SHOT_TOOL } from './contracts/canvas.js'
+import { VIEW_DEFAULTS, isShotCard, SEED_SHOT_TOOL, SEED_ANCHOR_TOOL } from './contracts/canvas.js'
 
 /** Zoom clamp range (matches the surface wheel/zoom clamp). */
 export const MIN_VIEW_SCALE = 0.1
@@ -383,8 +383,9 @@ const LANE_SCENE = 3  // ④ 场景图（行内横排子泳道）
 const LANE_KF = 4     // ⑤ 关键帧
 const LANE_SHOT = 5   // ⑥ 镜头视频 / 素材托盘
 const LANE_FRAME = 6  // ⑦ 末帧
-const LANE_MUSIC = 7  // ⑧ 音乐（独立分栏）
-const LANE_FILM = 8   // ⑨ 文案·成片（兜底泳道）
+const LANE_MUSIC = 7  // ⑧ 音乐（独立分栏，留给无 toolName 的 agent 音频）
+const LANE_POST = 8   // ⑨ 后期：文案 + BGM（写脚本与配乐同列，边竖着走而非右→左）
+const LANE_FILM = 9   // ⑩ 成片（兜底泳道）
 
 /** 分块：栏间 X 分离，**每栏顶对齐、用自己的纵向游标向下排**。
     只有分镜栏内部按镜号成行（同镜横向排开），其余栏都是「素材堆」。 */
@@ -475,20 +476,26 @@ function laneOfNode(
   node: StudioCanvasNode,
   shotNo: ReadonlyMap<string, number>,
   keyframes: ReadonlySet<string>,
+  byId?: ReadonlyMap<string, StudioCanvasNode>,
+  visited: ReadonlySet<string> = new Set(),
 ): number {
   switch (node.toolName) {
     case 'user_brief':                     return LANE_SOURCE
     case 'write_screenplay':
-    case 'character_sheet':                return LANE_SCRIPT
+    case 'character_sheet':
+    // 拍摄定稿是分镜卡的血缘父。旧实现没这一支 ⇒ text 兜底到最右的成片泳道 ⇒
+    // 定稿→每张分镜卡全成右→左反向边（真实画布 4 条）。归剧本·定稿栏即消。
+    case SEED_ANCHOR_TOOL:                 return LANE_SCRIPT
     case SEED_SHOT_TOOL:
     case 'submit_storyboard_for_approval': return LANE_CARD
     case 'extract_last_frame':             return LANE_FRAME
+    // 文案与 BGM 同列（后期），成片另起一列。旧实现两者都在 LANE_FILM ⇒
+    // 文案→成片竖线、文案→BGM 反向；拆开后前者跨列、后者同列竖线。
     case 'write_script':
+    case 'music_generation':               return LANE_POST
     case 'compose':                        return LANE_FILM
     // 用户上传的参考视频：抽帧后的帧图与「风格归纳」便签都挂这个 toolName，同在创意栏。
     case 'upload_video':                   return LANE_SOURCE
-    // 音乐独立成一栏：有音乐时它占第三块，成片顺延到第四块。
-    case 'music_generation':               return LANE_MUSIC
     default: break
   }
   // 图只有两种归宿（2026-09-22 拍板）：**绑了镜的图** → 分镜区（关键帧泳道），其余
@@ -511,6 +518,18 @@ function laneOfNode(
     // 手动上传的媒体素材（无 toolName）属于源素材，不是成片。
     if (node.toolName === undefined && node.origin === 'manual') return LANE_SOURCE
     return LANE_FILM
+  }
+  // 无 toolName 的文本便签（真实画布的「旁白与声音」）跟随血缘来源同列。旧实现
+  // 兜底到最右成片列 ⇒ 从定稿拉一条横穿全图的长线。visited 防 A→B→A 环。
+  if (node.kind === 'text' && node.toolName === undefined
+    && byId !== undefined && !visited.has(node.id)) {
+    const seen = new Set(visited)
+    seen.add(node.id)
+    for (const id of node.sourceIds) {
+      const source = byId.get(id)
+      if (source === undefined || source.id === node.id) continue
+      return laneOfNode(source, shotNo, keyframes, byId, seen)
+    }
   }
   return LANE_FILM
 }
@@ -596,8 +615,8 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     if (unit.shot !== undefined) { unit.lane = LANE_SHOT; continue }
     unit.lane = unit.node.kind === 'group' && unit.children.length > 0
       // 组按子代归泳道：参考托盘（图片成员）归源素材区，镜头托盘归镜位泳道。
-      ? Math.min(...unit.children.map(child => laneOfNode(child, shotNo, keyframes)))
-      : laneOfNode(unit.node, shotNo, keyframes)
+      ? Math.min(...unit.children.map(child => laneOfNode(child, shotNo, keyframes, byId)))
+      : laneOfNode(unit.node, shotNo, keyframes, byId)
   }
 
   // 被取代的顶层单元不参与行分配，最终钉在其取代者正下方；取代者丢失时按普通节点处理。

@@ -515,3 +515,55 @@ test('CV-244 only 传全量集合与不传等价：钉扎语义不受影响（�
   assert.equal(explicit.get('v1').y, full.get('v1').y, '坐标与全量排布一致')
   assert.equal(explicit.get('v1').y, full.get('v2').y + 270 + 6, '钉扎仍在取代者正下方（间隙 6px）')
 })
+
+// ===== 整理画布排布三修（2026-11-23，坐标层，不动数据结构）=====
+//
+// 真实画布「生成一段苹果手机广告」改前基线：32 边 = 顺向 21 / 同列 6 / 反向 5。
+// 反向 5 条里 4 条 = 拍摄定稿 → 分镜卡、1 条 = 文案 → BGM。三修后反向归零。
+// 断言全部走 computeArrangeLayout 的真实坐标，不读源码文本（行为断言，不是「源码里有这行」）。
+
+test('整理排布：拍摄定稿归剧本栏，恒在所有分镜卡左侧（消 4 条反向边）', () => {
+  const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const anchor = node('anchor', 260, 180, {
+    kind: 'text', toolName: 'seedCanvasFromStoryboard', createdAt: 2, sourceIds: ['brief'],
+  })
+  const card1 = cardNode('card1', 1, { createdAt: 3, sourceIds: ['anchor'] })
+  const card2 = cardNode('card2', 2, { createdAt: 4, sourceIds: ['anchor'] })
+  const positions = computeArrangeLayout([brief, anchor, card1, card2])
+
+  const xOf = (id) => positions.get(id).x
+  assert.ok(xOf('anchor') < xOf('card1'), '定稿在镜 1 卡左侧 —— 不能再兜底到最右成片列')
+  assert.ok(xOf('anchor') < xOf('card2'), '定稿在镜 2 卡左侧')
+  assert.ok(xOf('brief') < xOf('anchor'), '定稿仍在剧本栏（创意右侧）')
+})
+
+test('整理排布：文案与 BGM 同列、成片另起一列（消同列竖穿 + 文案→BGM 反向）', () => {
+  const script = node('script', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 1 })
+  const bgm = node('bgm', 260, 100, { kind: 'audio', toolName: 'music_generation', createdAt: 2, sourceIds: ['script'] })
+  const film = node('film', 260, 180, { kind: 'video', toolName: 'compose', createdAt: 3, sourceIds: ['script'] })
+  const positions = computeArrangeLayout([script, bgm, film])
+
+  const xOf = (id) => positions.get(id).x
+  assert.equal(xOf('bgm'), xOf('script'), 'BGM 与文案同列（竖线），不是右→左反向')
+  assert.ok(xOf('film') > xOf('script'), '成片在文案右侧独立列，不再是同列竖穿')
+})
+
+test('整理排布：无 toolName 的便签跟随血缘来源同列，不横穿全图', () => {
+  const anchor = node('anchor', 260, 180, {
+    kind: 'text', toolName: 'seedCanvasFromStoryboard', createdAt: 1,
+  })
+  const note = node('note', 260, 180, { kind: 'text', createdAt: 2, sourceIds: ['anchor'] })
+  const film = node('film', 260, 180, { kind: 'video', toolName: 'compose', createdAt: 3, sourceIds: ['anchor'] })
+  const positions = computeArrangeLayout([anchor, note, film])
+
+  assert.equal(positions.get('note').x, positions.get('anchor').x, '便签跟随来源同列')
+  assert.ok(positions.get('note').x < positions.get('film').x, '便签不落最右成片列')
+})
+
+test('整理排布：便签血缘成环不栈溢出（递归跟随带 visited）', () => {
+  const a = node('a', 260, 180, { kind: 'text', createdAt: 1, sourceIds: ['b'] })
+  const b = node('b', 260, 180, { kind: 'text', createdAt: 2, sourceIds: ['a'] })
+  const positions = computeArrangeLayout([a, b])
+
+  assert.ok(positions.has('a') && positions.has('b'), '成环血缘仍能落位，不无限递归')
+})

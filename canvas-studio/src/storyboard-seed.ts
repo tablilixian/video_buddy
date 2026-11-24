@@ -30,7 +30,7 @@
  */
 
 import type { StudioAsset, StudioCanvasNode } from './contracts/canvas.js'
-import { SEED_ANCHOR_TOOL, SEED_SHOT_TOOL } from './contracts/canvas.js'
+import { SEED_ANCHOR_TOOL, SEED_SHOT_TOOL, SOUND_SPEC_SBREF } from './contracts/canvas.js'
 import type { StoryboardDocument, StoryboardSections } from './contracts/storyboard.js'
 
 /** seed 结果（调用方负责落盘）。 */
@@ -245,7 +245,7 @@ export function planSeedFromStoryboard(
     createdAt: now + 1,
     origin: 'agent',
     sourceIds: [anchor.id],
-    sbRef: '03',
+    sbRef: SOUND_SPEC_SBREF,
   }
   nodes.push(soundNode)
 

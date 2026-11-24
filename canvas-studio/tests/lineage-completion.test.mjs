@@ -267,3 +267,83 @@ test('CV-221 兜底链：多条文案时挂最新一条（max createdAt）', asy
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// 2026-11-24：BGM 兜底链补「声音设计便签」档（真实画布取证）
+//
+// 「《赤发》」项目（VideoOut/new4 …内 4）里 BGM 节点的 sourceIds 指向「分镜 5」，
+// 而它的 generationPrompt 开头就是 `92 BPM` —— 那正是 seed 写进「旁白与声音」
+// 便签的 §06 参数。兜底链当时只有 文案 → 剧本 → 分镜文档 → 分镜卡，没有便签这
+// 一档，于是箭头说了一个假出处：BGM 看起来是从某一镜派生的。
+// ---------------------------------------------------------------------------
+
+/** seed 的「旁白与声音」便签：text + sbRef='03' + 无 toolName（`isSoundSpecNode` 的形态）。 */
+function soundSpecNode(id, createdAt = 1) {
+  return {
+    id, kind: 'text', title: '旁白与声音',
+    text: '【旁白】本片无旁白\n【BGM】BPM 92 · 响度 -16 LUFS · 侧链避让 1.5–3kHz\n【音效】山风与夜虫床',
+    x: 0, y: 0, width: 380, height: 180,
+    createdAt, origin: 'agent', sourceIds: [], sbRef: '03',
+  }
+}
+
+test('BGM 兜底：有「旁白与声音」便签时挂便签，不挂分镜卡', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    // 便签比最新一镜早（seed 时 createdAt = anchor+1，分镜卡按镜号递增），
+    // 证明命中的是「便签优先」这条档，不是在比 createdAt 谁新。
+    const note = soundSpecNode('note-1', 2)
+    const shot = { ...textNode('shot-5', 'seedStoryboardShot'), createdAt: 9 }
+    const reg = musicRegistry(dir, [note, shot])
+    await generateMusic(reg, 'p1', { captionPrompt: 'cinematic 92 BPM' })
+    assert.deepEqual(reg.getNodes()[0].sourceIds, ['note-1'],
+      '《赤发》取证：BGM 的 92 BPM 抄自便签，血缘就该指向便签而不是「分镜 5」')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('BGM 兜底：便签排在分镜文档之前（同样比某一镜更配当出处）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    const note = soundSpecNode('note-1', 2)
+    const storyboard = { ...textNode('sb-1', 'submit_storyboard_for_approval'), createdAt: 5 }
+    const reg = musicRegistry(dir, [note, storyboard])
+    await generateMusic(reg, 'p1', { captionPrompt: 'soft piano' })
+    assert.deepEqual(reg.getNodes()[0].sourceIds, ['note-1'], '便签档在分镜文档之前')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('BGM 兜底：文案/剧本优先于便签（文案类项目语义不变）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    const note = soundSpecNode('note-1', 9)
+    const script = { ...textNode('script-1', 'write_script'), createdAt: 1 }
+    const reg = musicRegistry(dir, [note, script])
+    await generateMusic(reg, 'p1', { captionPrompt: 'soft piano' })
+    assert.deepEqual(reg.getNodes()[0].sourceIds, ['script-1'],
+      'CV-206/221 的老口径不动：文案在场上时 BGM 仍挂文案')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('便签判据：同 sbRef 但非 text 节点不算声音便签（落回分镜卡）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    const fakeNote = { ...soundSpecNode('img-1', 2), kind: 'image', url: 'https://media.example/a.png' }
+    const shot = { ...textNode('shot-5', 'seedStoryboardShot'), createdAt: 9 }
+    const reg = musicRegistry(dir, [fakeNote, shot])
+    await generateMusic(reg, 'p1', { captionPrompt: 'soft piano' })
+    assert.deepEqual(reg.getNodes()[0].sourceIds, ['shot-5'],
+      '`isSoundSpecNode` 校验 kind：sbRef="03" 的图节点不许冒充声音便签')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

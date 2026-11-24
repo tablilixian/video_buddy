@@ -41,7 +41,6 @@ import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { ImageZoomModal } from './canvas/ImageZoomModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu, CanvasEdgeCreateMenu } from './canvas/CanvasBlankMenu.js'
-import { ReferenceTray } from './canvas/ReferenceTray.js'
 // REQ-037/CV-407：项目内「待落画布」条的落卡事件（index.ts 侧消费暂存）。
 import { LOBBY_LAND_STASH_EVENT } from './lobby-stash.js'
 import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo, resolveStudioRefs } from './api.js'
@@ -530,20 +529,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // 不因 nodes 变化重建闭包（配合 CanvasNode memo）。
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
-  // 参考托盘数据源：所有标记为参考的节点（REQ-037/CV-406 起四类全收，不限图片；
-  // CR-041：useMemo 缓存派生）。
-  // 2026-10-08 用户拍板曾整体关闭托盘入口；2026-11-03 REQ-037 拍板反转——托盘升级为
-  // 素材托盘（四分区）作为用户回看参考素材的入口之一，重新启用。
-  const referenceNodes = useMemo(
-    () => nodes.filter(node => node.isReference === true),
-    [nodes],
-  )
-  // REQ-037/CV-406：托盘内「查看/播放」——视频音频进播放浮层、图片进预览浮层；
-  // 文本在托盘内展开（组件内部处理），不走这里。
-  const handleOpenReferenceNode = useCallback((node: StudioCanvasNode): void => {
-    if (node.kind === 'video' || node.kind === 'audio') setPlaybackNodeId(node.id)
-    else if (node.kind === 'image') setPreviewNodeId(node.id)
-  }, [])
+  // 参考素材浮层已按 2026-11-24 用户拍板**隐藏**（原 REQ-037/CV-406 的浮动托盘会盖住
+  // 画布左上角）。`ReferenceTray` 组件与 `.csReferenceTray` 样式保留未删——日后若要
+  // 回看参考素材，改成工具栏 / 抽屉入口直接复用，不要再做成悬浮层。
   // CV-114：可引用素材的短句柄表（img-01 / vid-01）——chip 文案、@ 候选、
   // hover 缩略图三处共用同一份派生结果。REQ-001 起并入库条目（nodeId=`lib:<id>`）：
   // hover 浮层对 `@ref[lib:…]` chip 的反查零改动即可命中（同一字段同一张表）。
@@ -2289,25 +2277,10 @@ export function StudioFrame(props: StudioFrameProps) {
             detailInset={detailOpen ? detailHeight : 0}
           />
           {nodes.length === 0 && <CanvasEmptyHint />}
-          {/* REQ-037/CV-406（2026-11-03 拍板）：素材托盘入口重新启用——2026-10-08 的关闭
-              拍板就此反转；托盘升级为四分区（图片/视频/音频/文本），承担「用户回看
-              参考素材」的画布侧入口。空态引导保留（CV-011）。 */}
-          {referenceNodes.length > 0
-            ? (
-              <div className="csReferenceFloat">
-                <ReferenceTray
-                  nodes={referenceNodes}
-                  onUpdateNode={handleUpdateNode}
-                  onReferenceToChat={handleReferenceToChat}
-                  onOpenNode={handleOpenReferenceNode}
-                />
-              </div>
-              )
-            : (
-              // CV-011：空态引导 —— 空托盘不渲染浮层本体，但保留一次性的能力提示
-              // 会喧宾夺主；维持「有参考才出现」的原口径，空态引导随入口一起退役。
-              null
-              )}
+          {/* 参考素材浮动托盘：2026-11-24 用户拍板**隐藏**，不再渲染。它固定在画布
+              左上角（.csReferenceFloat，z-index 20），会盖住画布内容与节点。节点上的
+              `isReference` 标记、`referenceRole/Strength` 数据都保留不动——隐藏的只是
+              这一块 UI，不是能力。要回看参考素材时另辟工具栏 / 抽屉入口。 */}
           {view.layersOpen && (
             <aside className="csCanvasLayers">
               <LayerPanel

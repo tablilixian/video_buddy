@@ -36,6 +36,11 @@ export interface ReferenceTrayProps {
  * 按 图片/视频/音频/文本 四分区展示（REQ-037/CV-406，原「参考图托盘」升级）。
  * 每项带预览（图缩略 / 音视频播放 / 文本展开）、角色 chip、强度滑块、
  * 「引用到对话」与「移除」操作；节点即画布节点，不另开素材库。
+ *
+ * ⚠️ 2026-11-24 用户拍板：**暂不挂载**。原挂载点 `StudioFrame` 的浮动层
+ * （`.csReferenceFloat`，画布左上角）会盖住画布内容，已从渲染树摘除。
+ * 组件本体与样式保留，日后要走工具栏 / 抽屉入口时直接复用这个组件，
+ * 不要再把它塞回画布上方的绝对定位浮层。
  */
 export function ReferenceTray(props: ReferenceTrayProps) {
   const { nodes, onUpdateNode, onReferenceToChat, onOpenNode } = props

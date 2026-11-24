@@ -25,7 +25,7 @@ import type { ProjectRegistry } from './projects.js'
 import { composeImagePrompt } from './prompt-injection.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
-import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, SEED_SHOT_TOOL, STORYBOARD_NODE_TOOL, isShotCard } from './contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, SEED_SHOT_TOOL, STORYBOARD_NODE_TOOL, isShotCard, isSoundSpecNode } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_BUSINESS_API_BASE, DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { DramaClient, ApiError } from './drama-management.js'
@@ -3650,18 +3650,28 @@ export async function generateMusic(
     const validIds = new Set(canvas.nodes.map(n => n.id))
     sourceIds = mergeSourceIds(sourceIds, params.sourceNodeIds.filter(id => validIds.has(id)))
   }
-  // CV-206 兜底 + CV-221 放宽：BGM 无显式血缘时按 文案 → 剧本 → 分镜卡 逐级
-  // 找场上最新的内容祖先挂上（候选取 max createdAt —— 配乐类项目有多版文案
+  // CV-206 兜底 + CV-221 放宽：BGM 无显式血缘时按 文案 → 剧本 → 声音便签 → 分镜卡
+  // 逐级找场上最新的内容祖先挂上（候选取 max createdAt —— 配乐类项目有多版文案
   // 时挂最新策略，而非最旧）。**时序自限性**让两类 BGM 用法都成立：配乐类
   // （剧本/文案先行）agent 忘传来源时有保底血缘；音乐先行类（先定 BGM 再按
   // 音乐做 MV）落盘时场上只有创意 → 兜底全扑空 → 保持空血缘，那正是「源
   // BGM」的正确形态，不硬造血缘。
+  //
+  // 2026-11-24 补档（真实画布取证）：在「剧本」与「分镜」之间插入 seed 的
+  // 「旁白与声音」便签。此前这条链一路落到 `SEED_SHOT_TOOL`，于是「《赤发》」
+  // 项目里 BGM 的血缘指向了「分镜 5」——而它 generationPrompt 里的 92 BPM 明明
+  // 抄自那张便签。便签是 BGM/旁白/音效参数的唯一定义处，比任何一镜都更配当出处；
+  // 分镜卡只是「这一镜要什么声音」，不是「整片 BGM 是什么」。
   if (sourceIds.length === 0) {
-    const fallbackNode = [ 'write_script', 'write_screenplay', STORYBOARD_NODE_TOOL, SEED_SHOT_TOOL ]
-      .map((tool) => canvas.nodes
-        .filter((node) => node.toolName === tool)
-        .sort((left, right) => right.createdAt - left.createdAt)[0])
-      .find((node) => node !== undefined)
+    const newestBy = (predicate: (node: StudioCanvasNode) => boolean): StudioCanvasNode | undefined =>
+      canvas.nodes.filter(predicate).sort((left, right) => right.createdAt - left.createdAt)[0]
+    const fallbackNode = [
+      newestBy((node) => node.toolName === 'write_script'),
+      newestBy((node) => node.toolName === 'write_screenplay'),
+      newestBy(isSoundSpecNode),
+      newestBy((node) => node.toolName === STORYBOARD_NODE_TOOL),
+      newestBy((node) => node.toolName === SEED_SHOT_TOOL),
+    ].find((node) => node !== undefined)
     if (fallbackNode !== undefined) sourceIds = [fallbackNode.id]
   }
   const directory = registry.assetsDir(projectId)

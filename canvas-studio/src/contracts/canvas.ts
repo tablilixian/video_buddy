@@ -654,6 +654,34 @@ export function hasSeedAnchor(nodes: readonly { readonly toolName?: string | und
   return nodes.some((node) => node.toolName === SEED_ANCHOR_TOOL)
 }
 
+/**
+ * 故事板 §03 的 `sbRef` 值：seed 用它标记「旁白与声音」参数便签（§03 旁白 + §06 声音合成）。
+ *
+ * 与 `04:<scene>/shots/<shot>`（分镜卡）、`02:look`、`05:<character>` 同源同款：`sbRef`
+ * 指回故事板语义 ID。这个便签**没有 toolName**（它不是工具产物，是 seed 派生的投影），
+ * 所以身份只能靠 `sbRef` 认。
+ */
+export const SOUND_SPEC_SBREF = '03'
+
+/**
+ * 声音设计便签判定：「旁白与声音」节点 —— BGM / 旁白 / 音效参数的**唯一画布落点**。
+ *
+ * 为什么要一个谓词：`music_generation` 缺省血缘（agent 忘传 `sourceNodeIds` 时）要
+ * 落到这张便签上，而不是落到某一镜的分镜卡。2026-11-24 真实画布取证：「《赤发》」
+ * 项目里 BGM 节点的 `sourceIds` 指向「分镜 5」，可它的 generationPrompt 里的
+ * `92 BPM` 明显抄自这张便签 ⇒ 血缘箭头说了一个假出处（分镜卡跟 BGM 没有因果关系）。
+ *
+ * 判据取 `sbRef` 而不是标题：标题是给用户看的，会被改写；`sbRef` 是 seed 写入的
+ * 结构字段，且 `03` 在四类 seed 投影里唯一。`kind` 一并校验，避免把将来某个
+ * 同 `sbRef` 的非文本节点误认。
+ */
+export function isSoundSpecNode(node: {
+  readonly kind?: string | undefined
+  readonly sbRef?: string | undefined
+}): boolean {
+  return node.kind === 'text' && node.sbRef === SOUND_SPEC_SBREF
+}
+
 /** P8.4 参考视频抽帧的单帧产物（Host → 客户端落画布节点）。 */
 export interface StudioVideoFramePayload {
   /** 帧图同源 URL（Host 已写入项目 assets）。 */

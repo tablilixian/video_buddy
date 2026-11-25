@@ -38,6 +38,7 @@ import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
 // 段级抽帧在 shot-frames.ts（宿主 ffmpeg，失败只记一行不影响出片）。
 import { segmentRenderOptions } from './shot-cache.js'
 import { readProjectSpec, runShotRender } from './shot-render.js'
+import { publishSegmentPreview } from './segment-preview-publish.js'
 import { sampleSegmentFrame } from './shot-frames.js'
 import type { SegmentPointer } from './segment-artifacts.js'
 import { concatShots } from './shot-concat.js'
@@ -4040,6 +4041,24 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // spot 仍走空数组：它的画面由 spotFrames 静帧通道返回，再抽样是重复。
           sampleFrames: spot ? [] : pickSampleFrames(renderManifest),
           }))
+        // REQ-041 P0-b/P1：整片路径（含带 audio 的片子）渲完后，从段缓存按帧窗
+        // 旁路发布无声段 + 合成带声预览副本。失败全部收敛成一行 note，成片不陪葬。
+        // probe/spot 是诊断单，不发段；分镜路径已自己发过，不重复。
+        if (shotOutcome === null && !probe && !spot) {
+          try {
+            const preview = await publishSegmentPreview({
+              projectDir: registry.projectDir(projectId),
+              assetsDir: registry.assetsDir(projectId),
+              manifest: renderManifest,
+              spec: readProjectSpec(registry.projectDir(projectId)),
+              signal: exec.signal,
+            })
+            if (preview.pointers.length > 0 && shotPointers.length === 0) shotPointers = preview.pointers
+            if (preview.note !== undefined) shotReceipt.push(`ℹ️ 段预览：${preview.note}`)
+          } catch (cause) {
+            shotReceipt.push(`ℹ️ 段预览旁路失败（成片不受影响）：${cause instanceof Error ? cause.message : String(cause)}`)
+          }
+        }
         // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）；探针 / spot-check 不落。
         const composedNode = probe || spot
           ? null

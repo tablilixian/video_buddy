@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { readSegmentMedia } from '../lib/segment-media.js'
+import { deriveSegmentRows } from '../lib/segment-media.js'
 
 function project(card, files = ['s1', 's2']) {
   const projectDir = mkdtempSync(join(tmpdir(), 'cs-seg-media-'))
@@ -76,6 +77,54 @@ test('ref 缺省原样缺省：历史卡没有 ref 时不得按 id 反推', asyn
   const legacy = await readSegmentMedia({ ...ascii, projectId: 'p' })
   assert.equal(legacy.segments.length, 1)
   assert.ok(!('ref' in legacy.segments[0]), '没有发布时对齐信息就不给 ref（不许 spec: + id 猜）')
+})
+
+test('P0-a：无 card 时从 build/spec+manifest 派生，带 audio 也照发；ref 来自整表对齐，不按序号', async () => {
+  const p = mkdtempSync(join(tmpdir(), 'cs-seg-derived-'))
+  const assetsDir = join(p, 'assets')
+  mkdirSync(join(p, 'build'), { recursive: true })
+  mkdirSync(assetsDir, { recursive: true })
+  // 段表自洽：0/190/390 三段，末段吃余数；manifest 带 3 句旁白（旧实现会 whole）。
+  const manifest = {
+    meta: {
+      fps: 30,
+      durationInFrames: 590,
+      segments: [
+        { id: 's1', startFrame: 0, frames: 190 },
+        { id: 's2', startFrame: 190, frames: 200 },
+        { id: 's3', startFrame: 390, frames: 200 },
+      ],
+    },
+    audio: { voiceOver: [{ src: 'a.mp3', startFrame: 5 }, { src: 'b.mp3', startFrame: 195 }] },
+    tracks: [],
+  }
+  const spec = { meta: { fps: 30, durationSec: 590 / 30 }, sections: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] }
+  writeFileSync(join(p, 'build', 'manifest.json'), JSON.stringify(manifest))
+  writeFileSync(join(p, 'build', 'spec.json'), JSON.stringify(spec))
+  for (const id of ['s1', 's2', 's3']) writeFileSync(join(assetsDir, `seg-${id}.mp4`), `VIDEO:${id}`)
+
+  const view = await readSegmentMedia({ projectDir: p, assetsDir, projectId: 'derived' })
+  assert.deepEqual(view.segments.map((s) => s.ref), ['spec:s1', 'spec:s2', 'spec:s3'])
+  assert.deepEqual(view.segments.map((s) => s.startFrame), [0, 190, 390])
+  assert.deepEqual(view.segments.map((s) => s.frames), [190, 200, 200])
+  assert.ok(view.segments.every((s) => Number.isFinite(s.v) && s.v > 0))
+})
+
+test('P0-a：段表过期（断档/对不齐）⇒ 不给 ref、不给产物名（宁可空，不许按序号配）', () => {
+  const stale = {
+    meta: {
+      fps: 30,
+      durationInFrames: 400,
+      segments: [
+        { id: 's1', startFrame: 0, frames: 180 },
+        { id: 's2', startFrame: 200, frames: 200 },
+      ],
+    },
+    tracks: [],
+  }
+  // 段表断档 ⇒ segmentTableCuts 整表不用；spec 时长不一致 ⇒ 也不用；transition 无 ⇒ 空 cuts
+  const rows = deriveSegmentRows({ meta: { fps: 30, durationSec: 99 }, sections: [] }, stale)
+  assert.deepEqual(rows, [], '没有可信边界就不派生任何段（连 seg-1 都不给）')
 })
 
 test('路径穿越 id 直接跳过；中文 projectId 在 URL 中编码', async () => {

@@ -11,6 +11,7 @@ import { viewportWorldRect } from '../../canvas-cull.js'
 import { installCanvasPerfStyles } from '../styles-canvas-perf.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
+import { SegmentCell } from './SegmentCell.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
 import { NodeInputCard } from './NodeInputCard.js'
@@ -216,6 +217,13 @@ export interface CanvasSurfaceProps {
   onNodeOpenDetail(node: StudioCanvasNode): void
   /** CV-044：打开固定尺寸播放浮层 —— audio 双击 + video 工具条「预览」（透传给 CanvasNode / NodeActionBar）。 */
   onNodeOpenPlayback?(node: StudioCanvasNode): void
+  /**
+   * REQ-041：段产物格双击 → 播放浮层。
+   *
+   * 与 `onNodeOpenPlayback` 分开是因为段产物**不是节点**（清单按 ref 派生，不落画布）：
+   * 播放器要的是一段 URL，不是一个节点 id。语义与视频卡双击完全一致。
+   */
+  onOpenSegmentPlayback?(ref: string, shot: number): void
   /** CV-044 扩展：打开大图预览浮层 —— image 工具条「预览」+ 输入框卡参考放大镜（CV-283 起不再挂双击）。 */
   onNodeOpenPreview?(node: StudioCanvasNode): void
   /** Context menu request (rendered by the frame). */
@@ -433,6 +441,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onNodeTextSubmit,
     onNodeOpenDetail,
     onNodeOpenPlayback,
+    onOpenSegmentPlayback,
     onNodeOpenPreview,
     onContextMenu,
     onBlankContextMenu,
@@ -1269,6 +1278,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (el === null) return
     setWfThumb(thumbWidthFromViewport(el.clientWidth))
   }, [waterfallOn])
+  // REQ-041：有可播段产物的 ref 集合 —— 布局函数据此在「视频」位放一格段产物。
+  // 清单未到 / 没渲过段 ⇒ 空集 ⇒ 行形态与改前完全一致（不凭空造空格）。
+  const segmentRefsWithMedia = useMemo(
+    () => new Set(segmentMediaByRef?.keys() ?? []),
+    [segmentMediaByRef],
+  )
   const waterfallLayout = useMemo(
     () => (waterfallOn
       ? computeWaterfallLayout(visibleNodes, {
@@ -1278,9 +1293,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         // REQ-040 B：默认折叠被取代链（干净画布只显当前生效版本）；「显示废弃
         // 素材」开关打开时关闭折叠（平铺回显旧行为）。
         foldSuperseded: !showDeprecatedNodes,
+        // REQ-041：段产物自成一格（一行一镜的「视频」位）。
+        segmentRefsWithMedia,
       })
       : null),
-    [waterfallOn, visibleNodes, view.waterfallShowText, showAuxiliaryProp, wfThumb, showDeprecatedNodes],
+    [waterfallOn, visibleNodes, view.waterfallShowText, showAuxiliaryProp, wfThumb, showDeprecatedNodes, segmentRefsWithMedia],
   )
   const waterfallNodes = useMemo(() => {
     if (waterfallLayout === null) return ordered
@@ -1705,13 +1722,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           const tier = spotlightTierOf(spotlight, node.id)
           // REQ-040 B：链尾名下的被折叠历史数（fold 关闭时 stacks 恒空 → 不出角标）。
           const stack = waterfallOn ? waterfallLayout?.stacks.get(node.id) : undefined
-          // REQ-041：只给命中 ref 的卡传 URL；其它卡 prop 保持 undefined（memo 不破）。
-          const segmentVideoUrl = node.segmentRef === undefined ? undefined : segmentMediaByRef?.get(node.segmentRef)
           return (
             <CanvasNode
               key={node.id}
               node={node}
-              {...(segmentVideoUrl === undefined ? {} : { segmentVideoUrl })}
               selected={selectedNodeIds.includes(node.id)}
               // 档位继承（2026-10-27）：与输入卡同一份参数 —— 角标与 chip 不许各算一遍。
               {...(resolutionInheritByKind[node.kind === 'video' ? 'video' : 'image'] !== undefined
@@ -1746,6 +1760,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               {...(waterfallOn && selectedNodeIds.length <= 1 && onRetry !== undefined ? { onQuickRetry: onRetry } : {})}
               {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
               {...(props.queueNote != null ? { queueNote: props.queueNote } : {})}
+            />
+          )
+        })}
+        {/* REQ-041：段产物格 —— 一行一镜里「视频」位上的那一屏。
+            它不是节点（清单按 ref 派生、不落画布），所以单独一层渲染：
+            只读、悬停静音播、双击开播放浮层。布局已把格位算进 boxes /
+            trays[].nodeIds，这里只是把格子画出来 —— 行框、镜位 chip、
+            折行都不需要知道它是不是节点。 */}
+        {waterfallOn && waterfallLayout?.segmentCells.map(cell => {
+          const url = segmentMediaByRef?.get(cell.ref)
+          if (url === undefined) return null
+          return (
+            <SegmentCell
+              key={cell.id}
+              box={cell.box}
+              shot={cell.shot}
+              url={url}
+              onOpen={() => { onOpenSegmentPlayback?.(cell.ref, cell.shot) }}
             />
           )
         })}

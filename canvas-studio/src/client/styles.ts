@@ -2845,42 +2845,23 @@ img.csNodeMedia {
   text-align: center;
 }
 
-/* REQ-041：命中 segmentRef 的分镜卡 —— 段视频是主画面（吃体区剩余高度），
-   文案降为 2 行副信息。object-fit: contain 保证「卡上这一屏 = 成片这一屏」
-   不因卡片比例被裁切；两侧露底用画布最深档，与 .csNodeMedia 同源。 */
-.csNodeSegmentVideoBox {
-  position: relative;
-  flex: 1 1 auto;
-  /* 2026-11-25 真机：min-height:0 让正文把画面压到几十像素。画面是这张卡的
-     主形态（R1），给一个保底高度，正文再长也不许吃掉它。 */
-  min-height: 64px;
+/* REQ-041（2026-11-25 真机纠正）：段产物在历程视图里**自成一格**，
+   不再挂进分镜卡体区（那条路会让 380×214 的格里正文与 960×540 的画面互抢
+   高度）。这里只保留这一格外壳的少量差异化：只读、不可拖拽、悬停即播。 */
+.csSegmentCell {
+  cursor: default;
+  /* 视频类身份色（与 kindAccentOf('video') 同源的是描边变量，这里只借字形色） */
   overflow: hidden;
-  box-sizing: border-box;
-  border-top: 2px solid var(--cs-gate, #0b0d12);
-  border-bottom: 2px solid var(--cs-gate, #0b0d12);
-  background: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
 }
 
-.csNodeSegmentVideo {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
+/* 头部标题压一行：格里 214px 高，标题折行会挤掉画面。 */
+.csSegmentCell .csNodeHeadTitle {
+  min-width: 0;
 }
 
-/* REQ-041：段视频卡的正文**永远**只占两行，选中态也不展开。
-   为什么必须压过选中态：CV-081 的 .csNodeSelected .csNodeBody 会
-   display:block + line-clamp:unset（为长分镜稿/脚本服务，正文可滚可读）。
-   分镜卡一旦有段视频，那条规则就把整份 8 行分镜稿塞进 flex，正文与视频
-   互相压缩 ⇒ 视频被挤成一条、文字骑在画面上，正是真机截图里的「重叠」。
-   这里用更高特异度钉住：正文两行、不参与伸缩，全文仍可双击编辑查看。 */
-.csNodeSegmentCard .csNodeBody,
-.csNodeSegmentCard.csNodeSelected .csNodeBody {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  flex: 0 0 auto;
+/* 段产物格的分辨率读数用等宽数字，和视频卡脚部对齐（左右扫读不抖）。 */
+.csSegmentCell .csNodeFootReadings {
+  font-variant-numeric: tabular-nums;
 }
 
 .csNodeKind {

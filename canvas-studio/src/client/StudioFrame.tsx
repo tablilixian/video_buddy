@@ -618,6 +618,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const [promptEditNodeId, setPromptEditNodeId] = useState<string | null>(null)
   // CV-044：视频固定尺寸播放浮层（双击视频节点打开）。
   const [playbackNodeId, setPlaybackNodeId] = useState<string | null>(null)
+  /**
+   * REQ-041：段产物格的播放目标。段产物不是节点（清单按 ref 派生、不落画布），
+   * 所以它没有 id 可以塞进 `playbackNodeId` —— 这里单独记一个 ref + 镜号。
+   * 两个浮层互斥：任一打开时把另一个关掉，避免两段声音叠在一起。
+   */
+  const [segmentPlayback, setSegmentPlayback] = useState<{ ref: string; shot: number } | null>(null)
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -2141,6 +2147,8 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [actions])
   const handleNodeOpenPlayback = useCallback((node: StudioCanvasNode) => {
     actions.selectNode(node.id)
+    // 两个播放浮层互斥：段产物格开着时点视频卡，先关那一个（否则两段声音叠在一起）。
+    setSegmentPlayback(null)
     setPlaybackNodeId(node.id)
   }, [actions])
   const handleNodeOpenPreview = useCallback((node: StudioCanvasNode) => {
@@ -2254,6 +2262,7 @@ export function StudioFrame(props: StudioFrameProps) {
           <CanvasSurface
             nodes={visibleNodes}
             segmentMediaByRef={segmentMediaByRef}
+            onOpenSegmentPlayback={(ref, shot) => { setPlaybackNodeId(null); setSegmentPlayback({ ref, shot }) }}
             resolutionInherit={resolutionInherit}
             shotIndexOf={shotIndexOf}
             view={view}
@@ -3117,6 +3126,20 @@ export function StudioFrame(props: StudioFrameProps) {
           }}
         />
       )}
+      {/* REQ-041：段产物格的播放浮层 —— 与节点播放器同一个 VideoPlayerModal，
+          差别只在「按 ref 从清单取 URL」而不是「按节点 id 取 url」。 */}
+      {(() => {
+        if (segmentPlayback === null) return null
+        const url = segmentMediaByRef.get(segmentPlayback.ref)
+        if (url === undefined) return null
+        return (
+          <VideoPlayerModal
+            title={`镜 ${segmentPlayback.shot} · 分镜片段`}
+            url={url}
+            onClose={() => { setSegmentPlayback(null) }}
+          />
+        )
+      })()}
       {(() => {
         if (playbackNodeId === null) return null
         const target = nodes.find(node => node.id === playbackNodeId)

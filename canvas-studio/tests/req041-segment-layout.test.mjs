@@ -1,64 +1,112 @@
 /**
- * REQ-041 · 分镜卡版式守卫（G1 源码闸，2026-11-25 真机回归）。
+ * REQ-041 · 一行一镜**段产物格**守卫（2026-11-25 真机纠正）。
  *
- * 根因回顾：段视频上卡后，`.csNodeSelected .csNodeBody`（CV-081，为长分镜稿
- * 解除折叠）会把整份 8 行分镜稿摊进 flex 体区，与段视频争抢高度 ⇒ 视频被压成
- * 一条、正文骑在画面上。真机截图就是这条规则与段视频卡叠加的结果。
+ * ## 被纠正的错误形态
  *
- * 本闸钉三件事，任何一条被删/被改回去都必须变红：
- *   ① 段视频框有正向 min-height（正文再长也压不没画面）；
- *   ② 段视频卡的正文规则对**选中态**也生效，且钳两行、不许 unset；
- *   ③ CV-081 的通用选中展开规则仍在（修这条不能用删别人功能的方式）。
+ * 上一版把段视频画进分镜卡的体区。卡片在历程视图里只有 380×214，段画面是
+ * 960×540 —— 正文一展开，画面被压成一条亮带、文字骑在上面。真机截图就是这个。
+ * 结构上放错了格子，样式补不回来（那一版试过 min-height + 压选中态展开）。
  *
- * 无 React 渲染环境，按本仓惯例用源码闸钉结构性前提；视觉验收仍靠真机。
- * 运行：corepack yarn test:smoke
+ * ## 正确口径（用户 2026-11-25 原话）
+ *
+ * 分镜托盘一行 = 文字卡 → 关键帧 → 视频 → 音频（→ 末帧）。段产物属于「视频」
+ * 那一格：卡回纯文案，视频回视频位。
+ *
+ * 本闸钉行为，不钉实现：
+ *   ① 有可播段 ⇒ 行内多一格，落在「视频」位，且**不是节点**（无 positions）；
+ *   ② 无可播段 ⇒ 行形态与改前**逐字相同**（空清单不许凭空造空格）；
+ *   ③ 有镜视频时两者并排：镜视频 → 段 → 配音；
+ *   ④ 卡面不许再把段视频画回体区（源码闸，防复活）。
+ *
+ * 运行：corepack yarn test:smoke（import lib 产物，需先 build）
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { computeWaterfallLayout, segmentCellId } from '../lib/canvas-waterfall.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
+const readSource = (rel) => readFileSync(join(here, '..', rel), 'utf8')
 /** 去注释切片：断言只看声明本体，不被注释里的说明文字骗过。 */
 const codeOnly = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-const STYLES = codeOnly(readFileSync(join(here, '..', 'src', 'client', 'styles.ts'), 'utf8'))
+const STYLES = codeOnly(readSource('src/client/styles.ts'))
+const NODE_SRC = codeOnly(readSource('src/client/canvas/CanvasNode.tsx'))
 
-function ruleBlock(source, selectorPattern) {
-  const match = source.match(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`))
-  assert.ok(match, `找不到规则块：${selectorPattern}`)
-  return match[1]
-}
+let seq = 0
+const node = (id, extra = {}) => ({
+  id, kind: 'image', title: id, x: 0, y: 0, width: 260, height: 180,
+  zIndex: 0, createdAt: ++seq * 10, origin: 'agent', sourceIds: [], ...extra,
+})
+const cardNode = (id, shot, extra = {}) =>
+  node(id, { kind: 'text', toolName: 'submit_storyboard_for_approval', title: `分镜 ${shot} · 机位`, ...extra })
+const videoNode = (id, extra = {}) => node(id, { kind: 'video', toolName: 'video_composite', ...extra })
+const voiceNode = (id, extra = {}) => node(id, { kind: 'audio', toolName: 'tts_voiceover', ...extra })
 
-test('① 段视频框必须有正向 min-height —— 正文不许把画面压成一条', () => {
-  const block = ruleBlock(STYLES, '\\.csNodeSegmentVideoBox')
-  const minHeight = block.match(/min-height:\s*(\d+)px/)
-  assert.ok(minHeight, '.csNodeSegmentVideoBox 缺 min-height：正文一长就把视频压到 0（真机重叠回归）')
-  assert.ok(Number(minHeight[1]) >= 48, `min-height 太小（${minHeight[1]}px）：16:9 画面小于 85×48，读不出这一屏`)
-  assert.ok(block.includes('overflow: hidden'), '视频框要裁溢出，否则 contain 之外的黑边会盖住正文')
+const trayOf = (layout, shot) => layout.trays.find(tray => tray.shot === shot)
+
+test('① 有可播段：行内多一格，落在卡后第一位，且不是节点', () => {
+  const card = cardNode('card1', 1, { segmentRef: 'spec:s1' })
+  const layout = computeWaterfallLayout([card], {
+    thumbWidth: 380,
+    segmentRefsWithMedia: new Set(['spec:s1']),
+  })
+  const tray = trayOf(layout, 1)
+  assert.deepEqual(tray.nodeIds, ['card1', segmentCellId(1)], '卡之后就是段产物格')
+  assert.equal(layout.segmentCells.length, 1, '段产物格必须交出来给渲染层')
+  assert.equal(layout.segmentCells[0].ref, 'spec:s1', '格子要带 ref —— 渲染层按它去清单取 URL')
+  assert.equal(layout.segmentCells[0].shot, 1, '格子要知道自己是哪一镜（浮层标题 / 角标）')
+
+  // 不是节点：不进 positions（那里放的是「能拖能选」的坐标），但进 boxes（要画）。
+  assert.ok(layout.boxes.has(segmentCellId(1)), '格位必须进 boxes，否则画不出来')
+  assert.equal(layout.positions.has(segmentCellId(1)), false, '合成格不许进 positions：它不是节点')
+
+  // 格位尺寸与媒体格同口径（16:9），否则同一行里高一截低一截。
+  const cardBox = layout.boxes.get('card1')
+  const segBox = layout.boxes.get(segmentCellId(1))
+  assert.equal(segBox.width, cardBox.width, '同宽')
+  assert.equal(segBox.height, Math.round(380 * 9 / 16), '段产物格按 16:9 定高')
+  assert.equal(segBox.x - cardBox.x, 380 + 24, '紧贴卡右侧（格宽 + 间距）')
 })
 
-test('② 段视频卡正文：选中态也钳两行，不许 unset（重叠的直接成因）', () => {
-  const block = ruleBlock(STYLES, '\\.csNodeSegmentCard[^{]*?\\.csNodeBody')
-  assert.ok(block.includes('-webkit-line-clamp: 2'), '段视频卡正文必须钳两行，否则 8 行分镜稿把视频挤没')
-  assert.ok(!/line-clamp:\s*unset/.test(block), '选中态不许解除钳制：那是「文字骑在视频上」的原始成因')
-  assert.ok(block.includes('-webkit-box'), '钳行必须配 display:-webkit-box，否则 -webkit-line-clamp 不生效')
-  assert.ok(/flex:\s*0\s+0\s+auto/.test(block), '正文不参与伸缩，剩余高度归视频')
+test('② 无可播段：行形态与改前逐字相同（空清单不许凭空造格）', () => {
+  const card = cardNode('card1', 1, { segmentRef: 'spec:s1' })
+  const voice = voiceNode('v1', { sourceIds: ['card1'] })
+  const base = computeWaterfallLayout([card, voice], { thumbWidth: 380 })
+  assert.deepEqual(base.segmentCells, [], '没给清单 = 没有段格')
+  assert.deepEqual(trayOf(base, 1).nodeIds, ['card1', 'v1'], '行内仍只有卡与配音')
+
+  // 清单到了但这一镜的 ref 不在里面（别的镜渲过、这一镜没渲）—— 同样不出格。
+  const partial = computeWaterfallLayout([card, voice], {
+    thumbWidth: 380,
+    segmentRefsWithMedia: new Set(['spec:s9']),
+  })
+  assert.deepEqual(partial.segmentCells, [], 'ref 未命中不许出空格')
+  assert.deepEqual(trayOf(partial, 1).nodeIds, ['card1', 'v1'], '行形态不受影响')
 })
 
-test('③ 选中态覆盖必须真的能压过 .csNodeSelected .csNodeBody（特异度）', () => {
-  // 两条规则都是「两个类 + 后代类」时后写者胜；段视频规则必须显式带上选中态类，
-  // 否则选中卡（也就是用户提意见的那张卡）恰好走 CV-081 的展开分支。
-  assert.ok(/\.csNodeSegmentCard\.csNodeSelected\s+\.csNodeBody/.test(STYLES),
-    '缺 .csNodeSegmentCard.csNodeSelected .csNodeBody 覆盖 —— 选中卡必然重叠')
+test('③ 有镜视频时并排：镜视频 → 段产物 → 配音（段不抢卡的位置，也不抢配音的位置）', () => {
+  const card = cardNode('card1', 1, { segmentRef: 'spec:s1' })
+  const keyframe = node('kf1', { toolName: 'image_generate', sourceIds: ['card1'] })
+  const video = videoNode('vid1', { sourceIds: ['card1'] })
+  const voice = voiceNode('v1', { sourceIds: ['card1'] })
+  const layout = computeWaterfallLayout([card, keyframe, video, voice], {
+    thumbWidth: 380,
+    segmentRefsWithMedia: new Set(['spec:s1']),
+  })
+  assert.deepEqual(
+    trayOf(layout, 1).nodeIds,
+    ['card1', 'kf1', 'vid1', segmentCellId(1), 'v1'],
+    '格序必须是 卡 → 关键帧 → 镜视频 → 段 → 配音',
+  )
 })
 
-test('④ CV-081 通用选中展开仍在 —— 修分镜卡不等于删长文能力', () => {
-  // 行首锚定：段视频卡的规则里也含 `.csNodeSelected .csNodeBody` 字样，
-  // 不锚定就会拿到自己那条（它本来就该含 clamp 2、不含 unset）。
-  const match = STYLES.match(/(?:^|\n)\.csNodeSelected\s+\.csNodeBody\s*\{([^}]*)\}/)
-  assert.ok(match, 'CV-081 的通用选中展开规则整条不见了')
-  const block = match[1]
-  assert.ok(/line-clamp:\s*unset/.test(block), 'CV-081 被连带删掉：长分镜稿/脚本将无法在选中态展开阅读')
-  assert.ok(block.includes('overflow-y: auto'), 'CV-081 的可滚动兜底丢失')
+test('④ 卡面不许把段视频画回体区（防复活：格子放得对，样式补丁就没人需要了）', () => {
+  assert.ok(!STYLES.includes('csNodeSegmentVideoBox'), '卡内段视频框的样式复活了 —— 那正是「视频压成一条」的形态')
+  assert.ok(!NODE_SRC.includes('segmentVideoUrl'), 'CanvasNode 又接了段视频：段产物只能由 SegmentCell 渲染')
+  // 反向：CV-081 的长文展开能力不许被顺手删（上一版为压重叠动过它）。
+  const cv081 = STYLES.match(/(?:^|\n)\.csNodeSelected\s+\.csNodeBody\s*\{([^}]*)\}/)
+  assert.ok(cv081, 'CV-081 通用选中展开规则整条不见了')
+  assert.ok(/line-clamp:\s*unset/.test(cv081[1]), 'CV-081 被连带删掉：长分镜稿/脚本将无法在选中态展开阅读')
 })

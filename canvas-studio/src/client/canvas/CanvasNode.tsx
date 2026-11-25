@@ -15,6 +15,7 @@ import { productLabelOf } from '../../workflow-stage.js'
 import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
 import type { CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT, kindAccentOf } from './labels.js'
+import { HOVER_PREVIEW_DELAY, claimHoverVideo, releaseHoverVideo, prefersReducedMotion } from './hover-video.js'
 import { useWaveBars } from '../use-waveform.js'
 import { useGenerationSpend } from '../spend-store.js'
 import { formatQuoteCredits } from '../use-credit-quote.js'
@@ -38,16 +39,6 @@ const TOOL_TITLES: Readonly<Record<string, string>> = {
 
 /** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
 const LOADING_SLOW_THRESHOLD = 180
-
-/** CV-082：hover 预览启动延迟（ms）——快速扫过多个视频时不 play/pause 抖动。 */
-const HOVER_PREVIEW_DELAY = 150
-
-/** CR-067：系统减少动效偏好，模块加载时计算一次（会话中极少变化；此前每渲染查 matchMedia）。 */
-const prefersReducedMotion = typeof window !== 'undefined'
-  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-/** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
-let activeHoverVideo: HTMLVideoElement | null = null
 
 /** CV-128：全画布同一时刻只允许一个音频在响（模块级登记，显式点击播放时互停）。 */
 let activeAudioEl: HTMLAudioElement | null = null
@@ -184,13 +175,6 @@ export interface CanvasNodeProps {
    */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
   /**
-   * REQ-041 L3：该卡 `segmentRef` 命中的段视频 URL（带 `?v=`）。
-   *
-   * 只有 text 分镜卡会拿到；未命中 / 未渲项目一概 undefined ⇒ 维持原本文案卡。
-   * 地址是渲染态，**不写进节点数据**，所以不持久化、不进 undo。
-   */
-  segmentVideoUrl?: string
-  /**
    * CV-177：托盘（kind=group）的成员数 —— 头部抓取带上报「几张」。
    * 只在组节点上给值；其它节点不传（也就不用为此多算一份子节点表）。
    */
@@ -212,7 +196,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, dragging = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural, stackCount, onOpenStack, showQuickActions, onQuickEditPrompt, onQuickRetry, segmentVideoUrl } = props
+  const { node, selected, primary = false, dragging = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural, stackCount, onOpenStack, showQuickActions, onQuickEditPrompt, onQuickRetry } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -220,10 +204,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const [bodyInput, setBodyInput] = useState('')
   // 媒体加载失败兜底（验收反馈的「黑图」：URL 失效/产物损坏时不再静默黑块）。
   const [mediaFailed, setMediaFailed] = useState(false)
-  // REQ-041：失败状态必须跟着媒体 URL 走。段副本是覆盖写的（?v=mtimeMs 换版本），
-  // 同一张卡重渲后 URL 会变；不重置的话一次 404 会让这张卡永远退回文案 ——
-  // 渲染结算刷新了清单也救不回来，等于「改完看不到这一屏」。
-  const mediaUrl = node.kind === 'text' ? segmentVideoUrl : node.url
+  // 失败状态必须跟着媒体 URL 走（覆写同名文件后 URL 会变；不重置的话一次 404
+  // 会让这张卡永远显示「加载失败」）。
+  const mediaUrl = node.url
   useEffect(() => { setMediaFailed(false) }, [mediaUrl])
   // CV-083：视频时长角标（loadedmetadata 现算显示，不落盘——重载后重新
   // 读取 metadata 时长自然恢复，省一条契约字段）。
@@ -262,11 +245,10 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
 
   // CV-082：可 hover 预览的判定（loading/失败/错误节点不播；系统偏好减少
   // 动效时不自动播——这是展示增强，不是功能必需）。
-  // REQ-041：分镜卡（text + 命中段视频）与 video 节点共用同一套 hover 预览机制
-  // （150ms 延迟 + 全局 activeHoverVideo 单例 + muted + loop），不改点击手势。
-  const hasSegmentVideo = node.kind === 'text' && segmentVideoUrl !== undefined
+  // REQ-041（2026-11-25 真机纠正）：段产物**不再挂在分镜卡里** —— 它在历程视图
+  // 里自成一格（`SegmentCell.tsx`），所以这里只判 video 节点。
   const canHoverPreview = !mediaFailed && node.isLoading !== true && node.error === undefined
-    && ((node.kind === 'video' && node.url !== undefined) || hasSegmentVideo)
+    && node.kind === 'video' && node.url !== undefined
 
   const stopHoverPreview = (): void => {
     if (hoverTimer.current !== null) {
@@ -278,7 +260,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       el.pause()
       el.currentTime = 0
     }
-    if (el !== null && activeHoverVideo === el) activeHoverVideo = null
+    if (el !== null) releaseHoverVideo(el)
   }
 
   const handleVideoEnter = (): void => {
@@ -288,15 +270,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       hoverTimer.current = null
       const el = videoRef.current
       if (el === null) return
-      // 单实例约束：上一个 hover 播放的元素先停。
-      if (activeHoverVideo !== null && activeHoverVideo !== el) {
-        activeHoverVideo.pause()
-        activeHoverVideo.currentTime = 0
-      }
-      activeHoverVideo = el
-      el.muted = true
-      el.loop = true
-      el.play().catch(() => { /* muted 自动播放被拒绝时静默（保持缩略图） */ })
+      claimHoverVideo(el)
     }, HOVER_PREVIEW_DELAY)
   }
 
@@ -305,7 +279,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     if (hoverTimer.current !== null) clearTimeout(hoverTimer.current)
     const v = videoRef.current
     if (v !== null && !v.paused) v.pause()
-    if (v !== null && activeHoverVideo === v) activeHoverVideo = null
+    if (v !== null) releaseHoverVideo(v)
     const a = audioRef.current
     if (a !== null && !a.paused) a.pause()
     if (a !== null && activeAudioEl === a) activeAudioEl = null
@@ -958,32 +932,13 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       )}
       {node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt'
         ? (
-          <div className={`csNodeText${hasSegmentVideo ? ' csNodeSegmentCard' : ''}`}>
-            {/* REQ-041 L3：命中 segmentRef 的分镜卡把这一屏的段产物当主画面；
-                文案降为副信息。段 mp4 无音轨（R11-C3），hover 只能静音播，
-                浏览器不允许 hover 触发带声自动播放 —— 旁白细看留第 3 批。
-                onError 静默回退：卡继续显示文案，不出现破图 / 控制台红。 */}
-            {hasSegmentVideo && !mediaFailed && !editingBody
-              ? (
-                <div
-                  className="csNodeSegmentVideoBox"
-                  onPointerEnter={handleVideoEnter}
-                  onPointerLeave={stopHoverPreview}
-                >
-                  <video
-                    ref={videoRef}
-                    className="csNodeSegmentVideo"
-                    src={segmentVideoUrl}
-                    muted
-                    loop
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={handleVideoMetadata}
-                    onError={() => { setMediaFailed(true) }}
-                  />
-                </div>
-              )
-              : null}
+          <div className="csNodeText">
+            {/* REQ-041（2026-11-25 真机纠正）：段产物**不再画在这里**。
+                分镜卡回到纯文案卡 —— 一行一镜的格序是
+                文字卡 → 关键帧 → 视频 → 音频，段产物属于「视频」那一格，
+                由历程视图的 `SegmentCell` 渲染（`SegmentCell.tsx`）。
+                上一版把 960×540 的段视频塞进 380×214 的格子体区，正文一展开
+                就把画面压成一条亮带、文字骑在画面上 —— 结构错位，样式补不回来。 */}
             {/* C10：正文卡不再自己顶一个类型标签 —— 头部已经有「便签 / 文本 / 提示」，
                 而且头部那一个是**派生出来的**（剧本卡会显示「剧本」而不是「文本」）。
                 两处并存时，同一张卡会同时宣称自己是「文本」和「剧本」。 */}

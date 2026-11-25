@@ -129,6 +129,13 @@ export interface WaterfallLayout {
   activity: string | null
   /** 版本堆栈（REQ-040 B）：键 = 链尾（当前生效版本）节点 id。fold 关闭时恒空。 */
   stacks: ReadonlyMap<string, WaterfallStack>
+  /**
+   * REQ-041：段产物格（一行一镜的「视频」位）。只在调用方给出
+   * `segmentRefsWithMedia` 且该镜分镜卡带的 ref 确实有可播段时出现；
+   * 格位同时写进 `boxes` / `trays[].nodeIds`（否则行内布局与「镜 N」角标
+   * 的右边界会少算一格），但**不进** `positions`（它不是节点，没有坐标）。
+   */
+  segmentCells: readonly WaterfallSegmentCell[]
 }
 
 export interface WaterfallOptions {
@@ -152,6 +159,14 @@ export interface WaterfallOptions {
    * 「显示废弃素材」开关打开时关闭折叠（平铺回显旧行为）。
    */
   foldSuperseded?: boolean
+  /**
+   * REQ-041：**有可播段产物**的 ref 集合（`spec:s2` 这种）。
+   *
+   * 为什么要调用方给：布局函数是纯函数、只认节点，不知道某个 ref 到底渲过没有。
+   * 让它在布局里凭空造格会出现「每个分镜卡旁边都挂一个空视频格」—— 没渲过段的
+   * 项目（或段还在渲）立刻变形。清单到了才有格，清单为空则行形态与今天完全一致。
+   */
+  segmentRefsWithMedia?: ReadonlySet<string>
 }
 
 /* ================= 几何常量 ================= */
@@ -180,6 +195,32 @@ const PORTRAIT_MAX_RATIO = 16 / 9
 
 /** 镜内产物的排列角色（托盘网格顺序）。 */
 const ROLE = { keyframe: 1, video: 2, lastframe: 3, voice: 4 } as const
+
+/**
+ * REQ-041：段产物格的角色 —— 落在「镜视频」之后、「末帧 / 配音」之前。
+ *
+ * 用户口径（2026-11-25 真机纠正）：历程视图一行一镜的格序是
+ * **文字卡 → 关键帧 → 视频 → 音频（→ 末帧）**。段产物（Remotion 渲出的这一屏）
+ * 属于「视频」这一类，不是分镜卡的附属画面 —— 上一版把段视频塞进分镜卡体区，
+ * 结果是 380×214 的格里正文与视频互抢高度（真机截图：视频被压成一条、文字骑
+ * 在画面上）。改成独立格后，卡回到纯文案，视频回到视频格。
+ */
+const ROLE_SEGMENT = 2.5
+
+/** 段产物格的合成 id（不是节点，只在布局里占一个格位）。 */
+export function segmentCellId(shot: number): string {
+  return `segment:${shot}`
+}
+
+/** 历程视图里的段产物格（渲染层据 box 画一张只读视频卡）。 */
+export interface WaterfallSegmentCell {
+  /** 合成 id（{@link segmentCellId}），同时出现在 `trays[].nodeIds` 与 `boxes`。 */
+  id: string
+  shot: number
+  /** `spec:<原始 id>` —— 渲染层按它去段清单取 URL。 */
+  ref: string
+  box: WaterfallBox
+}
 
 /** 标准缩略盒高：媒体 16:9（竖版按真实比例派生、封顶），音频矮条，文本卡定高。
  *  REQ-036 复核（2026-10-27）：竖版素材（如 768×1376）此前被硬塞 16:9 格，
@@ -430,7 +471,7 @@ export function computeWaterfallLayout(
     return true
   })
   if (participants.length === 0) {
-    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks }
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks, segmentCells: [] }
   }
 
   const { shotNo, keyframes } = deriveShotSemantics(nodes)
@@ -464,9 +505,13 @@ export function computeWaterfallLayout(
     width: number
     height: number
     /** stage==='shots' 时为托盘计划，否则为单网格计划。 */
-    trays: readonly { shot: number; cardId?: string; nodeIds: readonly string[]; stats: WaterfallStats; width: number; height: number; offsets: Map<string, { x: number; y: number }> }[]
+    trays: readonly { shot: number; cardId?: string; nodeIds: readonly string[]; stats: WaterfallStats; width: number; height: number; offsets: Map<string, { x: number; y: number }>; cellHeights: ReadonlyMap<string, number>; segment?: { id: string; ref: string } }[]
     grid?: ReturnType<typeof gridLayout>
   }
+
+  const segmentRefsWithMedia = options.segmentRefsWithMedia
+  /** 段产物格的盒高：与媒体格同口径（16:9）。 */
+  const segmentCellHeight = Math.round(cellW * 9 / 16)
 
   const plans: SectionPlan[] = []
   for (const stage of STAGE_ORDER) {
@@ -484,22 +529,40 @@ export function computeWaterfallLayout(
         // 一行一镜（2026-11-24 拍板）：卡是**网格第一格**（不再是 108 高头带），音频也是
         // 普通格（不再独占整行横条）—— 两类都进 gridItems，格序靠 role 保证
         // 卡(0) → 关键帧(1) → 视频(2) → 末帧(3) → 配音(4) → 其余按 createdAt。
-        const gridItems = card !== undefined ? [card, ...others] : others
-        const cells = gridItems.map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW) }))
+        //
+        // REQ-041（2026-11-25 真机纠正）：段产物**自己占一格**（role 2.5 = 视频位），
+        // 不再塞进分镜卡的体区。格序因此是 卡 → 关键帧 → 视频 → 段 → 末帧 → 配音，
+        // 与效果图 `docs/demos/shot-rows-2026-11-24/` 的「文字卡 / 关键帧 / 镜视频 /
+        // 配音」一致；镜子有 H3 镜视频时两者并排（原始镜视频 vs 排版后的这一屏）。
+        const cardRef = card?.node.segmentRef
+        const segment = cardRef !== undefined && segmentRefsWithMedia?.has(cardRef) === true
+          ? { id: segmentCellId(shot), ref: cardRef }
+          : undefined
+        const orderedCells: { id: string; height: number; role: number }[] = (card !== undefined ? [card, ...others] : others)
+          .map(item => ({ id: item.node.id, height: cellHeightOf(item.node, cellW), role: item.role ?? 9 }))
+        if (segment !== undefined) {
+          const at = orderedCells.findIndex(cell => cell.role > ROLE_SEGMENT)
+          orderedCells.splice(at === -1 ? orderedCells.length : at, 0,
+            { id: segment.id, height: segmentCellHeight, role: ROLE_SEGMENT })
+        }
+        const cells = orderedCells.map(cell => ({ id: cell.id, height: cell.height }))
         // centerVertically：音频 168 落在 214 的媒体排里纵向居中（卡内部布局不动）。
         const grid = gridLayout(cells, cellW, { centerVertically: true })
         // 行高 = 内边距 + 网格高 + 内边距（单排 246；折行时随内容变高，不强制等高）。
         const height = TRAY_PAD + grid.height + TRAY_PAD
-        const memberIds = gridItems.map(item => item.node.id)
+        const memberIds = orderedCells.map(cell => cell.id)
         return {
           shot,
           ...(card !== undefined ? { cardId: card.node.id } : {}),
           nodeIds: memberIds,
+          // 合成格没有节点，statsOf 会跳过它 —— 计数仍按真实节点读，不会被读成「多一个产物」。
           stats: statsOf(memberIds, byId),
           /** 内容宽（未统一）：节宽 = 全部托盘取 max 后回填（见下）。 */
           width: TRAY_PAD * 2 + grid.width,
           height,
           offsets: grid.offsets,
+          cellHeights: new Map(orderedCells.map(cell => [cell.id, cell.height] as const)),
+          ...(segment !== undefined ? { segment } : {}),
         }
       })
       // 行框统一到节宽（表格感）：先算 sectionWidth，再回填每个托盘 —— 不按内容缩，
@@ -536,13 +599,14 @@ export function computeWaterfallLayout(
   }
 
   if (plans.length === 0) {
-    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks }
+    return { positions, boxes, sections: [], trays: [], stats: EMPTY_STATS, runningIds: [], activity: null, stacks, segmentCells: [] }
   }
 
   // ---- 统一落位：整列**居左对齐**（x=0 起排，用户 2026-10-27 拍板，原为居中），
   //      各节独立纵向游标 ----
   const sections: WaterfallSection[] = []
   const trays: WaterfallTray[] = []
+  const segmentCells: WaterfallSegmentCell[] = []
   let cursorY = 0
   for (const plan of plans) {
     const x = 0
@@ -564,9 +628,19 @@ export function computeWaterfallLayout(
         for (const [id, offset] of tray.offsets) {
           const cellX = box.x + TRAY_PAD + offset.x
           const cellY = box.y + TRAY_PAD + offset.y
-          positions.set(id, { x: cellX, y: cellY })
-          const node = byId.get(id)!
-          boxes.set(id, { x: cellX, y: cellY, width: cellW, height: cellHeightOf(node, cellW) })
+          const node = byId.get(id)
+          const height = tray.cellHeights.get(id)
+            ?? (node !== undefined ? cellHeightOf(node, cellW) : segmentCellHeight)
+          boxes.set(id, { x: cellX, y: cellY, width: cellW, height })
+          // 合成格（段产物）没有节点坐标 —— positions 只放真实节点，避免
+          // 任何按 id 反查节点的调用方拿到一个不存在的 id。
+          if (node !== undefined) positions.set(id, { x: cellX, y: cellY })
+        }
+        if (tray.segment !== undefined) {
+          const cellBox = boxes.get(tray.segment.id)
+          if (cellBox !== undefined) {
+            segmentCells.push({ id: tray.segment.id, shot: tray.shot, ref: tray.segment.ref, box: cellBox })
+          }
         }
         trayY += tray.height + TRAY_GAP
       }
@@ -597,5 +671,5 @@ export function computeWaterfallLayout(
       return (b.shotVersion ?? 0) - (a.shotVersion ?? 0) || b.createdAt - a.createdAt
     })
   }
-  return { positions, boxes, sections, trays, stats: statsOf(participants.map(node => node.id), byId), runningIds, activity, stacks }
+  return { positions, boxes, sections, trays, stats: statsOf(participants.map(node => node.id), byId), runningIds, activity, stacks, segmentCells }
 }

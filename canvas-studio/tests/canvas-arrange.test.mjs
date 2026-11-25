@@ -597,3 +597,34 @@ test('整理排布：便签血缘成环不栈溢出（递归跟随带 visited）
 
   assert.ok(positions.has('a') && positions.has('b'), '成环血缘仍能落位，不无限递归')
 })
+
+test('2026-11-25 音频归镜：配音血缘指向分镜卡 ⇒ 与分镜卡同一行、并进镜位框', () => {
+  const card = cardNode('card1', 1, { createdAt: 1 })
+  const voice = node('aud', 480, 168, {
+    kind: 'audio', toolName: 'tts_voiceover', createdAt: 2, sourceIds: ['card1'],
+  })
+  const bgm = node('bgm', 480, 168, {
+    kind: 'audio', toolName: 'music_generation', createdAt: 3, sourceIds: [],
+  })
+  const positions = computeArrangeLayout([card, voice, bgm])
+
+  assert.equal(positions.get('aud').y, positions.get('card1').y, '绑了镜的配音与分镜卡同一行')
+  assert.ok(positions.get('aud').x > positions.get('card1').x, '配音排在分镜卡右侧（镜位泳道）')
+  const lanes = computeShotLanes([card, voice, bgm])
+  const lane = lanes.find(entry => entry.shot === 1)
+  assert.ok(lane !== undefined, '镜 1 必须有镜位行')
+  assert.ok(lane.nodeIds.includes('aud'), '镜位框必须包住这条配音（真机里它在独立一列，框里只有文本卡）')
+})
+
+test('2026-11-25 空泳道不留列距：只有分镜卡 + 台词时，中间不再空出一条空白带', () => {
+  const card = cardNode('card1', 1, { createdAt: 1 })
+  const voice = node('aud', 480, 168, {
+    kind: 'audio', toolName: 'tts_voiceover', createdAt: 2, sourceIds: ['card1'],
+  })
+  const positions = computeArrangeLayout([card, voice])
+  const gap = positions.get('aud').x - (positions.get('card1').x + 260)
+  // 中间三条空泳道（场景 / 关键帧 / 末帧）此前各推进一个 ARRANGE_GAP_X，
+  // 真机上表现为 240px 的空档；现在只剩相邻泳道的一个行距。
+  assert.ok(gap <= 81, `空泳道不该占列距（实际 ${gap}px）`)
+  assert.ok(gap >= 79, '相邻泳道仍保留一个 ARRANGE_GAP_X')
+})

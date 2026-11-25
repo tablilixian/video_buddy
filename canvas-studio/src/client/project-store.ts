@@ -25,7 +25,7 @@ import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 // 与 Host 侧、成片、占位各写各的；现在四处共用本模块。
 import { PLACEMENT_GRID, deriveNodePlacement, placeSequence } from '../canvas-placement.js'
 // CV-177：托盘几何 / 载入规范化 / 整理排版 —— 与 Host 侧 attachShotGroup 同一份纯函数。
-import { groupBoxOf, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
+import { groupBoxOf, healShotCardGeometry, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 // CV-217：历史遗留的占位文案 / 占位剧本节点判定（模型「先占位后回填」的产物，
 // 内容整篇是「占位」二字）。载入清洗时一并丢弃，用户不必手动删。
@@ -767,7 +767,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
             const { isLoading: _isLoading, progress: _progress, error: _error, ...rest } = node
             return rest as StudioCanvasNode
           })
-        draft.nodes = { ...draft.nodes, [projectId]: normalizeGroupBoxes(clean) }
+        // 2026-11-25：先把被旧版本写坏尺寸的分镜卡恢复成文本卡尺寸（段视频自然
+        // 尺寸被写进卡片的存量数据），再清托盘几何 —— 否则大卡会把整理布局撑宽。
+        draft.nodes = { ...draft.nodes, [projectId]: normalizeGroupBoxes(healShotCardGeometry(clean)) }
       },
       setView: (draft, projectId, patch, saved) => {
         const current = draft.views[projectId] ?? { view: VIEW_DEFAULTS, saved: false }

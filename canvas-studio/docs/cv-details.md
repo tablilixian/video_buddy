@@ -2800,3 +2800,18 @@
 - **边界**：预览视图里的「片段」是虚拟格，自由画布这一档**不渲染**它（不引入「虚拟格要跟着拖动」的新问题）；台词卡仍是独立音频节点，其自身工具条语义不动。
 - **涉及文件**：`src/client/canvas/SegmentCell.tsx`、`src/client/canvas/NodeActionBar.tsx`、`src/client/canvas/CanvasSurface.tsx`、`src/reference-handle.ts`、`src/client/AssetChipPreview.tsx`、`src/client/StudioFrame.tsx`、`src/reference-resolve.ts`、`src/canvas-view.ts`、`src/client/styles.ts`；测试 `tests/canvas-arrange.test.mjs`（新增一行一镜用例 + CV-185 收窄到非分镜托盘）、`tests/reference.test.mjs`（新增分镜卡句柄用例）、`tests/canvas-chrome-align-req029.test.mjs`（锚点调用形态随 `anchorBox ?? node` 更新）。
 - **验证**：typecheck / 双 tsc（host + client 声明）/ verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：点片段卡出三钮且落在视频卡上沿；引用出真 chip + 成功 toast；自由画布点「整理布局」后一镜一行、托盘横排、与预览视图对形状。
+
+#### CV-470 · 分镜卡尺寸自愈 + 配音归镜 + 空泳道不留列距（2026-11-25）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **用户口径**：拿真机 canvas.json 追问「还是显示不对，需要重新生成吗」—— 明确**不重新生成、不改项目历史数据**，要功能正确。
+- **取证（canvas.json 回放）**：① 分镜 4~11 为 `960×588` 且带 `mediaWidth: 960 / mediaHeight: 540`，分镜 1~3 为 300×200 且无媒体字段；② 11 条配音 `sourceIds` 全部指向对应分镜卡，但排在 x=4060 的独立列（分镜卡在 x=2640）；③ 三条空泳道（场景 / 关键帧 / 末帧）各推进一个 `ARRANGE_GAP_X`。
+- **方案**：
+  - `canvas-view` 新增 `healShotCardGeometry`：判据三条取交 —— 分镜卡（`isShotCard`）、带 `mediaWidth/mediaHeight`、几何恰等于该媒体 `frameSizeOf`（±1px）；命中恢复 300×200 并摘掉媒体字段。无媒体字段（用户手动尺寸）、几何不符、非分镜卡一律不动；幂等。`project-store.setNodes` 载入链改为 `normalizeGroupBoxes(healShotCardGeometry(clean))`（先自愈尺寸再清托盘几何）。
+  - `deriveShotSemantics` 增第 ④ 趟「音频归镜」：音频 sourceIds 追到已登记镜号的节点 ⇒ 继承；`origin === 'manual'` 不归（与 `laneOfNode` 同口径）。`canvas-waterfall` 内重复的 `audioShotOf` 删除 —— 两个布局函数共用同一份语义。
+  - `laneX`：空泳道不再推进 `ARRANGE_GAP_X`（列宽仍取有内容的泳道，跨行对齐语义不变）。
+- **回放结果**：11 张分镜卡全部 300×200；11 条台词与各自分镜卡同行（间距 80，原约 1120px）；11 个镜位行全部含台词。
+- **涉及文件**：`src/canvas-view.ts`（healShotCardGeometry / deriveShotSemantics ④ / laneX）、`src/canvas-waterfall.ts`（删 audioShotOf）、`src/client/project-store.ts`（载入接线）；测试 `tests/canvas-view.test.mjs`（+2 自愈用例）、`tests/canvas-arrange.test.mjs`（+2：音频归镜 / 空泳道）、`tests/group-tray.test.mjs`、`tests/text-guard.test.mjs`（接线断言同步）。
+- **验证**：typecheck / 双 tsc / verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：重开该项目 → 分镜卡恢复常规大小；点「整理布局」→ 每镜「分镜卡 + 台词」同一行、镜位框包住整行、中间无空白带。
+- **边界**：自由画布仍不渲染「片段」虚拟格；无绑镜血缘的图仍在创意区（用户明确「血缘不正确是另一个需求，不处理」）。

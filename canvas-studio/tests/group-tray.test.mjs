@@ -87,8 +87,8 @@ test('CV-177 契约：托盘几何只有一份实现 —— 两处调用方都�
   )
   // client：手动编组 + 整理 + 载入规范化。
   assert.match(
-    STORE_CODE, /import \{ groupBoxOf, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout \} from '\.\.\/canvas-view\.js'/,
-    'project-store.ts 必须从 canvas-view 取这四件事（isShotMaterialGroup 是 A-10 的分镜组判别）',
+    STORE_CODE, /import \{ groupBoxOf, healShotCardGeometry, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout \} from '\.\.\/canvas-view\.js'/,
+    'project-store.ts 必须从 canvas-view 取这几件事（isShotMaterialGroup 是 A-10 的分镜组判别；healShotCardGeometry 是载入自愈）',
   )
   assert.match(STORE_CODE, /const box = groupBoxOf\(members\)/, 'groupSelected 必须调 groupBoxOf')
   assert.ok(
@@ -102,8 +102,8 @@ test('CV-177：载入清洗必须规范化老托盘几何（否则抓取带会�
   // 「头部带盖住图片顶部 24px」——而且只有老项目会这样，最容易被当成
   // 「某些项目显示不对」而不是「几何没迁移」。
   assert.match(
-    STORE_CODE, /normalizeGroupBoxes\(clean\)/,
-    'setNodes 必须对载入节点跑 normalizeGroupBoxes',
+    STORE_CODE, /normalizeGroupBoxes\(healShotCardGeometry\(clean\)\)/,
+    'setNodes 必须对载入节点跑 normalizeGroupBoxes（2026-11-25 起先跑 healShotCardGeometry）',
   )
   assert.ok(
     !/export function boundsOf/.test(STORE_CODE),

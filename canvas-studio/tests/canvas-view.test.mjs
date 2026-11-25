@@ -8,6 +8,7 @@ import {
   clampViewScale,
   computeArrangeLayout,
   groupBoxOf,
+  healShotCardGeometry,
   isShotMaterialGroup,
   GROUP_HEAD_HEIGHT,
   GROUP_PADDING,
@@ -331,3 +332,40 @@ test('A-10 tidyGroupLayout：缺省（grid）路径与 shot 显式无关 —— 
 function tidyShot(tray, members) {
   return tidyGroupLayout(tray, members, { mode: 'shot' })
 }
+
+/* ===================== 2026-11-25：分镜卡尺寸载入自愈 =====================
+   真机 canvas.json 取证：分镜 4~11 是 960×588（段视频 960×540 + 48 chrome），
+   正文只占顶部一块、下面大片空白。根因是旧版本把段视频自然尺寸回写进文本卡；
+   代码侧已加守卫，但存量脏数据不会自己回去 —— 这条盯的是载入清洗。 */
+
+test('healShotCardGeometry：旧 bug 写坏的分镜卡恢复 300×200，并摘掉媒体字段', () => {
+  const dirty = node('a', 0, 0, 960, 588, {
+    kind: 'text', toolName: 'seedStoryboardShot', mediaWidth: 960, mediaHeight: 540,
+  })
+  const healed = healShotCardGeometry([dirty])
+  const card = healed[0]
+  assert.equal(card.width, 300, '文本卡标准宽')
+  assert.equal(card.height, 200, '文本卡标准高')
+  assert.equal(card.mediaWidth, undefined, 'mediaWidth 是段视频的读数，不属于文本卡')
+  assert.equal(card.mediaHeight, undefined)
+  assert.equal(card.x, dirty.x, '位置不动（整理布局负责重排）')
+  // 幂等：再跑一次无变化（satisfies 不会反复写盘的前提）。
+  const again = healShotCardGeometry(healed)
+  assert.deepEqual(again[0], healed[0], '自愈必须幂等')
+})
+
+test('healShotCardGeometry：无 media 字段 / 几何不等于媒体帧 / 非分镜卡 → 一律不动', () => {
+  const userSized = node('m', 0, 0, 960, 588, { kind: 'text', toolName: 'seedStoryboardShot' })
+  const resized = node('r', 0, 0, 800, 500, {
+    kind: 'text', toolName: 'seedStoryboardShot', mediaWidth: 960, mediaHeight: 540,
+  })
+  const note = node('s', 0, 0, 960, 588, {
+    kind: 'text', toolName: 'write_note', mediaWidth: 960, mediaHeight: 540,
+  })
+  const image = node('i', 0, 0, 960, 588, { kind: 'image', mediaWidth: 960, mediaHeight: 540 })
+  const healed = healShotCardGeometry([userSized, resized, note, image])
+  assert.equal(healed[0].width, 960, '没有 media 字段 = 用户自己拉过的尺寸，不动')
+  assert.equal(healed[1].width, 800, '几何不等于媒体帧，不动')
+  assert.equal(healed[2].width, 960, '不是分镜卡，不动')
+  assert.equal(healed[3].width, 960, '媒体节点的自然尺寸是它的真值，不动')
+})

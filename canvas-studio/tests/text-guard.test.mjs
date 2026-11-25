@@ -229,5 +229,5 @@ test('接线：客户端载入清洗必须真的过滤占位节点（光修写�
     'setNodes 的载入清洗必须把占位节点滤掉 —— 否则历史画布上的垃圾卡永远清不掉',
   )
   assert.ok(segment.includes('isTransientNode(node)'), '原有的瞬态清洗不得被这次改动挤掉')
-  assert.ok(segment.includes('normalizeGroupBoxes(clean)'), '原有的托盘几何规范化不得被挤掉')
+  assert.ok(segment.includes('normalizeGroupBoxes(healShotCardGeometry(clean))'), '原有的托盘几何规范化不得被挤掉（2026-11-25 起先修复分镜卡尺寸）')
 })

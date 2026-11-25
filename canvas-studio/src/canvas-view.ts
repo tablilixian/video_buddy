@@ -6,6 +6,7 @@
  */
 import type { StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { VIEW_DEFAULTS, isShotCard, SEED_SHOT_TOOL, SEED_ANCHOR_TOOL } from './contracts/canvas.js'
+import { frameSizeOf } from './canvas-aspect.js'
 
 /** Zoom clamp range (matches the surface wheel/zoom clamp). */
 export const MIN_VIEW_SCALE = 0.1
@@ -412,12 +413,14 @@ function shotNumberOfTitle(title: string | undefined): number | undefined {
  * 语义只有一份：本函数是唯一实现，两个布局函数共同调用（CV-224 注释的既定
  * 纪律：渲染层/布局层自己再解析一遍镜号，就是第二份实现，那条路不走）。
  *
- * 三趟传播（与原 arrangeCanvas 内联版逐语义一致）：
+ * 四趟传播（前三趟与原 arrangeCanvas 内联版逐语义一致）：
  *   ① 分镜卡：title 解析「分镜 N」→ 登记镜号；
  *   ② 视频：血缘里能找到已登记的分镜卡 → 继承镜号（compose 成片除外）；
  *   ③ 末帧（extract_last_frame）：血缘里的视频已登记 → 继承；其余 image：
  *      血缘直接引用分镜卡 ⇒ 判为**绑镜关键帧**并继承镜号（2026-09-22 拍板：
- *      图只看「有没有绑镜」，不看「被谁消费」）。
+ *      图只看「有没有绑镜」，不看「被谁消费」）；
+ *   ④ 音频（配音）：血缘里能追到已登记镜号的节点 → 继承（2026-11-25 并入；
+ *      此前只有瀑布流分类内单独走查，整理布局漏掉 ⇒ 台词不进镜位行）。
  */
 export interface ShotSemantics {
   /** nodeId → 镜号（含沿血缘传播所得）。 */
@@ -456,6 +459,17 @@ export function deriveShotSemantics(nodes: readonly StudioCanvasNode[]): ShotSem
       // （原实现的隐藏缺陷：罗大佑画布一张关键帧都没有，所以一直没暴露）。
       shotNo.set(node.id, shotNo.get(card.id)!)
     }
+  }
+  // ④ 音频归镜（2026-11-25 并入；此前只在瀑布流分类内单独走查，整理布局没有）。
+  // 配音（tts_voiceover）的血缘是 agent 现算的（generate.ts resolveSourceIds），
+  // 不在前三趟传播链上 —— 漏掉它，整理布局会把台词甩到音乐列，分镜行中间空
+  // 一条泳道（真机 canvas.json 复现：11 条配音 sourceIds 全部指向分镜卡，
+  // 却全部排在 x=4060 的独立列）。
+  // 用户上传的音频不归镜（laneOfNode 同口径：manual 归创意栏）。
+  for (const node of nodes) {
+    if (node.kind !== 'audio' || node.origin === 'manual' || shotNo.has(node.id)) continue
+    const source = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
+    if (source !== undefined) shotNo.set(node.id, shotNo.get(source.id)!)
   }
   return { shotNo, keyframes }
 }
@@ -826,6 +840,10 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
   // 泳道 X：按泳道最大宽度逐栏累加（空泳道塌缩成一段间隙）。
   // 跨分块时多让出 ARRANGE_ZONE_GAP - ARRANGE_GAP_X，让「创意 | 分镜 | 音乐 | 成片」
   // 在视觉上成块 —— 栏间距 > 栏内间距，眼睛才能把它们读成几大块而不是一串等距的列。
+  //
+  // 2026-11-25：**空泳道不再留列距**（原为每空列仍推进 ARRANGE_GAP_X）。真机上
+  // 「只有分镜卡 + 台词」的项目里，中间三个空泳道把两格撑开 240px 的空带，镜位
+  // 行看起来是断开的。列宽本身来自有内容的泳道，所以对齐语义不变。
   const laneX = new Map<number, number>()
   let cursorX = ARRANGE_ORIGIN
   let previousZone = zoneOfLane(LANE_SOURCE)
@@ -833,7 +851,8 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     const zone = zoneOfLane(lane)
     if (zone !== previousZone) cursorX += ARRANGE_ZONE_GAP - ARRANGE_GAP_X
     laneX.set(lane, cursorX)
-    cursorX += (laneWidths.get(lane) ?? 0) + ARRANGE_GAP_X
+    const laneWidth = laneWidths.get(lane) ?? 0
+    cursorX += laneWidth > 0 ? laneWidth + ARRANGE_GAP_X : 0
     previousZone = zone
   }
   // 行 Y：**每组独立累加** —— 每栏都从 ARRANGE_ORIGIN 顶对齐、用自己的行高序列向下排，
@@ -1026,6 +1045,48 @@ export function groupBoxOf(members: readonly StudioCanvasNode[]): CanvasBox | nu
     width: maxX - minX + GROUP_PADDING * 2,
     height: maxY - minY + GROUP_PADDING * 2 + GROUP_HEAD_HEIGHT,
   }
+}
+
+/**
+ * 分镜卡（文本卡）的标准几何 —— `seedStoryboardShot` 落卡即 300×200。
+ *
+ * 只给「旧脏数据自愈」用（见 healShotCardGeometry）；正常尺寸由落卡方给定，
+ * 用户手动拉大/缩小也一律尊重，不在这里回写。
+ */
+const SHOT_CARD_SIZE = { width: 300, height: 200 } as const
+
+/**
+ * 载入清洗：把**被旧版本写坏尺寸**的分镜卡恢复成文本卡尺寸。
+ *
+ * ## 为什么会有这种脏数据
+ *
+ * CV-214 / REQ-041 早期，段产物（这一屏渲出来的视频）挂进分镜卡体区，客户端
+ * 的「自然尺寸自愈」把它的 960×540 连同 48px chrome 写进了文本卡 ⇒ 卡片变成
+ * 960×588：正文只占顶部一小块，下面一大片空白，整理布局也被这一格撑宽。
+ * 代码侧已加守卫（StudioFrame.handleMediaNatural 非媒体节点早退），但**已经
+ * 写坏的存量不会自己回去** —— 用户在真机上看到的仍是那批大卡。
+ *
+ * ## 判据（宁可漏修，不可误伤）
+ *
+ * 三个条件同时成立才算旧 bug 产物：
+ *   ① 是分镜卡（`isShotCard`，文本卡里唯一会带段视频的一类）；
+ *   ② 带 `mediaWidth / mediaHeight`（文本卡本身没有媒体语义，正常落卡不写这两个字段）；
+ *   ③ 几何**恰好等于**该媒体的 `frameSizeOf`（±1px）—— 用户手动拉成别的尺寸不命中。
+ *
+ * 命中后只改 width/height 并摘掉两个媒体字段；位置不动（整理布局会重排）。
+ * 纯函数、幂等：修完条件不再成立，重复调用无变化。
+ */
+export function healShotCardGeometry(nodes: readonly StudioCanvasNode[]): StudioCanvasNode[] {
+  if (!nodes.some(node => isShotCard(node) && node.mediaWidth !== undefined)) return [...nodes]
+  return nodes.map(node => {
+    if (!isShotCard(node)) return node
+    const { mediaWidth, mediaHeight } = node
+    if (mediaWidth === undefined || mediaHeight === undefined || mediaWidth <= 0 || mediaHeight <= 0) return node
+    const frame = frameSizeOf({ width: mediaWidth, height: mediaHeight })
+    if (Math.abs(node.width - frame.width) > 1 || Math.abs(node.height - frame.height) > 1) return node
+    const { mediaWidth: _mediaWidth, mediaHeight: _mediaHeight, ...rest } = node
+    return { ...rest, width: SHOT_CARD_SIZE.width, height: SHOT_CARD_SIZE.height }
+  })
 }
 
 /**

@@ -292,31 +292,16 @@ interface Classified {
 }
 
 /**
- * 音频的镜归属兜底：`shotNo` 三趟传播只覆盖 卡→视频→末帧/关键帧图，配音
- * （tts_voiceover）的血缘是 agent 传什么挂什么（generate.ts `resolveSourceIds`
- * 按 sourceUrls 现算），不在传播链上。这里在**瀑布流分类内**走查 sourceIds ——
- * 引用了分镜卡 / 已知镜号的视频或关键帧 ⇒ 跟随该镜进托盘。刻意不写入
- * `deriveShotSemantics`（那会同时改变整理布局 CV-223 的行为，超出本需求边界）。
+ * 音频的镜归属：**统一在 `deriveShotSemantics` 的第 ④ 趟**（2026-11-25 合并）。
+ *
+ * 此前这里有一份「分类内走查 sourceIds」的兜底，理由是「写入共享语义会改整理
+ * 布局的行为」；真机证明两边必须一致 —— 自由画布因缺这一趟，台词被排到音乐列，
+ * 分镜行中间空一条泳道。现在共享语义是唯一实现，这里只读结果。
  */
-function audioShotOf(
-  node: StudioCanvasNode,
-  shotNo: ReadonlyMap<string, number>,
-  byId: ReadonlyMap<string, StudioCanvasNode>,
-): number | undefined {
-  for (const id of node.sourceIds) {
-    const source = byId.get(id)
-    if (source === undefined) continue
-    const shot = shotNo.get(source.id)
-    if (shot !== undefined) return shot
-  }
-  return undefined
-}
-
 function classifyNode(
   node: StudioCanvasNode,
   shotNo: ReadonlyMap<string, number>,
   keyframes: ReadonlySet<string>,
-  byId: ReadonlyMap<string, StudioCanvasNode>,
 ): Classified {
   const shot = shotNo.get(node.id)
   if (isShotCard(node)) {
@@ -343,8 +328,7 @@ function classifyNode(
     return { node, stage: 'film' }
   }
   if (node.kind === 'audio') {
-    const audioShot = shot ?? audioShotOf(node, shotNo, byId)
-    if (audioShot !== undefined) return { node, stage: 'shots', shot: audioShot, role: ROLE.voice }
+    if (shot !== undefined) return { node, stage: 'shots', shot, role: ROLE.voice }
     if (node.origin === 'manual') return { node, stage: 'creative' }
     return { node, stage: 'audio' }
   }
@@ -477,7 +461,7 @@ export function computeWaterfallLayout(
   const { shotNo, keyframes } = deriveShotSemantics(nodes)
 
   // ---- 归类 + 手动 order 追加（order 里的 id 若不在 participants 中则忽略）----
-  const classified = participants.map(node => classifyNode(node, shotNo, keyframes, byId))
+  const classified = participants.map(node => classifyNode(node, shotNo, keyframes))
   for (const id of orderRank.keys()) {
     if (byId.has(id) && !classified.some(item => item.node.id === id)) {
       // order 引用了被过滤掉的节点：忽略（保持过滤语义优先）。

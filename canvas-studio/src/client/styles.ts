@@ -2851,7 +2851,10 @@ img.csNodeMedia {
 .csNodeSegmentVideoBox {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  /* 2026-11-25 真机：min-height:0 让正文把画面压到几十像素。画面是这张卡的
+     主形态（R1），给一个保底高度，正文再长也不许吃掉它。 */
+  min-height: 64px;
+  overflow: hidden;
   box-sizing: border-box;
   border-top: 2px solid var(--cs-gate, #0b0d12);
   border-bottom: 2px solid var(--cs-gate, #0b0d12);
@@ -2865,8 +2868,19 @@ img.csNodeMedia {
   display: block;
 }
 
-.csNodeSegmentCard .csNodeBody {
+/* REQ-041：段视频卡的正文**永远**只占两行，选中态也不展开。
+   为什么必须压过选中态：CV-081 的 .csNodeSelected .csNodeBody 会
+   display:block + line-clamp:unset（为长分镜稿/脚本服务，正文可滚可读）。
+   分镜卡一旦有段视频，那条规则就把整份 8 行分镜稿塞进 flex，正文与视频
+   互相压缩 ⇒ 视频被挤成一条、文字骑在画面上，正是真机截图里的「重叠」。
+   这里用更高特异度钉住：正文两行、不参与伸缩，全文仍可双击编辑查看。 */
+.csNodeSegmentCard .csNodeBody,
+.csNodeSegmentCard.csNodeSelected .csNodeBody {
+  display: -webkit-box;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .csNodeKind {

@@ -376,6 +376,16 @@ const ARRANGE_SCENE_GAP = 12
 /** 被取代节点钉在取代者正下方时的间距。 */
 const ARRANGE_SUPERSEDE_GAP = 6
 
+/**
+ * 段产物虚拟格的尺寸（自由画布的「片段」格）。
+ *
+ * 布局（reserve）与渲染（摆格）必须同一份常量 —— 两端各写一个数字，永远是
+ * 「预留了一格 480、画出来 960」这类错位。尺寸取 480×270（= 视频卡契约宽），
+ * 与同行的台词卡同宽，行高不至于被这一格撑爆。
+ */
+export const SEGMENT_CELL_WIDTH = 480
+export const SEGMENT_CELL_HEIGHT = 270
+
 /** 泳道号：决定 X 分栏，从左到右。 */
 const LANE_SOURCE = 0 // ① 创意·源：创意 / 上传素材 / 全局锚（风格·场景锚）
 const LANE_SCRIPT = 1 // ② 剧本·定妆
@@ -383,20 +393,23 @@ const LANE_CARD = 2   // ③ 分镜卡
 const LANE_SCENE = 3  // ④ 场景图（行内横排子泳道）
 const LANE_KF = 4     // ⑤ 关键帧
 const LANE_SHOT = 5   // ⑥ 镜头视频 / 素材托盘
-const LANE_FRAME = 6  // ⑦ 末帧
-const LANE_MUSIC = 7  // ⑧ 音乐（独立分栏，留给无 toolName 的 agent 音频）
-const LANE_POST = 8   // ⑨ 后期：文案 + BGM（写脚本与配乐同列，边竖着走而非右→左）
-const LANE_FILM = 9   // ⑩ 成片（兜底泳道）
+const LANE_SEGMENT = 6 // ⑦ 段产物（虚拟格，不是节点；2026-11-25 起自由画布也排它）
+const LANE_FRAME = 7  // ⑧ 末帧
+const LANE_VOICE = 8  // ⑨ 配音（绑镜的台词）
+const LANE_MUSIC = 9  // ⑩ 音乐（独立分栏，留给无 toolName 的 agent 音频）
+const LANE_POST = 10  // ⑪ 后期：文案 + BGM（写脚本与配乐同列，边竖着走而非右→左）
+const LANE_FILM = 11  // ⑫ 成片（兜底泳道）
 
 /** 分块：栏间 X 分离，**每栏顶对齐、用自己的纵向游标向下排**。
-    只有分镜栏内部按镜号成行（同镜横向排开），其余栏都是「素材堆」。 */
+    只有分镜栏内部按镜号成行（同镜横向排开），其余栏都是「素材堆」。
+    2026-11-25：分镜栏扩到 LANE_VOICE —— 段产物格与「绑镜的台词」都属这一行。 */
 const ZONE_CREATIVE = 0 // 创意：LANE_SOURCE + LANE_SCRIPT
-const ZONE_SHOT = 1     // 分镜：LANE_CARD ~ LANE_FRAME
+const ZONE_SHOT = 1     // 分镜：LANE_CARD ~ LANE_VOICE
 const ZONE_MUSIC = 2    // 音乐
 const ZONE_FILM = 3     // 文案·成片
 const zoneOfLane = (lane: number): number =>
   lane <= LANE_SCRIPT ? ZONE_CREATIVE
-    : lane <= LANE_FRAME ? ZONE_SHOT
+    : lane <= LANE_VOICE ? ZONE_SHOT
       : lane === LANE_MUSIC ? ZONE_MUSIC : ZONE_FILM
 
 /** 镜号解析：title 里的「分镜 N」。解析不出返回 undefined。 */
@@ -524,7 +537,9 @@ function laneOfNode(
   // 若将来再出带 toolName 的新入口，须在 switch 里显式归位，否则会掉到成片栏去。
   if (node.kind === 'audio') {
     if (node.origin === 'manual') return LANE_SOURCE
-    if (shotNo.has(node.id)) return LANE_SHOT
+    // 2026-11-25：绑镜的配音单独成列（排在段产物 / 末帧之后），与预览视图的
+    // 「… → 视频 → 段 → 末帧 → 配音」同序；无镜号的 agent 音频仍是音乐栏。
+    if (shotNo.has(node.id)) return LANE_VOICE
     return LANE_MUSIC
   }
   if (node.kind === 'video') {
@@ -745,6 +760,26 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
   // 镜号从 1 起算；Math.max 兜住异常镜号（0 / 负数），免得算出取不到 rowY 的负行。
   for (const shot of shotNumbers) shotRow.set(shot, Math.max(0, shot - 1))
 
+  /**
+   * 段产物虚拟格：每镜一格（该镜的分镜卡带 `segmentRef`）。
+   *
+   * 2026-11-25：用户要求自由画布也显示「片段」格（历程视图早就有）。它不是节点、
+   * 不落盘、不进 positions，但**必须占位** —— 否则台词卡会贴到分镜卡右边，
+   * 这一格只能叠在别人身上。所以布局在 LANE_SEGMENT 里给它留宽、行高按它封顶，
+   * 渲染层再用 `computeShotSegmentSlots` 按当前坐标把它摆进去。
+   */
+  const segmentSlotShots: { shot: number; ref: string }[] = []
+  {
+    const seen = new Set<number>()
+    for (const unit of units) {
+      if (!isShotCard(unit.node) || unit.node.segmentRef === undefined) continue
+      const shot = shotNo.get(unit.node.id)
+      if (shot === undefined || seen.has(shot)) continue
+      seen.add(shot)
+      segmentSlotShots.push({ shot, ref: unit.node.segmentRef })
+    }
+  }
+
   // 逐单元落行：分镜栏查镜号表；其余栏在**本栏内**依次向下（各栏游标互不干扰）。
   // 成片（compose）恒排在成片栏末尾 —— 它是终点，不该被后落的文案压到中间。
   const zoneCursor = new Map<number, number>()
@@ -799,6 +834,16 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, unitHeightOf(unit)))
     const laneKey = `${unit.lane}#${row}`
     laneRowWidths.set(laneKey, (laneRowWidths.get(laneKey) ?? 0) + unitWidthOf(unit) + ARRANGE_GAP_X)
+  }
+  // 段产物虚拟格占位：行高按它封顶、LANE_SEGMENT 留出整格宽 —— 后面的末帧/配音
+  // 列才不会压到这一格上（渲染层按当前坐标在预留的槽位里摆它）。
+  for (const slot of segmentSlotShots) {
+    const row = shotRow.get(slot.shot)
+    if (row === undefined) continue
+    const key = `zone-${ZONE_SHOT}#${row}`
+    rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, SEGMENT_CELL_HEIGHT))
+    const laneKey = `${LANE_SEGMENT}#${row}`
+    laneRowWidths.set(laneKey, (laneRowWidths.get(laneKey) ?? 0) + SEGMENT_CELL_WIDTH + ARRANGE_GAP_X)
   }
   // 泳道宽度 = 该泳道**最挤的那一行**并排后的总宽。只看「单个单元的最大宽度」会让错开的
   // 第二个单元伸出本栏、压进右邻栏（验收反馈「有节点突出去、每个区域不是矩形」）。
@@ -999,6 +1044,71 @@ export function computeArrangeLayout(
   const only = options?.only
   const input = only !== undefined ? nodes.filter(node => only.has(node.id)) : nodes
   return arrangeCanvas(input).positions
+}
+
+/** 自由画布上的段产物虚拟格（不是节点，只用于渲染）。 */
+export interface ShotSegmentSlot {
+  /** 镜号。 */
+  readonly shot: number
+  /** `spec:<原始 id>` —— 渲染层按它去段清单取 URL。 */
+  readonly ref: string
+  /** 归属分镜卡 id（点这一格 = 选中这张卡，工具条也锚到这张卡）。 */
+  readonly cardId: string
+  /** 当前坐标下的格位（画布空间）。 */
+  readonly box: CanvasBox
+}
+
+/**
+ * 段产物虚拟格在当前坐标下的落点（自由画布，2026-11-25）。
+ *
+ * ## 为什么在渲染侧现算，而不是用整理布局的结果
+ *
+ * 与镜位框同一条纪律：框/格必须跟着节点**当前的**坐标走。用户还没点「整理布局」
+ * 时，格若按整理后的坐标画，就会飘在空地上。这里只用「这一镜行内各节点的当前
+ * 右边界」推出 x，所以无论排没排过，格都紧跟在视频/关键帧之后。
+ *
+ * ## 顺序与不重叠
+ *
+ * 位置 = 行内最右的非音频节点（卡 / 关键帧 / 视频 / 末帧 / 托盘成员）+ 一个行距，
+ * 即预览视图的「… → 视频 → 段 → 末帧 → 配音」同序；整理布局会在 LANE_SEGMENT
+ * 预留整格宽，所以落点 ≤ 预留槽位，不会压到右侧的台词卡。
+ *
+ * @param segmentRefsWithMedia 有可播段产物的 ref 集合；不传 = 带 segmentRef 就出格。
+ */
+export function computeShotSegmentSlots(
+  nodes: readonly StudioCanvasNode[],
+  segmentRefsWithMedia?: ReadonlySet<string>,
+): readonly ShotSegmentSlot[] {
+  const { shotNo } = deriveShotSemantics(nodes)
+  const cards = new Map<number, StudioCanvasNode>()
+  for (const node of nodes) {
+    if (!isShotCard(node) || node.segmentRef === undefined) continue
+    const shot = shotNo.get(node.id)
+    if (shot === undefined || cards.has(shot)) continue
+    if (segmentRefsWithMedia !== undefined && !segmentRefsWithMedia.has(node.segmentRef)) continue
+    cards.set(shot, node)
+  }
+  const slots: ShotSegmentSlot[] = []
+  for (const [shot, card] of [...cards.entries()].sort((left, right) => left[0] - right[0])) {
+    let right = card.x + card.width
+    for (const node of nodes) {
+      if (node.id === card.id || node.kind === 'audio') continue
+      if (shotNo.get(node.id) !== shot) continue
+      right = Math.max(right, node.x + node.width)
+    }
+    slots.push({
+      shot,
+      ref: card.segmentRef!,
+      cardId: card.id,
+      box: {
+        x: right + ARRANGE_GAP_X,
+        y: card.y,
+        width: SEGMENT_CELL_WIDTH,
+        height: SEGMENT_CELL_HEIGHT,
+      },
+    })
+  }
+  return slots
 }
 
 /* ===================== CV-177：托盘（素材组）几何与排版 =====================

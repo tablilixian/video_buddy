@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { centerViewOf, computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { centerViewOf, computeFitView, computeShotLanes, computeShotSegmentSlots, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
 import { computeWaterfallLayout, SECTION_HEAD_H, thumbWidthFromViewport, type WaterfallStage } from '../../canvas-waterfall.js'
 import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
@@ -1331,6 +1331,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     () => new Map((waterfallLayout?.trays ?? []).map(tray => [tray.shot, tray] as const)),
     [waterfallLayout],
   )
+  /**
+   * 自由画布的段产物虚拟格（2026-11-25 用户要求与历程视图一致）。
+   *
+   * 历程视图由布局函数直接产出 segmentCells；自由画布没有布局投影，所以在渲染侧
+   * 按**当前坐标**现算落点（同一份纯函数，见 canvas-view.computeShotSegmentSlots）。
+   * 只在非历程模式算 —— 两个视图同时画会出现两张同 ref 的格。
+   */
+  const freeSegmentSlots = useMemo(
+    () => (waterfallOn ? [] : computeShotSegmentSlots(visibleNodes, segmentRefsWithMedia)),
+    [waterfallOn, visibleNodes, segmentRefsWithMedia],
+  )
   // ref 容器与 layoutTargets 在上方（viewRef 旁）声明 —— 这里只做渲染期回填。
   waterfallNodesRef.current = waterfallNodes
   // REQ-036 P1：进入历程视图时适配一次内容（投影盒为界）；退出不劫持视口，
@@ -1379,8 +1390,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         height: bottom - top + SHOT_BOX_HEAD + SHOT_BOX_PAD_Y,
       })
     }
+    // 2026-11-25：段产物格不是节点，但它在镜位行里占一格 —— 不收进包围盒的话，
+      // 「只有分镜卡 + 片段」的镜位框会把这一格漏在框外（历程视图的托盘宽度是
+      // 布局直接给的，自由画布这边只能在这里补）。
+    for (const slot of freeSegmentSlots) {
+      const laneBox = boxes.find(box => box.shot === slot.shot)
+      if (laneBox === undefined) continue
+      const left = Math.min(laneBox.x, slot.box.x - SHOT_BOX_PAD_X)
+      const right = Math.max(laneBox.x + laneBox.width, slot.box.x + slot.box.width + SHOT_BOX_PAD_X)
+      const top = Math.min(laneBox.y, slot.box.y - SHOT_BOX_HEAD)
+      const bottom = Math.max(laneBox.y + laneBox.height, slot.box.y + slot.box.height + SHOT_BOX_PAD_Y)
+      laneBox.x = left
+      laneBox.y = top
+      laneBox.width = right - left
+      laneBox.height = bottom - top
+    }
     return boxes
-  }, [visibleNodes])
+  }, [visibleNodes, freeSegmentSlots])
   // CV-177：托盘的成员数（头部抓取带上报「几张」）。没有组时这张表是空的，
   // 普通项目零开销。
   const groupCounts = useMemo(() => {
@@ -1452,11 +1478,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
    * 片段设成虚拟格后，按钮就落在用户正在看的画面上，而不是左边文本卡的下方。
    */
   const actionBarAnchorBox = useMemo(() => {
-    if (!waterfallOn || waterfallLayout === null || actionBarNode === null) return undefined
+    if (actionBarNode === null) return undefined
     const ref = actionBarNode.segmentRef
     if (ref === undefined) return undefined
-    return waterfallLayout.segmentCells.find(cell => cell.ref === ref)?.box
-  }, [waterfallOn, waterfallLayout, actionBarNode])
+    // 历程视图：布局函数给的段产物格；自由画布：渲染侧现算的虚拟格。
+    if (waterfallOn) return waterfallLayout?.segmentCells.find(cell => cell.ref === ref)?.box
+    return freeSegmentSlots.find(slot => slot.ref === ref)?.box
+  }, [waterfallOn, waterfallLayout, actionBarNode, freeSegmentSlots])
 
   // REQ-003 Step 2：就地提示词编辑（原浮层）。存 **id** 而不是节点快照 —— 提交后节点
   // 对象会换，编辑面必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
@@ -1815,6 +1843,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               selected={cardId !== undefined && selectedNodeIds.includes(cardId)}
               {...(cardId !== undefined ? { onSelect: () => { onSelectNode(cardId) } } : {})}
               onOpen={() => { onOpenSegmentPlayback?.(cell.ref, cell.shot) }}
+            />
+          )
+        })}
+        {/* 2026-11-25：自由画布也画「片段」格 —— 用户要求与历程视图一致。
+            它同样不是节点（不落盘、不进 positions），位置由
+            computeShotSegmentSlots 按当前坐标现算；点它 = 选中该镜的分镜卡，
+            工具条随之锚到这一格上沿。 */}
+        {!waterfallOn && freeSegmentSlots.map(slot => {
+          const url = segmentMediaByRef?.get(slot.ref)
+          if (url === undefined) return null
+          return (
+            <SegmentCell
+              key={`free-seg-${slot.shot}`}
+              box={slot.box}
+              shot={slot.shot}
+              url={url}
+              selected={selectedNodeIds.includes(slot.cardId)}
+              onSelect={() => { onSelectNode(slot.cardId) }}
+              onOpen={() => { onOpenSegmentPlayback?.(slot.ref, slot.shot) }}
             />
           )
         })}

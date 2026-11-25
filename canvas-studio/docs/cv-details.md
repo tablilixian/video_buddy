@@ -2814,4 +2814,21 @@
 - **回放结果**：11 张分镜卡全部 300×200；11 条台词与各自分镜卡同行（间距 80，原约 1120px）；11 个镜位行全部含台词。
 - **涉及文件**：`src/canvas-view.ts`（healShotCardGeometry / deriveShotSemantics ④ / laneX）、`src/canvas-waterfall.ts`（删 audioShotOf）、`src/client/project-store.ts`（载入接线）；测试 `tests/canvas-view.test.mjs`（+2 自愈用例）、`tests/canvas-arrange.test.mjs`（+2：音频归镜 / 空泳道）、`tests/group-tray.test.mjs`、`tests/text-guard.test.mjs`（接线断言同步）。
 - **验证**：typecheck / 双 tsc / verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：重开该项目 → 分镜卡恢复常规大小；点「整理布局」→ 每镜「分镜卡 + 台词」同一行、镜位框包住整行、中间无空白带。
-- **边界**：自由画布仍不渲染「片段」虚拟格；无绑镜血缘的图仍在创意区（用户明确「血缘不正确是另一个需求，不处理」）。
+- **边界**：自由画布当时**不渲染**「片段」虚拟格（**CV-471 已推翻**：用户要求与历程视图一致，现按 `computeShotSegmentSlots` 现算落点渲染）；无绑镜血缘的图仍在创意区（用户明确「血缘不正确是另一个需求，不处理」）。
+
+#### CV-471 · 自由画布也渲染段产物「片段」格（2026-11-25，推翻 CV-469 边界）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **用户口径**：历程视图每镜有「片段」视频格（图 2），自由画布同一镜只有分镜卡 + 台词（图 1）——两处形态要一致。
+- **根因**：`CanvasSurface` 只在 `waterfallOn` 时渲染 `SegmentCell`。这是 CV-469 方案 A 明确定的边界（自由画布不渲染虚拟格），不是渲染 bug。
+- **方案**：
+  - `canvas-view` 泳道表重排：`LANE_SHOT` 后新增 `LANE_SEGMENT`，`LANE_FRAME` 后新增 `LANE_VOICE`；`ZONE_SHOT` 扩到 `LANE_VOICE`。顺序即预览口径：卡 → 场景 → 关键帧 → 视频 → **段** → 末帧 → **配音**。
+  - `laneOfNode`：绑镜的 agent 音频 → `LANE_VOICE`（原先挤在 `LANE_SHOT`），手动上传仍归创意栏，无镜号音频仍归音乐栏。
+  - `arrangeCanvas`：为带 `segmentRef` 的分镜卡在 `LANE_SEGMENT` 预留 `SEGMENT_CELL_WIDTH×SEGMENT_CELL_HEIGHT`（480×270），行高与列宽都计入 —— 右侧末帧/配音列自动让位。
+  - 新纯函数 `computeShotSegmentSlots(nodes, refs?)`：按**当前坐标**推出虚拟格落点（行内最右的非音频节点右边界 + 行距），与镜位框同一条「跟着节点当前坐标走」纪律 —— 没点整理布局时也不会飘到空地。
+  - `CanvasSurface`：非历程模式渲染 `SegmentCell`；点格 = 选中该镜；`actionBarAnchorBox` 在自由画布也用这一格；镜位框包围盒把格算进去（只有卡 + 段的镜不漏在框外）。
+- **不落盘**：格子仍不是节点，不进 `positions`、不写 `canvas.json`、不参与拖动；拖动只作用于真实节点。
+- **回放（真实 canvas.json）**：11 格全部与「分镜卡 300 → 段 480 → 台词」同一行；槽右 3500 / 台词左 3580，不重叠；行距 318（行高 270 + 48）。
+- **涉及文件**：`src/canvas-view.ts`（泳道表 / 预留 / `computeShotSegmentSlots` / `SEGMENT_CELL_*`）、`src/client/canvas/CanvasSurface.tsx`（渲染、锚点、镜位框、`freeSegmentSlots`）、`tests/canvas-arrange.test.mjs`（+3）。
+- **验证**：typecheck / 双 tsc / verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：自由画布每镜出现片段格（悬停静音播 / 双击播放带旁白）、点格出三钮、整理布局后与历程视图同形。

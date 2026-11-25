@@ -21,9 +21,12 @@ import {
   FIT_MIN_SCALE,
   FIT_PADDING,
   MAX_VIEW_SCALE,
+  SEGMENT_CELL_HEIGHT,
+  SEGMENT_CELL_WIDTH,
   computeArrangeLayout,
   computeFitView,
   computeShotLanes,
+  computeShotSegmentSlots,
 } from '../lib/canvas-view.js'
 
 const readSource = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
@@ -627,4 +630,52 @@ test('2026-11-25 空泳道不留列距：只有分镜卡 + 台词时，中间不
   // 真机上表现为 240px 的空档；现在只剩相邻泳道的一个行距。
   assert.ok(gap <= 81, `空泳道不该占列距（实际 ${gap}px）`)
   assert.ok(gap >= 79, '相邻泳道仍保留一个 ARRANGE_GAP_X')
+})
+
+/* ============ 2026-11-25：自由画布的「片段」虚拟格（与历程视图对齐） ============ */
+
+/** 把布局结果叠加到节点上（模拟渲染时的当前坐标）。 */
+const placed = (nodes, positions) => nodes.map(node => ({ ...node, ...(positions.get(node.id) ?? {}) }))
+
+test('段产物格：布局在分镜卡与台词之间预留整格，渲染侧落点不压台词', () => {
+  const card = cardNode('card1', 1, { createdAt: 1, segmentRef: 'spec:s1' })
+  const voice = node('aud', 480, 168, {
+    kind: 'audio', toolName: 'tts_voiceover', createdAt: 2, sourceIds: ['card1'],
+  })
+  const nodes = [card, voice]
+  const positions = computeArrangeLayout(nodes)
+  const slots = computeShotSegmentSlots(placed(nodes, positions))
+  assert.equal(slots.length, 1, '带 segmentRef 的分镜卡必须出一格')
+  const slot = slots[0]
+  assert.equal(slot.shot, 1)
+  assert.equal(slot.ref, 'spec:s1')
+  assert.equal(slot.cardId, 'card1', '点这一格 = 选中这张卡')
+  assert.equal(slot.box.width, SEGMENT_CELL_WIDTH)
+  assert.equal(slot.box.height, SEGMENT_CELL_HEIGHT)
+
+  const cardPos = positions.get('card1')
+  const voicePos = positions.get('aud')
+  assert.ok(slot.box.x > cardPos.x + 260, '格子在分镜卡右侧')
+  assert.ok(slot.box.x + slot.box.width <= voicePos.x, '整格（含行距）不压台词 —— 布局预留了它的位置')
+  assert.equal(slot.box.y, cardPos.y, '与分镜卡同一行')
+  assert.equal(voicePos.y, cardPos.y, '台词也在这一行')
+})
+
+test('段产物格：无 segmentRef 不出格；有媒体过滤时按清单裁格', () => {
+  const plain = cardNode('card1', 1, { createdAt: 1 })
+  const withSeg = cardNode('card2', 2, { createdAt: 2, segmentRef: 'spec:s2' })
+  const nodes = [plain, withSeg]
+  assert.deepEqual(computeShotSegmentSlots(nodes).map(slot => slot.shot), [2], '没段产物的镜不凭空造格')
+  assert.equal(computeShotSegmentSlots(nodes, new Set()).length, 0, '清单为空 ⇒ 一格都不出')
+  assert.equal(computeShotSegmentSlots(nodes, new Set(['spec:s2'])).length, 1)
+})
+
+test('段产物格：镜位框把这一格算进去（只有卡 + 段时不漏在框外）', () => {
+  const card = cardNode('card1', 1, { createdAt: 1, segmentRef: 'spec:s1' })
+  const nodes = [card]
+  const positions = computeArrangeLayout(nodes)
+  const slots = computeShotSegmentSlots(placed(nodes, positions))
+  const lane = computeShotLanes(nodes).find(entry => entry.shot === 1)
+  assert.ok(lane !== undefined, '只有分镜卡也要有镜位行（段产物格据此进框）')
+  assert.ok(slots[0].box.x > positions.get('card1').x + 260, '格子落在卡右侧')
 })

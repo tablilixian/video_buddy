@@ -69,9 +69,11 @@ export async function mergeSegmentVoice(input: MergeSegmentVoiceInput): Promise<
   const outputPath = join(input.assetsDir, voiceFile)
   try {
     const run = input.run ?? runFfmpeg
+    // REQ-041 P1-4：`offsetSec` = 台词相对段首的偏移。段窗起点不是台词起点
+    // （实测每段差 10 帧 = 0.333s），整条贴段首会让预览比成片早开口。
     const result = await run(
       resolveFfmpegPath(),
-      buildMuxArgs(silentPath, voicePath, outputPath, input.durationSec),
+      buildMuxArgs(silentPath, voicePath, outputPath, input.durationSec, input.match.offsetSec),
       FFMPEG_TIMEOUT_MS,
       input.signal,
     )

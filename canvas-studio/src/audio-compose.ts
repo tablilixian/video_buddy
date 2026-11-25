@@ -294,7 +294,28 @@ export function buildAudioTrackArgs(
 }
 
 /** 母版 + 装配音轨 → 成片（`-c:v copy` 零重编码；音频 REPLACES 母版音轨）。 */
-export function buildMuxArgs(master: string, audioTrack: string, output: string, filmDurationSec: number): string[] {
+export function buildMuxArgs(
+  master: string,
+  audioTrack: string,
+  output: string,
+  filmDurationSec: number,
+  /**
+   * REQ-041 P1-4：音轨**相对画面起点的延迟**（秒）。默认 0 ⇒ 参数与改前逐字相同
+   * （成片合声不传这个参数，行为零变化）。
+   *
+   * 为什么需要：段窗起点不等于台词起点。实测超级月亮 s2 段窗从 235 帧起、旁白在
+   * 245 帧开口（差 10 帧 = 0.333s），整条贴段首会让每一段都比成片早 1/3 秒开口，
+   * 句尾还多截 0.333s 语音。用 adelay 补前置静音，把台词摆回它在段内的真实位置。
+   *
+   * 选 `adelay` 而不是 `-itsoffset`：后者在音频重编码时会产负时间戳，播放器可能
+   * 直接吞掉开头一段；adelay 是滤镜层加静音，时间轴干净。
+   * 用老语法 `ms|ms`（3.x 起支持；`all=1` 要 4.2+，不赌内置版本）。
+   */
+  audioOffsetSec = 0,
+): string[] {
+  const delayMs = Number.isFinite(audioOffsetSec)
+    ? Math.round(Math.max(0, audioOffsetSec) * 1000)
+    : 0
   return [
     '-i', master,
     '-i', audioTrack,
@@ -302,6 +323,7 @@ export function buildMuxArgs(master: string, audioTrack: string, output: string,
     '-map', '1:a',
     '-c:v', 'copy',
     '-c:a', 'aac',
+    ...(delayMs > 0 ? ['-af', `adelay=${String(delayMs)}|${String(delayMs)}`] : []),
     ...(filmDurationSec > 0 ? ['-t', filmDurationSec.toFixed(3)] : []),
     '-y', output,
   ]

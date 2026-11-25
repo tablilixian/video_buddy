@@ -11,7 +11,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -57,6 +57,38 @@ test('缓存索引：按帧窗建键，坏 meta / 缺 mp4 跳过', () => {
   const index = cacheIndexByWindow(p.cacheDir)
   assert.deepEqual([...index.keys()].sort(), ['0:200', '200:400'])
   assert.ok(index.get('0:200').endsWith('hash1.mp4'))
+})
+
+test('同帧窗多档缓存：取最高画质，不许按 readdir 顺序抖动画质', () => {
+  const p = seededProject()
+  // 这条守卫必须**自己造出**「低画质排在目录末尾」的场景，否则对「按顺序取最后
+  // 一个」的错误实现仍然是绿的（第一版就吃过这个假绿：目录顺序恰好让 high 在后）。
+  // APFS 的 readdir 顺序由名字哈希决定，与创建顺序无关 ⇒ 换名字重试直到命中。
+  let discriminating = false
+  for (let i = 0; i < 20 && !discriminating; i += 1) {
+    rmSync(p.cacheDir, { recursive: true, force: true })
+    mkdirSync(p.cacheDir, { recursive: true })
+    // 名字要保证「低画质排在词典序/目录序后面」：本机 APFS 的 readdir 顺序实测
+    // 就是名字序，`…draft` < `…high` 会把 high 排在后面 ⇒ 一条抓不到东西的守卫。
+    const draftJson = `z${String(i)}draft.json`
+    const highJson = `a${String(i)}high.json`
+    writeFileSync(join(p.cacheDir, draftJson), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'draft' }))
+    writeFileSync(join(p.cacheDir, draftJson.replace('.json', '.mp4')), 'DRAFT')
+    writeFileSync(join(p.cacheDir, highJson), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'high' }))
+    writeFileSync(join(p.cacheDir, highJson.replace('.json', '.mp4')), 'HIGHQ')
+    discriminating = readdirSync(p.cacheDir).filter(n => n.endsWith('.json')).at(-1) === draftJson
+    const picked = cacheIndexByWindow(p.cacheDir).get('0:200')
+    assert.ok(picked.endsWith(highJson.replace('.json', '.mp4')),
+      `同帧窗有 draft 与 high 时取到 ${picked.split('/').at(-1)}：还在按目录项顺序选，卡上画质会跳变`)
+  }
+  assert.ok(discriminating, '没能造出「低画质排在目录末尾」的场景：这条守卫对「按顺序取最后」没有鉴别力')
+
+  // 只有 draft 时照旧用它（不许因为「没有高档」就整段不发）。
+  const onlyDraft = join(p.projectDir, 'build', 'shot-cache-draft')
+  mkdirSync(onlyDraft, { recursive: true })
+  writeFileSync(join(onlyDraft, 'd.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'draft' }))
+  writeFileSync(join(onlyDraft, 'd.mp4'), 'DRAFT')
+  assert.ok(cacheIndexByWindow(onlyDraft).get('0:200').endsWith('d.mp4'), '只有 draft 时必须照用')
 })
 
 test('P0-b：整片路径从缓存发布两份；ref 来自对齐段表', () => {

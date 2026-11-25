@@ -29,6 +29,14 @@ export interface SegmentVoiceMatch {
   /** 旁白资产 URL（manifest 原文，宿主侧经 `resolveAssetPathIn` 取本地路径）。 */
   src: string
   startFrame: number
+  /**
+   * REQ-041 P1-4：台词相对**段首**的偏移（秒，≥0）。
+   *
+   * 段窗起点不等于台词起点。真机数据：s2 段窗 `[235,480)`、旁白 `startFrame=245`
+   * ⇒ 段内 10 帧 = 0.333s；s3/s4 同样差 10 帧，只有 s1（0/0）恰好对齐。
+   * 合声时按它补前置静音，否则预览里每一段都比成片早 1/3 秒开口。
+   */
+  offsetSec: number
   volume?: number
   note?: string
 }
@@ -44,6 +52,8 @@ export function matchVoiceForSegment(input: {
   voiceOver: readonly ManifestVoiceOver[] | undefined
   startFrame: number
   endFrame: number
+  /** 整片帧率 —— 只用来把「台词相对段首的帧差」换成秒（合声补静音）。 */
+  fps: number
 }): SegmentVoiceMatch | undefined {
   if (!Array.isArray(input.voiceOver) || input.voiceOver.length === 0) return undefined
   const hits = input.voiceOver.filter((v) => {
@@ -53,9 +63,16 @@ export function matchVoiceForSegment(input: {
   if (hits.length === 0) return undefined
   const first = hits[0] as ManifestVoiceOver
   if (typeof first.src !== 'string' || first.src.length === 0) return undefined
+  const startFrame = typeof first.startFrame === 'number' && Number.isFinite(first.startFrame)
+    ? first.startFrame
+    : input.startFrame
+  // 落窗已保证 startFrame ∈ [段首, 段尾)，所以帧差恒 ≥ 0；max 只是防脏数据反向。
+  const offsetFrames = Math.max(0, startFrame - input.startFrame)
+  const offsetSec = Number.isFinite(input.fps) && input.fps > 0 ? offsetFrames / input.fps : 0
   return {
     src: first.src,
-    startFrame: typeof first.startFrame === 'number' ? first.startFrame : input.startFrame,
+    startFrame,
+    offsetSec,
     ...(typeof first.volume === 'number' ? { volume: first.volume } : {}),
     ...(hits.length > 1 ? { note: `该段有 ${String(hits.length)} 句旁白，带声副本只合第一句` } : {}),
   }
@@ -71,11 +88,16 @@ export function matchSegmentVoices(input: {
 }): Map<string, SegmentVoiceMatch> {
   const out = new Map<string, SegmentVoiceMatch>()
   const voiceOver = input.manifest.audio?.voiceOver
+  // meta.fps 在 manifest 里是必填正数，但派生层不该因为一条脏数据整批抛 —— 取不到
+  // 就当 0，`offsetSec` 兜底成 0（旧行为：整条贴段首），不拿 NaN 去算 ffmpeg 毫秒。
+  const metaFps: unknown = input.manifest.meta?.fps
+  const fps = typeof metaFps === 'number' && Number.isFinite(metaFps) && metaFps > 0 ? metaFps : 0
   for (const artifact of input.artifacts) {
     const match = matchVoiceForSegment({
       voiceOver,
       startFrame: artifact.startFrame,
       endFrame: artifact.startFrame + artifact.frames,
+      fps,
     })
     if (match !== undefined) out.set(artifact.id, match)
   }

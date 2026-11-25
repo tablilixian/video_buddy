@@ -44,9 +44,21 @@ export interface PublishSegmentsResult {
   note?: string
 }
 
+/**
+ * 画质档的择优序（REQ-041 复审 #1）。
+ *
+ * 同一帧窗可能有多份缓存：先 draft 渲过、后来 standard 渲过 —— 文件名是
+ * `hash(帧窗, quality, globals)`，所以两份共存。取哪份不能交给 `readdir` 顺序
+ * （macOS 上是目录项顺序，与质量、mtime 都无关），否则卡上画质会随文件系统抖动：
+ * 一次 draft 之后，用户看到的是半分辨率的这一屏。
+ */
+const QUALITY_RANK: Readonly<Record<string, number>> = { draft: 0, standard: 1, high: 2 }
+
 /** 读 shot-cache 的 *.json，按 `start:end` 帧窗建绝对 mp4 路径索引。坏 meta 跳过。 */
 export function cacheIndexByWindow(cacheDir: string): Map<string, string> {
   const out = new Map<string, string>()
+  /** 每个帧窗当前选中档的 rank；同键更高档才允许覆盖。 */
+  const best = new Map<string, number>()
   if (!existsSync(cacheDir)) return out
   try {
     for (const name of readdirSync(cacheDir)) {
@@ -55,12 +67,19 @@ export function cacheIndexByWindow(cacheDir: string): Map<string, string> {
         const meta = JSON.parse(readFileSync(join(cacheDir, name), 'utf8')) as {
           startFrame?: unknown
           endFrame?: unknown
+          quality?: unknown
         }
         if (typeof meta.startFrame !== 'number' || typeof meta.endFrame !== 'number') continue
         const key = `${String(meta.startFrame)}:${String(meta.endFrame)}`
         const mp4 = join(cacheDir, name.replace(/\.json$/, '.mp4'))
         if (!existsSync(mp4)) continue
-        out.set(key, mp4) // 同窗多 hash（质量档不同）取最后一个，覆盖写语义
+        const rank = typeof meta.quality === 'string' ? (QUALITY_RANK[meta.quality] ?? -1) : -1
+        const prev = best.get(key)
+        // 已知档一律优于未知档；同为未知（旧 meta 没有 quality）时保持先到的，
+        // 不去猜 —— 旧格式没有可比的维度。
+        if (prev !== undefined && (rank < 0 || prev >= rank)) continue
+        out.set(key, mp4)
+        best.set(key, rank)
       } catch {
         // 坏 meta 不阻断其它段
       }

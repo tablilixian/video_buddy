@@ -18,7 +18,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -313,4 +313,48 @@ test('渲染结算名单：rerender_segment 必须触发段清单刷新，普通
   assert.equal(isRenderSettledTool('image_generate'), false)
   assert.equal(isRenderSettledTool(undefined), false)
   assert.deepEqual([...RENDER_SETTLED_TOOLS].sort(), ['render_composition', 'rerender_segment'])
+})
+
+test('N1 后同帧窗只留一份缓存：下一次整片渲染不许把改前的旧片发回来', async () => {
+  const p = seeded()
+  const cacheDir = join(p.projectDir, 'build', 'shot-cache')
+  mkdirSync(cacheDir, { recursive: true })
+  // 改前的旧条目：帧窗与 s1 完全相同，内容不同（不同 hash 是必然的）——
+  // 发布侧按帧窗取件，同质量档时只能按目录顺序挑，这就是回滚的发生条件。
+  writeFileSync(join(cacheDir, 'old1.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
+  writeFileSync(join(cacheDir, 'old1.mp4'), 'CACHE-OLD-1')
+  writeFileSync(join(cacheDir, 'keep2.json'), JSON.stringify({ startFrame: 200, endFrame: 400, quality: 'standard' }))
+  writeFileSync(join(cacheDir, 'keep2.mp4'), 'CACHE-2')
+
+  const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
+  const target = plan.artifacts.find((candidate) => candidate.ref === 'spec:s1')
+  const renderer = fakeRenderer(p.assetsDir)
+  const out = await rerenderSegmentArtifact({ ...io(p, renderer), manifest: p.manifest, plan, artifact: target })
+  try {
+    assert.ok(out.result, '目标段必须渲成')
+    // ① 旧条目必须被清掉：留下两份就等于把「取哪一份」交给 readdir 顺序。
+    assert.equal(existsSync(join(cacheDir, 'old1.mp4')), false, '同帧窗的改前条目必须删（否则下次可能被发回来）')
+    assert.equal(existsSync(join(cacheDir, 'old1.json')), false, 'meta 要跟着 mp4 一起删')
+    // ② 别的帧窗不许被误伤（清理按帧窗匹配，不是整目录清空）。
+    assert.equal(existsSync(join(cacheDir, 'keep2.mp4')), true, '别的帧窗不在本次范围，必须留着')
+    // ③ 端到端：整片路径的「从缓存发布」拿到的是新片，不是旧片。
+    const published = publishSegmentsFromCache({
+      projectDir: p.projectDir,
+      assetsDir: p.assetsDir,
+      manifest: p.manifest,
+      spec: p.spec,
+    })
+    assert.equal(readFileSync(join(p.assetsDir, 'seg-s1.mp4'), 'utf8'), 'RENDERED-0',
+      '从缓存发布会把改前的旧片复制回 assets ⇒ 用户看到「改了一屏，后来自己变回去了」')
+    assert.deepEqual(published.pointers.map((pointer) => pointer.id), ['s1', 's2'])
+    // ④ 缓存目录里该帧窗只剩一条（一一对应 = 无需再猜）。
+    const sameWindow = readdirSync(cacheDir).filter((name) => {
+      if (!name.endsWith('.json')) return false
+      const meta = JSON.parse(readFileSync(join(cacheDir, name), 'utf8'))
+      return meta.startFrame === 0 && meta.endFrame === 200
+    })
+    assert.equal(sameWindow.length, 1, `同帧窗缓存必须只剩 1 条，实际 ${String(sameWindow.length)} 条`)
+  } finally {
+    rmSync(p.projectDir, { recursive: true, force: true })
+  }
 })

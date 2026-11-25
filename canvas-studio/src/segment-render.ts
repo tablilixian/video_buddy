@@ -36,7 +36,7 @@
 import type { CompositionManifest, RenderQuality } from './remotion/manifest.js'
 import type { RenderJobOutcome } from './remotion/render-job.js'
 import type { ShotSegment } from './shot-slice.js'
-import { manifestGlobalsFingerprint, shotCacheDir, storeSegment } from './shot-cache.js'
+import { manifestGlobalsFingerprint, pruneStaleWindowEntries, shotCacheDir, storeSegment } from './shot-cache.js'
 import {
   segmentAssetName,
   type SegmentArtifact,
@@ -137,7 +137,17 @@ export async function renderSegmentArtifacts(input: SegmentRenderIo & {
       failures.push(`${artifact.id}（产物路径不可解析：${messageOf(cause)}）`)
       continue
     }
-    storeSegment(segment, input.quality, cacheDir, absPath, globals)
+    const stored = storeSegment(segment, input.quality, cacheDir, absPath, globals)
+    if (stored !== null) {
+      // 同帧窗只留这一份。留两份的后果不是「多占一点盘」：发布侧按帧窗取件、
+      // 同质量档时按 readdir 顺序挑 ⇒ 下次整片渲染可能把改前的旧片又发回来。
+      pruneStaleWindowEntries({
+        cacheDir,
+        startFrame: segment.startFrame,
+        endFrame: segment.endFrame,
+        keepHash: stored.hash,
+      })
+    }
     for (const warning of outcome.warnings) {
       if (!warnings.includes(warning)) warnings.push(warning)
     }

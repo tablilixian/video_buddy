@@ -22,7 +22,7 @@
  * 而不抛**（铁律：缓存是优化，坏了退化为全量重渲）。
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompositionManifest, RenderQuality } from './remotion/manifest.js'
 import { resolveShotBoundaries, sliceByShots, type ShotSegment } from './shot-slice.js'
@@ -175,6 +175,52 @@ export function clearStaleEntries(cacheDir: string, validHashes: ReadonlySet<str
   } catch {
     return 0
   }
+}
+
+/**
+ * 删掉**同一帧窗**下除 `keepHash` 之外的缓存条目（meta + mp4 成对删）。
+ *
+ * 为什么必须删：发布侧 `cacheIndexByWindow` 是按**帧窗**取件的（它不知道段内容），
+ * 同一帧窗出现两份缓存时，它只能按质量档挑，同档则退化成 readdir 顺序 —— 与
+ * 「哪份是新渲的」无关。单段重渲（`rerender_segment`）恰好会留下两份：
+ * 改前的旧条目仍在盘上，改后的新条目是另一个 hash。下一次整片渲染
+ * （`fillMissingSegments` 判「窗已在 ⇒ 零渲染」→ `publishSegmentsFromCache` 取件）
+ * 就有机会把**改前**那份复制回 `assets/` —— 用户看到的是「改了一屏，后来自己变回去了」。
+ *
+ * 所以渲成即清：同帧窗只留本次这份，帧窗索引退化为一一对应。清不掉不抛
+ * （缓存是优化，失败只意味着仍有两份，不阻断出片）。
+ */
+export function pruneStaleWindowEntries(input: {
+  cacheDir: string
+  startFrame: number
+  endFrame: number
+  keepHash: string
+}): string[] {
+  const removed: string[] = []
+  try {
+    if (!existsSync(input.cacheDir)) return removed
+    for (const name of readdirSync(input.cacheDir)) {
+      if (!name.endsWith('.json')) continue
+      const hash = name.slice(0, -'.json'.length)
+      if (hash === input.keepHash) continue
+      try {
+        const meta = JSON.parse(readFileSync(join(input.cacheDir, name), 'utf8')) as {
+          startFrame?: unknown
+          endFrame?: unknown
+        }
+        // 坏 meta 无法判断归属 ⇒ 不动它（保守：宁可留脏也不误删别的窗）。
+        if (meta.startFrame !== input.startFrame || meta.endFrame !== input.endFrame) continue
+      } catch {
+        continue
+      }
+      rmSync(join(input.cacheDir, name), { force: true })
+      rmSync(join(input.cacheDir, `${hash}.mp4`), { force: true })
+      removed.push(hash)
+    }
+  } catch {
+    return removed
+  }
+  return removed
 }
 
 /** 从被渲 manifest 剥出段渲染用 manifest（绝对帧号 + 段活跃轨 + **剥 audio**——D3 无声段）。 */

@@ -1321,6 +1321,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 「分镜」= 场数不同口径，会被读成「8 个分镜」。计数文案改双口径：镜数 = 托盘数
   // （渲染层从 trays 派生，布局输出契约不加字段），卡数 = 节内节点数。
   const waterfallShotCount = waterfallLayout?.trays.length ?? 0
+  /**
+   * REQ-041 后续（2026-11-25）：镜号 → 托盘（拿该镜的分镜卡 id）。
+   *
+   * 片段格不是节点，点它时要落到「这一镜的分镜卡」上 —— 选中、工具条、引用
+   * 三条都走那张卡，格本身只是它的画面。映射只建一次，别在渲染循环里 find。
+   */
+  const waterfallTrayByShot = useMemo(
+    () => new Map((waterfallLayout?.trays ?? []).map(tray => [tray.shot, tray] as const)),
+    [waterfallLayout],
+  )
   // ref 容器与 layoutTargets 在上方（viewRef 旁）声明 —— 这里只做渲染期回填。
   waterfallNodesRef.current = waterfallNodes
   // REQ-036 P1：进入历程视图时适配一次内容（投影盒为界）；退出不劫持视口，
@@ -1434,6 +1444,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const actionBarSegmentUrl = actionBarNode === null || actionBarNode.segmentRef === undefined
     ? undefined
     : segmentMediaByRef?.get(actionBarNode.segmentRef)
+  /**
+   * REQ-041 后续：工具条锚点从分镜卡让到**片段格**。
+   *
+   * 只有「选中的是一张有段产物的分镜卡、且这一格真的在布局里」时才换锚 ——
+   * 其余情况（普通文本卡 / 视频卡 / 自由画布）锚点保持节点自身，行为不变。
+   * 片段设成虚拟格后，按钮就落在用户正在看的画面上，而不是左边文本卡的下方。
+   */
+  const actionBarAnchorBox = useMemo(() => {
+    if (!waterfallOn || waterfallLayout === null || actionBarNode === null) return undefined
+    const ref = actionBarNode.segmentRef
+    if (ref === undefined) return undefined
+    return waterfallLayout.segmentCells.find(cell => cell.ref === ref)?.box
+  }, [waterfallOn, waterfallLayout, actionBarNode])
 
   // REQ-003 Step 2：就地提示词编辑（原浮层）。存 **id** 而不是节点快照 —— 提交后节点
   // 对象会换，编辑面必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
@@ -1780,12 +1803,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         {waterfallOn && waterfallLayout?.segmentCells.map(cell => {
           const url = segmentMediaByRef?.get(cell.ref)
           if (url === undefined) return null
+          // 选中态跟着**这一镜的分镜卡**走（片段格自己没有节点身份）；
+          // 点格 = 选中该卡 → 工具条随即让到本格上沿。
+          const cardId = waterfallTrayByShot.get(cell.shot)?.cardId
           return (
             <SegmentCell
               key={cell.id}
               box={cell.box}
               shot={cell.shot}
               url={url}
+              selected={cardId !== undefined && selectedNodeIds.includes(cardId)}
+              {...(cardId !== undefined ? { onSelect: () => { onSelectNode(cardId) } } : {})}
               onOpen={() => { onOpenSegmentPlayback?.(cell.ref, cell.shot) }}
             />
           )
@@ -1907,6 +1935,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           node={actionBarNode}
           view={view}
           viewport={surfaceSize}
+          {...(actionBarAnchorBox !== undefined ? { anchorBox: actionBarAnchorBox } : {})}
           {...(actionBarSegmentUrl !== undefined ? { segmentVideoUrl: actionBarSegmentUrl } : {})}
           {...(onRetry !== undefined ? { onRetry } : {})}
           onEditPrompt={node => { setInputCardNodeId(node.id); setPromptEditNodeId(null) }}

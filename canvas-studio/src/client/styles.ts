@@ -2849,9 +2849,21 @@ img.csNodeMedia {
    不再挂进分镜卡体区（那条路会让 380×214 的格里正文与 960×540 的画面互抢
    高度）。这里只保留这一格外壳的少量差异化：只读、不可拖拽、悬停即播。 */
 .csSegmentCell {
-  cursor: default;
+  cursor: pointer;
   /* 视频类身份色（与 kindAccentOf('video') 同源的是描边变量，这里只借字形色） */
   overflow: hidden;
+}
+
+/* REQ-041 后续（2026-11-25）：片段格可选中 —— 点它等于选中这一镜，就近工具条
+   从左边分镜卡让到本格上沿。选中光晕沿用 .csNodeSelected（同一套描边令牌），
+   这里只补「卡的画面区也跟着亮一点」，让「选的是这张画面」一眼看得出来。 */
+.csSegmentCell.csNodeSelected {
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--cs-accent-soft, transparent), var(--cs-glow-accent, 0 0 0 1px transparent);
+}
+
+.csSegmentCell.csNodeSelected .csNodeMediaBox {
+  box-shadow: inset 0 0 0 1px var(--cs-accent-soft, transparent);
 }
 
 /* 头部标题压一行：格里 214px 高，标题折行会挤掉画面。 */
@@ -3415,6 +3427,21 @@ img.csNodeMedia {
   color: var(--cs-accent, #7aa2f7);
   font-size: 40px;
   line-height: 1;
+}
+
+/* 分镜卡的 chip hover 卡：卡片不是媒体（没有首帧），用「标题 + 分镜徽标」
+   交代它是哪一镜 —— 与音频占位同一套盒子尺寸，不出现破图。 */
+.csChipPreviewShot {
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.csChipPreviewShotTitle {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
 }
 
 /* CV-124：技能 chip 的 hover 说明卡（无缩略图概念，图标 + 标题 + 一句话说明）。 */

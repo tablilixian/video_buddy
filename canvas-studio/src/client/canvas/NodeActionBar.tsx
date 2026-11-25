@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
+import type { CanvasBox } from '../../canvas-view.js'
 import { nodeActionAnchor } from '../../canvas-view.js'
 import { isSegmentReviewMedia, nodeActionSlots } from '../../node-action-slots.js'
 
@@ -35,6 +36,15 @@ export interface NodeActionBarProps {
    * `promptFieldsOf` 为空，真机上于是只剩「引用到对话」一个按钮。
    */
   segmentVideoUrl?: string
+  /**
+   * 锚点盒（画布空间坐标）—— 缺省用节点自身的盒。
+   *
+   * 2026-11-25 拍板：一行一镜里「预览 / 下载 / 引用到对话」属于中间那张**片段卡**，
+   * 而片段是虚拟格（不是节点），没有自己的工具条实例。所以工具条仍由「选中的
+   * 分镜卡」驱动，但锚点换成这一格的投影盒 —— 按钮就落在视频卡上，而不是左边
+   * 的文本卡下方。
+   */
+  anchorBox?: CanvasBox
 }
 
 /**
@@ -60,7 +70,7 @@ export interface NodeActionBarProps {
  * 空药丸比没有工具条更糟 —— 它会占着节点上方那块地方，还让人以为点得动。
  */
 export function NodeActionBar(props: NodeActionBarProps) {
-  const { node, view, viewport, onRetry, onEditPrompt, onReferenceToChat, onOpenPreview, onOpenPlayback, onAddToLibrary, onDownload, segmentVideoUrl } = props
+  const { node, view, viewport, onRetry, onEditPrompt, onReferenceToChat, onOpenPreview, onOpenPlayback, onAddToLibrary, onDownload, segmentVideoUrl, anchorBox } = props
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
 
@@ -93,7 +103,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
     setSize(prev => (prev.width === next.width && prev.height === next.height ? prev : next))
   })
 
-  const anchor = nodeActionAnchor(node, view, viewport, size)
+  const anchor = nodeActionAnchor(anchorBox ?? node, view, viewport, size)
   // ① 没有动作 ② 节点整个移出视野 —— 工具条随之退场。它的动作全是针对那个节点的，
   // 钉在屏幕边缘只会变成「不知道在操作谁」的悬空按钮。
   if (!hasActions || !anchor.visible) return null

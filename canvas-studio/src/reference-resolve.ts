@@ -172,10 +172,17 @@ export async function resolveRefFilenames(
     if (node === undefined) {
       // 类型不匹配要指名道姓（见 throwRefKindMismatch）：只说「找不到」会把模型
       // 引去换标题重试，而不是换正确的参数通道。
-      if (expectKind !== undefined) {
-        const stray = findNodeByRef(nodes, token)
-        if (stray !== undefined) throwRefKindMismatch(token, expectKind, stray.kind)
+      const stray = findNodeByRef(nodes, token)
+      // 分镜卡不是媒体文件：它进不了参考池（没有 filename / 可提升资产），但
+      // 「引用这一镜」的 chip 就是它 —— 落成笼统的「找不到」会让模型改标题空转。
+      // 2026-11-25：给出唯一正确的两条出路（引用片段 / 走 shotRefs）。
+      if (stray !== undefined && isShotCard(stray)) {
+        throwError('CS-USER-ERR', {
+          message: `「${token}」是分镜卡（文本），不能当参考文件引用 —— 要这一镜的画面请引用它的片段视频；要让工具作用于这一镜，请把镜号写进 shotRefs 参数。`,
+          detail: `shot card referenced as media: ${stray.id}`,
+        })
       }
+      if (expectKind !== undefined && stray !== undefined) throwRefKindMismatch(token, expectKind, stray.kind)
       throwError('CS-USER-001', {
         ref: token,
         detail: 'findNodeByRef 未命中',

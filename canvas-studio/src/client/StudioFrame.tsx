@@ -556,6 +556,12 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     const node = nodesRef.current.find(entry => entry.id === nodeId)
     if (node === undefined) return
+    // 分镜卡 / 文本卡没有可看的产物：落到详情抽屉，而不是开一个空的大图浮层。
+    if (node.kind === 'text' || node.kind === 'sticky' || node.kind === 'prompt') {
+      actions.selectNode(node.id)
+      setDetailNodeId(node.id)
+      return
+    }
     // CV-130：音频也走播放浮层（hover 卡片点击 → 播放器窗口，而不是图片预览）。
     if (node.kind === 'video' || node.kind === 'audio') setPlaybackNodeId(node.id)
     else setPreviewNodeId(node.id)
@@ -1635,7 +1641,13 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleReferenceToChat = (node: StudioCanvasNode): void => {
     // CV-114：优先插成输入框里的真 chip（与打 @ 选中候选同一产物，带文件图标、
     // 独立可删、hover 可出缩略图）。不可用时降级为纯文本 @ref 注入。
-    if (insertAssetChip(node.id)) return
+    // 2026-11-25：成功也出 toast —— 真机反馈「点了没效果」有一半是 chip 插进去了
+    // 但输入框不在视线里（对话区收起 / 另一栏）。有回执才算完成了一次动作。
+    if (insertAssetChip(node.id)) {
+      const label = (node.title ?? '').trim()
+      pushToast(label === '' ? '已引用到对话' : `已引用「${label.length > 18 ? `${[...label].slice(0, 17).join('')}…` : label}」到对话`)
+      return
+    }
     let token: string
     try {
       // 降级句柄用 node id（CV-114：id 唯一稳定，Host 侧另有标题兜底匹配）。

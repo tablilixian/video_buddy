@@ -2787,3 +2787,16 @@
 - **自查修复批（c7214a4b81）**：① @ref 每次引用重传 → manifest v2 assetIds 反向缓存（复用句柄，fresh 旁路给自愈）；② 视频 businessRun 绕过 quote 硬闸 → 补齐；③ 预估 warnings 实际未接线 → 补；④ 图像产物一律 .png → 按 content MIME 定扩展名；⑤ legacy providers/drama.ts + 其测试删除。
 - **涉及文件**：`src/contracts/generation.ts`（新）、`src/generation-client.ts`（新）、`src/asset-upload.ts`（新）、`src/media-download.ts`（新）、`src/providers/business.ts`（新，drama.ts 退役）、`src/generate.ts`（六链路改线 + self-heal fresh + quote 闸）、`src/model-route.ts`（模型 code）、`src/generate-queue.ts`（宽度闸）、`src/video-jobs.ts`（台账 v2）、`src/reference-resolve.ts`（promote 复用）、`src/drama-management.ts`、`src/errors/catalog.ts`（CS-ASSET-001~005 / CS-BILL-002）、`src/host-tools.ts`（image_fix 删）、skills/docs 文档换血；测试 ~25 文件迁移 + `tests/helpers/`（asset-upload-stub / generation-stub 共享桩）。
 - **验证**：host+client typecheck ✅；全量 smoke ✅ 失败 0（3700+ 用例）。**⚑ 待真机验收**：登录后端到端 roundtrip（方案 §10.2：三图像链路 / 角色 / 理解 / ASR / 音乐 / TTS / 视频 fl2va+ref2va / **1:1 实测成片**）+ 幂等断网重试 + Host 重启恢复 + 并发排队视图 + quote 拦截实弹；generate_audio 结论反馈后台。
+
+#### CV-469 · 一行一镜：工具条上片段卡 + 分镜卡进引用表 + 分镜托盘横排（2026-11-25）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **用户口径**：① 视图预览里「引用到对话 / 预览 / 下载」要放到中间的**片段视频卡**上，选中哪一格就出现在哪一格，且「引用到对话」要真的把**选中的那一镜**引用进对话（真机反馈「点了没效果」）；② 普通画布里的**分镜托盘**要跟视图预览的一行一镜一致。
+- **根因**：工具条锚的是「选中的节点」，而片段格是虚拟格（段产物不落画布、不是节点、不能选中）⇒ 三个钮只能挂在左边分镜卡底部；「引用」走 `insertAssetChip(node.id)`，而 `buildAssetHandles` 白名单只有 image/video/audio，分镜卡是 text 被过滤 ⇒ 返回 false 后静默降级为纯文本 `@ref` 注入（输入框不在视线里就等于「没反应」）。
+- **方案（预览视图）**：`SegmentCell` 新增 `selected / onSelect`（点片段格 = 选中该镜；选中光晕复用 `.csNodeSelected` 加深媒体窗内描边）；`NodeActionBar` 新增 `anchorBox`（锚点算式改为 `nodeActionAnchor(anchorBox ?? node, …)`）；`CanvasSurface` 由 `waterfallLayout.segmentCells` 按 `segmentRef` 反查该镜片段格的投影盒，选中态跟分镜卡走 —— 于是三钮落在视频卡上沿、引用目标仍是「这一镜」（分镜卡）。
+- **方案（引用管线）**：`reference-handle` 新增 `kind: 'shot'`（`shot-NN`、`url: null`、`ASSET_KIND_LABEL.shot = 分镜`）；`AssetChipPreview` 为分镜卡出文字卡（不再落进「无预览」/破图分支）；`StudioFrame` 引用成功也出 toast（消除「静默成功」）、文本类 chip 点击改落详情抽屉（不再开空的大图浮层）；`reference-resolve` 对「分镜卡被当媒体 `@ref`」给定向报错（引用片段视频 / 改用 shotRefs），不再笼统「找不到引用」。
+- **方案（自由画布）**：`canvas-view` 的整理布局对**分镜素材托盘**（`isShotMaterialGroup`）做行内横排 —— 顺序 `SHOT_TRAY_ORDER` = 关键帧 → 视频 → 末帧 → 台词（与预览视图同序），托盘框顶 = 行顶 −36（12 内边距 + 24 抓取带），成员顶边与同行分镜卡同线；行高/泳道宽/错开步进改用横排后的尺寸。非分镜托盘仍走 CV-185「组随行」（相对偏移不变）。
+- **边界**：预览视图里的「片段」是虚拟格，自由画布这一档**不渲染**它（不引入「虚拟格要跟着拖动」的新问题）；台词卡仍是独立音频节点，其自身工具条语义不动。
+- **涉及文件**：`src/client/canvas/SegmentCell.tsx`、`src/client/canvas/NodeActionBar.tsx`、`src/client/canvas/CanvasSurface.tsx`、`src/reference-handle.ts`、`src/client/AssetChipPreview.tsx`、`src/client/StudioFrame.tsx`、`src/reference-resolve.ts`、`src/canvas-view.ts`、`src/client/styles.ts`；测试 `tests/canvas-arrange.test.mjs`（新增一行一镜用例 + CV-185 收窄到非分镜托盘）、`tests/reference.test.mjs`（新增分镜卡句柄用例）、`tests/canvas-chrome-align-req029.test.mjs`（锚点调用形态随 `anchorBox ?? node` 更新）。
+- **验证**：typecheck / 双 tsc（host + client 声明）/ verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：点片段卡出三钮且落在视频卡上沿；引用出真 chip + 成功 toast；自由画布点「整理布局」后一镜一行、托盘横排、与预览视图对形状。

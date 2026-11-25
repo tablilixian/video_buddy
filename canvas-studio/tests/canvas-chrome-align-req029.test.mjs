@@ -81,7 +81,9 @@ test('CV-283 纵向不夹取：卡去视口 clamp（留抽屉顶夹），条去 
   assert.equal(view.includes('bottomInset'), false, '锚函数不得再读抽屉 inset（纵向已不夹）')
   assert.match(view, /return \{ x, y, visible, visualScale \}/, '锚结果 = x/y/visible/visualScale')
   // 调用侧同步：bar 不再传 bottomInset；anchor.x 是定位点（中心），CSS 负责居中。
-  assert.match(bar, /nodeActionAnchor\(node, view, viewport, size\)/, '工具条调用不得再传 bottomInset')
+  // 2026-11-25：锚点可以是**片段格**的盒（一行一镜把工具条让到视频卡上），
+  // 所以调用形态是 `anchorBox ?? node` —— 仍然只有四个参数、不读抽屉 inset。
+  assert.match(bar, /nodeActionAnchor\(anchorBox \?\? node, view, viewport, size\)/, '工具条调用不得再传 bottomInset')
   assert.equal(bar.includes('bottomInset'), false, 'NodeActionBar 不得再持有 bottomInset')
 })
 

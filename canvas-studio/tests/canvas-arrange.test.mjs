@@ -97,9 +97,11 @@ test('CV-223 镜号沿血缘继承：视频←卡、末帧←视频、托盘←�
   assert.equal(positions.get('video1').y, positions.get('card1').y, '视频继承分镜卡镜号 → 同行')
   assert.equal(positions.get('frame1').y, positions.get('video1').y, '末帧继承视频镜号 → 同行')
   assert.ok(positions.get('frame1').x > positions.get('video1').x, '末帧在视频右侧泳道')
-  assert.equal(positions.get('tray').y, positions.get('card2').y, '托盘按子代视频镜号进镜位行')
+  // 2026-11-25 一行一镜：托盘框顶让出「内边距 12 + 抓取带 24」，成员顶边与同行
+  // 分镜卡同线（托盘不再竖着堆，成员内部横排）。
+  assert.equal(positions.get('tray').y, positions.get('card2').y - 36, '托盘框落在镜 2 那一行（框头在行顶上方）')
   assert.ok(positions.get('card2').y > positions.get('card1').y, '镜 2 在镜 1 下一行')
-  assert.equal(positions.get('member').y - positions.get('tray').y, member.y - tray.y, '成员相对托盘的偏移不变')
+  assert.equal(positions.get('member').y, positions.get('card2').y, '成员与分镜卡同线（行内横排）')
 })
 
 test('CV-223 链式镜不拉列：末帧与视频同行，下一镜在下一行且视频同列', () => {
@@ -338,11 +340,12 @@ test('CV-223 同镜多张绑镜的图同行、行内横向错开', () => {
   assert.ok(positions.get('kfC').y > positions.get('kfA').y, '镜 2 的图在下一行')
 })
 
-test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单元重叠', () => {
-  const tray = node('g', 552, 600, { kind: 'group', title: '分镜 1 · 素材', zIndex: -1 })
+test('CV-185 组随行：非分镜托盘保持相对偏移，且不与其他单元重叠', () => {
+  const tray = node('g', 552, 600, { kind: 'group', title: '参考素材', zIndex: -1 })
   const memberA = node('a', 270, 528, { x: 100, y: 200, parentId: 'g' })
   const memberB = node('b', 270, 528, { x: 382, y: 200, parentId: 'g' })
-  const other = node('other', 480, 318, { x: 2000, y: 3000 })
+  // 无关节点放成片泳道（最右栏），这样「不重叠」检查才有意义（同栏必然同列堆叠）。
+  const other = videoNode('other', { x: 2000, y: 3000, toolName: 'compose' })
   const positions = computeArrangeLayout([tray, memberA, memberB, other])
 
   // 断言**相对偏移不变**，不要用「另一个成员推出来的 delta」—— 那样两边一起错时
@@ -357,10 +360,37 @@ test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单�
     || positions.get('other').x + 480 <= trayX, '托盘与无关节点不重叠')
 
   const trayBox = { x: trayX, y: trayY, width: 552, height: 600 }
-  const otherBox = { ...positions.get('other'), width: 480, height: 318 }
+  const otherBox = { ...positions.get('other'), width: 480, height: 270 }
   const overlaps = trayBox.x < otherBox.x + otherBox.width && otherBox.x < trayBox.x + trayBox.width
     && trayBox.y < otherBox.y + otherBox.height && otherBox.y < trayBox.y + trayBox.height
   assert.equal(overlaps, false, '托盘矩形与无关节点矩形不相交')
+})
+
+test('2026-11-25 一行一镜：分镜素材托盘成员在行内横排，序 = 关键帧 → 视频 → 台词', () => {
+  // 真实形态：分镜卡在行首（组的 sourceIds 锚点），产物挂 parentId 进来。
+  const card = cardNode('card1', 1, { createdAt: 1 })
+  const tray = node('g', 600, 700, {
+    kind: 'group', title: '分镜 1 · 素材', zIndex: -1, createdAt: 2, sourceIds: ['card1'],
+    x: 1000, y: 1000,
+  })
+  const video = videoNode('v1', { createdAt: 3, parentId: 'g', sourceIds: ['card1'], x: 1012, y: 1360, width: 480, height: 270 })
+  // 关键帧用绑镜的图（sourceIds 直接引用分镜卡 ⇒ 关键帧 + 继承镜号）。
+  const kf = node('kf1', 260, 146, { createdAt: 4, parentId: 'g', sourceIds: ['card1'], x: 1012, y: 1036 })
+  const voice = node('aud1', 480, 168, {
+    kind: 'audio', createdAt: 5, parentId: 'g', sourceIds: ['card1'], x: 1012, y: 1650, width: 480, height: 168,
+  })
+  const positions = computeArrangeLayout([card, tray, video, kf, voice])
+
+  const yOf = (id) => positions.get(id).y
+  assert.equal(yOf('kf1'), yOf('v1'), '关键帧与视频在托盘内同一行')
+  assert.equal(yOf('kf1'), yOf('aud1'), '台词也在同一行（不再竖着堆成一列）')
+  assert.ok(positions.get('kf1').x < positions.get('v1').x, '关键帧在视频左侧')
+  assert.ok(positions.get('v1').x < positions.get('aud1').x, '台词在视频右侧')
+  // 托盘框顶比成员顶边高一个「内边距 + 抓取带」——成员顶边与同行分镜卡同线。
+  assert.equal(positions.get('g').y, yOf('v1') - 36, '托盘框顶让出内边距 12 + 抓取带 24')
+  // 分镜卡也在同一行（组随行：托盘落在该镜那一行）。
+  assert.equal(yOf('card1'), yOf('v1'), '分镜卡与托盘成员同一行')
+  assert.ok(positions.get('card1').x < positions.get('g').x, '分镜卡在托盘左侧（行内第一格）')
 })
 
 test('CV-223 版本钉扎：被取代节点钉在取代者正下方，取代者所在行加高', () => {

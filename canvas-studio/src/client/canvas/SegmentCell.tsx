@@ -13,7 +13,8 @@
  *
  * 段产物由清单按 `segmentRef` 派生（§9.7：不写画布、不加持久字段）。所以这里
  * 没有 `StudioCanvasNode`：没有 id 可选中、可拖拽、可右键，也不进 `positions`。
- * 交互只有两条，都与视频卡同语义：
+ * 交互与视频卡同语义：
+ *   - 单击 → 选中这一镜（工具条从分镜卡让到本格上沿，见 REQ-041 后续）；
  *   - 悬停 → 静音循环播放（浏览器禁止 hover 触发带声自动播放）；
  *   - 双击 → 播放浮层（清单里那一版，带旁白副本优先）。
  *
@@ -34,9 +35,17 @@ export interface SegmentCellProps {
   url: string
   /** 双击：打开播放浮层（与视频卡双击同语义）。 */
   onOpen(): void
+  /**
+   * 该镜被选中（点分镜卡或点这张片段格都算）——高亮这张卡，并把就近工具条
+   * 让到它上沿。2026-11-25 拍板：一行一镜的「预览 / 下载 / 引用到对话」属于
+   * 这一格画面，不属于左边的分镜文本卡。
+   */
+  selected?: boolean
+  /** 单击：选中这一镜（与点分镜卡同语义，工具条据此锚到本格）。 */
+  onSelect?(): void
 }
 
-function SegmentCellInner({ box, shot, url, onOpen }: SegmentCellProps): React.ReactElement {
+function SegmentCellInner({ box, shot, url, onOpen, selected = false, onSelect }: SegmentCellProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hoverTimer = useRef<number | null>(null)
   const [durationLabel, setDurationLabel] = useState<string | null>(null)
@@ -95,14 +104,15 @@ function SegmentCellInner({ box, shot, url, onOpen }: SegmentCellProps): React.R
 
   return (
     <div
-      className="csNode csSegmentCell"
+      className={selected ? 'csNode csSegmentCell csNodeSelected' : 'csNode csSegmentCell'}
       style={style}
       // 只读格：不参与画布手势（框选 / 平移从它身上起手会打断「看这一屏」）。
       onPointerDown={event => { event.stopPropagation() }}
+      onClick={() => { onSelect?.() }}
       onPointerEnter={handleEnter}
       onPointerLeave={stop}
       onDoubleClick={onOpen}
-      title="这一屏渲出来的样子（双击播放，带旁白）"
+      title={selected ? '已选中这一镜：预览 / 下载 / 引用到对话在卡上方' : '这一屏渲出来的样子（单击选中，双击播放带旁白）'}
       data-segment-shot={shot}
       data-segment-url={url}
     >

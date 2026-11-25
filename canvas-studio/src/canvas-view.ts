@@ -555,6 +555,54 @@ interface ArrangeResult {
 }
 
 /**
+ * 分镜素材托盘的**行内顺序**（2026-11-25 拍板：与视图预览的一行一镜同序）：
+ * 关键帧 → 视频 → 末帧 → 台词 → 其余。
+ *
+ * 托盘里没有分镜卡（它是组的归属锚点、在行内第一格），所以只排它的产物类成员。
+ * 「整理托盘」（tidyShotGroupLayout）与「整理布局」（planShotTrayRow）共用这一份
+ * 顺序 —— 两个入口排出来的托盘必须是同一个形状，否则用户点哪个都对不上。
+ */
+const SHOT_TRAY_ORDER = { keyframe: 1, video: 2, frame: 3, voice: 4, other: 5 } as const
+
+function shotTrayRoleOf(node: StudioCanvasNode): number {
+  if (node.kind === 'audio') return SHOT_TRAY_ORDER.voice
+  if (node.toolName === 'extract_last_frame') return SHOT_TRAY_ORDER.frame
+  if (node.kind === 'video') return SHOT_TRAY_ORDER.video
+  if (node.kind === 'image') return SHOT_TRAY_ORDER.keyframe
+  return SHOT_TRAY_ORDER.other
+}
+
+/** 分镜托盘在「一行一镜」里的排法：行内顺序 + 托盘自身尺寸。 */
+interface ShotTrayPlan {
+  readonly order: readonly StudioCanvasNode[]
+  /** 托盘框宽（成员宽之和 + 间距 + 左右内边距）。 */
+  readonly width: number
+  /** 行高占用：最高成员 + 12px 内边距（框头单独让在上一行的间隙里）。 */
+  readonly rowHeight: number
+}
+
+/**
+ * 分镜素材托盘的行内排布（2026-11-25）。
+ *
+ * 用户口径：普通画布里的「分镜托盘」要和视图预览的一行一镜一致 —— 托盘内部
+ * 不再竖着堆（那会让镜位框变成一条竖长条），改成**一行横排**，顺序与预览相同。
+ * 只对分镜素材组生效（`isShotMaterialGroup`）；参考托盘等其余托盘维持「组随行」
+ * 的相对偏移，不动。
+ */
+function planShotTrayRow(members: readonly StudioCanvasNode[]): ShotTrayPlan | null {
+  if (members.length === 0) return null
+  const order = [...members].sort((left, right) =>
+    shotTrayRoleOf(left) - shotTrayRoleOf(right) || left.createdAt - right.createdAt)
+  const contentWidth = order.reduce((sum, member) => sum + member.width, 0)
+    + GROUP_TIDY_GAP * (order.length - 1)
+  return {
+    order,
+    width: contentWidth + GROUP_PADDING * 2,
+    rowHeight: Math.max(...order.map(member => member.height)) + GROUP_PADDING,
+  }
+}
+
+/**
  * 整理布局的核心（CV-223）：一次算出**节点坐标**与**镜位框**。
  *
  *   - **分栏**：① 创意 → ② 分镜 → ③ 音乐 → ④ 文案·成片；各栏顶对齐、各有纵向
@@ -618,6 +666,20 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
       ? Math.min(...unit.children.map(child => laneOfNode(child, shotNo, keyframes, byId)))
       : laneOfNode(unit.node, shotNo, keyframes, byId)
   }
+
+  // ---- 一行一镜：分镜素材托盘内部也横排（2026-11-25 拍板）----
+  // 托盘在行内仍只占一格（LANE_SHOT），但它的成员不再保持「竖着堆」的相对偏移 ——
+  // 那会把镜位框撑成竖长条，与预览视图的一行一镜对不上。尺寸也换成横排后的，
+  // 行高/泳道宽/错开步进全部走下面两个取值器（缺省仍是节点自身的盒）。
+  const shotTrayPlans = new Map<string, ShotTrayPlan>()
+  for (const unit of units) {
+    if (unit.node.kind !== 'group' || unit.children.length === 0) continue
+    if (!isShotMaterialGroup(unit.node, nodes)) continue
+    const plan = planShotTrayRow(unit.children)
+    if (plan !== null) shotTrayPlans.set(unit.node.id, plan)
+  }
+  const unitWidthOf = (unit: ArrangeUnit): number => shotTrayPlans.get(unit.node.id)?.width ?? unit.node.width
+  const unitHeightOf = (unit: ArrangeUnit): number => shotTrayPlans.get(unit.node.id)?.rowHeight ?? unit.node.height
 
   // 被取代的顶层单元不参与行分配，最终钉在其取代者正下方；取代者丢失时按普通节点处理。
   const isSuperseded = (unit: ArrangeUnit): boolean =>
@@ -720,9 +782,9 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     const row = rowOf.get(unit.node.id)
     if (row === undefined) continue
     const key = rowKey(unit, row)
-    rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, unit.node.height))
+    rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, unitHeightOf(unit)))
     const laneKey = `${unit.lane}#${row}`
-    laneRowWidths.set(laneKey, (laneRowWidths.get(laneKey) ?? 0) + unit.node.width + ARRANGE_GAP_X)
+    laneRowWidths.set(laneKey, (laneRowWidths.get(laneKey) ?? 0) + unitWidthOf(unit) + ARRANGE_GAP_X)
   }
   // 泳道宽度 = 该泳道**最挤的那一行**并排后的总宽。只看「单个单元的最大宽度」会让错开的
   // 第二个单元伸出本栏、压进右邻栏（验收反馈「有节点突出去、每个区域不是矩形」）。
@@ -819,6 +881,22 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     if (row === undefined) continue
     const baseX = laneX.get(unit.lane) ?? ARRANGE_ORIGIN
     const y = rowY.get(rowKey(unit, row)) ?? ARRANGE_ORIGIN
+    // 分镜托盘：成员在行内横排，顶边与同行的分镜卡同线；托盘框顶 = 行顶让出
+    // 「内边距 + 抓取带」，那 36px 落在上一行的行距里（行距 48，仍留 12px）。
+    const trayPlan = shotTrayPlans.get(unit.node.id)
+    if (trayPlan !== undefined) {
+      const key = `${rowKey(unit, row)}:${unit.lane}`
+      const offset = stagger.get(key) ?? 0
+      const x = baseX + offset
+      stagger.set(key, offset + trayPlan.width + ARRANGE_GAP_X)
+      positions.set(unit.node.id, { x, y: y - GROUP_PADDING - GROUP_HEAD_HEIGHT })
+      let childX = x + GROUP_PADDING
+      for (const child of trayPlan.order) {
+        positions.set(child.id, { x: childX, y })
+        childX += child.width + GROUP_TIDY_GAP
+      }
+      continue
+    }
     let x: number
     if (unit.lane === LANE_SCENE) {
       const sceneIndex = sceneIndexByNode.get(unit.node.id) ?? 0
@@ -827,7 +905,7 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
       const key = `${rowKey(unit, row)}:${unit.lane}`
       const offset = stagger.get(key) ?? 0
       x = baseX + offset
-      stagger.set(key, offset + unit.node.width + ARRANGE_GAP_X)
+      stagger.set(key, offset + unitWidthOf(unit) + ARRANGE_GAP_X)
     }
     positions.set(unit.node.id, { x, y })
     const deltaX = x - unit.node.x
@@ -1056,47 +1134,29 @@ export function tidyGroupLayout(
 }
 
 /**
- * A-10：分镜素材组的成员角色。与顶层泳道（LANE_KF / LANE_SHOT / LANE_FRAME）
- * 同一套语义的托盘内投影：视频单独成列、末帧辅助卡靠尾，其余（关键帧图等）
- * 归关键帧列。分镜卡本身不是成员（它是组的 sourceIds 锚点）。
- */
-function shotMemberRole(member: StudioCanvasNode): 'video' | 'frame' | 'keyframe' {
-  if (member.kind === 'video') return 'video'
-  if (member.toolName === 'extract_last_frame') return 'frame'
-  return 'keyframe'
-}
-
-/**
- * A-10：分镜素材组的 shot 模式排版 —— 用户验收原话「分镜视频单独一个列，
- * 横向对齐分镜」。列序 = 关键帧列 → 视频列（末帧辅助卡接在视频列末尾）；
- * 每列成员纵排、**左缘 X 对齐**（不搞格内居中，对齐就是这条模式的全部意义），
- * 列间距 GROUP_TIDY_GAP，锚与收框口径同 grid（托盘左上角 + groupBoxOf）。
- * 角色列为空就跳过（只有视频的镜组退化为单列纵排）。
+ * A-10 修订（2026-11-25）：分镜素材组的 **一行一镜** 排版。
+ *
+ * 用户口径：普通画布里的「分镜托盘」要和视图预览的一行一镜一致 —— 成员在
+ * **同一行**从左到右排，序 = 关键帧 → 视频 → 末帧 → 台词（与预览视图同序）；
+ * 不再按角色分列纵排（那会把托盘撑成一条竖长条，镜位框也跟着变形）。
+ *
+ * 锚与收框口径不变（托盘左上角 + groupBoxOf）：所以成员恒落在
+ * `group.x + GROUP_PADDING` / `group.y + GROUP_PADDING + GROUP_HEAD_HEIGHT`。
+ * 「组随行」的整理布局把托盘框顶放在行顶上方 36px，成员顶边正好与同行分镜卡同线。
  */
 function tidyShotGroupLayout(
   group: StudioCanvasNode,
   members: readonly StudioCanvasNode[],
 ): TidyGroupResult {
   const positions = new Map<string, { x: number; y: number }>()
-  const ordered = readingOrder(members)
-  const columns: StudioCanvasNode[][] = []
-  const keyframes = ordered.filter(member => shotMemberRole(member) === 'keyframe')
-  const videos = ordered.filter(member => shotMemberRole(member) === 'video')
-  const frames = ordered.filter(member => shotMemberRole(member) === 'frame')
-  if (keyframes.length > 0) columns.push(keyframes)
-  if (videos.length > 0 || frames.length > 0) columns.push([...videos, ...frames])
-
+  const ordered = [...members].sort((left, right) =>
+    shotTrayRoleOf(left) - shotTrayRoleOf(right) || left.createdAt - right.createdAt)
   const originX = group.x + GROUP_PADDING
   const originY = group.y + GROUP_PADDING + GROUP_HEAD_HEIGHT
-  let columnX = originX
-  for (const column of columns) {
-    const columnWidth = Math.max(...column.map(member => member.width))
-    let y = originY
-    for (const member of column) {
-      positions.set(member.id, { x: columnX, y })
-      y += member.height + GROUP_TIDY_GAP
-    }
-    columnX += columnWidth + GROUP_TIDY_GAP
+  let x = originX
+  for (const member of ordered) {
+    positions.set(member.id, { x, y: originY })
+    x += member.width + GROUP_TIDY_GAP
   }
 
   const moved = members.map(member => {

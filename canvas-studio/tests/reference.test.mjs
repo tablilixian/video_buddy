@@ -182,6 +182,30 @@ test('buildAssetHandles：收 image/video/audio，按类型分别编号，文本
   assert.equal(handles[5].duration, undefined, '未知时长不挂字段（exactOptionalPropertyTypes）')
 })
 
+test('buildAssetHandles：分镜卡进表（shot-01 / kind=shot / url 恒 null），其余文本仍不进表', () => {
+  const node = (id, extra = {}) => ({
+    id,
+    kind: 'text',
+    title: id,
+    x: 0, y: 0, width: 300, height: 200,
+    createdAt: 1,
+    origin: 'agent',
+    sourceIds: [],
+    ...extra,
+  })
+  const handles = buildAssetHandles([
+    node('card1', { toolName: 'seedStoryboardShot', title: '分镜 1 · S1-Sh1 · 中景', segmentRef: 'spec:s1' }),
+    node('note', { title: '便利贴' }),
+    node('img1', { kind: 'image', url: '/assets/img1.png', title: '关键帧' }),
+  ])
+  assert.deepEqual(handles.map((h) => h.handle), ['shot-01', 'img-01'], '只有分镜卡与媒体进表')
+  assert.equal(handles[0].kind, 'shot')
+  assert.equal(handles[0].url, null, '分镜卡不是媒体：url 恒空（画面由段产物格渲染）')
+  assert.equal(handles[0].title, '分镜 1 · S1-Sh1 · 中景')
+  assert.equal(filterAssetHandles(handles, '分镜').length, 1, '中文类型「分镜」可搜')
+  assert.equal(findAssetByHandle(handles, 'shot-01')?.nodeId, 'card1')
+})
+
 test('findAssetByHandle：大小写不敏感、容错前导 @；filterAssetHandles 按句柄/标题/类型过滤', () => {
   const handles = [
     { nodeId: 'i1', handle: 'img-01', kind: 'image', title: '主角正面', url: null },

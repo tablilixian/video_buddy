@@ -272,7 +272,7 @@ test('A-10 isShotMaterialGroup：标题或 sourceIds 指向分镜卡皆判真，
   assert.equal(isShotMaterialGroup(node('n', 0, 0, 10, 10)), false, '非组节点恒假')
 })
 
-test('A-10 tidyGroupLayout shot 模式：视频单列纵排 X 对齐，关键帧另列，末帧靠尾', () => {
+test('A-10（2026-11-25 修订）tidyGroupLayout shot 模式：一行横排，序 = 关键帧 → 视频 → 末帧', () => {
   const tray = group('g', 1000, 1000, 800, 900)
   const kf1 = node('kf1', 0, 0, 270, 528)
   const kf2 = node('kf2', 0, 600, 270, 528)
@@ -280,33 +280,36 @@ test('A-10 tidyGroupLayout shot 模式：视频单列纵排 X 对齐，关键帧
   const frame = node('f', 0, 1500, 480, 270, { toolName: 'extract_last_frame' })
   const layout = tidyShot(tray, [kf1, kf2, video, frame])
 
-  // 关键帧列：左缘对齐、纵排。
+  // 行内横排：四张同一行、X 依次递增（不再分列纵排）。
   const k1 = layout.positions.get('kf1')
   const k2 = layout.positions.get('kf2')
-  assert.equal(k2.x, k1.x, '关键帧列 X 对齐')
-  assert.equal(k2.y, k1.y + 528 + GROUP_TIDY_GAP, '关键帧列纵排（间距 GROUP_TIDY_GAP）')
-  // 视频列：在关键帧列右侧（列宽 270 + 间距），末帧接在视频下方。
   const v = layout.positions.get('v')
   const f = layout.positions.get('f')
-  assert.equal(v.x, k1.x + 270 + GROUP_TIDY_GAP, '视频列在关键帧列右侧')
-  assert.equal(f.x, v.x, '视频与末帧 X 对齐（单列）')
-  assert.equal(f.y, v.y + 270 + GROUP_TIDY_GAP, '末帧辅助卡靠尾（视频列末尾）')
-  assert.equal(v.y, k1.y, '各列顶对齐（锚 = 托盘左上）')
+  const y = k1.y
+  assert.equal(k2.y, y, '关键帧 2 与关键帧 1 同一行')
+  assert.equal(v.y, y, '视频与关键帧同一行')
+  assert.equal(f.y, y, '末帧也在同一行')
+  assert.equal(k2.x, k1.x + 270 + GROUP_TIDY_GAP, '关键帧 1 → 关键帧 2 横向相接')
+  assert.equal(v.x, k2.x + 270 + GROUP_TIDY_GAP, '视频排在关键帧之后')
+  assert.equal(f.x, v.x + 480 + GROUP_TIDY_GAP, '末帧排在视频之后（辅助卡靠尾）')
+  assert.equal(k1.x, 1000 + GROUP_PADDING, '锚在托盘左上（内边距）')
+  assert.equal(k1.y, 1000 + GROUP_PADDING + 24, '纵向让出「内边距 + 抓取带」')
   // 收框：所有成员落回托盘盒内（groupBoxOf 口径不变）。
   assert.ok(layout.box.x <= k1.x && layout.box.y <= k1.y)
   assert.ok(layout.box.x + layout.box.width >= f.x + 480)
-  assert.ok(layout.box.y + layout.box.height >= f.y + 270)
+  assert.ok(layout.box.y + layout.box.height >= k1.y + 528)
 })
 
-test('A-10 tidyGroupLayout shot 模式：只有视频时退化单列，仍左缘对齐', () => {
+test('A-10（2026-11-25 修订）tidyGroupLayout shot 模式：只有视频时横排，不再纵排', () => {
   const tray = group('g', 0, 0, 600, 900)
   const v1 = node('v1', 0, 0, 480, 270, { kind: 'video' })
   const v2 = node('v2', 0, 300, 480, 270, { kind: 'video' })
   const layout = tidyShot(tray, [v1, v2])
   const p1 = layout.positions.get('v1')
   const p2 = layout.positions.get('v2')
-  assert.equal(p1.x, GROUP_PADDING, '锚在托盘左上（无关键帧列可让位）')
-  assert.equal(p2.x, p1.x, '视频列 X 对齐')
+  assert.equal(p1.x, GROUP_PADDING, '锚在托盘左上')
+  assert.equal(p2.y, p1.y, '两个视频同一行（不再纵排）')
+  assert.equal(p2.x, p1.x + 480 + GROUP_TIDY_GAP, '横向相接，间距 GROUP_TIDY_GAP')
 })
 
 test('A-10 tidyGroupLayout：缺省（grid）路径与 shot 显式无关 —— 原网格行为不变', () => {

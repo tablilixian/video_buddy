@@ -138,15 +138,22 @@ export function AssetChipPreview({ assets, skills, onOpen }: AssetChipPreviewPro
   const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN)
   const isVideo = asset.kind === 'video'
   const isAudio = asset.kind === 'audio'
+  // 分镜卡不是媒体（url 恒空）：出「分镜卡 + 标题」的文字卡，不显示破图/无预览。
+  const isShot = asset.kind === 'shot'
   return (
     <div
       className="csChipPreview"
       style={{ left: `${clampedLeft}px`, top: `${top - CARD_MARGIN}px`, width: `${CARD_WIDTH}px` }}
       onPointerDown={(event) => { event.preventDefault() }}
       onClick={() => { onOpen(asset.nodeId) }}
-      title="点击打开大图 / 播放"
+      title={isShot ? '点击查看这张分镜卡' : '点击打开大图 / 播放'}
     >
-      {asset.url === null ? (
+      {isShot ? (
+        <div className="csChipPreviewEmpty csChipPreviewShot">
+          <span className="csChipPreviewShotTitle">{truncateLabel(asset.title === '' ? '分镜卡' : asset.title, 28)}</span>
+          <span className="csChipPreviewBadge" aria-hidden>{ASSET_KIND_LABEL[asset.kind]}</span>
+        </div>
+      ) : asset.url === null ? (
         <div className="csChipPreviewEmpty">无预览</div>
       ) : isAudio ? (
         // 音频没有首帧可取：出音符占位（mp3 当 <img src> 只会是一张破图），

@@ -5,7 +5,7 @@
  * （`Cinematic portrait 主角特写 01`），直接塞进对话框 chip 会挤爆一行，
  * 截断了又互相认不出。因此派生一套**类型前缀 + 同类型序号**的短句柄：
  *
- *   img-01  img-02  …   vid-01  vid-02  …   aud-01  aud-02  …
+ *   img-01  img-02  …   vid-01  vid-02  …   aud-01  aud-02  …   shot-01  shot-02  …
  *
  * 设计取舍：
  * - 短：`≤6` 字符，chip 只承担「这是第几张图/哪个视频」；
@@ -16,16 +16,17 @@
  *   （永不漂移的）node id —— 漂移只影响人类读新 chip，不影响正确性。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import type { LibraryAsset, LibMedia } from './contracts/asset-library.js'
 import { LIB_CATEGORY_LABELS, libraryMediaUrl } from './contracts/asset-library.js'
 
-/** 一个可引用素材（图片 / 视频 / 音频）的短句柄视图。 */
+/** 一个可引用素材（图片 / 视频 / 音频 / 分镜卡）的短句柄视图。 */
 export interface AssetHandle {
   /** 节点 id —— 引用句柄与模型侧 token 的真实身份（稳定）。 */
   readonly nodeId: string
-  /** 短句柄，如 `img-01` / `vid-02` / `aud-01`（仅用于人读与展示）。 */
+  /** 短句柄，如 `img-01` / `vid-02` / `aud-01` / `shot-03`（仅用于人读与展示）。 */
   readonly handle: string
-  readonly kind: 'image' | 'video' | 'audio'
+  readonly kind: 'image' | 'video' | 'audio' | 'shot'
   /** 完整节点标题（hover 卡片 / 候选项描述用）。 */
   readonly title: string
   /** 素材 URL（缩略图 src；缺省时空浮层降级为纯文本卡）。 */
@@ -34,8 +35,8 @@ export interface AssetHandle {
   readonly duration?: number
 }
 
-/** 句柄前缀（按类型分道编号，图片/视频/音频序号互不干扰）。 */
-const HANDLE_PREFIX = { image: 'img', video: 'vid', audio: 'aud' } as const
+/** 句柄前缀（按类型分道编号，图片/视频/音频/分镜序号互不干扰）。 */
+const HANDLE_PREFIX = { image: 'img', video: 'vid', audio: 'aud', shot: 'shot' } as const
 
 /**
  * kind → 中文标签：`@` 候选的 hint 与搜索匹配共用同一份，避免两处各写一份
@@ -45,6 +46,7 @@ export const ASSET_KIND_LABEL: Readonly<Record<AssetHandle['kind'], string>> = {
   image: '图片',
   video: '视频',
   audio: '音频',
+  shot: '分镜',
 }
 
 /** 完整标题的展示截断长度（hover 卡片标题行用）。 */
@@ -59,16 +61,32 @@ export function truncateLabel(text: string, max: number = LABEL_MAX): string {
 
 /**
  * 为当前项目的可引用素材派生短句柄（按节点数组顺序 = 创建顺序编号）。
- * 只有 image / video / audio 节点可引用（文本便利贴等没有素材语义）。
+ * 只有 image / video / audio 节点与**分镜卡**可引用（文本便利贴等没有素材语义）。
  *
  * 音频（CV-128 起独立成类）此前被这道闸挡在 chip 管线之外 —— 于是右键
  * 「引用到对话」必然掉进纯文本降级，`@` 菜单也搜不到它（宿主侧 `@ref`
  * 解析其实一直通）。补进来后三处入口（chip / `@` 候选 / hover 卡）齐活。
+ *
+ * 分镜卡（2026-11-25）：同样的闸让它「引用到对话」没有任何可见结果 —— 它是
+ * text 节点、没有 url，被过滤后只能降级成纯文本注入。一行一镜的工具条本来就
+ * 长在它身上，引用对象也正是「这一镜」，所以按 `shot-NN` 单独成类收进来。
+ * 卡片不是媒体：`url` 恒为 null（它的画面是段产物格，不是节点产物）。
  */
 export function buildAssetHandles(nodes: readonly StudioCanvasNode[]): AssetHandle[] {
-  const counters = { image: 0, video: 0, audio: 0 }
+  const counters = { image: 0, video: 0, audio: 0, shot: 0 }
   const out: AssetHandle[] = []
   for (const node of nodes) {
+    if (isShotCard(node)) {
+      counters.shot += 1
+      out.push({
+        nodeId: node.id,
+        handle: `${HANDLE_PREFIX.shot}-${String(counters.shot).padStart(2, '0')}`,
+        kind: 'shot',
+        title: node.title ?? '',
+        url: null,
+      })
+      continue
+    }
     const kind = node.kind
     if (kind !== 'image' && kind !== 'video' && kind !== 'audio') continue
     counters[kind] += 1

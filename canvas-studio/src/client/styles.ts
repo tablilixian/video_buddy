@@ -2864,6 +2864,13 @@ img.csNodeMedia {
   font-variant-numeric: tabular-nums;
 }
 
+/* 画面必须**完整**：这一段是排版后的成片素材，字幕/角标常贴在画面下缘，
+   cover 会把上下各裁掉三分之一（格内媒体区比 16:9 扁）。宁可两侧/上下留
+   画布底色，也不许用户看到的「这一屏」比成片少一半。 */
+.csSegmentCell .csNodeMedia {
+  object-fit: contain;
+}
+
 .csNodeKind {
   font-size: var(--cs-fs-xs, 11px);
   letter-spacing: 0.02em;

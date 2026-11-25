@@ -105,6 +105,10 @@ test('③ 有镜视频时并排：镜视频 → 段产物 → 配音（段不抢
 test('④ 卡面不许把段视频画回体区（防复活：格子放得对，样式补丁就没人需要了）', () => {
   assert.ok(!STYLES.includes('csNodeSegmentVideoBox'), '卡内段视频框的样式复活了 —— 那正是「视频压成一条」的形态')
   assert.ok(!NODE_SRC.includes('segmentVideoUrl'), 'CanvasNode 又接了段视频：段产物只能由 SegmentCell 渲染')
+  // 画面完整：段产物格必须 contain —— cover 会把字幕所在的下缘裁掉。
+  const media = STYLES.match(/\.csSegmentCell \.csNodeMedia\s*\{([^}]*)\}/)
+  assert.ok(media, '.csSegmentCell .csNodeMedia 规则不见了')
+  assert.ok(/object-fit:\s*contain/.test(media[1]), '段产物格必须 object-fit: contain：cover 会裁掉画面上下的字幕/角标')
   // 反向：CV-081 的长文展开能力不许被顺手删（上一版为压重叠动过它）。
   const cv081 = STYLES.match(/(?:^|\n)\.csNodeSelected\s+\.csNodeBody\s*\{([^}]*)\}/)
   assert.ok(cv081, 'CV-081 通用选中展开规则整条不见了')

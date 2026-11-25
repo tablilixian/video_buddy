@@ -23,6 +23,8 @@ import {
   type StudioRenderReport,
 } from './api.js'
 import type { RenderedManifest, RenderMetrics, SpotRenderResult } from './remotion-render.js'
+import type { RenderSample } from './remotion-render.js'
+import { createSpotUploadLedger } from '../spot-upload-ledger.js'
 
 /** 一次工单执行的结果（三个终态，恰好覆盖宿主侧的三种结算）。 */
 export type RenderJobExecution = 'committed' | 'aborted' | 'failed'
@@ -72,6 +74,9 @@ export interface ExecuteRenderJobOptions {
   /**
    * V1：spot-check 渲染实现注入（测试用）。缺省动态 import `./remotion-render.js`
    * 的 `renderSpotFramesOnWeb`（每帧 renderStillOnWeb，不启动编码器）。
+   *
+   * REQ-041 F3：多一个 `onSample` —— 渲出一张就回调一次，执行器立刻回写宿主。
+   * 注入了假实现的测试可以忽略它（执行器会在渲完后补传没交过的帧）。
    */
   renderSpot?: (
     manifest: CompositionManifest,
@@ -80,6 +85,7 @@ export interface ExecuteRenderJobOptions {
       signal: AbortSignal
       quality: PendingStudioRenderJob['quality']
       onProgress: (progress: number) => void
+      onSample?: (sample: RenderSample) => void
     },
   ) => Promise<SpotRenderResult>
 }
@@ -103,9 +109,13 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
         signal: renderOptions.signal,
         quality: renderOptions.quality,
         onProgress: renderOptions.onProgress,
+        ...(renderOptions.onSample === undefined ? {} : { onSample: renderOptions.onSample }),
       })
     })
     let lastSpotStep = -1
+    // REQ-041 F3：边渲边传。真机事故里第 5 帧把渲染器按死、宿主 30s 判死整张工单，
+    // 已渲好的 4 张跟着一起没了。改成每渲出一张立刻 `uploadSample`，最坏只剩最后一张。
+    const ledger = createSpotUploadLedger((frame, bytes) => transport.uploadSample(job.jobId, frame, bytes))
     try {
       const rendered = await renderSpot(job.manifest, spotFrames, {
         signal,
@@ -119,15 +129,17 @@ export async function executeRenderJob(options: ExecuteRenderJobOptions): Promis
           lastSpotStep = step
           void transport.reportProgress(job.jobId, clamped).catch(() => {})
         },
+        onSample: ledger.onSample,
       })
       if (signal.aborted) return 'aborted'
-      for (const sample of rendered.samples) {
-        if (signal.aborted) return 'aborted'
-        await transport.uploadSample(job.jobId, sample.frame, sample.bytes).catch(() => null)
-      }
+      // 注入了假 `renderSpot` 的测试不会回调 `onSample` ⇒ 这里补传没交过的帧（幂等去重）。
+      ledger.fillMissing(rendered.samples)
+      await ledger.settle()
       await transport.commitSpot(job.jobId, rendered.warnings, metricsReport(rendered.metrics))
       return 'committed'
     } catch (cause) {
+      // 已发出去的静帧上传不要丢：等它们落地，宿主侧「已落盘 N 张」才是真的。
+      await ledger.settle().catch(() => undefined)
       if (signal.aborted) return 'aborted'
       const reason = cause instanceof Error ? cause.message : String(cause)
       void transport.cancel(job.jobId, true, reason).catch(() => {})

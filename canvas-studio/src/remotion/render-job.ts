@@ -714,6 +714,23 @@ function executorFallbackReason(options: RunRenderJobOptions, fast: RenderExecut
 }
 
 /**
+ * REQ-041 F3：spot 单失败时，把**已经落盘的静帧**写进错误文案。
+ *
+ * 事故（2026-11-25）：探针渲到第 5 帧卡死，看门狗按「31s 无心跳无进度」判死整张工单，
+ * 前 4 张静帧已经在盘上，但模型只看到一句「请重试」⇒ 它以为一张都没有，只能整片 draft
+ * 硬猜。静帧是探针产物，**半批也值钱**：给出帧号 + 同源 URL，模型可以直接看图定位。
+ */
+function spotSalvageHint(job: ActiveRenderJob): string {
+  if (job.spotFrames.length === 0) return ''
+  const saved = [...job.samples].sort((a, b) => a.frame - b.frame)
+  if (saved.length === 0) return `\n静帧一张都没渲出（目标帧：${job.spotFrames.join('、')}）。`
+  const listed = saved.map((sample) => `第 ${sample.frame} 帧 ${sample.url}`).join('；')
+  const missing = job.spotFrames.filter((frame) => !saved.some((sample) => sample.frame === frame))
+  const tail = missing.length === 0 ? '' : `；没渲到的帧：${missing.join('、')}（卡住的位置就在这几帧附近）`
+  return `\n已落盘 ${saved.length}/${job.spotFrames.length} 张静帧（可直接 read_image，不必重渲）：${listed}${tail}`
+}
+
+/**
  * 心跳看门狗：**两种执行者都装**（此前只给 `render-host` 装，见下方"为什么改"）。
  *
  * 判据按执行者分开，因为两条路能拿到的证据不同：
@@ -739,7 +756,7 @@ function armLivenessWatchdog(job: ActiveRenderJob, staleMs: number): void {
     settleAndForget(job, 'failed', `${stall.detail} · ${describeDiagnostics(diag)}`)
     if (diag.path === 'render-host') resetRenderHostAfterFailure(`render host stalled: ${stall.detail}`)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: `${stall.message}${diagHint(diag)}`,
+      message: `${stall.message}${spotSalvageHint(job)}${diagHint(diag)}`,
       detail: `${stall.detail} · ${describeDiagnostics(diag)}`,
       job: diag,
     }))
@@ -829,7 +846,7 @@ export function failRenderHostJobs(reason: string): number {
     job.settled = true
     settleAndForget(job, 'failed', reason)
     job.reject(makeCanvasError('CS-RENDER-002', {
-      message: `渲染窗口异常：窗口已退出（${reason}），已中止本次渲染。请重试。${diagHint(diag)}`,
+      message: `渲染窗口异常：窗口已退出（${reason}），已中止本次渲染。请重试。${spotSalvageHint(job)}${diagHint(diag)}`,
       detail: reason,
       job: diag,
     }))
@@ -1026,7 +1043,7 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
         const rateNote = measuredMsPerFrame > 0 ? `，实测 ${measuredMsPerFrame}ms/帧` : ''
         reject(makeCanvasError('CS-RENDER-TIMEOUT', {
           seconds: Math.round(budgetMs / 1000),
-          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧${rateNote}${extendNote}。已自动回退画布页执行器，可直接继续任务（重试与执行器选择由宿主侧自动处理，含熔断跳过盲等）；执行器链路排障（隐藏窗口为何未接管）是宿主侧的事，把宿主日志交给用户即可，不要为消超时删减画面元素`,
+          diagnosis: `${describeDiagnostics(diag)}；已渲约 ${renderedFrames}/${totalFrames} 帧${rateNote}${extendNote}。已自动回退画布页执行器，可直接继续任务（重试与执行器选择由宿主侧自动处理，含熔断跳过盲等）；执行器链路排障（隐藏窗口为何未接管）是宿主侧的事，把宿主日志交给用户即可，不要为消超时删减画面元素${spotSalvageHint(job).replace(/\n/g, '；')}`,
           job: diag,
         }))
       }

@@ -38,6 +38,11 @@ import { reconcileManifestVideoDurations } from '../remotion/timing.js'
 import { pickSampleFrames } from '../remotion/timing.js'
 import { audioRenderOptions } from '../remotion/audio-options.js'
 import { flattenTracksDeep } from '../remotion/group-children.js'
+import {
+  runSpotFramesWithTimeout,
+  SPOT_FRAME_DELAYRENDER_TIMEOUT_MS,
+  SPOT_FRAME_TIMEOUT_MS,
+} from '../spot-frame-budget.js'
 import { applyManifestFonts } from './remotion-font-inject.js'
 import { auditTextFit, textFitWarnings, type TextFitReportEntry } from '../remotion/text-fit-audit.js'
 
@@ -187,6 +192,35 @@ export interface RenderManifestOnWebOptions {
   frameRange?: FrameRange | undefined
   /** R11-C3：无声渲染（audioCodec null，段视频不编码音轨）。 */
   muteAudio?: boolean | undefined
+}
+
+/**
+ * spot-check 的渲染选项（REQ-041 F3 从 `RenderManifestOnWebOptions` 里拆出来）。
+ *
+ * 拆的理由：spot 多了三件整片渲染没有的事 —— **单帧预算**、**边渲边交**、**逐帧开渲回调**。
+ * 挤进整片的选项里会让「渲染整片要不要单帧超时」这种问题永远悬着（答案是不要：整片的
+ * 进度回调本身就是活性证据，静帧没有）。
+ */
+export interface SpotRenderOptions {
+  signal?: AbortSignal
+  /** 0–1 进度（每渲完一帧推进一次；被放弃的帧也推进，进度不会卡住）。 */
+  onProgress?: (progress: number) => void
+  /** 许可键（缺省 `free-license`）。 */
+  licenseKey?: string
+  /** 质量档（缺省取 `manifest.meta.quality`，再缺省 `standard`）。 */
+  quality?: RenderQuality | undefined
+  /** 单帧预算（毫秒；缺省 `SPOT_FRAME_TIMEOUT_MS`，测试注入短值）。 */
+  perFrameTimeoutMs?: number
+  /**
+   * 每渲出一张**立刻**回调（执行器据此边渲边传）。
+   *
+   * 为什么不是渲完统一交：真机事故里第 5 帧把渲染器按死，宿主 30s 判死整张工单 ——
+   * 已经渲好的 4 张跟着一起没了，模型看到「一张都没有」。边渲边传之后，最坏情况也
+   * 只剩「最后那一帧没有」。
+   */
+  onSample?: (sample: RenderSample, index: number, total: number) => void
+  /** 每帧开渲前回调（记录「正在渲哪一帧」，用于进度文案）。 */
+  onFrameStart?: (frame: number, index: number, total: number) => void
 }
 
 export interface RenderedManifest {
@@ -400,13 +434,16 @@ export interface SpotRenderResult {
 export async function renderSpotFramesOnWeb(
   manifest: CompositionManifest,
   frames: readonly number[],
-  options: RenderManifestOnWebOptions = {},
+  options: SpotRenderOptions = {},
 ): Promise<SpotRenderResult> {
   if (frames.length === 0) throw new WebRenderError('spot-check 目标帧为空，请传 1–8 个帧号。')
   const { width, height, fps, durationInFrames } = manifest.meta
   const quality: RenderQuality = options.quality ?? manifest.meta.quality ?? 'standard'
   const preset = QUALITY_PRESETS[quality] ?? QUALITY_PRESETS.standard
   const startedAt = Date.now()
+  const perFrameTimeoutMs = Math.max(1, Math.round(options.perFrameTimeoutMs ?? SPOT_FRAME_TIMEOUT_MS))
+  // Remotion 自己的 delayRender 闸门要比我们的硬预算先响（见 SPOT_FRAME_* 常量注释）。
+  const delayRenderTimeoutInMilliseconds = Math.min(SPOT_FRAME_DELAYRENDER_TIMEOUT_MS, perFrameTimeoutMs)
   // 与整片渲染同一顺序：字体面先就绪（否则拍到回退字体的帧），再判能力。
   const fontWarnings = await applyManifestFonts(manifest)
   // A4 补漏（2026-11-11 真机复盘）：文字容量体检原本只挂在整片渲染上，而 **spot-check
@@ -440,23 +477,47 @@ export async function renderSpotFramesOnWeb(
     defaultProps: { manifest },
     calculateMetadata: null,
   } as const
-  let frameIndex = 0
-  for (const frame of frames) {
-    if (signal?.aborted === true) throw new WebRenderError('渲染已取消。')
+  // REQ-041 F3：逐帧独立计预算 —— 一帧卡死只丢这一帧（口径在 `spot-frame-budget.ts`）。
+  let settled = 0
+  const run = await runSpotFramesWithTimeout(frames, async (frame, frameSignal) => {
     const still = await renderStillOnWeb({
       composition,
       inputProps: { manifest },
       frame,
       licenseKey: options.licenseKey ?? DEFAULT_REMOTION_LICENSE_KEY,
       scale: preset.scale,
-      ...(signal === undefined ? {} : { signal }),
+      delayRenderTimeoutInMilliseconds,
+      signal: frameSignal,
     })
     const blob = await still.blob({ format: 'jpeg', quality: 0.85 })
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    if (bytes.length > 0) samples.push({ frame, bytes })
-    frameIndex += 1
-    options.onProgress?.(frameIndex / total)
+    return new Uint8Array(await blob.arrayBuffer())
+  }, {
+    timeoutMs: perFrameTimeoutMs,
+    ...(signal === undefined ? {} : { signal }),
+    ...(options.onFrameStart === undefined ? {} : { onFrameStart: options.onFrameStart }),
+  })
+  if (run.aborted) throw new WebRenderError('渲染已取消。')
+  // 渲出一张就交一张（执行器立刻回写宿主，卡死后前面的帧仍在盘上）。
+  for (const entry of run.done) {
+    const bytes = entry.value
+    if (bytes.length > 0) {
+      const sample: RenderSample = { frame: entry.frame, bytes }
+      samples.push(sample)
+      options.onSample?.(sample, samples.length - 1, total)
+    }
+    settled += 1
+    options.onProgress?.(settled / total)
   }
+  // 被放弃的帧也推进进度：进度条不能卡在「渲到一半」，否则宿主看到的是「没动静」。
+  for (let index = 0; index < run.skipped.length; index += 1) {
+    settled += 1
+    options.onProgress?.(settled / total)
+  }
+  // 一帧都没渲出来 ⇒ 这是失败，不是「成功但没图」（否则模型会以为画面就是这样）。
+  if (samples.length === 0) {
+    throw new WebRenderError(`静帧一张都没渲出来：${run.skipped.map((skip) => skip.message).join('；')}。请降低目标帧数或换 quality:"draft" 再试。`)
+  }
+  const skipWarnings = run.skipped.map((skip) => `⚠️ ${skip.message}；其余 ${samples.length} 张已渲出`)
   const totalMs = Date.now() - startedAt
   const metrics: RenderMetrics = {
     quality,
@@ -479,7 +540,7 @@ export async function renderSpotFramesOnWeb(
     // A4：spot 与整片同口径上报 —— 只渲几张静帧不影响「字放不放得下」的判定。
     ...(textFit.length > 0 ? { textFit } : {}),
   }
-  return { samples, warnings, metrics }
+  return { samples, warnings: [...warnings, ...skipWarnings], metrics }
 }
 
 // ───────────────── 二期 D2：失败分类 + 有界重试（红线：重试前必须中断上一次） ─────────────────

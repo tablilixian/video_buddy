@@ -140,7 +140,7 @@ import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } fro
 import { readPendingFactWarning } from './data-provenance-file.js'
 import { runRenderJobWithStuckRetry, type RenderJobDiagnostics, type RenderJobOutcome } from './remotion/render-job.js'
 import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
-import { withStructuralSpotFrames } from './remotion/spot-frames.js'
+import { MAX_SPOT_FRAMES, withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
@@ -1408,6 +1408,21 @@ export function assertRenderCompositionProjectId(
   if (knownProjectIds.includes(explicit)) return
   throwError('CS-USER-ERR', {
     message: `projectId「${explicit}」不是有效的 Canvas Studio 项目 id。请**省略 projectId 参数**（会自动取当前会话项目）后重试。`,
+  })
+}
+
+/**
+ * REQ-041 F3：`spotFrames` 条数守卫（纯函数，便于单测）。
+ *
+ * 2026-11-25 真机：一次传 9 帧，`normalizeSpotFrames` **静默**截到 8 ⇒ 模型以为 9 处
+ * 都验过了，最后一帧从没渲过（`skill` 契约本来就是 1–8）。越界是脏参数：入口拒收并
+ * 告诉它怎么办（0 帧 / 末帧 / 场景边界由 `withStructuralSpotFrames` 自动补，别自己填满）。
+ */
+export function assertSpotFrameCount(frames: readonly unknown[], limit: number = MAX_SPOT_FRAMES): void {
+  if (frames.length <= limit) return
+  throwError('CS-USER-ERR', {
+    message: `spotFrames 一次最多 ${limit} 帧（这次传了 ${frames.length}）。请只保留判据帧`
+      + `（0 帧、末帧与各场景边界由工具自动补，不必自己填），或拆成两次调用。`,
   })
 }
 
@@ -4025,6 +4040,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (a.spotFrames !== undefined && !Array.isArray(a.spotFrames)) {
           throwError('CS-USER-ERR', { message: 'spotFrames 必须是帧号数组（如 [30, 120, 360]）。' })
         }
+        // REQ-041 F3（2026-11-25 真机）：一次传了 9 帧，`normalizeSpotFrames` 静默截到 8 ——
+        // 模型以为 9 处都验过了，实际最后一帧从没渲过。越界属于**脏参数**：在入口拒收并
+        // 说清怎么办，比静默丢帧诚实（skill 契约本来就是 1–8 帧）。
+        if (Array.isArray(a.spotFrames)) assertSpotFrameCount(a.spotFrames)
         const spot = Array.isArray(a.spotFrames) && a.spotFrames.length > 0
         // Q2/Q3（复刻提效批四）：拆解段双闸 —— 入参解析（形状非法显式拒收，零副作用）
         // + Q3 元素覆盖核对（纯函数；probe 跳过 —— 诊断渲不刷纪律告警）。

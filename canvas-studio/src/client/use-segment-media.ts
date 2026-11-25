@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 import type { SegmentMediaByRef } from '../contracts/segment-media.js'
 import { fetchSegmentMedia } from './api.js'
+import { createSegmentMediaLoad } from '../segment-media-load.js'
 import { segmentMediaByRefOf } from '../segment-media-map.js'
 import { subscribeSegmentMediaRefresh } from '../segment-media-signal.js'
 
@@ -34,23 +35,18 @@ export function useSegmentMedia(projectId: string | null): SegmentMediaByRef {
       setByRef(new Map())
       return
     }
-    let alive = true
-    const load = async (): Promise<void> => {
-      try {
-        const items = await fetchSegmentMedia(projectId)
-        if (!alive) return
-        setByRef(segmentMediaByRefOf(items))
-      } catch {
-        // 清单不可用 = 这一段还没渲过（或宿主暂时不可达）：卡维持文案，静默。
-        if (alive) setByRef(new Map())
-      }
-    }
-    void load()
+    // 清单不可用 = 这一段还没渲过（或宿主暂时不可达）：卡维持文案，静默。
+    const loader = createSegmentMediaLoad(
+      () => fetchSegmentMedia(projectId),
+      (items) => { setByRef(segmentMediaByRefOf(items)) },
+      () => { setByRef(new Map()) },
+    )
+    void loader.run()
     const unsubscribe = subscribeSegmentMediaRefresh((changed) => {
-      if (changed === projectId) void load()
+      if (changed === projectId) void loader.run()
     })
     return () => {
-      alive = false
+      loader.dispose()
       unsubscribe()
     }
   }, [projectId])

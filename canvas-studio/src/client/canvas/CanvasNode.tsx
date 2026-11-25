@@ -220,6 +220,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const [bodyInput, setBodyInput] = useState('')
   // 媒体加载失败兜底（验收反馈的「黑图」：URL 失效/产物损坏时不再静默黑块）。
   const [mediaFailed, setMediaFailed] = useState(false)
+  // REQ-041：失败状态必须跟着媒体 URL 走。段副本是覆盖写的（?v=mtimeMs 换版本），
+  // 同一张卡重渲后 URL 会变；不重置的话一次 404 会让这张卡永远退回文案 ——
+  // 渲染结算刷新了清单也救不回来，等于「改完看不到这一屏」。
+  const mediaUrl = node.kind === 'text' ? segmentVideoUrl : node.url
+  useEffect(() => { setMediaFailed(false) }, [mediaUrl])
   // CV-083：视频时长角标（loadedmetadata 现算显示，不落盘——重载后重新
   // 读取 metadata 时长自然恢复，省一条契约字段）。
   const [durationLabel, setDurationLabel] = useState<string | null>(null)

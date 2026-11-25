@@ -7,6 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import { createSegmentMediaLoad } from '../lib/segment-media-load.js'
 import { segmentMediaByRefOf } from '../lib/segment-media-map.js'
 import { disposeSegmentMediaSignal, notifySegmentMediaRefresh, subscribeSegmentMediaRefresh } from '../lib/segment-media-signal.js'
 
@@ -44,4 +45,45 @@ test('渲染结算信号：多订阅者都收到；只通知目标项目；单�
   disposeSegmentMediaSignal()
   notifySegmentMediaRefresh('p3')
   assert.equal(seen.length, 6, '取消订阅后不再收到')
+})
+
+test('并发清单：旧请求晚返回也不能把新清单盖掉（改完这一屏必须看得到）', async () => {
+  const resolvers = []
+  const applied = []
+  const loader = createSegmentMediaLoad(
+    () => new Promise((resolve) => { resolvers.push(resolve) }),
+    (items) => { applied.push(items) },
+  )
+  const oldRun = loader.run()
+  const newRun = loader.run()
+  resolvers[1](['new'])
+  await newRun
+  resolvers[0](['old'])
+  await oldRun
+  assert.deepEqual(applied, [['new']], '旧响应必须被丢弃')
+  loader.dispose()
+})
+
+test('清单失败只在最新请求落空；卸载后的在飞请求全部作废', async () => {
+  const resolvers = []
+  const applied = []
+  const cleared = []
+  const loader = createSegmentMediaLoad(
+    () => new Promise((resolve, reject) => { resolvers.push({ resolve, reject }) }),
+    (items) => { applied.push(items) },
+    () => { cleared.push(true) },
+  )
+  const first = loader.run()
+  const second = loader.run()
+  resolvers[0].reject(new Error('host down'))
+  await first
+  assert.deepEqual(cleared, [], '过期的失败不能清空新清单')
+  resolvers[1].resolve(['ok'])
+  await second
+  assert.deepEqual(applied, [['ok']])
+  const third = loader.run()
+  loader.dispose()
+  resolvers[2].resolve(['after unmount'])
+  await third
+  assert.equal(applied.length, 1, '卸载后不再落状态')
 })

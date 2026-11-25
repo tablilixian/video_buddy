@@ -2907,15 +2907,31 @@ img.csNodeMedia {
   -webkit-line-clamp: unset;
 }
 
-/* REQ-036：历程瀑布流 —— 托盘头（分镜卡）正文钳两行。托盘头盒 108 =
-   chrome 48（头 26 + 脚 22）+ 正文区 60（padding 24 + 两行 ≈ 36）。
-   max-height 而非 line-clamp：.csNodeBody 的 display 由 A-5 折叠规则动态
-   切换（-webkit-box 不保证在位），max-height 恒生效。文本卡没有 csKind*
-   类（CV-197 kindAccentOf 对非媒体返回空串），用 :has(.csNodeText) 圈定；
-   选中态展开滚动由 CV-081 规则保持（:not 放行）。卡片根元素自带
-   overflow:hidden（styles.ts .csNode），盒高即硬裁，不会压到托盘网格。 */
-.csWaterfall .csNode:has(.csNodeText):not(.csNodeSelected) .csNodeBody {
-  max-height: 38px;
+/* REQ-041（2026-11-25 二次真机口径）：历程视图的文字卡**完整显示**正文，
+   显示不下时在卡内滚轮滚动 —— 不再按行数截断。
+
+   为什么推翻 REQ-036 的两行钳制：那条规则服务的是「托盘头 108 高」的头带形态
+   （chrome 48 + 正文 60）。一行一镜把卡改成 380×214 的整格后，体区有 144px，
+   钳两行等于把四分之三的高度空着，而分镜稿恰恰是这个产品里最长的一份文本。
+
+   实现要点：
+   - display:block + line-clamp:unset：解除 A-5 的 12 行折叠（.csNodeBody 默认
+     -webkit-box，钳制在 block 下不生效，写 unset 是为了让人一眼看出意图）；
+   - 不给 max-height：高度由内容决定，超出由 .csNodeText 的 overflow:hidden
+     与本规则的 overflow-y:auto 收口，卡片根元素也自带 overflow:hidden，
+     滚的是正文不是格位，托盘网格不受影响；
+   - min-height:0 必须写：flex 子项默认 min-height:auto 会顶到内容高，
+     那样滚动条永远不出现；
+   - 滚轮豁免见 CanvasSurface 的 wheel 处理（目标正文可滚就不劫持成缩放）。
+     选中态仍由 CV-081 规则兜底，两条不冲突。 */
+.csWaterfall .csNode:has(.csNodeText) .csNodeBody {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 /* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */

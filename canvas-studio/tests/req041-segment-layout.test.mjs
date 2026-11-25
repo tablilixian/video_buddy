@@ -114,3 +114,47 @@ test('④ 卡面不许把段视频画回体区（防复活：格子放得对，�
   assert.ok(cv081, 'CV-081 通用选中展开规则整条不见了')
   assert.ok(/line-clamp:\s*unset/.test(cv081[1]), 'CV-081 被连带删掉：长分镜稿/脚本将无法在选中态展开阅读')
 })
+
+test('⑤ 文字卡完整显示正文 + 卡内可滚（不许再钳两行）', () => {
+  const rule = STYLES.match(/\.csWaterfall \.csNode:has\(\.csNodeText\) \.csNodeBody\s*\{([^}]*)\}/)
+  assert.ok(rule, '历程视图的正文规则不见了：分镜稿会退回自由画布的 12 行折叠')
+  assert.ok(/display:\s*block/.test(rule[1]), '正文必须是块级流：-webkit-box 下钳制无法解除')
+  assert.ok(/overflow-y:\s*auto/.test(rule[1]), '正文必须可滚：用户口径是「显示不下滚轮查看」')
+  assert.ok(/min-height:\s*0/.test(rule[1]), '缺 min-height:0 时 flex 子项顶到内容高，滚动条永远不出现')
+  assert.ok(!/max-height:\s*\d/.test(rule[1]), '又钳高度了：完整显示是 2026-11-25 的明确口径（推翻 REQ-036 两行）')
+  assert.ok(!/-webkit-line-clamp:\s*\d/.test(rule[1]), '又按行数截断了')
+})
+
+test('⑥ 滚轮在正文里滚正文，不劫持成画布缩放（未选中也算）', () => {
+  const surface = codeOnly(readSource('src/client/canvas/CanvasSurface.tsx'))
+  const closest = surface.match(/closest<HTMLElement>\('([^']*)'\)/)
+  assert.ok(closest, 'wheel 的可滚判定不见了')
+  assert.ok(closest[1].includes('.csNodeBody'), '豁免必须覆盖正文')
+  assert.ok(!closest[1].includes('.csNodeSelected'),
+    '豁免绑在选中态上：历程视图未选中的文字卡一滚就变成缩放，用户根本滚不动分镜稿')
+  assert.ok(/overflowY\s*!==\s*'hidden'/.test(surface),
+    '缺 overflowY 检查：A-5 折叠态（overflow:hidden）会被当成可滚而放行，结果既不滚也不缩放')
+})
+
+test('⑦ 有则显示、缺则左移：格序不按列占位，缺一格后面补上前', () => {
+  const card = cardNode('card1', 1, { segmentRef: 'spec:s1' })
+  const video = videoNode('vid1', { sourceIds: ['card1'] })
+  const voice = voiceNode('v1', { sourceIds: ['card1'] })
+  // 这一镜没有关键帧 —— 镜视频必须直接贴住卡右，中间不许留「关键帧的空位」。
+  const layout = computeWaterfallLayout([card, video, voice], {
+    thumbWidth: 380,
+    segmentRefsWithMedia: new Set(['spec:s1']),
+  })
+  const tray = trayOf(layout, 1)
+  assert.deepEqual(tray.nodeIds, ['card1', 'vid1', segmentCellId(1), 'v1'], '缺关键帧时空位必须被后面的格补上')
+  const xs = tray.nodeIds.map(id => layout.boxes.get(id).x)
+  for (let i = 1; i < xs.length; i += 1) {
+    assert.equal(xs[i] - xs[i - 1], 380 + 24, `第 ${i + 1} 格没贴住前一格（x=${xs[i]}）：中间留了空位`)
+  }
+  // 反向：这一镜没有段产物时，配音必须紧贴镜视频，不许留着段格的位置。
+  const noSeg = computeWaterfallLayout([card, video, voice], { thumbWidth: 380 })
+  const xs2 = trayOf(noSeg, 1).nodeIds.map(id => noSeg.boxes.get(id).x)
+  for (let i = 1; i < xs2.length; i += 1) {
+    assert.equal(xs2[i] - xs2[i - 1], 380 + 24, '没段产物时也不许留空位')
+  }
+})

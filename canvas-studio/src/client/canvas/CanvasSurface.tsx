@@ -684,12 +684,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null) return
     const onWheel = (event: WheelEvent): void => {
-      // CV-081：文本节点选中态正文可滚动 —— 滚轮落在「可滚动的选中正文 /
-      // 编辑 textarea」内时不劫持（不 preventDefault、不平移缩放），交给
-      // 浏览器原生滚动；内容未溢出（不可滚）时维持画布行为不变。
+      // CV-081 + REQ-041：滚轮落在「可滚的正文 / 编辑 textarea」内时不劫持
+      // （不 preventDefault、不平移缩放），交给浏览器原生滚动；内容未溢出
+      // （不可滚）时维持画布行为不变。
+      //
+      // REQ-041（2026-11-25）：选择器去掉 `.csNodeSelected` 限定 —— 历程视图的
+      // 文字卡现在**未选中**也完整显示正文并可滚，只认选中态的话，用户在托盘里
+      // 滚分镜稿会被当成画布缩放。
+      //
+      // overflowY 检查不能省：自由画布未选中的正文是 A-5 折叠态（overflow:hidden），
+      // 行的 scrollHeight 仍可能大于 clientHeight；只比高度会放行一个**滚不动**的
+      // 元素 ⇒ 既不滚也不缩放，滚轮像坏了。
       const target = event.target instanceof HTMLElement ? event.target : null
-      const scrollable = target?.closest<HTMLElement>('.csNodeSelected .csNodeBody, textarea')
-      if (scrollable != null && scrollable.scrollHeight > scrollable.clientHeight) return
+      const scrollable = target?.closest<HTMLElement>('.csNodeBody, textarea')
+      if (scrollable != null && scrollable.scrollHeight > scrollable.clientHeight
+        && getComputedStyle(scrollable).overflowY !== 'hidden') return
       event.preventDefault()
       // REQ-004 / R-P2-01（2026-10-03）：滚轮=缩放（单手习惯，绕光标缩放）；
       // Ctrl/Cmd+滚轮保留同义（老习惯不破）。平移走空白处按住拖动（既有 pan 手势）。

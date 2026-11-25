@@ -60,6 +60,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // REQ-034：代码驱动合成（Remotion CSR）。与 compose_video 同为「出成片」但来源不同
   // —— 前者拼已有视频片段，后者按 manifest 渲染字幕卡/数据卡/转场/图文幻灯片。
   render_composition: { tier: 'A', title: '代码合成成片', icon: '合' },
+  // REQ-041 第 2 批（2026-11-25）：单段重渲 —— 「只换这一屏」，与「代码合成成片」同档 A
+  // （两者都真的动了盘上的媒体产物，用户需要看到它发生了）。
+  rerender_segment: { tier: 'A', title: '重渲这一屏', icon: '段' },
   inspect_image: { tier: 'A', title: '图像检测', icon: '析' },
   // CV-394（REQ-036 复刻复盘批）：纯色底抠透明底 —— 生图不吐 alpha 的缺口工具。
   image_matting: { tier: 'A', title: '抠透明底', icon: '抠' },

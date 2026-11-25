@@ -55,6 +55,8 @@ const PRODUCTION_TOOLS = [
   // P1-1（2026-10-26）：批量旁白 —— 产物与 tts_voiceover 同性质，必须同口径挂闸。
   'tts_narration',
   'render_composition',
+  // REQ-041 第 2 批（2026-11-25）：单段重渲 —— 真的换盘上的段产物，与出片同口径。
+  'rerender_segment',
   'write_script',
 ]
 

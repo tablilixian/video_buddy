@@ -158,7 +158,8 @@ export async function verifyShotTiming(args: {
  * REQ-041 的第二份副本进 `assets/`：`deliver/` 在 assets 媒体路由之外，客户端只能
  * 通过 `GET /canvas-studio/assets/<pid>/<file>` 拿到带 Range 的媒体流。文件名确定性
  * （`seg-<id>.mp4`）而非随机资产 id，重渲覆盖同名 —— URL 与缓存键都稳定。两份
- * 中任一份失败都算该段未完整落地 ⇒ 指针不给，避免清单说有、浏览器却 404。
+ * 中任一份失败都算该段未完整落地 ⇒ 该段不给指针（REQ-041 D14：**逐段**，其它段照给），
+ * 失败逐段点名进 note。
  */
 export function publishSegmentArtifacts(input: {
   projectDir: string
@@ -169,6 +170,7 @@ export function publishSegmentArtifacts(input: {
 }): { pointers: SegmentPointer[]; note?: string } {
   const dir = join(input.projectDir, SEGMENT_DELIVER_DIR)
   const failures: string[] = []
+  const published: SegmentArtifact[] = []
   try {
     mkdirSync(dir, { recursive: true })
     mkdirSync(input.assetsDir, { recursive: true })
@@ -184,14 +186,18 @@ export function publishSegmentArtifacts(input: {
     try {
       copyFileSync(source, join(dir, segmentArtifactName(artifact.id)))
       copyFileSync(source, join(input.assetsDir, segmentAssetName(artifact.id)))
+      published.push(artifact)
     } catch (cause) {
       failures.push(`${artifact.id}（${cause instanceof Error ? cause.message : String(cause)}）`)
     }
   })
   const note = failures.length > 0 ? `段 ${failures.join('、')} 复制失败` : undefined
   return {
-    // 指针只报**全部落地**的段：半套指针比没有更误导（卡里列了三段、盘上两段）。
-    pointers: failures.length === 0 ? segmentPointers(input.artifacts, input.fps) : [],
+    // REQ-041 D14：**逐段** —— 落地几段就给几段指针，失败的已在 note 里点名。
+    // 旧口径「任一段失败 ⇒ 全批不给」与差异表不符：文件已复制进 assets/，卡上
+    // 明明能播、账上说没发。「半套指针更误导」的顾虑用 note 逐段点名解决，
+    // 而不是把成功的段一起作废。
+    pointers: segmentPointers(published, input.fps),
     ...(note === undefined ? {} : { note }),
   }
 }

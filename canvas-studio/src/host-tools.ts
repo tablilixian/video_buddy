@@ -38,6 +38,10 @@ import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
 // 段级抽帧在 shot-frames.ts（宿主 ffmpeg，失败只记一行不影响出片）。
 import { segmentRenderOptions } from './shot-cache.js'
 import { readProjectSpec, runShotRender } from './shot-render.js'
+import type { ShotRenderDeps } from './shot-render.js'
+import { fillMissingSegments } from './segment-render.js'
+import { defineRerenderSegmentTool } from './host-tools-rerender.js'
+import { writeRenderedManifest } from './rendered-manifest.js'
 import { publishSegmentPreview } from './segment-preview-publish.js'
 import { sampleSegmentFrame } from './shot-frames.js'
 import type { SegmentPointer } from './segment-artifacts.js'
@@ -1556,6 +1560,63 @@ async function assertApprovalAllowed(
   const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
   const message = approvalGateMessage({ tool, mode: workflow.mode, state: workflow.state, shotBound })
   if (message !== null) throwError('CS-USER-ERR', { message })
+}
+
+/**
+ * 分镜渲染 / 单段重渲的宿主注入 —— **唯一构造点**（REQ-041 第 2 批）。
+ *
+ * 为什么必须抽出来：`render_composition` 原本在 execute 里内联了 40 行注入代码。
+ * `rerender_segment` 需要的正是同一批能力（渲一段 / 解析产物路径 / 抽帧），
+ * 复制一份必然在下次改 ffmpeg、预览闸、缓存目录时漂移 —— 那时两条路径的
+ * 「段」就不再是同一个东西。
+ *
+ * 作业参数只在 `renderSegment` 里由纯函数 `segmentRenderOptions` 产出
+ * （`frameRange` 闭区间 + `muteAudio: true` + 剥 audio）。**禁止**在这里内联拼对象：
+ * C5 接线时漏传这两个字段，真机渲出的是整片且带声、还进了缓存。
+ */
+function buildShotRenderDeps(input: {
+  registry: ProjectRegistry
+  projectId: string
+  signal: AbortSignal
+  manifest: CompositionManifest
+  quality: RenderQuality
+  realDurations?: Record<string, number>
+  timingSegments?: ShotRenderDeps['timingSegments']
+}): ShotRenderDeps {
+  const projectDir = input.registry.projectDir(input.projectId)
+  const assetsDir = input.registry.assetsDir(input.projectId)
+  return {
+    projectDir,
+    assetsDir,
+    quality: input.quality,
+    signal: input.signal,
+    renderSegment: (segment) => runRenderJobWithStuckRetry({
+      projectId: input.projectId,
+      signal: input.signal,
+      ...segmentRenderOptions(input.manifest, segment, input.quality, input.realDurations),
+    }),
+    resolveAsset: (assetFile) => resolveAssetPathIn(assetsDir, assetFile),
+    saveMerged: (bytes, name) => saveLocalAssetBytes(input.registry, input.projectId, name, bytes),
+    probeMedia: (absPath) => probeMediaInfo(absPath),
+    concat: (args) => concatShots({ ...args, segmentFiles: [...args.segmentFiles] }),
+    // B2：段级抽帧补上此前恒空的 frames[]（模型不再自己抽 1080p PNG）。
+    sampleFrame: (args) => sampleSegmentFrame({
+      registry: input.registry,
+      projectId: input.projectId,
+      fps: input.manifest.meta.fps,
+      signal: input.signal,
+      artifact: args.artifact,
+      file: args.file,
+    }),
+    loadSpec: () => readProjectSpec(projectDir),
+    // REQ-041：用户最常做的是先「草稿快渲一版」看画面；shot-render 缺省
+    // 在 draft 不发段，这里显式打开 —— 不改其缺省语义（其它调用方不变）。
+    // 段的 assets 副本 + ref 指针是分镜卡出画面的唯一来源，draft 必须发。
+    publishSegments: true,
+    // B4：Q2 时序回核接进分镜路径 —— 此前绕过 commitRenderJob，
+    // 用户传了拆解表也永远没有 report.timingCheck（界面像回核过，其实没有）。
+    ...(input.timingSegments === undefined ? {} : { timingSegments: input.timingSegments }),
+  }
 }
 
 /**
@@ -3982,40 +4043,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         let shotPointers: SegmentPointer[] = []
         if (!probe && !spot) {
           try {
-            const projectDir = registry.projectDir(projectId)
-            const assetsDir = registry.assetsDir(projectId)
-            const shot = await runShotRender(renderManifest, {
-              projectDir,
-              assetsDir,
-              quality: quality ?? 'standard',
+            const shot = await runShotRender(renderManifest, buildShotRenderDeps({
+              registry,
+              projectId,
               signal: exec.signal,
-              renderSegment: (segment) => runRenderJobWithStuckRetry({
-                projectId,
-                signal: exec.signal,
-                ...segmentRenderOptions(renderManifest, segment, quality ?? 'standard', pre.realDurations),
-              }),
-              resolveAsset: (assetFile) => resolveAssetPathIn(assetsDir, assetFile),
-              saveMerged: (bytes, name) => saveLocalAssetBytes(registry, projectId, name, bytes),
-              probeMedia: (absPath) => probeMediaInfo(absPath),
-              concat: (args) => concatShots({ ...args, segmentFiles: [...args.segmentFiles] }),
-              // B2：段级抽帧补上此前恒空的 frames[]（模型不再自己抽 1080p PNG）。
-              sampleFrame: (args) => sampleSegmentFrame({
-                registry,
-                projectId,
-                fps: renderManifest.meta.fps,
-                signal: exec.signal,
-                artifact: args.artifact,
-                file: args.file,
-              }),
-              loadSpec: () => readProjectSpec(projectDir),
-              // REQ-041：用户最常做的是先「草稿快渲一版」看画面；shot-render 缺省
-              // 在 draft 不发段，这里显式打开 —— 不改其缺省语义（其它调用方不变）。
-              // 段的 assets 副本 + ref 指针是分镜卡出画面的唯一来源，draft 必须发。
-              publishSegments: true,
-              // B4：Q2 时序回核接进分镜路径 —— 此前绕过 commitRenderJob，
-              // 用户传了拆解表也永远没有 report.timingCheck（界面像回核过，其实没有）。
+              manifest: renderManifest,
+              quality: quality ?? 'standard',
+              ...(pre.realDurations === undefined ? {} : { realDurations: pre.realDurations }),
               ...(timingSegments === undefined ? {} : { timingSegments }),
-            })
+            }))
             shotOutcome = shot.outcome
             shotPointers = shot.segments
             shotReceipt.push(...shot.receipt)
@@ -4041,10 +4077,53 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           // spot 仍走空数组：它的画面由 spotFrames 静帧通道返回，再抽样是重复。
           sampleFrames: spot ? [] : pickSampleFrames(renderManifest),
           }))
+        // REQ-041 第 2 批（2026-11-25）：把**实际渲出去的那份** manifest 落盘一次。
+        // 段清单的派生读法读的是 `build/manifest.json`，而它此前只在 scaffold /
+        // patch_spec_section(writeTo) 时写 —— reconcile（按 ffprobe 真值改轨道时长、
+        // 组展开、alpha 标记、同源 URL 物化）之后的事实从来没有落过盘 ⇒ 派生按旧帧窗
+        // 算段、渲染按新帧窗出片，卡上会出现「这一段其实是隔壁那一段的画面」。
+        // 只在渲成之后写（渲挂的 reconcile 结果不该覆盖用户手里的文件）；写失败只记一行。
+        if (!probe && !spot) {
+          const persisted = writeRenderedManifest({
+            projectDir: registry.projectDir(projectId),
+            manifest: renderManifest,
+          })
+          if (persisted.note !== undefined) shotReceipt.push(`ℹ️ ${persisted.note}`)
+        }
         // REQ-041 P0-b/P1：整片路径（含带 audio 的片子）渲完后，从段缓存按帧窗
         // 旁路发布无声段 + 合成带声预览副本。失败全部收敛成一行 note，成片不陪葬。
         // probe/spot 是诊断单，不发段；分镜路径已自己发过，不重复。
         if (shotOutcome === null && !probe && !spot) {
+          // REQ-041 P0-3（方案 c，2026-11-25）：带 audio 的片子走整片路径 ⇒ 一段都
+          // 没渲过 ⇒ 缓存空 ⇒ 下面只读缓存的旁路发不出任何段（「新项目带旁白一段都
+          // 没有」的根因）。这里先用客户端 CSR 把**缓存里没有的段**渲一遍（无声、
+          // 帧窗闭区间、作业参数走 `segmentRenderOptions`），再交给同一套发布。
+          // 成片已在盘上：本步只写段产物，任何失败都退化成一行 note。
+          try {
+            const filled = await fillMissingSegments({
+              ...buildShotRenderDeps({
+                registry,
+                projectId,
+                signal: exec.signal,
+                manifest: renderManifest,
+                quality: quality ?? 'standard',
+                ...(pre.realDurations === undefined ? {} : { realDurations: pre.realDurations }),
+              }),
+              manifest: renderManifest,
+              spec: readProjectSpec(registry.projectDir(projectId)),
+            })
+            if (filled.rendered > 0) {
+              // §十 5 的实测面：用户问「补段会不会拖慢出片」时有数可看。
+              shotReceipt.push(
+                `ℹ️ 段补渲：${String(filled.rendered)} 段 / ${(filled.elapsedMs / 1000).toFixed(1)}s`
+                + '（整片路径原本不产段，首次渲染补一次；内容不变时缓存命中、零成本）',
+              )
+            }
+            if (filled.pointers.length > 0 && shotPointers.length === 0) shotPointers = filled.pointers
+            if (filled.note !== undefined) shotReceipt.push(`ℹ️ 段补渲：${filled.note}`)
+          } catch (cause) {
+            shotReceipt.push(`ℹ️ 段补渲失败（成片不受影响）：${cause instanceof Error ? cause.message : String(cause)}`)
+          }
           try {
             const preview = await publishSegmentPreview({
               projectDir: registry.projectDir(projectId),
@@ -5534,6 +5613,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(via === undefined ? {} : { via }),
         })
       },
+    }),
+    // REQ-041 第 2 批（2026-11-25）· N1：单段重渲。紧随 patch_spec_section ——
+    // agent 处理一句意见的动作序列就是「改 spec（可 writeTo 重编）→ 只重渲这一段」。
+    // 实现与 deps 装配在 host-tools-rerender.ts；这里只注入宿主能力，其中
+    // `buildSegmentRenderIo` 复用与 render_composition **同一个** buildShotRenderDeps
+    // （复制注入代码必然在下次改 ffmpeg / 预览闸 / 缓存目录时漂移）。
+    defineRerenderSegmentTool({
+      registry,
+      resolveProjectId: (cwd) => resolveProjectId(registry, cwd),
+      assertApprovalAllowed: (projectId, tool) => assertApprovalAllowed(registry, projectId, tool, false),
+      buildSegmentRenderIo: (renderInput) => buildShotRenderDeps({
+        registry,
+        projectId: renderInput.projectId,
+        signal: renderInput.signal,
+        manifest: renderInput.manifest,
+        quality: renderInput.quality,
+      }),
     }),
   ]
   // 故事板强约束 L1：**单一放行点**。所有产出类工具在这里统一套「故事板已落地」前置，

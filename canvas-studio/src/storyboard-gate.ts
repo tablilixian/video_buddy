@@ -40,7 +40,7 @@ import { normalizeWorkflow } from './contracts/project.js'
 /**
  * 要挂「故事板已落地」前置的工具（产出类）。
  *
- * = `approval-gate.ts` 的 `FORMAL_TOOLS`（9 个）+ `write_script`。
+ * = `approval-gate.ts` 的 `FORMAL_TOOLS`（10 个）+ `write_script`。
  *
  * `write_script` 在这里而不在 `FORMAL_TOOLS`：它的产物是画布文案节点，与「产线」略有区别，
  * 且必须在 `keyframe_review` 期放行（按意见改写文案，否则流程卡死）—— 而本闸与 state 无关，
@@ -60,6 +60,9 @@ export const STORYBOARD_GATED_TOOLS: ReadonlySet<string> = new Set([
   // P1-1（2026-10-26）：批量旁白 —— 产物与 tts_voiceover 同性质（音频节点），必须同口径。
   'tts_narration',
   'render_composition',
+  // REQ-041 第 2 批（2026-11-25）：单段重渲 —— 与 render_composition 同性质
+  // （直接产出/替换段视频）。两表必须相等，见 `tests/storyboard-gate.test.mjs`。
+  'rerender_segment',
   'write_script',
 ])
 

@@ -134,7 +134,11 @@ export const FILE_WHITELIST = {
   // R11-B2（2026-11-16）：分镜渲染编排整体搬到 `shot-render.ts`（注入式，可做装配测试），
   // render handler 里 105 行 → 44 行 ⇒ 5412 → 5355（**首次下降**，不是新增）。
   // R11-B4：probe 返帧注释（+5）+ 时序回核透传（+2）⇒ 5355 → 5362。
-  'src/host-tools.ts': 5362,
+  // REQ-041 第 2 批（2026-11-25）：抽 `buildShotRenderDeps`（唯一注入点，供 render_composition
+  // 与 rerender_segment 共用）+ 整片路径段补渲接线 + 渲后 manifest 落盘 + N1 工具注入
+  // +283 ⇒ 5362 → 5645。消化路径：这三段都在 render_composition 的 execute 里，随「工具壳
+  // 拆分」批外提到 host-tools-remotion.ts（与 rerender_segment 已经外提的做法一致）。
+  'src/host-tools.ts': 5645,
   // 订阅与积分（2026-11-02）：G1 余额闸（requireCreditsForGeneration + 注释）+37，
   // 3582 → 3619。闸函数刻意就近放在要求鉴权的 dramaPost 旁，不与鉴权闸拆两个文件。
   // CV-448（2026-11-06）：+transcribeAudio（asr2txt 同步调用 + 空响应拒收 + 自愈）+67，

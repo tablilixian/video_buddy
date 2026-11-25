@@ -51,7 +51,7 @@
 
 ## 工具总览
 
-注册给模型的工具**共 54 个** = **53 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48；2026-11-05 故事板提速 B1：48 → 49；CV-448：49 → 50；CV-463 / R9-P1b / R11-B3 三批补登至 54：`list_templates`、`validate_manifest`、`patch_spec_section`）。
+注册给模型的工具**共 55 个** = **54 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。数量由 `tests/tool-registry.test.mjs` 的 `EXPECTED_TOOL_COUNT` 钉死（CV-445：46 → 48；2026-11-05 故事板提速 B1：48 → 49；CV-448：49 → 50；CV-463 / R9-P1b / R11-B3 三批补登至 54：`list_templates`、`validate_manifest`、`patch_spec_section`；REQ-041 第 2 批（2026-11-25）54 → 55：`rerender_segment`）。
 
 ### A. 后端生成 / 分析类（16 个）
 
@@ -73,13 +73,14 @@
 | `tts_voiceover` | audio | `txt2speech` | **配音生成**（VoxCPM2，CV-271 占位升真）：`instruct_prompt` 声音设计自然语言写（30 语种 + 9 方言）；**时长由文本决定**；产物实测 mp3 |
 | `tts_narration` | audio | `txt2speech` × N（内部串行） | **多段旁白批量合成 + 帧级排期**（P1-1，2026-10-26）：一次调用合成 N 段并**由代码算好 `audio.voiceOver[]` 的帧号**。音色锚由参数形状强制成立——不传 `voice.refaudio` 就自动拿第一段当锚，后段全部克隆它。**逐句绑镜**：`lines[k].shotRef`（D-08，2026-11-24）——整批 ref 在任何一段合成之前统一校验，写错当批报错、不花钱。不是事务：中途失败时前 k-1 段已花额度，报错列出已完成节点（不要整批重跑） |
 
-### B. 本地媒体处理（4 个，不调后端）
+### B. 本地媒体处理（5 个，不调后端）
 
 | 工具名 | 产物 | 实现 |
 |--------|------|------|
 | `extract_last_frame` | image | 本地 ffmpeg 抽真实末帧，供 `shotTransition=chain` 链帧 |
 | `compose_video` | video | 本地 ffmpeg 拼接 + BGM 混音 + 统一调色，产出成片 |
 | `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
+| `rerender_segment` | video | **单段重渲**（REQ-041 第 2 批，N1）：只把**这一屏**重渲并发布段产物（`deliver/segments/<id>.mp4` + `assets/seg-<id>.mp4` + 带声副本 `seg-<id>-voice.mp4`），其余段文件与 URL 一个不动。定位 `shotNodeId` / `segmentId` 二选一；**不改 spec**（改 spec 走 `patch_spec_section`）。结构性改动（拆屏 / 增删屏）不归它 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
 ### C. 画布 / 流程管控（14 个，不调后端）

@@ -20,16 +20,15 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompositionManifest } from './remotion/manifest.js'
+import { shotCacheDir } from './shot-cache.js'
+import { planSegmentTable } from './segment-table.js'
 import {
-  planSegmentArtifacts,
   segmentArtifactName,
   segmentAssetName,
   segmentPointers,
   SEGMENT_DELIVER_DIR,
   type SegmentArtifact,
 } from './segment-artifacts.js'
-import { shotCacheDir } from './shot-cache.js'
-import { boundariesFromSpec, resolveShotBoundaries, sliceByShots } from './shot-slice.js'
 
 export interface PublishSegmentsFromCacheInput {
   projectDir: string
@@ -94,16 +93,12 @@ export function cacheIndexByWindow(cacheDir: string): Map<string, string> {
 export function publishSegmentsFromCache(input: PublishSegmentsFromCacheInput): PublishSegmentsResult {
   const fps = input.manifest.meta?.fps
   const safeFps = typeof fps === 'number' && Number.isFinite(fps) && fps > 0 ? fps : 30
-  const totalFrames = Math.max(1, Math.floor(input.manifest.meta?.durationInFrames ?? 0))
-  const specBoundaries = boundariesFromSpec(input.spec, totalFrames, safeFps)
-  const { cuts } = resolveShotBoundaries(input.manifest, specBoundaries)
-  if (cuts.length === 0) return { pointers: [], artifacts: [], note: '无可用段边界，跳过段副本发布' }
-  const { segments } = sliceByShots(input.manifest, cuts)
-  const artifacts = planSegmentArtifacts({
-    segments,
-    declared: input.manifest.meta?.segments,
-    fps: safeFps,
-  })
+  // 段表规划与渲染侧同源（`segment-render.ts` 的 `planSegmentTable`）：这里若自己
+  // 再切一遍，就会出现「渲染按 A 套帧窗、发布按 B 套帧窗」—— 缓存按帧窗匹配
+  // meta.json，错一帧就永远命中不了（表现为「渲了但不发布」）。
+  const plan = planSegmentTable({ manifest: input.manifest, spec: input.spec })
+  if (plan === null) return { pointers: [], artifacts: [], note: '无可用段边界，跳过段副本发布' }
+  const artifacts = plan.artifacts
   const index = cacheIndexByWindow(shotCacheDir(input.projectDir))
   if (index.size === 0) return { pointers: [], artifacts, note: '段缓存为空（整片路径未渲段），跳过段副本发布' }
 
@@ -131,11 +126,12 @@ export function publishSegmentsFromCache(input: PublishSegmentsFromCacheInput): 
       failures.push(`${artifact.id}（${cause instanceof Error ? cause.message : String(cause)}）`)
     }
   }
-  // 只报**全部落地**的一批的指针（与 L0 同口径）；失败的段不给，清单不会说有却 404。
-  const allOk = published.length === artifacts.length
+  // REQ-041 D14：**逐段** —— 落地几段给几段指针，失败的逐段点名进 note。
+  // 旧口径「任一段失败 ⇒ 全批不给」会让已经复制进 assets/ 的段在账上消失
+  // （卡能播、交付卡说没发），与差异表不符。
   return {
-    pointers: allOk ? segmentPointers(published, safeFps) : [],
-    artifacts: allOk ? published : [],
+    pointers: published.length > 0 ? segmentPointers(published, safeFps) : [],
+    artifacts: published,
     ...(failures.length > 0 ? { note: `段 ${failures.join('、')} 副本发布失败` } : {}),
   }
 }

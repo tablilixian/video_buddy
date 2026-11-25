@@ -23,6 +23,7 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { codeIsUserFacing, isStudioErrorCode } from './error-system.js'
 import { firstText, stripToolErrorPrefix, touchedStoryboard } from './tool-result-text.js'
+import { isRenderSettledTool } from './render-settled-tools.js'
 import './errors/catalog.js'
 
 /** 读不出失败原因时的兜底文案（保留旧文案，避免无谓的视觉变更）。 */
@@ -84,6 +85,11 @@ export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'aud
   // REQ-034 · B3：代码驱动合成（CSR）。产物由**本端渲染进程**出片后回写宿主落盘，
   // 但结算通知仍走 tool/result → reloadCanvas，故与 compose_video 同须登记。
   render_composition: 'video',
+  // REQ-041 N1（2026-11-25）：单段重渲。**必须登记**——不在表里 `tool/call` 不产生
+  // start ⇒ 没有 state ⇒ `tool/result` 找不到挂载点 ⇒ ①渲染轮询不会起（宿主建的单段
+  // 工单没人认领，等到超时）②结算不触发段清单刷新。它本身不落新节点，占位是
+  // transient（`pending-*`），reload 即消失。
+  rerender_segment: 'video',
   extract_last_frame: 'image',
   // CV-130：音频产物（txt2audio mp3）此前漏登记 → 生成后画布不刷新。
   music_generation: 'audio',
@@ -437,10 +443,12 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           // 让客户端从单一真相源拿到最新节点（含血缘 sourceIds），不再依赖
           // 解析事件渲染文本里的 URL —— 那在后端异常 / 渲染差异时并不可靠。
           hooks.reloadCanvas(projectId)
-          // 2026-10-23：render_composition 成功结算 ⇒ 放掉渲染轮询的在飞计数
+          // 2026-10-23：渲染类工具**成功**结算 ⇒ 放掉渲染轮询的在飞计数
           // （失败/取消已由 onToolError/onToolCancelled 覆盖，成功此前没有任何
           // 带 runId 的信号 —— 轮询会一直空转）。
-          if (state.toolName === 'render_composition' && runId.length > 0) {
+          // REQ-041 N1（2026-11-25）：判据从硬编码 `render_composition` 改成集合
+          // `RENDER_SETTLED_TOOLS` —— 单段重渲同样换了盘上的段文件，必须同口径刷清单。
+          if (isRenderSettledTool(state.toolName) && runId.length > 0) {
             hooks.onRenderToolSettled?.(projectId, runId)
           }
           // 创意先行 / CV-308：Host 附注里带 `STORYBOARD_TOUCH_MARKER` == 它确实回写了

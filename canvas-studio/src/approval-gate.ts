@@ -92,6 +92,9 @@ export const FORMAL_TOOLS: ReadonlySet<string> = new Set([
   // 且直接在 execute() 里干活（不走 runGeneration）。漏登记会让它在拍摄定稿阶段 /
   // 关键帧审阅期变成一条后门（Z-3 验收项明文要求「同 compose_video 口径」）。
   'render_composition',
+  // REQ-041 第 2 批（2026-11-25）：单段重渲 —— 它同样会**换掉盘上的段产物**，
+  // 关键帧审阅期用户还没确认就重渲，等于绕过审阅（「等待确认时不要偷偷出片」）。
+  'rerender_segment',
 ])
 
 /**

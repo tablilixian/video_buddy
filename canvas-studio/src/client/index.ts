@@ -24,6 +24,7 @@ import { buildLobbyPlan } from '../lobby-spec.js'
 import { DEFAULT_RESOLUTION_ID, normalizeResolutionId, type ResolutionId } from '../resolution-tiers.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
+import { isRenderSettledTool } from '../render-settled-tools.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 // CV-358：生成彻底结束后刷一次余额（扣费在服务端，Host 拿不到结算时刻）。
 import { refreshCreditsAfterGeneration } from './credits-store.js'
@@ -2259,7 +2260,9 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         ensureQueuePoll()
         // REQ-034 · B3：`render_composition` 产物由本端 CSR 渲染产出 —— 起渲染工单轮询取单。
         // 2026-10-23：登记在飞 runId（轮询保活的判据，收工由结算回调清账）。
-        if (info.toolName === 'render_composition') {
+        // REQ-041 N1（2026-11-25）：单段重渲同样由宿主建工单、本端认领，判据改成
+        // 集合 —— 漏了它，宿主那边建好的段渲染工单没人取，只能等超时。
+        if (isRenderSettledTool(info.toolName)) {
           inflightRenderRuns.add(info.runId)
           ensureRenderPoll()
         }

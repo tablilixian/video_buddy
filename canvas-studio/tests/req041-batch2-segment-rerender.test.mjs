@@ -26,12 +26,16 @@ import {
   fillMissingSegments,
   missingArtifacts,
   rerenderSegmentArtifact,
-  segmentCacheKey,
 } from '../lib/segment-render.js'
 import { planSegmentTable } from '../lib/segment-table.js'
 import { publishSegmentsFromCache } from '../lib/segment-publish.js'
 import { publishSegmentArtifacts } from '../lib/shot-render.js'
-import { segmentRenderOptions } from '../lib/shot-cache.js'
+import {
+  manifestGlobalsFingerprint,
+  segmentHash,
+  segmentRenderOptions,
+  shotCacheDir,
+} from '../lib/shot-cache.js'
 import { planSegmentArtifacts } from '../lib/segment-artifacts.js'
 import { writeRenderedManifest, renderedManifestPath } from '../lib/rendered-manifest.js'
 import { deriveSegmentRows } from '../lib/segment-media.js'
@@ -96,6 +100,26 @@ function io(p, renderer, extra = {}) {
   }
 }
 
+/**
+ * 按**真实内容 hash** 种一段缓存（F1 之后命中按 hash 查，手写文件名不再算命中）。
+ * `indexes` 指定种哪几段；返回写下的 hash 方便断言。
+ */
+function seedCacheEntry(p, indexes, quality = 'standard', bytesOf = (i) => `CACHE-${String(i + 1)}`) {
+  const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
+  const globals = manifestGlobalsFingerprint(p.manifest)
+  const dir = shotCacheDir(p.projectDir)
+  mkdirSync(dir, { recursive: true })
+  for (const index of indexes) {
+    const segment = plan.segments[index]
+    const hash = segmentHash(segment, quality, globals)
+    writeFileSync(join(dir, `${hash}.json`), JSON.stringify({
+      hash, index, startFrame: segment.startFrame, endFrame: segment.endFrame, quality,
+    }))
+    writeFileSync(join(dir, `${hash}.mp4`), bytesOf(index))
+  }
+  return plan
+}
+
 test('P0-3：带 audio 的整片路径，缓存为空时补渲每一段并发布两份副本', async () => {
   const p = seeded()
   const renderer = fakeRenderer(p.assetsDir)
@@ -150,15 +174,10 @@ test('P0-3：一段渲失败 —— 成功的段照样给指针，失败写进 n
 
 test('N1：只渲目标段，且只发布目标段（其余段文件字节不变）', async () => {
   const p = seeded()
-  // 预置：两段的旧副本 + 两段缓存（让「全量重发」这种错误实现能被字节差异抓到）
+  // 预置两段的旧副本（让「全量重发」这种错误实现能被字节差异抓到）
   for (const id of ['s1', 's2']) {
-    mkdirSync(join(p.projectDir, 'build', 'shot-cache'), { recursive: true })
     writeFileSync(join(p.assetsDir, `seg-${id}.mp4`), `STALE-${id}`)
   }
-  writeFileSync(join(p.projectDir, 'build', 'shot-cache', 'h1.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
-  writeFileSync(join(p.projectDir, 'build', 'shot-cache', 'h1.mp4'), 'CACHE-1')
-  writeFileSync(join(p.projectDir, 'build', 'shot-cache', 'h2.json'), JSON.stringify({ startFrame: 200, endFrame: 400, quality: 'standard' }))
-  writeFileSync(join(p.projectDir, 'build', 'shot-cache', 'h2.mp4'), 'CACHE-2')
 
   const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
   assert.ok(plan !== null)
@@ -221,10 +240,7 @@ test('D14 发布路径：`publishSegmentArtifacts` 一段缺源文件也照给�
 
 test('D14 发布路径：缓存缺一段时，其余段的指针照给', () => {
   const p = seeded()
-  const cacheDir = join(p.projectDir, 'build', 'shot-cache')
-  mkdirSync(cacheDir, { recursive: true })
-  writeFileSync(join(cacheDir, 'h1.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
-  writeFileSync(join(cacheDir, 'h1.mp4'), 'CACHE-1')
+  seedCacheEntry(p, [0])
   const published = publishSegmentsFromCache({
     projectDir: p.projectDir,
     assetsDir: p.assetsDir,
@@ -258,14 +274,15 @@ test('C5 硬约束：段作业参数来自纯函数（闭区间帧窗 + 静音 +
 test('段表切法唯一：渲染侧与发布侧算出同一批帧窗', () => {
   const p = seeded()
   const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
-  const missing = missingArtifacts(plan.artifacts, join(p.projectDir, 'build', 'shot-cache'))
+  const cacheDir = shotCacheDir(p.projectDir)
+  const globals = manifestGlobalsFingerprint(p.manifest)
+  const missing = missingArtifacts({ plan, cacheDir, quality: 'standard', globals })
   try {
-    assert.deepEqual(missing.map((artifact) => segmentCacheKey(artifact)), ['0:200', '200:400'])
+    assert.deepEqual(missing.map((row) => [row.artifact.startFrame, row.artifact.startFrame + row.artifact.frames]),
+      [[0, 200], [200, 400]])
+    assert.deepEqual(missing.map((row) => row.reason), ['absent', 'absent'], '空缓存 ⇒ 都是「没渲过」')
     // 发布侧（publishSegmentsFromCache）与渲染侧共用 planSegmentTable ⇒ 键必须一致
-    const cacheDir = join(p.projectDir, 'build', 'shot-cache')
-    mkdirSync(cacheDir, { recursive: true })
-    writeFileSync(join(cacheDir, 'h1.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
-    writeFileSync(join(cacheDir, 'h1.mp4'), 'CACHE-1')
+    seedCacheEntry(p, [0])
     const published = publishSegmentsFromCache({
       projectDir: p.projectDir,
       assetsDir: p.assetsDir,
@@ -317,14 +334,14 @@ test('渲染结算名单：rerender_segment 必须触发段清单刷新，普通
 
 test('N1 后同帧窗只留一份缓存：下一次整片渲染不许把改前的旧片发回来', async () => {
   const p = seeded()
-  const cacheDir = join(p.projectDir, 'build', 'shot-cache')
+  const cacheDir = shotCacheDir(p.projectDir)
   mkdirSync(cacheDir, { recursive: true })
-  // 改前的旧条目：帧窗与 s1 完全相同，内容不同（不同 hash 是必然的）——
-  // 发布侧按帧窗取件，同质量档时只能按目录顺序挑，这就是回滚的发生条件。
+  // 改前的旧条目：帧窗与 s1 完全相同、内容不同（所以 hash 名不同）。F1 之后命中按
+  // 内容 hash 查，旧条目已经**不可能**被发回来；清理它只是为了不留同窗两份垃圾。
   writeFileSync(join(cacheDir, 'old1.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
   writeFileSync(join(cacheDir, 'old1.mp4'), 'CACHE-OLD-1')
-  writeFileSync(join(cacheDir, 'keep2.json'), JSON.stringify({ startFrame: 200, endFrame: 400, quality: 'standard' }))
-  writeFileSync(join(cacheDir, 'keep2.mp4'), 'CACHE-2')
+  // 另一段的**真实**缓存（用来断言清理不误伤别的帧窗）：
+  seedCacheEntry(p, [1], 'standard', () => 'CACHE-2')
 
   const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
   const target = plan.artifacts.find((candidate) => candidate.ref === 'spec:s1')
@@ -332,11 +349,13 @@ test('N1 后同帧窗只留一份缓存：下一次整片渲染不许把改前�
   const out = await rerenderSegmentArtifact({ ...io(p, renderer), manifest: p.manifest, plan, artifact: target })
   try {
     assert.ok(out.result, '目标段必须渲成')
-    // ① 旧条目必须被清掉：留下两份就等于把「取哪一份」交给 readdir 顺序。
-    assert.equal(existsSync(join(cacheDir, 'old1.mp4')), false, '同帧窗的改前条目必须删（否则下次可能被发回来）')
+    // ① 旧条目必须被清掉：留着只会在人工核对缓存目录时制造噪声。
+    assert.equal(existsSync(join(cacheDir, 'old1.mp4')), false, '同帧窗的改前条目必须删')
     assert.equal(existsSync(join(cacheDir, 'old1.json')), false, 'meta 要跟着 mp4 一起删')
     // ② 别的帧窗不许被误伤（清理按帧窗匹配，不是整目录清空）。
-    assert.equal(existsSync(join(cacheDir, 'keep2.mp4')), true, '别的帧窗不在本次范围，必须留着')
+    const globals = manifestGlobalsFingerprint(p.manifest)
+    const hash2 = segmentHash(plan.segments[1], 'standard', globals)
+    assert.equal(existsSync(join(cacheDir, `${hash2}.mp4`)), true, '别的帧窗不在本次范围，必须留着')
     // ③ 端到端：整片路径的「从缓存发布」拿到的是新片，不是旧片。
     const published = publishSegmentsFromCache({
       projectDir: p.projectDir,

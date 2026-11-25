@@ -36,14 +36,14 @@
 import type { CompositionManifest, RenderQuality } from './remotion/manifest.js'
 import type { RenderJobOutcome } from './remotion/render-job.js'
 import type { ShotSegment } from './shot-slice.js'
-import { manifestGlobalsFingerprint, pruneStaleWindowEntries, shotCacheDir, storeSegment } from './shot-cache.js'
+import { manifestGlobalsFingerprint, lookupSegmentsCache, pruneStaleWindowEntries, shotCacheDir, storeSegment } from './shot-cache.js'
 import {
   segmentAssetName,
   type SegmentArtifact,
   type SegmentPointer,
 } from './segment-artifacts.js'
 import { planSegmentTable, type SegmentTablePlan } from './segment-table.js'
-import { cacheIndexByWindow, publishSegmentsFromCache } from './segment-publish.js'
+import { publishSegmentsFromCache } from './segment-publish.js'
 import { publishSegmentArtifacts } from './shot-render.js'
 
 /** 一段的渲染 × 发布所需的宿主能力（全部注入，测试可给假实现）。 */
@@ -67,18 +67,33 @@ export interface SegmentRenderIo {
 /** 段表规划（段 + 产物 id/帧窗）。切法唯一实现在 `segment-table.ts`。 */
 export type { SegmentTablePlan }
 
-/** 段产物在 shot-cache 里的匹配键（`startFrame:endFrame`，与 meta.json 同口径）。 */
-export function segmentCacheKey(artifact: SegmentArtifact): string {
-  return `${String(artifact.startFrame)}:${String(artifact.startFrame + artifact.frames)}`
+/** 一段「需要渲」的原因：`stale` = 渲过但内容/档位已变；`absent` = 从没渲过。 */
+export interface MissingSegment {
+  artifact: SegmentArtifact
+  reason: 'stale' | 'absent'
 }
 
-/** 缓存里还没有的段（= 需要渲的段）。顺序与段序一致。 */
-export function missingArtifacts(
-  artifacts: readonly SegmentArtifact[],
-  cacheDir: string,
-): SegmentArtifact[] {
-  const index = cacheIndexByWindow(cacheDir)
-  return artifacts.filter((artifact) => !index.has(segmentCacheKey(artifact)))
+/** 缓存里还没有**可用版本**的段（= 需要渲的段）。顺序与段序一致。 */
+export function missingArtifacts(input: {
+  plan: SegmentTablePlan
+  cacheDir: string
+  /** 本次渲染档：缓存里只有更低档 ⇒ 视为缺（要真渲一版补上）。 */
+  quality: RenderQuality
+  globals: string
+}): MissingSegment[] {
+  const states = lookupSegmentsCache({
+    segments: input.plan.segments,
+    cacheDir: input.cacheDir,
+    globals: input.globals,
+    minQuality: input.quality,
+  })
+  const out: MissingSegment[] = []
+  for (const artifact of input.plan.artifacts) {
+    const state = states[artifact.index]
+    if (state?.kind === 'hit') continue
+    out.push({ artifact, reason: state?.kind === 'stale' ? 'stale' : 'absent' })
+  }
+  return out
 }
 
 /** 一次「渲 N 段」的产物（`failures` 非空不代表整体失败，见 D14）。 */
@@ -139,13 +154,15 @@ export async function renderSegmentArtifacts(input: SegmentRenderIo & {
     }
     const stored = storeSegment(segment, input.quality, cacheDir, absPath, globals)
     if (stored !== null) {
-      // 同帧窗只留这一份。留两份的后果不是「多占一点盘」：发布侧按帧窗取件、
-      // 同质量档时按 readdir 顺序挑 ⇒ 下次整片渲染可能把改前的旧片又发回来。
+      // 同帧窗只留这一份（更高档除外）。命中判断自 F1 起已按内容 hash 查，留两份不会
+      // 再导致「发回旧片」；清理只为控制磁盘与人工核对成本，所以不许误删更高档 ——
+      // 拿 high 缓存渲一版 draft 时把 high 删掉就是永久降级预览画质。
       pruneStaleWindowEntries({
         cacheDir,
         startFrame: segment.startFrame,
         endFrame: segment.endFrame,
         keepHash: stored.hash,
+        keepQuality: input.quality,
       })
     }
     for (const warning of outcome.warnings) {
@@ -161,6 +178,10 @@ export async function renderSegmentArtifacts(input: SegmentRenderIo & {
 export interface FillMissingSegmentsResult {
   /** 本次真正渲的段数。 */
   rendered: number
+  /** 其中「渲过但内容/档位已变」的段数（回执据此说明是内容变更还是首渲）。 */
+  staleCount: number
+  /** 上述 stale 段的产物 id（回执点名用：真机据此判断是「我改了这屏」还是「白渲了」）。 */
+  staleIds: string[]
   /** 已落地段的指针（D14：逐段，成功的都给）。 */
   pointers: SegmentPointer[]
   artifacts: SegmentArtifact[]
@@ -184,13 +205,18 @@ export async function fillMissingSegments(input: SegmentRenderIo & {
 }): Promise<FillMissingSegmentsResult> {
   const plan = planSegmentTable({ manifest: input.manifest, spec: input.spec })
   if (plan === null) {
-    return { rendered: 0, pointers: [], artifacts: [], note: '切不出段（无可用边界），跳过段补渲', elapsedMs: 0 }
+    return { rendered: 0, pointers: [], artifacts: [], staleCount: 0, staleIds: [], note: '切不出段（无可用边界），跳过段补渲', elapsedMs: 0 }
   }
-  const missing = missingArtifacts(plan.artifacts, shotCacheDir(input.projectDir))
+  const cacheDir = shotCacheDir(input.projectDir)
+  const globals = manifestGlobalsFingerprint(input.manifest)
+  // 「缺」= 该段**内容**在缓存里没有可用版本（含「只有更低画质档」）—— 按帧窗判存在
+  // 会让改过的段永远命中旧件（F1）。stale 与 absent 在这里同处理，回执里再分说。
+  const missing = missingArtifacts({ plan, cacheDir, quality: input.quality, globals })
   if (missing.length === 0) {
-    return { rendered: 0, pointers: [], artifacts: [], elapsedMs: 0 }
+    return { rendered: 0, pointers: [], artifacts: [], staleCount: 0, staleIds: [], elapsedMs: 0 }
   }
-  const rendered = await renderSegmentArtifacts({ ...input, plan, targets: missing })
+  const stale = missing.filter((row) => row.reason === 'stale')
+  const rendered = await renderSegmentArtifacts({ ...input, plan, targets: missing.map((row) => row.artifact) })
   const published = publishSegmentsFromCache({
     projectDir: input.projectDir,
     assetsDir: input.assetsDir,
@@ -204,6 +230,8 @@ export async function fillMissingSegments(input: SegmentRenderIo & {
     rendered: rendered.artifacts.length,
     pointers: published.pointers,
     artifacts: published.artifacts,
+    staleCount: stale.length,
+    staleIds: stale.map((row) => row.artifact.id),
     ...(notes.length === 0 ? {} : { note: notes.join('；') }),
     elapsedMs: rendered.elapsedMs,
   }

@@ -6,9 +6,9 @@
  * 「manifest（+ spec）→ 段 → 产物 id/帧窗」这四步此前在三个地方各写一遍
  * （`shot-render.ts` 的分镜路径、`segment-publish.ts` 的整片旁路、`segment-media.ts`
  * 的派生清单）。三处各自 `boundariesFromSpec → resolveShotBoundaries → sliceByShots
- * → planSegmentArtifacts`，任何一处改口径，另外两处就会与它错位 —— 而**缓存是按
- * 帧窗匹配 meta.json 的**（`cacheIndexByWindow`），错一帧的表现不是报错，是
- * 「渲了但发布不出来」「清单说有、客户端 404」。
+ * → planSegmentArtifacts`，任何一处改口径，另外两处就会与它错位 —— 而**缓存按内容
+ * hash 命中**（`shot-cache.ts` 的 `lookupSegmentsCache`：hash 含段窗与归一化轨），
+ * 错一帧的表现不是报错，是「渲了但发布不出来」「清单说有、客户端 404」。
  *
  * 所以切法收成一处：渲染侧（`segment-render.ts`）与发布侧（`segment-publish.ts`）
  * 都调它。放独立文件是为了避免 `segment-render ↔ segment-publish` 循环依赖。

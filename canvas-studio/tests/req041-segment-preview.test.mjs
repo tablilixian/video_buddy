@@ -2,12 +2,15 @@
  * REQ-041 P0-b+P1 · 段预览旁路编排（行为断言，可反向变异）。
  *
  * 锁四件事：
- * ① 整片路径（shotOutcome=null）也能从段缓存按帧窗发布无声段；
+ * ① 整片路径（shotOutcome=null）也能从段缓存发布无声段；
  * ② 带 audio 的 manifest 自动合声，清单 url 指向 `-voice.mp4`；
  * ③ 合声失败 → 无声段仍在、清单回退无声版、note 如实说；
  * ④ 缓存为空/无段边界 → 空指针 + note，不抛。
  *
- * 反向变异：把缓存匹配改成按序号 ⇒ ①红；把合声关掉 ⇒ ②红。
+ * F1（2026-11-25）之后命中按**内容 hash** 查：种缓存必须用 `segmentHash` 算真名，
+ * 手写文件名不再算命中（这正是「帧窗对得上就算存在」那个洞的反面）。
+ *
+ * 反向变异：把命中改回按帧窗 ⇒ 「内容变了不发旧片」红；把合声关掉 ⇒ ②红。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -15,16 +18,32 @@ import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readdirSync, rmSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { publishSegmentsFromCache, cacheIndexByWindow } from '../lib/segment-publish.js'
+import { publishSegmentsFromCache } from '../lib/segment-publish.js'
 import { publishSegmentPreview } from '../lib/segment-preview-publish.js'
 import { readSegmentMedia } from '../lib/segment-media.js'
+import { planSegmentTable } from '../lib/segment-table.js'
+import { lookupSegmentsCache, manifestGlobalsFingerprint, segmentHash, shotCacheDir } from '../lib/shot-cache.js'
+
+/** 按真实内容 hash 种缓存（`quality` 决定档位；同段可种多档）。 */
+function seedCache(p, quality = 'standard', bytesOf = (i) => `SILENT${String(i + 1)}`) {
+  const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
+  const globals = manifestGlobalsFingerprint(p.manifest)
+  const dir = shotCacheDir(p.projectDir)
+  mkdirSync(dir, { recursive: true })
+  plan.segments.forEach((segment, i) => {
+    const hash = segmentHash(segment, quality, globals)
+    writeFileSync(join(dir, `${hash}.json`), JSON.stringify({
+      hash, index: segment.index, startFrame: segment.startFrame, endFrame: segment.endFrame, quality,
+    }))
+    writeFileSync(join(dir, `${hash}.mp4`), bytesOf(i))
+  })
+  return { dir, plan, globals }
+}
 
 function seededProject() {
   const projectDir = mkdtempSync(join(tmpdir(), 'cs-preview-'))
   const assetsDir = join(projectDir, 'assets')
-  const cacheDir = join(projectDir, 'build', 'shot-cache')
   mkdirSync(assetsDir, { recursive: true })
-  mkdirSync(cacheDir, { recursive: true })
   mkdirSync(join(projectDir, 'build'), { recursive: true })
   const spec = {
     meta: { fps: 30, durationSec: 400 / 30 },
@@ -44,51 +63,43 @@ function seededProject() {
   }
   writeFileSync(join(projectDir, 'build', 'spec.json'), JSON.stringify(spec))
   writeFileSync(join(projectDir, 'build', 'manifest.json'), JSON.stringify(manifest))
-  writeFileSync(join(cacheDir, 'hash1.json'), JSON.stringify({ startFrame: 0, endFrame: 200 }))
-  writeFileSync(join(cacheDir, 'hash1.mp4'), 'SILENT1')
-  writeFileSync(join(cacheDir, 'hash2.json'), JSON.stringify({ startFrame: 200, endFrame: 400 }))
-  writeFileSync(join(cacheDir, 'hash2.mp4'), 'SILENT2')
   writeFileSync(join(assetsDir, 'v1.mp3'), 'VOICE1')
-  return { projectDir, assetsDir, cacheDir, spec, manifest }
+  const project = { projectDir, assetsDir, cacheDir: shotCacheDir(projectDir), spec, manifest }
+  seedCache(project)
+  return project
 }
 
-test('缓存索引：按帧窗建键，坏 meta / 缺 mp4 跳过', () => {
+test('缓存命中：按内容 hash 查，坏 meta / 缺 mp4 不算命中', () => {
   const p = seededProject()
-  const index = cacheIndexByWindow(p.cacheDir)
-  assert.deepEqual([...index.keys()].sort(), ['0:200', '200:400'])
-  assert.ok(index.get('0:200').endsWith('hash1.mp4'))
+  const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
+  const globals = manifestGlobalsFingerprint(p.manifest)
+  const states = lookupSegmentsCache({ segments: plan.segments, cacheDir: p.cacheDir, globals })
+  assert.deepEqual(states.map((s) => s.kind), ['hit', 'hit'])
+  // 缺 mp4（只剩 meta）⇒ 不算命中：发布侧复制会读空字节，卡上是黑帧。
+  const onlyJson = mkdtempSync(join(tmpdir(), 'cs-cache-jsononly-'))
+  const hash0 = segmentHash(plan.segments[0], 'standard', globals)
+  writeFileSync(join(onlyJson, `${hash0}.json`), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'standard' }))
+  assert.equal(lookupSegmentsCache({ segments: [plan.segments[0]], cacheDir: onlyJson, globals })[0].kind, 'stale')
 })
 
-test('同帧窗多档缓存：取最高画质，不许按 readdir 顺序抖动画质', () => {
+test('同帧窗多档缓存：取最高档，不许按 readdir 顺序抖动画质', () => {
   const p = seededProject()
-  // 这条守卫必须**自己造出**「低画质排在目录末尾」的场景，否则对「按顺序取最后
-  // 一个」的错误实现仍然是绿的（第一版就吃过这个假绿：目录顺序恰好让 high 在后）。
-  // APFS 的 readdir 顺序由名字哈希决定，与创建顺序无关 ⇒ 换名字重试直到命中。
-  let discriminating = false
-  for (let i = 0; i < 20 && !discriminating; i += 1) {
-    rmSync(p.cacheDir, { recursive: true, force: true })
-    mkdirSync(p.cacheDir, { recursive: true })
-    // 名字要保证「低画质排在词典序/目录序后面」：本机 APFS 的 readdir 顺序实测
-    // 就是名字序，`…draft` < `…high` 会把 high 排在后面 ⇒ 一条抓不到东西的守卫。
-    const draftJson = `z${String(i)}draft.json`
-    const highJson = `a${String(i)}high.json`
-    writeFileSync(join(p.cacheDir, draftJson), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'draft' }))
-    writeFileSync(join(p.cacheDir, draftJson.replace('.json', '.mp4')), 'DRAFT')
-    writeFileSync(join(p.cacheDir, highJson), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'high' }))
-    writeFileSync(join(p.cacheDir, highJson.replace('.json', '.mp4')), 'HIGHQ')
-    discriminating = readdirSync(p.cacheDir).filter(n => n.endsWith('.json')).at(-1) === draftJson
-    const picked = cacheIndexByWindow(p.cacheDir).get('0:200')
-    assert.ok(picked.endsWith(highJson.replace('.json', '.mp4')),
-      `同帧窗有 draft 与 high 时取到 ${picked.split('/').at(-1)}：还在按目录项顺序选，卡上画质会跳变`)
-  }
-  assert.ok(discriminating, '没能造出「低画质排在目录末尾」的场景：这条守卫对「按顺序取最后」没有鉴别力')
-
+  // 先种 draft（低档），再种 high：两档同帧窗共存是常态（先草稿快看、后高清出片）。
+  seedCache(p, 'draft', () => 'DRAFT')
+  seedCache(p, 'high', () => 'HIGHQ')
+  const plan = planSegmentTable({ manifest: p.manifest, spec: p.spec })
+  const globals = manifestGlobalsFingerprint(p.manifest)
+  const states = lookupSegmentsCache({ segments: plan.segments, cacheDir: p.cacheDir, globals })
+  assert.ok(states.every((s) => s.kind === 'hit' && s.quality === 'high'),
+    '同内容有 draft 与 high 时必须取 high —— 否则卡上画质会随目录顺序跳')
   // 只有 draft 时照旧用它（不许因为「没有高档」就整段不发）。
-  const onlyDraft = join(p.projectDir, 'build', 'shot-cache-draft')
-  mkdirSync(onlyDraft, { recursive: true })
-  writeFileSync(join(onlyDraft, 'd.json'), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'draft' }))
-  writeFileSync(join(onlyDraft, 'd.mp4'), 'DRAFT')
-  assert.ok(cacheIndexByWindow(onlyDraft).get('0:200').endsWith('d.mp4'), '只有 draft 时必须照用')
+  const onlyDraft = mkdtempSync(join(tmpdir(), 'cs-cache-draft-'))
+  const hash0 = segmentHash(plan.segments[0], 'draft', globals)
+  writeFileSync(join(onlyDraft, `${hash0}.json`), JSON.stringify({ startFrame: 0, endFrame: 200, quality: 'draft' }))
+  writeFileSync(join(onlyDraft, `${hash0}.mp4`), 'DRAFT')
+  const single = lookupSegmentsCache({ segments: [plan.segments[0]], cacheDir: onlyDraft, globals })[0]
+  assert.equal(single.kind, 'hit')
+  assert.equal(single.quality, 'draft')
 })
 
 test('P0-b：整片路径从缓存发布两份；ref 来自对齐段表', () => {

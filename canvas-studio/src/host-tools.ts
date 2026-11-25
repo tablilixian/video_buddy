@@ -4114,9 +4114,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             })
             if (filled.rendered > 0) {
               // §十 5 的实测面：用户问「补段会不会拖慢出片」时有数可看。
+              // F1 之后「重渲」可能来自内容变更（stale）或画质升档；分说一句，
+              // 否则用户会以为「我什么都没改，怎么又渲了一遍」。
+              const why = filled.staleCount > 0
+                ? `（其中 ${String(filled.staleCount)} 段是内容/画质变更后的重渲：${filled.staleIds.join('、')}）`
+                : '（首次补段）'
               shotReceipt.push(
-                `ℹ️ 段补渲：${String(filled.rendered)} 段 / ${(filled.elapsedMs / 1000).toFixed(1)}s`
-                + '（整片路径原本不产段，首次渲染补一次；内容不变时缓存命中、零成本）',
+                `ℹ️ 段补渲：${String(filled.rendered)} 段 / ${(filled.elapsedMs / 1000).toFixed(1)}s${why}`
+                + '——内容不变时缓存按内容命中、零成本',
               )
             }
             if (filled.pointers.length > 0 && shotPointers.length === 0) shotPointers = filled.pointers

@@ -15,6 +15,14 @@
  *   永远进不了成片）——**改 s2 的 copy 只脏 s2**；carry/bg 变了全段脏（它们在每个
  *   段的活跃集里）；任何全局态变了全段脏（保守且正确）；
  * - 缓存条目 = `<hash>.mp4` + `<hash>.json`（段元数据：窗/轨数/全局态指纹/写入时间）；
+ * - **命中按内容 hash 查，不按帧窗**（REQ-041 F1，2026-11-25 真机复盘）：
+ *   `lookupSegmentsCache` 是命中判据的唯一实现。此前「按 `startFrame:endFrame`
+ *   找得到就算命中」导致改一屏内容后帧窗不变 ⇒ 零补渲 + 把旧 mp4 发回前端，
+ *   且永久陈旧、不报错。帧窗现在只用来区分「没渲过（absent）」与「渲过但内容
+ *   变了（stale）」，不再当缓存键；
+ * - **hash 里的轨序是归一化的**（REQ-041 F2）：`canonicalTracks` 只对时间不重叠的
+ *   轨重排 —— 那些轨永远不同帧出现，顺序是噪声；时间重叠的轨保持原相对次序
+ *   （画序是内容）。这样「改一屏」不会因为编辑脚本重排数组而让全片失效；
  * - `clearStaleEntries` 只删「本次合法 hash 集合之外」的条目（孤儿回收），
  *   失败不抛（缓存是优化，坏了退化为全量重渲）。
  *
@@ -45,6 +53,24 @@ const CACHE_DIR_NAME = join('build', 'shot-cache')
 
 export function shotCacheDir(projectDir: string): string {
   return join(projectDir, CACHE_DIR_NAME)
+}
+
+/**
+ * 画质档序（0 = 最低）。未知档返回 -1：旧 meta 没有 `quality` 时没有可比的维度，
+ * 一律当「未知」处理（既不优于也不劣于已知档）。
+ *
+ * **唯一定义**：缓存查找（本文件）与发布择优都读这张表。此前它只活在
+ * `segment-publish.ts`，而缓存命中判断另有一套「按帧窗有没有」的口径 —— 两套口径
+ * 各说各话，才让「改了内容却命中旧件」这种事故没有一处代码能看出来。
+ */
+export const QUALITY_RANK: Readonly<Record<string, number>> = { draft: 0, standard: 1, high: 2 }
+
+/** 由高到低的查找顺序：同内容优先用最高档那份（不许拿 draft 顶掉已有 high）。 */
+const QUALITY_HIGH_TO_LOW = ['high', 'standard', 'draft'] as const
+
+/** 画质档的分值（未知档 -1）。 */
+export function qualityRankOf(quality: string): number {
+  return QUALITY_RANK[quality] ?? -1
 }
 
 /**
@@ -81,10 +107,104 @@ export function manifestGlobalsFingerprint(manifest: CompositionManifest): strin
 }
 
 /**
- * 段内容 hash：sha256 前 16 位。输入 = 段窗 + 段活跃轨全量 JSON + 渲染质量 +
- * manifest 全局态指纹——任一变化（copy / 格位 / 质量档 / 调色 / 字体）都会换
- * hash。确定性：同输入同输出。`globals` 是**必传**参数（`manifestGlobalsFingerprint`
- * 的产物）：必须显式出现在每个调用点，防止再犯「忘了全局态」的集成错误。
+ * 轨的时间窗（帧，半开 `[start, start+duration)`）。脏数据一律按 0 长处理 ——
+ * 归一化只影响缓存键，不该因为一条坏轨让整段失去缓存能力。
+ */
+function trackWindow(track: CompositionManifest['tracks'][number]): [number, number] {
+  const rawStart = (track as { startFrame?: unknown }).startFrame
+  const rawDuration = (track as { durationInFrames?: unknown }).durationInFrames
+  const start = typeof rawStart === 'number' && Number.isFinite(rawStart) ? rawStart : 0
+  const duration = typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 0
+  return [start, start + duration]
+}
+
+/**
+ * 画序归一化（REQ-041 F2，2026-11-25 真机复盘）：**只用于算缓存 hash**，不参与渲染。
+ *
+ * ## 解决什么
+ *
+ * 真机实测：改第 2 屏后，同一份缓存的 draft 命中从 7/9 掉到 1/9 —— 其余 6 段的轨
+ * **集合完全没变**，只是数组顺序变了（模型直改 manifest 时的 filter+push / 重新
+ * 归组）。而 `segmentHash` 吃的是有序 tracks，于是「改一屏」变成「全片重渲」。
+ *
+ * ## 为什么不能简单 sort(by id)
+ *
+ * `Root.tsx:238` 按数组顺序 `<Sequence>` 渲染 ⇒ **数组顺序就是画序（z-order）**。
+ * 两条**时间上重叠**的轨互换位置会真的改像素；对它们排序就等于让两份不同的画面
+ * 算出同一个 hash，把错的段缓存回放出去。
+ *
+ * ## 做法：只对「时间不重叠」的轨重排
+ *
+ * 时间窗不相交的两条轨永远不同帧出现，谁先谁后不影响任何一帧 ⇒ 它们的相对顺序
+ * 是纯噪声，可以归一。于是：
+ * - 重叠对 → 连边 `前 → 后`（这是画序语义，属于内容，必须进 hash）；
+ * - 不重叠对 → 无边（顺序自由）；
+ * - 在这个偏序上做确定性拓扑排序（同时可选的按轨内容排序取名次）⇒ **同一偏序
+ *   的任意输入顺序得到同一个输出**，而画序不同的输入得到不同输出。
+ *
+ * 推论：`canonicalTracks` 相同 ⇔ 每一帧的画序相同（在「轨是独立图层」这一前提下），
+ * 所以拿它当缓存键是安全的 —— 这也是它**只**出现在 hash 里的原因（渲染顺序仍用
+ * 原始数组，存量项目的画面零变化）。
+ *
+ * group 容器的子轨同权递归处理（容器内部同样是 `<Sequence>` 顺序）。
+ */
+export function canonicalTracks(tracks: readonly CompositionManifest['tracks'][number][]): CompositionManifest['tracks'] {
+  const items = tracks.map((track) => (
+    track.type === 'group'
+      ? { ...track, children: canonicalTracks(track.children ?? []) }
+      : track
+  )) as CompositionManifest['tracks']
+  const count = items.length
+  if (count < 2) return items
+
+  const windows = items.map(trackWindow)
+  const successors: number[][] = items.map(() => [])
+  const indegree = new Array<number>(count).fill(0)
+  for (let i = 0; i < count; i += 1) {
+    const [startA, endA] = windows[i] as [number, number]
+    for (let j = i + 1; j < count; j += 1) {
+      const [startB, endB] = windows[j] as [number, number]
+      if (startA < endB && startB < endA) {
+        ;(successors[i] as number[]).push(j)
+        indegree[j] = (indegree[j] ?? 0) + 1
+      }
+    }
+  }
+
+  // 同内容同键：可互换的两条轨（键完全一致）谁先谁后对 hash 无影响。
+  const keys = items.map((track) => stableStringify(track))
+  const ready: number[] = []
+  for (let i = 0; i < count; i += 1) if (indegree[i] === 0) ready.push(i)
+  const byKey = (left: number, right: number): number => {
+    const a = keys[left] as string
+    const b = keys[right] as string
+    return a < b ? -1 : a > b ? 1 : 0
+  }
+  ready.sort(byKey)
+
+  const out: CompositionManifest['tracks'] = []
+  while (ready.length > 0) {
+    const pick = ready.shift() as number
+    out.push(items[pick] as CompositionManifest['tracks'][number])
+    for (const next of successors[pick] as number[]) {
+      const left = (indegree[next] ?? 0) - 1
+      indegree[next] = left
+      if (left === 0) {
+        ready.push(next)
+        ready.sort(byKey)
+      }
+    }
+  }
+  // 理论上不可达（边只从低索引指向高索引 ⇒ 无环）；真出环时退回原序，绝不丢轨。
+  return out.length === count ? out : items
+}
+
+/**
+ * 段内容 hash：sha256 前 16 位。输入 = 段窗 + 段活跃轨全量 JSON（**画序归一化后**）
+ * + 渲染质量 + manifest 全局态指纹——任一变化（copy / 格位 / 质量档 / 调色 / 字体 /
+ * 真正的画序调整）都会换 hash。确定性：同输入同输出。`globals` 是**必传**参数
+ * （`manifestGlobalsFingerprint` 的产物）：必须显式出现在每个调用点，防止再犯
+ * 「忘了全局态」的集成错误。
  */
 export function segmentHash(segment: ShotSegment, quality: string, globals: string): string {
   const payload = JSON.stringify({
@@ -92,7 +212,7 @@ export function segmentHash(segment: ShotSegment, quality: string, globals: stri
     end: segment.endFrame,
     quality,
     globals,
-    tracks: segment.tracks,
+    tracks: canonicalTracks(segment.tracks),
   })
   return createHash('sha256').update(payload).digest('hex').slice(0, 16)
 }
@@ -135,6 +255,80 @@ export function reusedEntries(segments: readonly ShotSegment[], quality: string,
       return existsSync(videoPath) && existsSync(metaPath) ? { segment, entry: { hash, videoPath } } : null
     })
     .filter((v) => v !== null)
+}
+
+/** 缓存里出现过的帧窗集合（`start:end`）。只用于区分「没渲过」与「渲过但内容变了」。 */
+function cachedWindows(cacheDir: string): Set<string> {
+  const out = new Set<string>()
+  try {
+    for (const name of readdirSync(cacheDir)) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const meta = JSON.parse(readFileSync(join(cacheDir, name), 'utf8')) as {
+          startFrame?: unknown
+          endFrame?: unknown
+        }
+        if (typeof meta.startFrame === 'number' && typeof meta.endFrame === 'number') {
+          out.add(`${String(meta.startFrame)}:${String(meta.endFrame)}`)
+        }
+      } catch {
+        // 坏 meta 不参与「渲过没渲过」的判断（宁可说没渲过，也不谎称陈旧）
+      }
+    }
+  } catch {
+    return out
+  }
+  return out
+}
+
+/** 一段在缓存里的状态（见 `lookupSegmentsCache`）。 */
+export type SegmentCacheState =
+  | { kind: 'hit'; hash: string; quality: string; videoPath: string }
+  | { kind: 'stale' }
+  | { kind: 'absent' }
+
+/**
+ * 一批段在缓存里的状态（与入参同序）。**按内容 hash 查，不按帧窗**。
+ *
+ * ## 为什么这是关键修正（REQ-041 F1，2026-11-25 真机复盘）
+ *
+ * 旧口径（`segment-publish.ts` 的 `cacheIndexByWindow`）只拿 `startFrame:endFrame`
+ * 当键：改一屏内容后帧窗没变 ⇒ 判「已存在」⇒ 零补渲 + 把改前的旧 mp4 复制回
+ * `assets/`。用户看到的是「托盘里的第 2 屏一直是旧画面，成片却是新的」，而且**永久
+ * 陈旧、不报错**。meta.json 里一直写着 `hash`，却从来没被用来判命中。
+ *
+ * ## 三态，而不是布尔
+ *
+ * `stale`（同帧窗有条目、内容/档位不合）与 `absent`（从没渲过）要分开：前者的回执
+ * 必须说「内容已变、缓存仍是旧版」，那是「该重渲而没渲」；后者只是「还没渲」。
+ * 混成一句「缓存无该段」会让排查重新回到猜。
+ *
+ * `minQuality`：本次要渲的档。缓存里只有**更低**档 ⇒ 视为不可用（要真渲一版补上
+ * —— 这正是「段产物停在 540p、成片是 1080p」的修法）；只有**更高**档 ⇒ 直接复用
+ * （渲 draft 时不必把 high 降级重渲）。
+ */
+export function lookupSegmentsCache(input: {
+  segments: readonly ShotSegment[]
+  cacheDir: string
+  globals: string
+  /** 可接受的最低档；缺省 = 任何档都行（发布场景：现有最高档就够）。 */
+  minQuality?: string
+}): SegmentCacheState[] {
+  if (!existsSync(input.cacheDir)) return input.segments.map(() => ({ kind: 'absent' as const }))
+  const floor = input.minQuality === undefined ? -1 : qualityRankOf(input.minQuality)
+  let windows: Set<string> | null = null
+  return input.segments.map((segment) => {
+    for (const quality of QUALITY_HIGH_TO_LOW) {
+      if (qualityRankOf(quality) < floor) continue
+      const hash = segmentHash(segment, quality, input.globals)
+      const { videoPath, metaPath } = entryPaths(input.cacheDir, hash)
+      if (existsSync(videoPath) && existsSync(metaPath)) {
+        return { kind: 'hit' as const, hash, quality, videoPath }
+      }
+    }
+    windows ??= cachedWindows(input.cacheDir)
+    return { kind: windows.has(`${String(segment.startFrame)}:${String(segment.endFrame)}`) ? 'stale' as const : 'absent' as const }
+  })
 }
 
 /** 渲染完成的段写入缓存（从渲染产物复制；元数据含窗/轨数/质量/全局态指纹）。 */
@@ -180,23 +374,23 @@ export function clearStaleEntries(cacheDir: string, validHashes: ReadonlySet<str
 /**
  * 删掉**同一帧窗**下除 `keepHash` 之外的缓存条目（meta + mp4 成对删）。
  *
- * 为什么必须删：发布侧 `cacheIndexByWindow` 是按**帧窗**取件的（它不知道段内容），
- * 同一帧窗出现两份缓存时，它只能按质量档挑，同档则退化成 readdir 顺序 —— 与
- * 「哪份是新渲的」无关。单段重渲（`rerender_segment`）恰好会留下两份：
- * 改前的旧条目仍在盘上，改后的新条目是另一个 hash。下一次整片渲染
- * （`fillMissingSegments` 判「窗已在 ⇒ 零渲染」→ `publishSegmentsFromCache` 取件）
- * 就有机会把**改前**那份复制回 `assets/` —— 用户看到的是「改了一屏，后来自己变回去了」。
+ * 用途是**控制磁盘**与「同帧窗多份」的混乱度：单段重渲会在同一帧窗留下改前/改后
+ * 两份。命中判断自 F1 起已按内容 hash 查（`lookupSegmentsCache`），所以留两份不再
+ * 造成「发回旧片」，但同帧窗堆 N 份会让缓存目录无法人工核对，也白占盘。
  *
- * 所以渲成即清：同帧窗只留本次这份，帧窗索引退化为一一对应。清不掉不抛
- * （缓存是优化，失败只意味着仍有两份，不阻断出片）。
+ * **不删比 `keepQuality` 更高的档**：拿 high 缓存渲一版 draft（用户只要快看）时，
+ * 把 high 删掉等于永久降级预览画质 —— 这与 D11「只允许更高档覆盖」相悖。
  */
 export function pruneStaleWindowEntries(input: {
   cacheDir: string
   startFrame: number
   endFrame: number
   keepHash: string
+  /** 本次落盘的档；更高档的旧条目保留。缺省 = 不设防（旧调用口径）。 */
+  keepQuality?: string
 }): string[] {
   const removed: string[] = []
+  const keepRank = input.keepQuality === undefined ? Number.POSITIVE_INFINITY : qualityRankOf(input.keepQuality)
   try {
     if (!existsSync(input.cacheDir)) return removed
     for (const name of readdirSync(input.cacheDir)) {
@@ -207,9 +401,12 @@ export function pruneStaleWindowEntries(input: {
         const meta = JSON.parse(readFileSync(join(input.cacheDir, name), 'utf8')) as {
           startFrame?: unknown
           endFrame?: unknown
+          quality?: unknown
         }
         // 坏 meta 无法判断归属 ⇒ 不动它（保守：宁可留脏也不误删别的窗）。
         if (meta.startFrame !== input.startFrame || meta.endFrame !== input.endFrame) continue
+        const rank = typeof meta.quality === 'string' ? qualityRankOf(meta.quality) : -1
+        if (rank > keepRank) continue
       } catch {
         continue
       }

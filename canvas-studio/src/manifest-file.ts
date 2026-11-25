@@ -14,9 +14,10 @@
  * - 拒收时**零副作用**：校验全部通过才 mkdir / write。
  * - 只回显前 40 行：够人核对结构，又不把 60KB 重新塞回上下文。
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve, sep } from 'node:path'
 import { throwError } from './error-system.js'
+import { diffOverwrittenTracks, type OverwriteTrackDiff } from './manifest-overwrite.js'
 
 /** 回显行数：骨架前 40 行足够核对 id / meta / 前几轨，再多就变成第二份 60KB。 */
 export const MANIFEST_PREVIEW_LINES = 40
@@ -30,6 +31,13 @@ export interface ManifestFileWrite {
   trackCount: number
   /** 前 N 行文本（不含围栏，调用方自己加 ```json）。 */
   preview: string
+  /**
+   * 这次覆盖**丢掉**了哪些旧轨（REQ-041 §5.4）。
+   *
+   * 真机里手工加的椭圆轨道被 `scaffold_from_spec(writeTo)` 整份覆盖、且没有任何提示 ——
+   * 模型只能靠记性「重编后恢复」。这里把丢掉的 id 带出去，回执据此说一句人话。
+   */
+  droppedTracks: OverwriteTrackDiff | null
 }
 
 /**
@@ -77,6 +85,9 @@ export function writeManifestFile(input: {
   // 可读副本另存 `<path>.pretty.json`。预览永远来自 pretty（紧凑版一行没法核对）。
   const onDisk = input.compactJson ?? input.json
   const bytes = Buffer.byteLength(onDisk, 'utf8')
+  // 覆盖前先留一份旧文的「轨名快照」：手工轨丢失是这一层唯一的静默风险。
+  const previousText = existsSync(resolved) ? readFileSync(resolved, 'utf8') : undefined
+  const droppedTracks = diffOverwrittenTracks(previousText, input.json)
   mkdirSync(dirname(resolved), { recursive: true })
   writeFileSync(resolved, onDisk, 'utf8')
   if (input.compactJson !== undefined && input.compactJson !== input.json) {
@@ -87,5 +98,6 @@ export function writeManifestFile(input: {
     bytes,
     trackCount: input.trackCount,
     preview: previewLines(input.json),
+    droppedTracks,
   }
 }

@@ -51,6 +51,7 @@ import { saveLocalAssetBytes } from './generate.js'
 import { sessionKeyOf } from './tool-error-boundary.js'
 // P1-3（2026-11-05）：scaffold_manifest 的落盘实现（包含校验 / 前 N 行回显）。
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
+import { droppedTracksNote } from './manifest-overwrite.js'
 // A4/P1-6（2026-11-11 真机复盘）：抽帧 URL → 磁盘绝对路径。回执里只给 `/canvas-studio/assets/…`
 // 时 `read_image` 直接 not found（真机浪费 2 次调用：读图失败 + `find` 找路径）。
 import { urlToAssetPath } from './compose.js'
@@ -5181,6 +5182,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               '```json',
               written.preview,
               '```',
+              ...(droppedTracksNote(written.droppedTracks) === '' ? [] : [droppedTracksNote(written.droppedTracks)]),
               ...hints,
               `下一步：直接 \`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片 —— 不要先美化、不要先读源码。`,
               `改文案/加轨请改这个小文件；改末尾轨时长仍要同步 \`meta.durationInFrames\`（当前 ${String(total)}，必须始终 = 最大结束帧）。`,

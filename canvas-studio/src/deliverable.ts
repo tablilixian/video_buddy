@@ -25,6 +25,7 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SegmentPointer } from './segment-artifacts.js'
+import { currentAnchorVersion } from './render-anchor.js'
 
 /** 交付时长断言容忍（秒）：|actual − target| 超过即标 durationMismatch。D4 拍板 ±1s。 */
 export const DELIVER_DURATION_TOLERANCE_SEC = 1
@@ -134,6 +135,7 @@ export interface DeliverableInput {
   quality: 'standard' | 'high'
   /** manifest 内容 hash（sha256 前 16 位，调用方算好传入）。 */
   manifestHash: string
+  /** 调用方读到的锚点版本。**仅作兜底**：真值由 `build/versions/` 的最新快照决定。 */
   anchorVersion: number | null
   targetDurationSec: number | null
   /** PROGRESS「已知未决」段原文（null/空 = 模型没填）。 */
@@ -227,6 +229,9 @@ export function writeDeliverable(input: DeliverableInput): DeliverableResult {
     ? null
     : Math.round((input.durationSec - input.targetDurationSec) * 10) / 10
   const durationMismatch = deltaSec !== null && Math.abs(deltaSec) > DELIVER_DURATION_TOLERANCE_SEC
+  // REQ-041 F5：版本号以**磁盘上的最新快照**为准，不信调用方手里那份（它可能是写锚点
+  // 之前读的，真机就写出「卡 v7 / 快照 v8」）。目录为空时才回落到入参。
+  const anchorVersion = currentAnchorVersion(input.projectDir) ?? input.anchorVersion
   const deliveredWithGaps = input.openIssues === null || input.openIssues.trim() === ''
   // A1：只在调用方真的测过时才判（缺省 = 不判，行为与 A1 之前一致）。
   const gate = input.loudness === undefined ? null : evaluateLoudnessGate(input.loudness)
@@ -247,7 +252,7 @@ export function writeDeliverable(input: DeliverableInput): DeliverableResult {
         ...(input.width === undefined ? {} : { width: input.width }),
         ...(input.height === undefined ? {} : { height: input.height }),
       },
-      version: { anchorVersion: input.anchorVersion, manifestHash: input.manifestHash },
+      version: { anchorVersion, manifestHash: input.manifestHash },
       pending: {
         openIssues: deliveredWithGaps ? '（未填）' : (input.openIssues as string),
         deliveredWithGaps,

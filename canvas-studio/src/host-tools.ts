@@ -1427,6 +1427,34 @@ export function assertSpotFrameCount(frames: readonly unknown[], limit: number =
 }
 
 /**
+ * REQ-041 F4：交付卡的时长断言按谁判（唯一实现点）。
+ *
+ * 口径：`plan.targetDuration` 是产出规格的唯一事实源；但**故事板后写**，它声明的目标
+ * 总时长是更近的一次决定 —— 两者不一致时以故事板为准，并顺手把 plan 自愈回来
+ *（本修复之前写的故事板不会经过 `write_storyboard` 的回写，老项目只能靠这里对齐）。
+ *
+ * 真机事故（2026-11-25）：plan=15（建项目锁的）、故事板=60、成片=80.02 ⇒ 交付卡
+ * `delta 65s / durationMismatch` 每版必红，把注意力全引到「片子超长」这个假结论上。
+ */
+export async function resolveDeliveryTargetDuration(
+  registry: ProjectRegistry,
+  projectId: string,
+): Promise<number | null> {
+  const project = await registry.getProject(projectId)
+  const planTarget = typeof project?.plan?.targetDuration === 'number' ? project.plan.targetDuration : null
+  const storyboardTarget = await loadStoryboard(registry, projectId)
+    .then((load) => (load.status === 'ok' && Number.isFinite(load.document.meta.targetDuration) && load.document.meta.targetDuration > 0
+      ? load.document.meta.targetDuration
+      : null))
+    .catch(() => null)
+  if (storyboardTarget === null) return planTarget
+  if (planTarget === storyboardTarget) return planTarget
+  // 自愈：写失败不影响断言（仍按故事板判，那是更近的决定）。
+  await registry.setPlanTargetDuration(projectId, storyboardTarget).catch(() => null)
+  return storyboardTarget
+}
+
+/**
  * `value` 是不是**本项目画布上真实存在**的节点 id（CS-USER-002 的唯一判据）。
  *
  * 只比 id、不比形态：`input.asset_id` 与画布节点 id 都是 UUID，形态完全同形，
@@ -4191,12 +4219,45 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 非 probe/spot）自动落 deliver/final.mp4（覆盖写）+ card.json（规格/版本/未决项/
         // 时长断言）。draft 不落；复制不改画布节点（落节点逻辑零改动）。写盘失败不阻断
         // 渲染（同锚点纪律），失败原因进回执。
+        // 骨架优先出片（2026-11-05）：每次真成片落一版锚点 —— 压缩丢上下文后，
+        // 「当前最好的是哪一版」由磁盘回答，不由模型的记忆回答（今天 8 次压缩后
+        // 模型回读源码重推整片，正是因为这个答案原本不存在）。
+        // 两条不写规则：probe / spot 不是成片；写盘失败不阻断渲染（辅助设施不陪葬）。
+        //
+        // ⚠️ 顺序（REQ-041 F5）：**锚点必须先于交付卡落盘**。交付卡要写「本版是第几版」，
+        // 而卡此前读的是「写锚点之前」的状态 ⇒ 永远差一档（真机：card.json 写
+        // `anchorVersion: 7`，同一秒落盘的快照却是 `build/versions/v8.json`）。
+        let anchor: ComposeToolResult['anchor']
+        let anchorVersion: number | null = null
+        if (!probe && !spot) {
+          try {
+            const written = writeRenderAnchor({
+              projectDir: registry.projectDir(projectId),
+              manifest: renderManifest,
+              quality: job.quality ?? quality ?? 'standard',
+              durationSec: job.duration ?? 0,
+              ...(job.width === undefined ? {} : { width: job.width }),
+              ...(job.height === undefined ? {} : { height: job.height }),
+              trackCount: renderManifest.tracks.length,
+              sampledFrames: job.frames.map((sample) => sample.frame),
+            })
+            anchor = { version: written.version, progressPath: written.progressPath, trackCount: written.trackCount }
+            anchorVersion = written.version
+            // M1 达成时刻只记一次：每版都刷新会让「首片 T+Nmin」永远显示成 0。
+            const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+            if (workflow.firstDraftAt === undefined) {
+              await registry.updateWorkflow(projectId, { firstDraftAt: Date.now() })
+            }
+          } catch (cause) {
+            console.info('[canvas-studio] 出片锚点写入失败（不影响成片）', cause)
+          }
+        }
         let delivery: ReturnType<typeof writeDeliverable> | null = null
         if (isDeliverableRender(job.quality, probe === true, spot)) {
           try {
-            const anchor = readAnchorState(registry.projectDir(projectId))
-            const project = await registry.getProject(projectId)
-            const target = typeof project?.plan?.targetDuration === 'number' ? project.plan.targetDuration : null
+            const anchorState = readAnchorState(registry.projectDir(projectId))
+            // REQ-041 F4：时长断言按「故事板优先、plan 自愈」判（唯一实现点）。
+            const target = await resolveDeliveryTargetDuration(registry, projectId)
             const finalSource = resolveAssetPathIn(registry.assetsDir(projectId), job.assetFile)
             // A1（2026-11-24）：交付前实测成片响度 + 真峰 + 有无音轨。
             // 为什么在这里量：`media-probe` 早就把 lufs 测出来了，却只写进拆解表、从没
@@ -4217,9 +4278,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               // isDeliverableRender 已保证此处 quality ∈ {standard, high}（TS 无法跨函数收窄）
               quality: job.quality as 'standard' | 'high',
               manifestHash: createHash('sha256').update(JSON.stringify(renderManifest)).digest('hex').slice(0, 16),
-              anchorVersion: anchor.versions.at(-1)?.version ?? null,
+              anchorVersion,
               targetDurationSec: target,
-              openIssues: anchor.openIssues ?? null,
+              openIssues: anchorState.openIssues ?? null,
               // A1：`expectsAudio` 取自这次渲染**声明**的音轨构成（'none' = 本来就无声片）。
               // 声明有轨而实测无轨是真矛盾（旁白/BGM 全丢），那是硬 blocker；判定全在
               // deliverable.ts 的 evaluateLoudnessGate（纯函数，可反向变异）。
@@ -4296,33 +4357,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const effectiveWarnings = probe
           ? warnings.filter((w) => !w.startsWith('[编排体检'))
           : collapseLintWarnings(warnings)
-        // 骨架优先出片（2026-11-05）：每次真成片落一版锚点 —— 压缩丢上下文后，
-        // 「当前最好的是哪一版」由磁盘回答，不由模型的记忆回答（今天 8 次压缩后
-        // 模型回读源码重推整片，正是因为这个答案原本不存在）。
-        // 两条不写规则：probe / spot 不是成片；写盘失败不阻断渲染（辅助设施不陪葬）。
-        let anchor: ComposeToolResult['anchor']
-        if (!probe && !spot) {
-          try {
-            const written = writeRenderAnchor({
-              projectDir: registry.projectDir(projectId),
-              manifest: renderManifest,
-              quality: job.quality ?? quality ?? 'standard',
-              durationSec: job.duration ?? 0,
-              ...(job.width === undefined ? {} : { width: job.width }),
-              ...(job.height === undefined ? {} : { height: job.height }),
-              trackCount: renderManifest.tracks.length,
-              sampledFrames: job.frames.map((sample) => sample.frame),
-            })
-            anchor = { version: written.version, progressPath: written.progressPath, trackCount: written.trackCount }
-            // M1 达成时刻只记一次：每版都刷新会让「首片 T+Nmin」永远显示成 0。
-            const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
-            if (workflow.firstDraftAt === undefined) {
-              await registry.updateWorkflow(projectId, { firstDraftAt: Date.now() })
-            }
-          } catch (cause) {
-            console.info('[canvas-studio] 出片锚点写入失败（不影响成片）', cause)
-          }
-        }
         const payload: ComposeToolResult = {
           // spot-check 无成片：这三个字段缺省（渲染文案走 spot 专用分支）。
           ...(job.spot === true ? {} : {
@@ -4536,6 +4570,21 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             : '活副本已更新（**不产生新版本**；要留里程碑请让用户在覆盖层点「存档为新版本」）'
         }
 
+        // REQ-041 F4：故事板一声明目标总时长，就把项目锁定规格对齐。
+        // 真机事故（2026-11-25 超级月亮）：plan 停在 15s、故事板写 60s、成片 80s ⇒ 每一版
+        // 交付卡都带 `durationMismatch: delta 65s` 的**假红**。`plan` 仍是唯一事实源
+        //（交付断言 / 首页 chip / 提示词都读它），所以要在声明点回写，而不是让两边各漂。
+        let targetSyncNote: string | undefined
+        try {
+          const synced = await registry.setPlanTargetDuration(projectId, normalized.meta.targetDuration)
+          if (synced !== null) {
+            targetSyncNote = `⏱ 目标时长已按故事板写回项目规格：${synced.from === null ? '未锁定' : `${String(synced.from)}s`}`
+              + ` → ${String(synced.to)}s（交付卡的时长断言从此按新值判，之前的红标是旧值造成的）`
+          }
+        } catch (cause) {
+          targetSyncNote = `⚠️ 目标时长回写项目规格失败（故事板已保存，交付断言仍按旧值）：${cause instanceof Error ? cause.message : String(cause)}`
+        }
+
         const summary = summarizeStoryboard(normalized.sections)
 
         // ── 故事板强约束 L3：auto 模式自动落地 ─────────────────────────────────
@@ -4603,6 +4652,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             `分镜 ${String(summary.scenes)} · shot ${String(summary.shots)} · Σ shot ${summary.shotDuration.toFixed(1)}s`
               + ` · 目标 ${normalized.meta.targetDuration.toFixed(1)}s · 旁白 ${summary.narrationDuration.toFixed(1)}s`
               + ` · 角色 ${String(summary.characters)} · 硬约束 ${String(summary.constraints)}`,
+            ...(targetSyncNote === undefined ? [] : [targetSyncNote]),
             ...(keptLabels.length === 0 ? [] : [`以下分节本次未传、**保留现值**未动：${keptLabels.join('、')}。如需清空某一节，必须显式传空内容（如 "[]"）。`]),
             blockers.length === 0
               ? '落地完成度：无阻断项。'

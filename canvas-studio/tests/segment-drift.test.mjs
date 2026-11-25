@@ -117,8 +117,9 @@ test('段数变化：提示带「8 段 → 9 段」与新增段名', () => {
     })
     const next = manifestOf([0, 120, 240, 360, 480, 600, 720, 840, 960])
     const note = segmentDriftNote(dir, next)
-    assert.ok(note.includes('段边界相对 v1 变了'), note)
-    assert.ok(note.includes('8 段 → 9 段'), note)
+    assert.ok(note.includes('轨段**边界相对 v1 变了'), note)
+    assert.match(note, /不是分镜段、也不是段产物/, '术语必须去二义（REQ-041 F5）')
+    assert.ok(note.includes('8 个轨段 → 9 个轨段'), note)
     assert.ok(note.includes('新增 V9'), note)
     assert.ok(note.includes('重排'), '必须告诉模型：重排要在汇报里说明')
   } finally {

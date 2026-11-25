@@ -145,6 +145,25 @@ export function nextAnchorVersion(versionsDir: string): number {
   return max + 1
 }
 
+/**
+ * 磁盘上**已经存在**的最新一版号（没有 `versions/` 目录 / 目录为空 ⇒ null）。
+ *
+ * REQ-041 F5：交付卡的 `version.anchorVersion` 必须回答「本版是第几版」，而这个事实
+ * 只有 `build/versions/` 知道。此前卡取的是调用方在**写锚点之前**读到的状态 ——
+ * 真机表现为 `card.json` 写 `anchorVersion: 7`、同一秒落盘的快照却是 `v8.json`。
+ * 口径统一到磁盘：谁最后落的版，目录里就是谁。
+ */
+export function currentAnchorVersion(projectDir: string): number | null {
+  const versionsDir = join(projectDir, BUILD_DIR, VERSIONS_DIR)
+  if (!existsSync(versionsDir)) return null
+  let max = 0
+  for (const name of readdirSync(versionsDir)) {
+    const hit = /^v(\d+)\.json$/.exec(name)
+    if (hit !== null) max = Math.max(max, Number(hit[1]))
+  }
+  return max === 0 ? null : max
+}
+
 /** 读机器状态；文件缺失 / 损坏一律回落空状态（锚点是辅助设施，绝不因此报错）。 */
 export function readAnchorState(projectDir: string): AnchorState {
   const path = join(projectDir, BUILD_DIR, STATE_FILE)
@@ -413,7 +432,7 @@ export function segmentDriftNote(projectDir: string, manifest: unknown): string 
   if (baseline === null || baseline.length === 0) return ''
   const diff = diffSegments(baseline, segmentsOf(manifest))
   if (!diff.changed) return ''
-  const parts = [`${String(diff.baselineCount)} 段 → ${String(diff.currentCount)} 段`]
+  const parts = [`${String(diff.baselineCount)} 个轨段 → ${String(diff.currentCount)} 个轨段`]
   if (diff.added.length > 0) parts.push(nameList(diff.added, '新增 '))
   if (diff.removed.length > 0) parts.push(nameList(diff.removed, '删掉 '))
   if (diff.shifted.length > 0) {
@@ -422,6 +441,10 @@ export function segmentDriftNote(projectDir: string, manifest: unknown): string 
       .map((seg) => `${seg.id} 起点 ${String(seg.from)} → ${String(seg.to)}`)
       .join('；'))
   }
-  return `段边界相对 v1 变了（${parts.join('；')}）：如果是**重排**，请在汇报里说明改了什么；`
+  // REQ-041 F5：术语去二义。这里的「段」是**轨的时间窗**（字幕卡 / 元素轨切出来的段），
+  // 与「分镜段 s1…sN」「段产物 seg-*.mp4」是三个不同的东西 —— 真机回执每轮都被模型
+  // 额外解释一次，用户也分不清在说哪个。
+  return `manifest **轨段**边界相对 v1 变了（${parts.join('；')}）——「轨段」= 轨道时间窗`
+    + `（字幕卡 / 元素轨），不是分镜段、也不是段产物：如果是**重排**，请在汇报里说明改了什么；`
     + '如果不是重排，说明帧表被改坏了 —— 回 `build/versions/v1.json` 对一遍再继续。'
 }

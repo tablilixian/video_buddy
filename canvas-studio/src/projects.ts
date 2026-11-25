@@ -1251,6 +1251,39 @@ export class ProjectRegistry {
   }
 
   /**
+   * REQ-041 F4：把故事板声明的目标总时长**回写**项目的锁定规格（`plan.targetDuration`）。
+   *
+   * 真机事故（2026-11-25，超级月亮项目）：`plan.targetDuration = 15`（建项目那次锁的，
+   * 之后再没动过）、`storyboard.meta.targetDuration = 60`（`write_storyboard` 收的值）、
+   * 成片 80.02s ⇒ 交付卡 `durationCheck: { target: 15, delta: 65, durationMismatch: true }`。
+   * 每一版交付都带一条**假红**，模型和用户都被指向错误的方向（「片子超长 65s」）。
+   *
+   * 口径：`plan` 仍是「产出规格」的唯一事实源（交付断言、首页 chip、提示词都只读它），
+   * 但**故事板一声明就把 plan 对齐** —— 否则两个真值各自漂移，谁也不知道该信谁。
+   * 只改这一项（画幅 / 分辨率不动），非法值（≤0 / NaN）与「没变化」一律返回 null 不写盘。
+   *
+   * @returns 发生变更时 `{ from, to }`（`from: null` = 原来没锁）；未变更 / 项目不存在返回 null
+   */
+  async setPlanTargetDuration(
+    projectId: string,
+    seconds: number,
+  ): Promise<{ from: number | null; to: number } | null> {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return null
+    const projects = [...await this.list()]
+    const index = projects.findIndex((entry) => entry.id === projectId)
+    if (index === -1) return null
+    const current = projects[index]!
+    const normalized = normalizePlan({ ...current.plan, targetDuration: seconds })
+    if (normalized === undefined || normalized.targetDuration === undefined) return null
+    const to = normalized.targetDuration
+    const from = current.plan?.targetDuration ?? null
+    if (from === to) return null
+    projects[index] = { ...current, plan: normalized }
+    await this.commitRegistry(projects)
+    return { from, to }
+  }
+
+  /**
    * 读注册表文档（项目记录 + 墓碑）。文件不存在返回 `null`；存在但损坏/形状不符
    * 则抛错 —— **不静默当空表**：那会让紧随其后的写盘把整个注册表抹掉。
    */

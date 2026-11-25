@@ -58,6 +58,8 @@ import { disposeRenderHost, ensureRenderHost, renderHostSnapshot, touchRenderHos
 import { installRenderHostWiring, uninstallRenderHostWiring } from './render-host/wiring.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
+// REQ-041 L1：段产物只读清单（分镜卡出画面的数据来源）。
+import { readSegmentMedia } from './segment-media.js'
 import { storageInfoSnapshot } from './storage-info.js'
 import { ensureStoryboardSkeleton, loadStoryboard, loadStoryboardOrFail, updateStoryboardOrFail } from './storyboard-store.js'
 import { landStoryboard } from './storyboard-land.js'
@@ -374,6 +376,9 @@ const ROUTE_REMOTION_FX = '/canvas-studio/remotion/fx'
 // 与 sfx 同因挂在 `remotion/` 下：`/canvas-studio/assets/…` 会被资产路由解析成
 // projectId（`routes.ts` 的 `/assets/<projectId>/…`），拿到 404。
 const ROUTE_REMOTION_TEMPLATES = '/canvas-studio/remotion/templates'
+// REQ-041 L1：段产物只读清单。客户端不盲拼 assets URL，由这条路由一次回答
+// 「渲过没有 / 从哪取 / 缓存版本」；未渲项目回空数组，不报错。
+const ROUTE_REMOTION_SEGMENTS = '/canvas-studio/remotion/segments'
 // REQ-034 · O-05：RenderHost 隐藏渲染窗口的三条路由（页面 / bundle / 自报状态）。
 // 页面与 bundle 由**隐藏窗口自己**加载，不给外部浏览器用 ⇒ 仍然只认 loopback authority。
 const ROUTE_RENDER_HOST = '/canvas-studio/render-host'
@@ -3376,6 +3381,37 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 400, '读取渲染队列失败，请稍后重试。')
+      }
+    }}),
+
+    // REQ-041 L1：分镜卡段产物清单（只读）。按 projectId 读 deliver/card.json +
+    // stat assets/seg-<id>.mp4；未渲 / 无卡 / 副本缺失都回空数组（不是错误）。
+    // 清单带 ref（spec 原文 id）供客户端按 segmentRef 等值匹配，**禁止按序号配**。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_SEGMENTS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort())) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion segments requires GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort()}`)
+      const projectId = requestUrl.searchParams.get('projectId') ?? ''
+      if (projectId === '') {
+        sendJson(res, 400, { error: '缺少 projectId' })
+        return
+      }
+      try {
+        const view = await readSegmentMedia({
+          projectDir: registry.projectDir(projectId),
+          assetsDir: registry.assetsDir(projectId),
+          projectId,
+        })
+        if (!res.destroyed) sendJson(res, 200, view)
+      } catch {
+        // 未知 / 非法 projectId 走这里：回空清单，别给 UI 一张错误卡。
+        if (!res.destroyed) sendJson(res, 200, { projectId, segments: [] })
       }
     }}),
 

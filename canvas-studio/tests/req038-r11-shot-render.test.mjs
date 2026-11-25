@@ -130,7 +130,12 @@ test('首渲：3 段全渲 + 每段抽中点帧 + 段产物落 deliver/segments 
   ])
   for (const pointer of result.segments) {
     assert.ok(existsSync(join(project.projectDir, pointer.file)), `段产物必须落盘：${pointer.file}`)
+    // REQ-041：assets/ 下必须有一份确定性命名的副本（只读清单据此拼 URL）。
+    assert.ok(existsSync(join(project.assetsDir, pointer.assetFile)), `资产副本必须落盘：${pointer.assetFile}`)
+    assert.equal(readFileSync(join(project.assetsDir, pointer.assetFile), 'utf8'),
+      readFileSync(join(project.projectDir, pointer.file), 'utf8'), '两份副本内容必须同源')
   }
+  assert.deepEqual(result.segments.map((p) => p.ref), ['spec:s1', 'spec:s2', 'spec:s3'])
   assert.equal(readFileSync(join(project.projectDir, 'deliver/segments/s2.mp4'), 'utf8'), 'SEG:1')
 
   // ④ 报告：帧数按段帧窗合计，分辨率走实测探测，码率非 0
@@ -255,6 +260,19 @@ test('拆解表 <2 段 ⇒ 不回核（单段没有边界可比），report 无�
   const result = await runShotRender(manifest(), d)
   assert.equal(called, 0, '单段拆解表不该触发回核')
   assert.equal(result.outcome.report.timingCheck, undefined)
+})
+
+test('REQ-041 draft 档：缺省不发段，显式 publishSegments:true 才发（宿主走后者）', async () => {
+  const quiet = makeProject()
+  const defaultDraft = await runShotRender(manifest(), deps(quiet, { quality: 'draft' }).deps)
+  assert.deepEqual(defaultDraft.segments, [], 'shot-render 缺省语义不变：draft 不发段')
+
+  const published = makeProject()
+  const explicit = await runShotRender(manifest(), deps(published, { quality: 'draft', publishSegments: true }).deps)
+  assert.equal(explicit.segments.length, 3, '宿主显式发布后 draft 也有段指针')
+  for (const pointer of explicit.segments) {
+    assert.ok(existsSync(join(published.assetsDir, pointer.assetFile)), `draft 段副本必须落盘：${pointer.assetFile}`)
+  }
 })
 
 test('回核实现抛错 ⇒ 成片照常返回，只记一行（回核不吞成果）', async () => {

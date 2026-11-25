@@ -4007,6 +4007,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 file: args.file,
               }),
               loadSpec: () => readProjectSpec(projectDir),
+              // REQ-041：用户最常做的是先「草稿快渲一版」看画面；shot-render 缺省
+              // 在 draft 不发段，这里显式打开 —— 不改其缺省语义（其它调用方不变）。
+              // 段的 assets 副本 + ref 指针是分镜卡出画面的唯一来源，draft 必须发。
+              publishSegments: true,
               // B4：Q2 时序回核接进分镜路径 —— 此前绕过 commitRenderJob，
               // 用户传了拆解表也永远没有 report.timingCheck（界面像回核过，其实没有）。
               ...(timingSegments === undefined ? {} : { timingSegments }),

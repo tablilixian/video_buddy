@@ -1,6 +1,6 @@
 import { forwardRef } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
-import { canDownloadNode } from '../../canvas-actions.js'
+import { canDownloadNode, isStoryboardReviewCard } from '../../canvas-actions.js'
 import { clipboardPlanOf } from '../../clipboard-copy.js'
 import { isReplayable, promptFieldsOf } from '../../node-params.js'
 
@@ -76,6 +76,8 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
+  // REQ-041 §9.5：分镜卡上没有「改提示词 / 重试」——它改的是 spec 段，不是生成参数。
+  const storyboardCard = isStoryboardReviewCard(node)
   // CV-159：参考图片也可作废 / 恢复（样张重出后旧图退出参考池）。
   const isRefImage = node.kind === 'image' && node.isReference === true
   // CV-198：能不能复制到**系统**剪贴板由计划决定 —— 视频 / 音频 / 托盘没有可送
@@ -146,8 +148,8 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {/* 判据与就近工具条同源（node-params）：**能不能重放**，而不是「有没有
           generationPrompt」。音频 / 四视图 / 抽帧那 8 个节点从前都显示这两个入口，
           点下去落进图片分支 —— 要么报错，要么静默出一张无提示词的图覆盖原节点。 */}
-      {isReplayable(node) && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
-      {promptFieldsOf(node).length > 0 && !node.isLoading && item('修改提示词', () => { onEditPrompt(node.id) })}
+      {!storyboardCard && isReplayable(node) && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
+      {!storyboardCard && promptFieldsOf(node).length > 0 && !node.isLoading && item('修改提示词', () => { onEditPrompt(node.id) })}
       {item('删除', () => { onDelete(node.id) }, true)}
     </div>
   )

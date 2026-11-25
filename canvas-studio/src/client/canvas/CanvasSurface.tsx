@@ -22,6 +22,7 @@ import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { isDeprecatedNode } from '../../shot-versions.js'
 import type { ResolutionId } from '../../resolution-tiers.js'
+import type { SegmentMediaByRef } from '../../contracts/segment-media.js'
 
 /**
  * CV-286：滚轮缩放灵敏度 —— 因子按**滚动量**走指数（`exp(-deltaY / 除数)`），
@@ -151,6 +152,11 @@ interface Gesture {
 /** Props for the pannable / zoomable canvas surface. */
 export interface CanvasSurfaceProps {
   nodes: readonly StudioCanvasNode[]
+  /**
+   * REQ-041 L3：`segmentRef` → 段视频 URL（带 `?v=`）。由 StudioFrame 的 Hook 提供；
+   * 缺省 = 不渲染段视频（未渲项目与既有调用方行为完全不变）。
+   */
+  segmentMediaByRef?: SegmentMediaByRef
   /**
    * 档位继承来源（2026-10-27）：节点输入卡的清晰度 chip 要显示**真实生效值**，
    * 就必须知道项目预置与设置页两层。由 StudioFrame 读好传下来；本组件只按节点
@@ -404,6 +410,7 @@ function resolutionInheritFor(
 export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>(function CanvasSurface(props, ref) {
   const {
     nodes,
+    segmentMediaByRef,
     view,
     onViewChange,
     selectedNodeIds,
@@ -1689,10 +1696,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           const tier = spotlightTierOf(spotlight, node.id)
           // REQ-040 B：链尾名下的被折叠历史数（fold 关闭时 stacks 恒空 → 不出角标）。
           const stack = waterfallOn ? waterfallLayout?.stacks.get(node.id) : undefined
+          // REQ-041：只给命中 ref 的卡传 URL；其它卡 prop 保持 undefined（memo 不破）。
+          const segmentVideoUrl = node.segmentRef === undefined ? undefined : segmentMediaByRef?.get(node.segmentRef)
           return (
             <CanvasNode
               key={node.id}
               node={node}
+              {...(segmentVideoUrl === undefined ? {} : { segmentVideoUrl })}
               selected={selectedNodeIds.includes(node.id)}
               // 档位继承（2026-10-27）：与输入卡同一份参数 —— 角标与 chip 不许各算一遍。
               {...(resolutionInheritByKind[node.kind === 'video' ? 'video' : 'image'] !== undefined

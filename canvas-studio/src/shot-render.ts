@@ -46,6 +46,7 @@ import {
   SEGMENT_DELIVER_DIR,
   planSegmentArtifacts,
   segmentArtifactName,
+  segmentAssetName,
   segmentPointers,
   segmentReceiptLine,
   type SegmentArtifact,
@@ -148,14 +149,20 @@ export async function verifyShotTiming(args: {
 }
 
 /**
- * 段产物发布：`deliver/segments/<id>.mp4`（覆盖写）。
+ * 段产物发布：`deliver/segments/<id>.mp4` + `assets/seg-<id>.mp4`（都覆盖写）。
  *
  * 每段都复制（含**复用段**）：复用段若只留在 hash 缓存目录，交付目录就会少一段 ——
  * 「用户看到的三段里有一段不存在」这种半成品比没有更误导。复制失败不抛，
  * 汇总成一行 note（成片不陪葬）。
+ *
+ * REQ-041 的第二份副本进 `assets/`：`deliver/` 在 assets 媒体路由之外，客户端只能
+ * 通过 `GET /canvas-studio/assets/<pid>/<file>` 拿到带 Range 的媒体流。文件名确定性
+ * （`seg-<id>.mp4`）而非随机资产 id，重渲覆盖同名 —— URL 与缓存键都稳定。两份
+ * 中任一份失败都算该段未完整落地 ⇒ 指针不给，避免清单说有、浏览器却 404。
  */
 export function publishSegmentArtifacts(input: {
   projectDir: string
+  assetsDir: string
   artifacts: readonly SegmentArtifact[]
   files: readonly string[]
   fps: number
@@ -164,6 +171,7 @@ export function publishSegmentArtifacts(input: {
   const failures: string[] = []
   try {
     mkdirSync(dir, { recursive: true })
+    mkdirSync(input.assetsDir, { recursive: true })
   } catch (cause) {
     return { pointers: [], note: `建目录失败：${cause instanceof Error ? cause.message : String(cause)}` }
   }
@@ -175,6 +183,7 @@ export function publishSegmentArtifacts(input: {
     }
     try {
       copyFileSync(source, join(dir, segmentArtifactName(artifact.id)))
+      copyFileSync(source, join(input.assetsDir, segmentAssetName(artifact.id)))
     } catch (cause) {
       failures.push(`${artifact.id}（${cause instanceof Error ? cause.message : String(cause)}）`)
     }
@@ -336,6 +345,7 @@ export async function runShotRender(
     if (publish) {
       const published = publishSegmentArtifacts({
         projectDir: deps.projectDir,
+        assetsDir: deps.assetsDir,
         artifacts,
         files: orderedFiles,
         fps: manifest.meta.fps,

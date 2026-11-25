@@ -28,6 +28,8 @@ import { MilestoneBar } from './MilestoneBar.js'
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
+// REQ-041：段产物只读清单（画布就绪 + 渲染结算各拉一次，不写回项目文档）。
+import { useSegmentMedia } from './use-segment-media.js'
 import { studioErrorCodeOf } from '../error-kind.js'
 import { clearEditorDrafts } from '../editor-drafts.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
@@ -895,6 +897,8 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [edgeCreateMenu])
 
   const projectId = selectedProjectId
+  // REQ-041 L2：段产物按 segmentRef 索引；空 Map = 没有段 / 清单不可用（卡维持文案）。
+  const segmentMediaByRef = useSegmentMedia(projectId)
 
   /**
    * 阶段一覆盖层的**自动**可见性 —— 派生，不在 effect 里 setState。
@@ -2224,6 +2228,7 @@ export function StudioFrame(props: StudioFrameProps) {
               共用宿主的同一份状态。 */}
           <CanvasSurface
             nodes={visibleNodes}
+            segmentMediaByRef={segmentMediaByRef}
             resolutionInherit={resolutionInherit}
             shotIndexOf={shotIndexOf}
             view={view}

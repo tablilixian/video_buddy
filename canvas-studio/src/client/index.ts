@@ -34,6 +34,8 @@ import { cancelStudioRenderJob, fetchPendingStudioRenderJob, fetchStudioRenderJo
 // 2026-10-23：渲染轮询的拍内决策表（纯函数，tests/render-poll-gate.test.mjs 钉住）。
 import { decideRenderPollStep } from '../render-poll-gate.js'
 import { clearRenderProgress, setRenderProgress } from './render-progress.js'
+// REQ-041：渲染结算后刷新分镜卡的段清单（段产物属于渲染态，不进项目文档）。
+import { notifySegmentMediaRefresh } from '../segment-media-signal.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
 // BUG-014 起落 src/ 根供单测直连，见 test-driver.ts 头注）。
@@ -2278,9 +2280,11 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       },
       // 2026-10-23：render_composition **成功**结算（studio 工具不走 onToolFinished，
       // 那是 workflow 工具专用回调）。不清账轮询会在工单结算后继续空转。
-      onRenderToolSettled: (_projectId, runId) => {
+      onRenderToolSettled: (projectId, runId) => {
         clearPendingTimer(runId)
         releaseRenderRun(runId)
+        // REQ-041：只重拉段清单，不动画布文档（无版本 / undo 污染）。
+        notifySegmentMediaRefresh(projectId)
       },
     }))
     return disposeCapture

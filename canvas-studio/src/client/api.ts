@@ -8,6 +8,7 @@ import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryListFilte
 export { libraryMediaUrl } from '../contracts/asset-library.js'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoImportPayload, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
+import type { SegmentMediaItem } from '../contracts/segment-media.js'
 import { buildRenderCommitFrame } from '../render-protocol.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
@@ -99,6 +100,18 @@ async function readJson<T>(response: Response): Promise<T> {
     )
   }
   return value as T
+}
+
+/**
+ * REQ-041 L2：段产物只读清单。失败由调用方静默降级（卡维持文案），不弹错误卡 ——
+ * 「这段没渲过」是正常状态，不是故障。
+ */
+export async function fetchSegmentMedia(projectId: string, signal?: AbortSignal): Promise<readonly SegmentMediaItem[]> {
+  const response = await readJson<{ segments?: unknown }>(await fetch(
+    `/canvas-studio/remotion/segments?projectId=${encodeURIComponent(projectId)}`,
+    { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
+  ))
+  return Array.isArray(response.segments) ? response.segments as readonly SegmentMediaItem[] : []
 }
 
 /** List all registered projects. */

@@ -102,6 +102,31 @@ test('交付指针：相对路径 + 3 位小数时长（卡要能跟项目搬，
   assert.equal(segmentArtifactRelPath('s2'), 'deliver/segments/s2.mp4')
 })
 
+test('REQ-041 指针：段表对齐时 ref = spec 原文 id（不是清洗后的产物 id），资产副本名确定性', () => {
+  // 中文 id：产物名被清洗成 seg-1，但 ref 必须保留原文，卡上才知道是哪一屏。
+  const declared = [
+    { id: '第一屏', startFrame: 0, frames: 190 },
+    { id: 's.2', startFrame: 190, frames: 200 },
+    { id: 's3', startFrame: 390, frames: 210 },
+  ]
+  const artifacts = planSegmentArtifacts({ segments: SEGMENTS, declared, fps: 30 })
+  assert.deepEqual(artifacts.map((a) => a.id), ['seg-1', 's-2', 's3'])
+  const pointers = segmentPointers(artifacts, 30)
+  assert.deepEqual(pointers.map((p) => p.ref), ['spec:第一屏', 'spec:s.2', 'spec:s3'])
+  assert.deepEqual(pointers.map((p) => p.assetFile), ['seg-seg-1.mp4', 'seg-s-2.mp4', 'seg-s3.mp4'])
+})
+
+test('REQ-041 指针：段表不对齐 ⇒ 不给 ref（诚实失败，禁止按序号瞎配）', () => {
+  const stale = [
+    { id: 's1', startFrame: 0, frames: 200 },
+    { id: 's2', startFrame: 200, frames: 200 },
+    { id: 's3', startFrame: 400, frames: 200 },
+  ]
+  const pointers = segmentPointers(planSegmentArtifacts({ segments: SEGMENTS, declared: stale, fps: 30 }), 30)
+  assert.ok(pointers.every((p) => p.ref === undefined), '段表错位时不得回 ref')
+  assert.ok(pointers.every((p) => p.assetFile !== undefined), '资产副本名仍要给（与 ref 无关）')
+})
+
 test('回执：段清单有内容才出行（空数组不吐空行）', () => {
   assert.equal(segmentReceiptLine([]), '')
   const line = segmentReceiptLine(segmentPointers(planSegmentArtifacts({ segments: SEGMENTS, declared: DECLARED, fps: 30 }), 30))

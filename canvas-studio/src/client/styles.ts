@@ -2845,6 +2845,30 @@ img.csNodeMedia {
   text-align: center;
 }
 
+/* REQ-041：命中 segmentRef 的分镜卡 —— 段视频是主画面（吃体区剩余高度），
+   文案降为 2 行副信息。object-fit: contain 保证「卡上这一屏 = 成片这一屏」
+   不因卡片比例被裁切；两侧露底用画布最深档，与 .csNodeMedia 同源。 */
+.csNodeSegmentVideoBox {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  border-top: 2px solid var(--cs-gate, #0b0d12);
+  border-bottom: 2px solid var(--cs-gate, #0b0d12);
+  background: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+}
+
+.csNodeSegmentVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.csNodeSegmentCard .csNodeBody {
+  -webkit-line-clamp: 2;
+}
+
 .csNodeKind {
   font-size: var(--cs-fs-xs, 11px);
   letter-spacing: 0.02em;

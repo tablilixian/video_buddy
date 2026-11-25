@@ -6,6 +6,7 @@
  * testable under `node --test`.
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 
 /**
  * CV-018：该节点是否支持「就地重试」。判定条件与 client 侧 `rerunNode`
@@ -27,6 +28,22 @@ export function canRetryNode(node: StudioCanvasNode): boolean {
 export function canDownloadNode(node: StudioCanvasNode): boolean {
   if (node.kind !== 'image' && node.kind !== 'video' && node.kind !== 'audio') return false
   return typeof node.url === 'string' && node.url.length > 0
+}
+
+/**
+ * REQ-041 §9.5：**分镜卡**判定（Remotion 渲染的段，不是模型生成的片段卡）。
+ *
+ * 判据复用 `isShotCard` 这个唯一事实源（`seedStoryboardShot` / 
+ * `submit_storyboard_for_approval` 两种生产者都算），不新增标记。
+ * 需求文档写的 `operationType === 'submit_storyboard_for_approval'` 在真实项目里
+ * 并不成立（实测卡是 `operationType:'storyboard'` + `toolName:'seedStoryboardShot'`），
+ * 照抄会让菜单收窄在真实路径上完全不生效。
+ *
+ * 这类卡的「改提示词 / 重试」无意义：正确改法是引用到对话后
+ * `patch_spec_section(shotNodeId → segmentRef)`。
+ */
+export function isStoryboardReviewCard(node: StudioCanvasNode): boolean {
+  return node.kind === 'text' && isShotCard(node)
 }
 
 /** 各节点类型的产物扩展名（`assetDownloadName` 兜底补后缀用）。 */

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetDownloadName, canDownloadNode, canRetryNode, computeNudge, isGenerationEdge, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
+import { assetDownloadName, canDownloadNode, canRetryNode, computeNudge, isGenerationEdge, isStoryboardReviewCard, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
 
 /** 构造一个最小合法画布节点。 */
 function node(extra = {}) {
@@ -130,6 +130,19 @@ test('computeNudge：锁定节点跳过（与拖拽行为一致）', () => {
 test('computeNudge：选中 id 不在节点表中 / 空选 → 无指令', () => {
   assert.deepEqual(computeNudge([node({ id: 'a' })], ['ghost'], 1, 1), [])
   assert.deepEqual(computeNudge([node({ id: 'a' })], [], 1, 1), [])
+})
+
+test('REQ-041 §9.5：分镜卡判据覆盖两种生产者；模型生成的片段卡与手写文本不算', () => {
+  // 真实项目里的分镜卡：operationType='storyboard'，靠 toolName 认。
+  assert.equal(isStoryboardReviewCard(node({
+    kind: 'text', operationType: 'storyboard', toolName: 'seedStoryboardShot', segmentRef: 'spec:s1',
+  })), true)
+  assert.equal(isStoryboardReviewCard(node({
+    kind: 'text', toolName: 'submit_storyboard_for_approval', segmentRef: 'spec:s1',
+  })), true)
+  assert.equal(isStoryboardReviewCard(node({ kind: 'video', toolName: 'seedStoryboardShot' })), false)
+  assert.equal(isStoryboardReviewCard(node({ kind: 'text', toolName: 'video_generate' })), false)
+  assert.equal(isStoryboardReviewCard(node({ kind: 'text' })), false)
 })
 
 test('isGenerationEdge：target 带生成操作类型判真，import/缺省/无 target 判假', () => {

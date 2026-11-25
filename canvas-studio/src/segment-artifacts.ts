@@ -25,6 +25,7 @@
  * `[A-Za-z0-9_-]`，其余一律折成 `-`；折完为空则用 `seg-N` 兜底。
  */
 import type { ManifestSegment } from './remotion/manifest.js'
+import { segmentRefOf } from './segment-binding.js'
 
 /** 段产物 id 的合法字符（写进文件名 / 交付卡，必须无路径语义）。 */
 const UNSAFE_ID_CHARS = /[^A-Za-z0-9_-]/g
@@ -44,6 +45,13 @@ export interface SegmentArtifact {
   frames: number
   /** 段级抽帧的绝对帧号（段中点）；末段取 `start + (frames-1)/2` 向下取整。 */
   sampleFrame: number
+  /**
+   * 段表整表对齐时 = spec 原始 id 的 `segmentRef`（`spec:s2`）；对不齐**缺省**。
+   *
+   * REQ-041：卡上 `segmentRef` 存 spec 原文，而 `id` 是清洗过的产物名 —— 两者
+   * 中文 id / 过期段表场景下并不相等。客户端必须拿 `ref` 做等值匹配，禁止按序号配。
+   */
+  ref?: string
 }
 
 /** 交付卡里的段指针（`card.json pointers.segments[]`）。 */
@@ -51,10 +59,14 @@ export interface SegmentPointer {
   id: string
   /** 相对项目根的路径（`deliver/segments/<id>.mp4`）——卡是可搬的，别写绝对路径。 */
   file: string
+  /** `assets/` 下确定性副本文件名（`seg-<id>.mp4`）；只读清单据此 stat / 拼 URL。 */
+  assetFile?: string
   startFrame: number
   frames: number
   /** 段时长（秒，3 位小数：`frames / fps`，不做任何取整到整秒）。 */
   durationSec: number
+  /** 只有段表对齐才给；对齐失败时客户端收不到 ref，卡诚实显示文案（不猜）。 */
+  ref?: string
 }
 
 /** 段产物在项目内的子目录（相对项目根）。 */
@@ -120,7 +132,9 @@ export function planSegmentArtifacts(input: {
   const aligned = declaredTableAligned(input.segments, input.declared)
   const used = new Set<string>()
   return input.segments.map((segment, i) => {
-    const base = segmentArtifactId(aligned ? (input.declared as readonly ManifestSegment[])[i]?.id : undefined, i)
+    // 产物 id 走清洗，ref 保留 spec 原文 —— 两者故意不同源，客户端只认 ref。
+    const declaredId = aligned ? (input.declared as readonly ManifestSegment[])[i]?.id : undefined
+    const base = segmentArtifactId(declaredId, i)
     let id = base
     let suffix = 2
     while (used.has(id)) {
@@ -135,6 +149,7 @@ export function planSegmentArtifacts(input: {
       startFrame: segment.startFrame,
       frames,
       sampleFrame: segmentSampleFrame(segment.startFrame, frames),
+      ...(declaredId === undefined ? {} : { ref: segmentRefOf(declaredId) }),
     }
   })
 }
@@ -149,15 +164,27 @@ export function segmentArtifactRelPath(id: string): string {
   return `${SEGMENT_DELIVER_DIR}/${segmentArtifactName(id)}`
 }
 
+/**
+ * REQ-041：段副本在 `assets/` 下的确定性文件名（`seg-<id>.mp4`）。
+ *
+ * 覆盖写、不含随机 id（禁 `newAssetId()`）—— URL 漂移会让缓存与卡引用全废。
+ * assets 路由只接受 `<projectId>/<file>` 两段，因此这里必须是**根目录下平铺文件名**。
+ */
+export function segmentAssetName(id: string): string {
+  return `seg-${segmentArtifactName(id)}`
+}
+
 /** 规划结果 → 交付卡指针（fps 用于折算时长，保留 3 位小数）。 */
 export function segmentPointers(artifacts: readonly SegmentArtifact[], fps: number): SegmentPointer[] {
   const safeFps = Number.isFinite(fps) && fps > 0 ? fps : 30
   return artifacts.map((artifact) => ({
     id: artifact.id,
     file: segmentArtifactRelPath(artifact.id),
+    assetFile: segmentAssetName(artifact.id),
     startFrame: artifact.startFrame,
     frames: artifact.frames,
     durationSec: Math.round((artifact.frames / safeFps) * 1000) / 1000,
+    ...(artifact.ref === undefined ? {} : { ref: artifact.ref }),
   }))
 }
 

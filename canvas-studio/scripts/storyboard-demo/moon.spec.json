@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "超级月亮是怎么来的",
+    "theme": "cold-tech",
+    "fps": 30,
+    "durationSec": 24
+  },
+  "sections": [
+    {
+      "id": "hook",
+      "card": "A2",
+      "copy": "超级月亮\n月亮也有离家近的时候",
+      "label": "开场",
+      "durationSec": 4,
+      "cell": { "x": 50, "y": 44, "w": 88, "h": 40 },
+      "claim": "月亮离我们时近时远"
+    },
+    {
+      "id": "orbit",
+      "card": "DAT6",
+      "copy": "近地点:36.3; 中段:37.4; 平均:38.4; 中段:39.5; 远地点:40.6",
+      "label": "地月距离 | 远地点 | 近地点",
+      "durationSec": 4,
+      "cell": { "x": 50, "y": 54, "w": 88, "h": 52 },
+      "dataSource": "NASA Moon Fact Sheet",
+      "claim": "轨道是椭圆，距离在 36 到 40 万公里之间起伏"
+    },
+    {
+      "id": "gap",
+      "card": "B1",
+      "copy": "最近:36.3 万公里; 最远:40.6 万公里",
+      "label": "最近与最远",
+      "durationSec": 3.9,
+      "cell": { "x": 50, "y": 52, "w": 70, "h": 54 },
+      "dataSource": "NASA Moon Fact Sheet",
+      "claim": "一来一回差出 4 万公里"
+    },
+    {
+      "id": "condition",
+      "card": "A4",
+      "copy": "满月\n恰好赶在近地点\n就叫超级月亮",
+      "label": "什么时候出现",
+      "durationSec": 4.5,
+      "cell": { "x": 50, "y": 50, "w": 78, "h": 52 },
+      "claim": "满月撞上近地点，才叫超级月亮"
+    },
+    {
+      "id": "compare",
+      "card": "B1",
+      "copy": "视直径:+14%; 亮度:+30%",
+      "label": "到底大多少",
+      "durationSec": 3.7,
+      "cell": { "x": 50, "y": 52, "w": 70, "h": 54 },
+      "dataSource": "NASA · 视直径 14% / 亮度 30%",
+      "claim": "看着大一圈，实际只大 14%"
+    },
+    {
+      "id": "outro",
+      "card": "A5",
+      "copy": "不是月亮变大了\n是它离你更近了",
+      "label": "结论",
+      "durationSec": 3.9,
+      "cell": { "x": 50, "y": 46, "w": 88, "h": 40 },
+      "claim": "显得大，是因为它离得更近"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# REQ-041 方案推演原型（scripts/storyboard-demo）：
+# 这些是脚本跑出来的渲染产物，可随时重跑，不进仓库。
+scripts/storyboard-demo/out/
+scripts/storyboard-demo/build/
+scripts/storyboard-demo/*.mp4

@@ -1,8 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { nodeActionAnchor } from '../../canvas-view.js'
-import { canDownloadNode } from '../../canvas-actions.js'
-import { isReplayable, promptFieldsOf } from '../../node-params.js'
+import { isSegmentReviewMedia, nodeActionSlots } from '../../node-action-slots.js'
 
 /** Props for the node action bar (the small toolbar floating next to the node). */
 export interface NodeActionBarProps {
@@ -27,6 +26,15 @@ export interface NodeActionBarProps {
   onAddToLibrary?(id: string): void
   /** REQ-031 F4：「下载资产」—— 与右键菜单同一 Host 通路（按 id）。 */
   onDownload?(id: string): void
+  /**
+   * REQ-041：该卡命中清单的**段产物** URL（仅 text 分镜卡）。
+   *
+   * 段不是节点产物（`node.kind` 恒 text、`node.url` 恒空，URL 由清单按
+   * `segmentRef` 派生），所以「预览 / 下载」两条判据必须单独认它 —— 只按
+   * kind/url 判会让分镜卡落回 text 分支，而它的 `isReplayable` 为 false、
+   * `promptFieldsOf` 为空，真机上于是只剩「引用到对话」一个按钮。
+   */
+  segmentVideoUrl?: string
 }
 
 /**
@@ -52,7 +60,7 @@ export interface NodeActionBarProps {
  * 空药丸比没有工具条更糟 —— 它会占着节点上方那块地方，还让人以为点得动。
  */
 export function NodeActionBar(props: NodeActionBarProps) {
-  const { node, view, viewport, onRetry, onEditPrompt, onReferenceToChat, onOpenPreview, onOpenPlayback, onAddToLibrary, onDownload } = props
+  const { node, view, viewport, onRetry, onEditPrompt, onReferenceToChat, onOpenPreview, onOpenPlayback, onAddToLibrary, onDownload, segmentVideoUrl } = props
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
 
@@ -60,22 +68,21 @@ export function NodeActionBar(props: NodeActionBarProps) {
   // **引用到对话 / （仅 image）添加到资产库 / 预览 / 下载** —— 重试 / 改提示词不在这
   // 三类占位（改提示词 = 单击节点开输入框卡，重试走右键菜单与卡内「发送」）；
   // 其余 kind（text/分组等）无演示覆盖，保持既有「重试 / 改提示词 / 引用」。
-  const isVideo = node.kind === 'video'
+  // REQ-041：带段产物的 text 分镜卡按**媒体卡三项**处理（判据见 node-action-slots）。
   const isImage = node.kind === 'image'
   const isAudio = node.kind === 'audio'
-  const isMedia = isVideo || isImage || isAudio
-  const canPreview = isMedia && node.url !== undefined && node.isLoading !== true && (
-    ((isVideo || isAudio) && onOpenPlayback !== undefined) || (isImage && onOpenPreview !== undefined)
-  )
-  // 下载判据与右键菜单同源（canvas-actions.canDownloadNode：image/video/audio 且带 url）。
-  const canDownload = isMedia && onDownload !== undefined && node.isLoading !== true && canDownloadNode(node)
-  // REQ-032 F5：入库扩到 audio（后端 collectNodeMediaSources 已放行 audio，仅拒 video）。
-  const canAddToLibrary = (isImage || isAudio) && onAddToLibrary !== undefined && node.url !== undefined && node.isLoading !== true
-  const canRetry = !isMedia && onRetry !== undefined && node.isLoading !== true && isReplayable(node)
-  const canEdit = !isMedia && onEditPrompt !== undefined && node.isLoading !== true && promptFieldsOf(node).length > 0
-  // 托盘（分组）本身没有产物，引用它没有语义。
-  const canReference = onReferenceToChat !== undefined && node.kind !== 'group'
-  const hasActions = canRetry || canEdit || canReference || canAddToLibrary || canPreview || canDownload
+  const hasSegment = isSegmentReviewMedia(node, segmentVideoUrl)
+  // 判据全部收口在 node-action-slots（纯函数，可行为断言）：这里只报「宿主接没接」。
+  const slots = nodeActionSlots(node, segmentVideoUrl, {
+    retry: onRetry !== undefined,
+    edit: onEditPrompt !== undefined,
+    reference: onReferenceToChat !== undefined,
+    library: onAddToLibrary !== undefined,
+    previewImage: onOpenPreview !== undefined,
+    playback: onOpenPlayback !== undefined,
+    download: onDownload !== undefined,
+  })
+  const hasActions = slots.length > 0
 
   // 自身尺寸无从预知（按钮数目随节点类型变），先量再放。用 layout effect 而不是
   // effect：量完立刻同步重渲染，用户看不到「摆错位置的一帧」。
@@ -109,62 +116,62 @@ export function NodeActionBar(props: NodeActionBarProps) {
       // 右键不外传：外层的空白菜单（新建节点 / 粘贴 / 适配）与这里的语境无关。
       onContextMenu={event => { event.stopPropagation() }}
     >
-      {canRetry && (
+      {slots.includes('retry') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
           title="用当前保存的参数重新生成一版"
-          onClick={() => { onRetry(node.id) }}
+          onClick={() => { onRetry?.(node.id) }}
         >
           重试
         </button>
       )}
-      {canEdit && (
+      {slots.includes('edit') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
           title="打开就地提示词编辑面板（与右键「修改提示词」同一面板）"
-          onClick={() => { onEditPrompt(node) }}
+          onClick={() => { onEditPrompt?.(node) }}
         >
           改提示词
         </button>
       )}
-      {canReference && (
+      {slots.includes('reference') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
           title="把该节点作为引用标记插入右侧输入框"
-          onClick={() => { onReferenceToChat(node) }}
+          onClick={() => { onReferenceToChat?.(node) }}
         >
           引用到对话
         </button>
       )}
-      {canAddToLibrary && (
+      {slots.includes('library') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
           title={isAudio ? '把这段音频存入资产库' : '把当前画面存入资产库'}
-          onClick={() => { onAddToLibrary(node.id) }}
+          onClick={() => { onAddToLibrary?.(node.id) }}
         >
           添加到资产库
         </button>
       )}
-      {canPreview && (
+      {slots.includes('preview') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
-          title={isImage ? '预览：打开大图预览' : '预览：打开播放浮层'}
+          title={isImage ? '预览：打开大图预览' : hasSegment ? '预览：播放本段（含旁白）' : '预览：打开播放浮层'}
           onClick={() => { if (isImage) onOpenPreview?.(node); else onOpenPlayback?.(node) }}
         >
           预览
         </button>
       )}
-      {canDownload && (
+      {slots.includes('download') && (
         <button
           type="button"
           className="csNodeActionBarBtn"
           title="把产物另存到本地"
-          onClick={() => { onDownload(node.id) }}
+          onClick={() => { onDownload?.(node.id) }}
         >
           下载
         </button>

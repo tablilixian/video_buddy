@@ -18,6 +18,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { nodeActionSlots } from '../lib/node-action-slots.js'
 
 const read = async (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -66,20 +67,30 @@ test('REQ-031 F4 工具栏：video 三项 / image 四项（CV-283 修正），�
   const bar = await read('src/client/canvas/NodeActionBar.tsx')
   // 裁剪口径（CV-283）：重试/改提示词**只在非 media**（image/video 都不占位 ——
   // 单击节点 = 输入框卡是唯一编辑面；重试走右键菜单与卡内「发送」）。
-  assert.match(bar, /const canRetry = !isMedia && onRetry !== undefined/, '重试必须退出 image/video 工具栏（仅其余 kind）')
-  assert.match(bar, /const canEdit = !isMedia && onEditPrompt !== undefined/, '改提示词必须退出 image/video 工具栏')
-  // 预览：video/audio = 播放浮层通道；image = 大图预览通道（都有产物 + 未生成才出）。
-  assert.match(bar, /const canPreview = isMedia && node\.url !== undefined && node\.isLoading !== true && \(/, '预览必须 media + 有产物 + 未生成')
-  assert.match(bar, /\(\(isVideo \|\| isAudio\) && onOpenPlayback !== undefined\) \|\| \(isImage && onOpenPreview !== undefined\)/, '预览必须按 kind 分流到播放(video/audio)/大图(image)通道')
-  assert.match(bar, /canDownloadNode\(node\)/, '下载判据必须与右键菜单同源（canDownloadNode）')
-  // 三项按钮逐字（video）。
-  assert.match(bar, /onClick=\{\(\) => \{ onReferenceToChat\(node\) \}\}/, '引用到对话保留')
+  //
+  // REQ-041 起判据抽到 src/node-action-slots.ts（分镜卡也要按媒体卡三项处理），
+  // 这里改成**行为断言**：直接喂节点快照看返回的槽位，比盯源码正则更能挡回归。
+  const CAPS = { retry: true, edit: true, reference: true, library: true, previewImage: true, playback: true, download: true }
+  assert.deepEqual(
+    nodeActionSlots({ id: 'v1', kind: 'video', url: '/a.mp4', toolName: 'video_generate' }, undefined, CAPS),
+    ['reference', 'preview', 'download'],
+    'video 必须恰好三项（引用 / 预览 / 下载），重试与改词不得出现',
+  )
+  assert.deepEqual(
+    nodeActionSlots({ id: 'i1', kind: 'image', url: '/a.png' }, undefined, CAPS),
+    ['reference', 'library', 'preview', 'download'],
+    'image 必须四项（多「添加到资产库」）',
+  )
+  assert.deepEqual(
+    nodeActionSlots({ id: 't1', kind: 'text', toolName: 'image_generate', generationPrompt: JSON.stringify({ prompt: 'x' }) }, undefined, CAPS),
+    ['retry', 'edit', 'reference'],
+    '重试 / 改提示词只给其余 kind',
+  )
+  // 按钮文案与点击接线仍在本组件（判据在纯函数里）。
   assert.match(bar, />\s*预览\s*</, '预览按钮必须存在')
   assert.match(bar, />\s*下载\s*</, '下载按钮必须存在')
-  // image/audio 第四项：添加到资产库（video 不出 —— canAddToLibrary 钉 image/audio，REQ-032 F5 扩 audio）。
-  assert.match(bar, /const canAddToLibrary = \(isImage \|\| isAudio\) && onAddToLibrary !== undefined/, '添加到资产库必须仅 image/audio')
   assert.match(bar, />\s*添加到资产库\s*</, '添加到资产库按钮必须存在')
-  assert.match(bar, /onClick=\{\(\) => \{ onAddToLibrary\(node\.id\) \}\}/, '添加到资产库必须按 id 走 LibImportDialog 通路')
+  assert.match(bar, /onClick=\{\(\) => \{ onAddToLibrary\?\.\(node\.id\) \}\}/, '添加到资产库必须按 id 走 LibImportDialog 通路')
   // 宿主接线：surface 透传 + StudioFrame setLibImportNodeId。
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
   assert.match(surface, /onNodeAddToLibrary\?\(id: string\): void/, 'CanvasSurface 必须新增按 id 的入库出口')

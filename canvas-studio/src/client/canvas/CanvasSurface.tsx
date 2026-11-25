@@ -1400,6 +1400,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return waterfallNodes.find(node => node.id === target) ?? null
   }, [selectedNodeIds, primaryDragId, waterfallNodes])
 
+  /**
+   * REQ-041：工具条要「这张分镜卡当前这一段」的 URL。段不是节点产物（不写
+   * `node.url`，见 §9.7 不写画布），URL 只在清单里 —— 取法与 CanvasNode 同一份
+   * Map（同一 ref、同一 `?v=`），不另拼一份规则，避免卡上与浮层播的不是同一版。
+   */
+  const actionBarSegmentUrl = actionBarNode === null || actionBarNode.segmentRef === undefined
+    ? undefined
+    : segmentMediaByRef?.get(actionBarNode.segmentRef)
+
   // REQ-003 Step 2：就地提示词编辑（原浮层）。存 **id** 而不是节点快照 —— 提交后节点
   // 对象会换，编辑面必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
   // CV-272：受控 / 非受控两用 —— 宿主（StudioFrame）持有状态时，右键菜单
@@ -1857,6 +1866,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           node={actionBarNode}
           view={view}
           viewport={surfaceSize}
+          {...(actionBarSegmentUrl !== undefined ? { segmentVideoUrl: actionBarSegmentUrl } : {})}
           {...(onRetry !== undefined ? { onRetry } : {})}
           onEditPrompt={node => { setInputCardNodeId(node.id); setPromptEditNodeId(null) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}

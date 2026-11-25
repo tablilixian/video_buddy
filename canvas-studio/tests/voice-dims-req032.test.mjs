@@ -13,6 +13,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { nodeActionSlots } from '../lib/node-action-slots.js'
 import { readFile } from 'node:fs/promises'
 import {
   AUDIO_FNS, DIMS, LAYERS, LAYER_ORDER, LOCAL_REF_PREFIX,
@@ -257,14 +258,15 @@ test('REQ-032 Step 5 audio 字幕条：描述+正文合成一行，仅产物后�
 test('REQ-032 Step 5 audio 工具栏：四项 + 入库扩 audio + 预览走播放浮层', async () => {
   const bar = await read('src/client/canvas/NodeActionBar.tsx')
   // F5：audio 进媒体工具栏组（isMedia 含 audio，退出重试/改提示词）。
-  assert.match(bar, /const isAudio = node\.kind === 'audio'/, '必须判 isAudio')
-  assert.match(bar, /const isMedia = isVideo \|\| isImage \|\| isAudio/, 'isMedia 必须含 audio')
-  assert.match(bar, /const canRetry = !isMedia &&/, 'audio 必须退出重试按钮')
-  assert.match(bar, /const canEdit = !isMedia &&/, 'audio 必须退出改提示词按钮')
-  // 四项判据：引用（非 group）/ 入库（audio 扩入）/ 预览（audio→播放浮层）/ 下载（canDownloadNode 含 audio）。
-  assert.match(bar, /const canAddToLibrary = \(isImage \|\| isAudio\)/, '入库必须扩到 audio')
-  assert.match(bar, /\(\(isVideo \|\| isAudio\) && onOpenPlayback !== undefined\)/, '预览：audio 必须走 onOpenPlayback')
-  assert.match(bar, /title=\{isImage \? '预览：打开大图预览' : '预览：打开播放浮层'\}/, '预览 title 必须按 isImage 分支')
+  // REQ-041 起判据抽到 src/node-action-slots.ts —— 断言行为（槽位数组）而不是源码正则。
+  assert.match(bar, /const isAudio = node\.kind === 'audio'/, '必须判 isAudio（按钮 title 分流用）')
+  const CAPS = { retry: true, edit: true, reference: true, library: true, previewImage: true, playback: true, download: true }
+  assert.deepEqual(
+    nodeActionSlots({ id: 'a1', kind: 'audio', url: '/a.mp3' }, undefined, CAPS),
+    ['reference', 'library', 'preview', 'download'],
+    'audio 必须四项（引用 / 入库 / 预览 / 下载），且不得出现重试与改词',
+  )
+  assert.match(bar, /title=\{isImage \? '预览：打开大图预览' : hasSegment \? '预览：播放本段（含旁白）' : '预览：打开播放浮层'\}/, '预览 title 必须按 isImage / 分镜段分支')
   // 入库 title 按 audio 分支。
   assert.match(bar, /title=\{isAudio \? '把这段音频存入资产库' : '把当前画面存入资产库'\}/, '入库 title 必须按 audio 分支')
   // 下载判据：canDownloadNode 已含 audio（canvas-actions.ts）。

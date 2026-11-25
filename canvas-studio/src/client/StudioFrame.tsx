@@ -1726,10 +1726,25 @@ export function StudioFrame(props: StudioFrameProps) {
    * `download` 会被忽略并退化为「在新标签打开」，仍可取回文件，不会静默失败。
    */
   const handleDownload = (node: StudioCanvasNode): void => {
-    if (!canDownloadNode(node) || node.url === undefined) return
+    /**
+     * REQ-041：分镜卡的「下载」下的是**这一段的产物**，不是节点产物 —— 段 URL
+     * 由清单按 `segmentRef` 派生（节点上 `url` 恒空，也不许写，见 §9.7）。
+     * 文件名直接取 URL 末段（`seg-<id>-voice.mp4`）：清单发的是哪一版就下哪一版，
+     * 不在客户端再拼一遍命名规则，避免与宿主产物名漂移。
+     */
+    const segmentUrl = node.url !== undefined || node.segmentRef === undefined
+      ? undefined
+      : segmentMediaByRef.get(node.segmentRef)
+    const url = node.url ?? segmentUrl
+    if (url === undefined || url.length === 0) return
+    if (node.url !== undefined && !canDownloadNode(node)) return
+    const fromUrl = url.split('?')[0]?.split('/').pop()
+    const name = node.url !== undefined
+      ? assetDownloadName(node)
+      : (fromUrl !== undefined && fromUrl.length > 0 ? fromUrl : `seg-${node.id.slice(0, 8)}.mp4`)
     const link = document.createElement('a')
-    link.href = node.url
-    link.download = assetDownloadName(node)
+    link.href = url
+    link.download = name
     link.rel = 'noopener'
     document.body.appendChild(link)
     link.click()
@@ -2153,6 +2168,16 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null || naturalWidth <= 0) return
     const target = nodesRef.current.find((node) => node.id === id)
     if (target === undefined) return
+    /**
+     * REQ-041 守卫：**非媒体节点不参与自然尺寸自愈**。
+     *
+     * 分镜卡是 text 卡，卡上那段视频只是「这一屏产物」的预览条（REQ-041）；
+     * 它的自然像素（960×540）与卡片几何无关。放它进来会走下面的 `frameSizeOf`
+     * 把 300×200 的分镜稿改成 960×588 并 `updateNode` 落盘 —— 清单回来几秒内
+     * 画布被改（版本 +1、undo 脏、分镜托盘按旧几何算 ⇒ 重叠），直接违反
+     * REQ-041 §9.7「不写画布、不加持久字段、不产生脏版本」。
+     */
+    if (target.kind !== 'image' && target.kind !== 'video' && target.kind !== 'audio') return
     const updates: Partial<StudioCanvasNode> = {}
     if (target.mediaWidth !== naturalWidth || target.mediaHeight !== naturalHeight) {
       updates.mediaWidth = naturalWidth
@@ -3095,18 +3120,28 @@ export function StudioFrame(props: StudioFrameProps) {
       {(() => {
         if (playbackNodeId === null) return null
         const target = nodes.find(node => node.id === playbackNodeId)
-        if (target === undefined || target.url === undefined) return null
-        if (target.kind === 'video') {
+        if (target === undefined) return null
+        /**
+         * REQ-041：分镜卡（text + segmentRef）的「预览」= 播这一段的带声副本。
+         * 段 URL 只在清单里（节点 url 恒空），所以这里按 ref 现取 —— 与卡上视频、
+         * 工具条同一个来源，不会出现「卡上第 2 段、浮层第 3 段」。
+         */
+        const segmentUrl = target.url === undefined && target.segmentRef !== undefined
+          ? segmentMediaByRef.get(target.segmentRef)
+          : undefined
+        const url = target.url ?? segmentUrl
+        if (url === undefined) return null
+        if (target.kind === 'video' || segmentUrl !== undefined) {
           return (
             <VideoPlayerModal
-              title={target.title ?? '视频'}
-              url={target.url}
+              title={target.kind === 'video' ? (target.title ?? '视频') : '分镜片段'}
+              url={url}
               onClose={() => { setPlaybackNodeId(null) }}
             />
           )
         }
         // CV-130：音频节点双击 → 简单播放器窗口（可拖进度 + 完整歌词）。
-        if (target.kind === 'audio') {
+        if (target.kind === 'audio' && target.url !== undefined) {
           return (
             <AudioPlayerModal
               title={target.title ?? '音频'}

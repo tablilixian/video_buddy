@@ -21,6 +21,8 @@ export interface PublishSegmentPreviewInput {
   assetsDir: string
   manifest: CompositionManifest
   spec: unknown
+  /** 本项目 id：校验旁白 URL 的 projectId，防跨项目同名错配（缺省跳过校验）。 */
+  projectId?: string
   signal?: AbortSignal
   /** 测试注入；生产走默认 ffmpeg。 */
   runFfmpeg?: FfmpegRun
@@ -29,6 +31,13 @@ export interface PublishSegmentPreviewInput {
 export interface PublishSegmentPreviewResult {
   pointers: SegmentPointer[]
   note?: string
+  /**
+   * 合声耗时实测（§十.5 要的数据面）。
+   *
+   * `merged` 只数**真正调了 ffmpeg 的段**（没旁白/跨项目/越界的不计），
+   * 所以它可能小于指针数。原来回执只记失败，11 段串行吃多久只能靠猜。
+   */
+  voiceCost?: { merged: number; totalMs: number; maxMs: number }
 }
 
 /**
@@ -54,6 +63,8 @@ export async function publishSegmentPreview(input: PublishSegmentPreviewInput): 
 
   const matches = matchSegmentVoices({ manifest: input.manifest, artifacts: published.artifacts })
   const notes: string[] = published.note === undefined ? [] : [published.note]
+  /** 合声实测：只收真正跑过 ffmpeg 的段（有旁白且同源）。 */
+  const costs: number[] = []
   // 合声串行（每段 ffmpeg 独立，串行避免 N 路并发打爆本机；段数 ≤ 12，可接受）。
   for (const pointer of published.pointers) {
     const match = matches.get(pointer.id)
@@ -62,16 +73,25 @@ export async function publishSegmentPreview(input: PublishSegmentPreviewInput): 
       projectDir: input.projectDir,
       assetsDir: input.assetsDir,
       id: pointer.id,
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       silentFile: pointer.assetFile ?? `seg-${pointer.id}.mp4`,
       durationSec: pointer.durationSec,
       match,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
       ...(input.runFfmpeg === undefined ? {} : { run: input.runFfmpeg }),
     })
+    if (result.elapsedMs !== undefined) costs.push(result.elapsedMs)
     if (result.note !== undefined) notes.push(result.note)
   }
   return {
     pointers: published.pointers,
     ...(notes.length === 0 ? {} : { note: notes.join('；') }),
+    ...(costs.length === 0 ? {} : {
+      voiceCost: {
+        merged: costs.length,
+        totalMs: costs.reduce((sum, ms) => sum + ms, 0),
+        maxMs: Math.max(...costs),
+      },
+    }),
   }
 }

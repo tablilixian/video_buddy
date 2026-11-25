@@ -107,6 +107,9 @@ test('P1：带 audio ⇒ 自动合声；清单指向 -voice.mp4；无声段不�
   }
   const result = await publishSegmentPreview({ ...p, runFfmpeg: fakeRun })
   assert.deepEqual(result.pointers.map((x) => x.ref), ['spec:s1', 'spec:s2'])
+  // 耗时汇总只数真正调了 ffmpeg 的段：s1 有旁白（1 段），s2 没有。
+  assert.equal(result.voiceCost?.merged, 1, '合声段数不许把「没旁白的段」也算进去')
+  assert.equal(typeof result.voiceCost?.totalMs, 'number', '总耗时要回传（回执那一行靠它）')
   assert.equal(existsSync(join(p.assetsDir, 'seg-s1-voice.mp4')), true, 's1 有旁白 ⇒ 合声')
   assert.equal(existsSync(join(p.assetsDir, 'seg-s2-voice.mp4')), false, 's2 无旁白 ⇒ 不合')
   const view = await readSegmentMedia({ projectDir: p.projectDir, assetsDir: p.assetsDir, projectId: 'p' })

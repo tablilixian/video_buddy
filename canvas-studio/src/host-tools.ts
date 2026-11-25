@@ -4051,10 +4051,22 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               assetsDir: registry.assetsDir(projectId),
               manifest: renderManifest,
               spec: readProjectSpec(registry.projectDir(projectId)),
+              // 复审 #5：旁白 URL 里的 projectId 必须与本次渲染的项目一致，否则
+              // 跨项目同名文件会被当成本片台词合进去（宁可无声，不给错的声音）。
+              projectId,
               signal: exec.signal,
             })
             if (preview.pointers.length > 0 && shotPointers.length === 0) shotPointers = preview.pointers
             if (preview.note !== undefined) shotReceipt.push(`ℹ️ 段预览：${preview.note}`)
+            // 复审 #4：合声是 N 次串行 ffmpeg，原来只有失败有痕迹。给一行实测，
+            // 用户问「发段会不会拖慢 draft」时有数可看（§十.5 单段耗时）。
+            if (preview.voiceCost !== undefined) {
+              const cost = preview.voiceCost
+              shotReceipt.push(
+                `ℹ️ 段合声：${String(cost.merged)} 段 / ${(cost.totalMs / 1000).toFixed(1)}s`
+                + `（均 ${String(Math.round(cost.totalMs / cost.merged))}ms，最长 ${String(cost.maxMs)}ms）`,
+              )
+            }
           } catch (cause) {
             shotReceipt.push(`ℹ️ 段预览旁路失败（成片不受影响）：${cause instanceof Error ? cause.message : String(cause)}`)
           }

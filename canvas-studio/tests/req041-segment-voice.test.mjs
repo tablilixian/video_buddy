@@ -108,6 +108,54 @@ test('合声失败/URL 越界 ⇒ 回退无声版，不抛', async () => {
   assert.equal(voiceAssetFileOf('/canvas-studio/assets/p/../evil.mp3'), '../evil.mp3', '解析只取文件名，越界由 resolveAssetPathIn 挡')
 })
 
+test('旁白 URL 的 projectId 必须与本次渲染的项目一致（跨项目不许合）', async () => {
+  // 解析层：给了期望项目 id 就必须同一段。
+  assert.equal(voiceAssetFileOf('/canvas-studio/assets/proj-a/v.mp3', 'proj-a'), 'v.mp3')
+  assert.equal(voiceAssetFileOf('/canvas-studio/assets/proj-b/v.mp3', 'proj-a'), undefined,
+    '跨项目旁白必须拒绝：同名文件会在本项目 assets 里被误取')
+  assert.equal(voiceAssetFileOf('/canvas-studio/assets/proj-b/v.mp3'), 'v.mp3',
+    '不传项目 id（旧调用）保持旧行为，不静默改变语义')
+
+  // 执行层：拒绝之后不许调 ffmpeg，也不许写副本。
+  const assetsDir = mkdtempSync(join(tmpdir(), 'cs-voice-foreign-'))
+  writeFileSync(join(assetsDir, 'seg-s1.mp4'), 'SILENT')
+  let called = false
+  const result = await mergeSegmentVoice({
+    projectDir: assetsDir, assetsDir, id: 's1', silentFile: 'seg-s1.mp4', durationSec: 5,
+    projectId: 'proj-a',
+    match: { src: '/canvas-studio/assets/proj-b/v.mp3', startFrame: 0, offsetSec: 0 },
+    run: async () => { called = true; return { code: 0, stdout: '', stderr: '' } },
+  })
+  assert.equal(result.voiceFile, undefined)
+  assert.equal(called, false, '跨项目旁白不该触发 ffmpeg')
+  assert.match(result.note ?? '', /不是本项目资产/)
+})
+
+test('合声耗时被记下来（§十.5 单段实测的唯一数据面）', async () => {
+  const assetsDir = mkdtempSync(join(tmpdir(), 'cs-voice-cost-'))
+  writeFileSync(join(assetsDir, 'seg-s1.mp4'), 'SILENT')
+  writeFileSync(join(assetsDir, 'v1.mp3'), 'AUDIO')
+  const result = await mergeSegmentVoice({
+    projectDir: assetsDir, assetsDir, id: 's1', silentFile: 'seg-s1.mp4', durationSec: 5,
+    match: { src: '/canvas-studio/assets/p/v1.mp3', startFrame: 0, offsetSec: 0 },
+    run: async (_ffmpeg, args) => {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      writeFileSync(args.at(-1), 'MUXED')
+      return { code: 0, stdout: '', stderr: '' }
+    },
+  })
+  assert.equal(typeof result.elapsedMs, 'number', '耗时要回传，否则「发段拖慢 draft 多少」只能猜')
+  assert.ok(result.elapsedMs >= 3, `耗时记成了 ${String(result.elapsedMs)}ms，明显没在测 ffmpeg`)
+
+  // 失败也要有耗时（它卡多久同样是信息）。
+  const failed = await mergeSegmentVoice({
+    projectDir: assetsDir, assetsDir, id: 's1', silentFile: 'seg-s1.mp4', durationSec: 5,
+    match: { src: '/canvas-studio/assets/p/v1.mp3', startFrame: 0, offsetSec: 0 },
+    run: async () => ({ code: 1, stdout: '', stderr: 'boom' }),
+  })
+  assert.equal(typeof failed.elapsedMs, 'number', '失败路径丢耗时：卡住的那几秒看不到')
+})
+
 test('偏移为 0 / 缺省 ⇒ 合声参数与改前逐字相同（成片口径不许被这条线带动）', async () => {
   const assetsDir = mkdtempSync(join(tmpdir(), 'cs-voice-zero-'))
   writeFileSync(join(assetsDir, 'seg-s9.mp4'), 'SILENT')

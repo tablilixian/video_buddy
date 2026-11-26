@@ -91,6 +91,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   validate_manifest: { tier: 'A', title: '离线体检', icon: '检' },
   // 1（CV-463）：模板清单（只读；选模板是「生成骨架」的前一步，所以同档 A）。
   list_templates: { tier: 'A', title: '模板清单', icon: '模' },
+  // 配方正确用法 D1（2026-11-26）：片型配方清单 + 五判据适配判定（只读，同档 A）。
+  list_recipes: { tier: 'A', title: '配方清单', icon: '配' },
   // 故事板强约束 L4（2026-10-25）：老项目迁移，从画布已有分镜卡反推故事板骨架。
   adopt_canvas_as_storyboard: { tier: 'A', title: '反推故事板', icon: '溯' },
   // 2026-10-25（shotcraft 本地化 P0-a）：项目级布局坐标表（工作台，不参与渲染）。

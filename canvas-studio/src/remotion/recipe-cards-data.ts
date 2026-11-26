@@ -2,7 +2,7 @@
  * SSR 消化批 · data 类目卡(来源:video-shotcraft-dsh demos/data,Apache-2.0,
  * 手法参考、表达重写;逐卡翻译对照见 shotcraft-catalog.md)。
  */
-import { registerCard } from './recipe-cards.js'
+import { readDataNum, registerCard } from './recipe-cards.js'
 import { chartPlotFor, chartPointOnCanvas, chartValueY } from './chart-layout.js'
 
 // ── DAT1 · gauge-readout(三联表盘扫针)──
@@ -257,6 +257,112 @@ registerCard({
           box: { x: clamp(troughPoint.x, 16, 84), y: clamp(troughPoint.y + 7, 16, 88), w: 26, h: 7 },
           startFrame: start + 18, durationInFrames: Math.max(10, dur - 18), fadeFrames: 0 },
       )
+    }
+    return tracks
+  },
+})
+
+// ── DAT7 · beat-race（节拍赛跑）──────────────────────────────────────────────
+// 两条节拍带：A 常速刻度均匀铺，B 以 periodB 错拍起跑；两者同帧即「重合」
+// （t = lcm(periodA, periodB) 的整数倍）。前 alignAt 个重合点出竖线高亮 +
+// 逐次读出（`重合 n/alignAt`）——读出文本含 alignAt，改参数产物必变
+// （反变异 4）。复用边界：只做「两相位错拍 → 偶发重合」，不模拟物理加减速。
+// 卡参数走 D5 data 通道（periodA / periodB / alignAt），不 parse copy。
+registerCard({
+  id: 'DAT7',
+  title: '节拍赛跑',
+  assets: [],
+  dataKeys: ['periodA', 'periodB', 'alignAt'],
+  generate: (ctx) => {
+    const tid = (part: string): string => `${ctx.segmentId}-${part}`
+    const data = ctx.data
+    const periodA = readDataNum(data, 'periodA', 1.2, 0.2, 10)
+    const periodB = readDataNum(data, 'periodB', 0.9, 0.2, 10)
+    const alignAt = Math.round(readDataNum(data, 'alignAt', 2, 0, 12))
+    const fps = ctx.fps ?? 30
+    const dur = Math.max(1, Math.round(ctx.durationInFrames))
+    const fA = Math.max(2, Math.round(periodA * fps))
+    const fB = Math.max(2, Math.round(periodB * fps))
+    // 时间轴映射：t ∈ [0, dur] → 带上 x ∈ [8, 92]（%）。
+    const xAt = (t: number): number => +(8 + (Math.min(dur, Math.max(0, t)) / dur) * 84).toFixed(2)
+    const gcd = (x: number, y: number): number => (y === 0 ? x : gcd(y, x % y))
+    const alignStep = Math.round((fA * fB) / gcd(fA, fB))
+    const alignTimes: number[] = []
+    for (let t = 0; t < dur && alignTimes.length < Math.max(0, alignAt); t += alignStep) alignTimes.push(t)
+
+    const tracks: Record<string, unknown>[] = [
+      { id: tid('bg'), type: 'shape', shape: 'rect', color: '#faf7f2', box: { x: 50, y: 50, w: 100, h: 100 }, startFrame: ctx.startFrame, durationInFrames: dur, fadeFrames: 0 },
+      { id: tid('label'), type: 'textCard', variant: 'subtitle', text: ctx.label, box: { x: 50, y: 9, w: 64, h: 6 }, background: 'transparent', color: '#7c2d12', anim: 'fadeUp', startFrame: ctx.startFrame, durationInFrames: dur, fadeFrames: 4 },
+      { id: tid('band-a'), type: 'shape', shape: 'rect', color: '#e7ddd0', box: { x: 50, y: 38, w: 84, h: 1.6 }, startFrame: ctx.startFrame, durationInFrames: dur, fadeFrames: 8 },
+      { id: tid('band-b'), type: 'shape', shape: 'rect', color: '#e7ddd0', box: { x: 50, y: 62, w: 84, h: 1.6 }, startFrame: ctx.startFrame, durationInFrames: dur, fadeFrames: 8 },
+    ]
+
+    // 节拍刻度：每个刻度一轨（各自 x 位置），opacity 两段脉冲（升 → 降）；
+    // 段外保持首段值 0.3 ⇒ 刻度常显微弱、打拍时亮起（fadeFrames 置 0，避免与
+    // 入场淡入叠乘产生歧义）。
+    const ticks = (idPrefix: string, y: number, times: number[], color: string): Record<string, unknown>[] =>
+      times.map((t, i) => {
+        const up = Math.max(0, t - 4)
+        const down = Math.min(dur, t + 8)
+        return {
+          id: `${idPrefix}-${i}`,
+          type: 'shape',
+          shape: 'circle',
+          color,
+          box: { x: xAt(t), y, w: 2.4, h: 4.2 },
+          animate: [
+            { from: { opacity: 0.3 }, to: { opacity: 1 }, startFrame: up, durationInFrames: Math.max(1, t - up), easing: 'linear' },
+            ...(down > t
+              ? [{ from: { opacity: 1 }, to: { opacity: 0.3 }, startFrame: t, durationInFrames: down - t, easing: 'linear' }]
+              : []),
+          ],
+          startFrame: ctx.startFrame,
+          durationInFrames: dur,
+          fadeFrames: 0,
+        }
+      })
+    const aTimes: number[] = []
+    for (let t = 0; t < dur; t += fA) aTimes.push(t)
+    const bTimes: number[] = []
+    for (let t = Math.round(fB / 2); t < dur; t += fB) bTimes.push(t)
+    tracks.push(...ticks(tid('tick-a'), 38, aTimes, '#a0522d'))
+    tracks.push(...ticks(tid('tick-b'), 62, bTimes, '#8a8178'))
+
+    // 重合高亮：竖线 + 逐次读出（读出含 alignAt —— 反变异 4「产物必须变」的锚点）。
+    // 锚点夹回画布内：读出轨 w=22 ⇒ x ∈ [12, 89]；竖线 w=0.7 ⇒ x ∈ [1, 99]。
+    alignTimes.forEach((t, i) => {
+      const rawX = xAt(t)
+      const readX = Math.min(89, Math.max(12, rawX))
+      const railX = Math.min(99, Math.max(1, rawX))
+      const riseStart = Math.max(0, t - 6)
+      tracks.push({
+        id: tid(`align${i + 1}`),
+        type: 'shape',
+        shape: 'rect',
+        color: '#c2410c',
+        box: { x: railX, y: 50, w: 0.7, h: 27 },
+        animate: [{ from: { opacity: 0 }, to: { opacity: 1 }, startFrame: riseStart, durationInFrames: Math.max(4, Math.min(dur, t + 14) - riseStart), easing: 'easeOutCubic' }],
+        startFrame: ctx.startFrame,
+        durationInFrames: dur,
+        fadeFrames: 4,
+      })
+      tracks.push({
+        id: tid(`read${i + 1}`),
+        type: 'textCard',
+        variant: 'dataCard',
+        text: `重合 ${i + 1}/${alignAt}`,
+        box: { x: readX, y: 76, w: 22, h: 6 },
+        background: 'transparent',
+        color: '#c2410c',
+        anim: 'fadeUp',
+        startFrame: ctx.startFrame + t,
+        durationInFrames: Math.max(8, dur - t),
+        fadeFrames: 4,
+      })
+    })
+
+    if (ctx.copy.trim() !== '') {
+      tracks.push({ id: tid('cap'), type: 'textCard', variant: 'subtitle', text: ctx.copy, box: { x: 50, y: 92, w: 84, h: 6 }, background: 'transparent', color: '#6b4423', startFrame: ctx.startFrame, durationInFrames: dur, fadeFrames: 8 })
     }
     return tracks
   },

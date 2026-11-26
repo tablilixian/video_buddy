@@ -36,7 +36,13 @@ test('覆盖完整：58 张一张不漏，且每行列数一致（ASCII 竖线�
   const fieldCounts = new Set(
     text.split('\n').filter((line) => /^\| [A-Z]+\d+ \|/u.test(line)).map((line) => line.split('|').length),
   )
-  assert.deepEqual([...fieldCounts], [8], `行内字段数不一致（${[...fieldCounts].join(', ')}）：单元格里的 | 必须转义或改名`)
+  assert.deepEqual([...fieldCounts], [9], `行内字段数不一致（${[...fieldCounts].join(', ')}）：单元格里的 | 必须转义或改名（D5 后应为 7 列 = 9 段）`)
+})
+
+test('D5 新列：表头含「data 键」且列口径有说明（缺列 = data 通道对模型不可见）', () => {
+  const text = readFileSync(OUTPUT, 'utf8')
+  assert.match(text, /\| 卡 \| copy 解析规则 \| label \| highlights \| dataSource \| data 键 \| 同义卡 \|/u, '表头缺 data 键列')
+  assert.match(text, /data 键\*\*（D5）/u, '列口径缺 data 键说明')
 })
 
 test('DAT3 回归：解析规则必须是「键:值」拆 k/v，不得退回「多行」假信息', () => {
@@ -51,6 +57,8 @@ test('反向变异：临时注册一张「键:值」卡，生成物必须出现�
     id: 'TYP9',
     title: '临时解析探针卡',
     assets: [],
+    // D5：顺带验证 dataKeys → 规则表列的管道（声明什么，列里就有什么）。
+    dataKeys: ['probeRadius', 'probePeriod'],
     generate: (ctx) => [
       {
         id: `${ctx.segmentId}-chart`,
@@ -68,6 +76,7 @@ test('反向变异：临时注册一张「键:值」卡，生成物必须出现�
   const row = renderCardRules().split('\n').find((line) => line.startsWith('| TYP9 '))
   assert.ok(row, '新注册的卡没出现在规则表里（硬编码的表 = 下一个漂移源头）')
   assert.match(row, /键:值/, `探针卡的规则应是「键:值」（实际：${row}）—— 规则必须是探测产物`)
+  assert.match(row, /probeRadius probePeriod/u, `TYP9 行缺 data 键列内容（实际：${row}）—— dataKeys 声明必须进规则表`)
 })
 
 test('体积闸：解析规则表不得超过 14KB（references 体积要克制，塞进动效参数就破闸）', () => {

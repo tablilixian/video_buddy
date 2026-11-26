@@ -90,3 +90,23 @@ test('独立复探：units 上限与 carry 轨型（即使有人手改了生成�
     assert.match(body, /`carry` 里写 `text` 会怎样 \| \*\*被忽略\*\*/u, 'carry 仍不支持文字，但边界表不是这么写的')
   }
 })
+
+test('D5 独立复探：data 形状校验拒收坏值，且边界表有 data 事实行', () => {
+  const meta = { title: 'probe', width: 1080, height: 1920, fps: 30, durationSec: 6 }
+  const nan = { meta, sections: [{ id: 's1', label: '甲', card: 'A1', copy: '一句', data: { v: Number.NaN } }] }
+  assert.ok(
+    validateContentSpec(nan).errors.some((message) => message.includes('.data')),
+    'NaN 的 data 没被拒收 —— 形状校验失效',
+  )
+  const emptyKey = { meta, sections: [{ id: 's1', label: '甲', card: 'A1', copy: '一句', data: { '': 1 } }] }
+  assert.ok(
+    validateContentSpec(emptyKey).errors.some((message) => message.includes('键不能为空')),
+    '空键的 data 没被拒收',
+  )
+  const tooLong = { meta, sections: [{ id: 's1', label: '甲', card: 'A1', copy: '一句', data: { v: 'x'.repeat(201) } }] }
+  assert.ok(
+    validateContentSpec(tooLong).errors.some((message) => message.includes('短字符串')),
+    '超长字符串的 data 没被拒收',
+  )
+  assert.match(text(), /`data`（D5 结构化数值）怎么进卡/u, '边界表缺 data 事实行（生成器没跑或被手改）')
+})

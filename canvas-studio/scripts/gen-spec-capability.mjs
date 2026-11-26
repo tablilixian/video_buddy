@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { validateContentSpec, planFromSpec } from '../lib/remotion/content-spec.js'
-import { getCard } from '../lib/remotion/recipe-cards-all.js'
+import { getCard, registerCard } from '../lib/remotion/recipe-cards-all.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = join(here, '..')
@@ -133,6 +133,45 @@ function innerBoxRatio() {
   }
 }
 
+/**
+ * D5：`data` 结构化数值通道探测 —— 临时注册一张消费 `ctx.data` 的探针卡
+ * （进程内专用，注册前查重以支持本脚本被测试多次调用），验「透传 + 形状校验」两半。
+ */
+function dataChannelProbe(deps) {
+  if (getCard('DAT99') === undefined) {
+    registerCard({
+      id: 'DAT99',
+      title: 'data 通道探针卡（生成器临时注册）',
+      assets: [],
+      dataKeys: ['probeValue'],
+      generate: (ctx) => [{
+        id: `${ctx.segmentId}-dprobe`,
+        type: 'textCard',
+        variant: 'subtitle',
+        text: `probe=${String(ctx.data?.probeValue ?? 'missing')}`,
+        startFrame: ctx.startFrame,
+        durationInFrames: ctx.durationInFrames,
+        fadeFrames: 0,
+      }],
+    })
+  }
+  const spec = {
+    meta,
+    sections: [{ id: 's1', label: '甲', card: 'DAT99', copy: '探针', data: { probeValue: 9137 } }],
+  }
+  const check = deps.validateContentSpec(spec)
+  expect(check.ok, `带 data 的最小 spec 过不了校验：${check.errors.join('；')}`)
+  const hit = deps.planFromSpec(spec, 180).tracks.find((item) => String(item.text ?? '').includes('probe=9137'))
+  expect(hit !== undefined, 'section.data 没有透传进卡产物（planFromSpec 丢了 data）')
+  const badSpec = {
+    meta,
+    sections: [{ id: 's1', label: '甲', card: 'DAT99', copy: '探针', data: { probeValue: Number.NaN } }],
+  }
+  const bad = deps.validateContentSpec(badSpec)
+  expect(!bad.ok && bad.errors.some((message) => message.includes('.data')), '坏 data（NaN）没被拒收')
+  return { text: String(hit.text), rejected: true }
+}
+
 // ── 事实行 ─────────────────────────────────────────────────
 
 function buildFacts(deps = { validateContentSpec, planFromSpec }) {
@@ -221,6 +260,14 @@ function buildFacts(deps = { validateContentSpec, planFromSpec }) {
     capability: '能否逐轨指定**卡内** box（标题占卡高多少）',
     verdict: `不能。卡内 box 是卡自己的百分比（A1 标题恒占卡高 ${Number(ratio.small) * 100}%），spec 只能缩放整个 \`cell\``,
     evidence: `探测：cell.h 40 → 80，标题轨高度占 cell 的比例不变（${ratio.small} / ${ratio.big}）`,
+  })
+
+  // 9) D5：data 结构化数值通道
+  const data = dataChannelProbe({ validateContentSpec, planFromSpec })
+  facts.push({
+    capability: '`data`（D5 结构化数值）怎么进卡',
+    verdict: '**透传进卡的 `ctx.data`**（单元级覆盖屏级）；形状校验收在 spec 侧 —— 键空 / 非有限数 / 字符串超 200 字符直接拒收',
+    evidence: `探测：section.data { probeValue: 9137 } → 产物 \`${data.text}\`；NaN 值 → ${data.rejected ? '拒收（错误含 `.data`）' : '未拒收'}`,
   })
 
   return facts

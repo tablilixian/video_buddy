@@ -61,7 +61,7 @@ import { urlToAssetPath } from './compose.js'
 import { THEMES, resolveTheme, themeGuidance } from './remotion/themes.js'
 import { RECIPES, planRecipe, recipeAssetsJson } from './remotion/recipes.js'
 // 1（CV-463）· 模板库：`list_templates` 工具组 + 模板通道编排（判据全在 remotion/template-*.ts 纯函数里）
-import { defineTemplateTools } from './host-tools-template.js'
+import { defineTemplateTools, defineRecipeTools } from './host-tools-template.js'
 import { scaffoldFromTemplate } from './template-scaffold.js'
 // R7（REQ-038 · RQ-27）· 起点 D：内容规格（屏表）。逻辑在 host-tools-spec.ts ——
 // 这里只接线，避免又给本文件的函数长度闸加压。
@@ -4451,8 +4451,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","facesVisible"? true,"backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词。**`facesVisible:false` 只给微距 / 背影 / 空镜**：它会让 `qc_shot` 跳过外貌核对，不要拿它掩盖「该露脸却没露脸」）'
         + '\n- characters：[{"id":"C1","label":"ROLE A","name":"苏婉","tags":["女","26岁"],"profile":{"temperament":"…","face":"…","costume":"…"},"palette":{"base":"…","accent":"…"},"appearsIn":["S1"],"gen":{"lockedPrompt":"英文冻结主体段","negativePrompt":"…"}}]（profile 人读；gen 机读、要落画布，**lockedPrompt 必填**）'
         + '\n- sound：{"bgm":{"bpm":52,"lufs":-16,"sidechain":"1.5–3kHz 避让人声"},"sfx":["雨声床"]}'
-        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending|waived","ref":{"kind":"canvasNode|file","id":"…"},"neededBy":["S1-Sh1"],"source":"generated|user|library|stock"}]}（**只存引用不存副本**。`neededBy` = 这条素材服务哪些 shot，空表示全片通用；`source` = 去哪儿拿。**`status:"pending"` 会阻断落地** —— 先备齐再动手；确实不要了就标 `"waived"`，那是唯一的「放弃」写法。**用户提供的参考素材必须登记**（REQ-037/CV-405）：用户上传 / 链接下载（download_video 产物）的素材一律写一条 `source:"user"`、`ref:{kind:"canvasNode",id:<节点id>}`、`status:"ready"`——这是用户在故事板里回看自己参考的唯一位置，漏登 = 用户找不到自己给的素材；口述的文字参考先落便签节点再引用）'
-        + '\n- constraints：{"constraints":["每个 shot prompt 只保留一个 camera motion 动词"]}'
+        + '\n- assets：**bare 数组，不要包 `{"assets":[…]}` 外壳**（wrapper 会被 normalizeStoryboard 静默清空成 `[]`，见 contracts/storyboard.ts:709-710）：[{"name":"…","type":"image|video|audio|text","status":"ready|pending|waived","ref":{"kind":"canvasNode|file","id":"…"},"neededBy":["S1-Sh1"],"source":"generated|user|library|stock"}]（**只存引用不存副本**。`neededBy` = 这条素材服务哪些 shot，空表示全片通用；`source` = 去哪儿拿。**`status:"pending"` 会阻断落地** —— 先备齐再动手；确实不要了就标 `"waived"`，那是唯一的「放弃」写法。**用户提供的参考素材必须登记**（REQ-037/CV-405）：用户上传 / 链接下载（download_video 产物）的素材一律写一条 `source:"user"`、`ref:{kind:"canvasNode",id:<节点id>}`、`status:"ready"`——这是用户在故事板里回看自己参考的唯一位置，漏登 = 用户找不到自己给的素材；口述的文字参考先落便签节点再引用）'
+        + '\n- constraints：**bare 数组，不要包 `{"constraints":[…]}` 外壳**（同 assets，wrapper 会被静默清空）：["每个 shot prompt 只保留一个 camera motion 动词"]'
         + '\n\n语义 ID（S1 / S1-Sh1 / C1 / V1）**一次铸造、永不复用**；改了内容不要改已有 ID，只增不重排。',
       parameters: {
         title: { type: 'string' as const, description: '片名（如「《雨夜来信》」）' },
@@ -5003,8 +5003,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         },
         recipe: {
           type: 'string' as const,
-          enum: ['explainer-cards', 'product-walkthrough', 'story-arc'] as const,
-          description: '可选：**片型配方**（结构起点）—— 给出段序列 + 时间轴 + 素材需求，并接管 tracks 骨架。explainer-cards = 零素材科普图卡；product-walkthrough = 需 1 张产品图；story-arc = 需 2 张场景图。给了它就不按「片头+片尾」三轨出，而是按段出占位卡',
+          enum: ['explainer-cards', 'product-walkthrough', 'story-arc', 'product-promo-60s'] as const,
+          description: '可选：**片型配方**（结构起点）—— 给出段序列 + 时间轴 + 素材需求，并接管 tracks 骨架。explainer-cards = 零素材科普图卡；product-walkthrough = 需 1 张产品图；story-arc = 需 2 张场景图；product-promo-60s = 12 段 60s 产品促销。给了它就不按「片头+片尾」三轨出，而是按段出占位卡。选配方前先 `list_recipes({requirements})` 按五判据判定',
+        },
+        assetSlots: {
+          type: 'object' as const,
+          description: '可选：配方段槽位素材表 `{ "<段id>": { "<槽名>": "<同源URL>" } }` —— 不给则配方素材全走降级版式（占位/纯色）。**仅 recipe 分支消费**（templateId / specPath 分支忽略）。槽名以 `list_recipes` 回执的素材清单为准',
+          additionalProperties: true,
+        },
+        accentColor: {
+          type: 'string' as const,
+          description: '可选：配方强调色（CSS 颜色串，如 `#4f9cf9`）—— 透传进各段卡的生成器；缺省用主题强调色。**仅 recipe 分支消费**',
         },
         specPath: {
           type: 'string' as const,
@@ -5029,7 +5038,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const a = args as {
           title?: unknown; durationSeconds?: unknown; fps?: unknown; aspect?: unknown; theme?: unknown
           recipe?: unknown; writeTo?: unknown; templateId?: unknown; slots?: unknown; dryRun?: unknown
-          bgmUrl?: unknown; specPath?: unknown
+          bgmUrl?: unknown; specPath?: unknown; assetSlots?: unknown; accentColor?: unknown
         }
         const writeToRaw = typeof a.writeTo === 'string' ? a.writeTo.trim() : ''
         const templateId = typeof a.templateId === 'string' ? a.templateId.trim() : ''
@@ -5130,7 +5139,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const exitFrames = Math.min(10, head, tail)
         // 片型配方（2026-10-25）：给了 recipe 就让它接管段结构与时间轴，
         // 否则走原来的「底色 + 片头 + 片尾」三轨骨架。
-        const plan = recipe === undefined ? undefined : planRecipe({ title, totalFrames: total, recipe })
+        // 参数接线（2026-11-26 D1 实施）：assetSlots / accentColor / fps 从工具入参
+        // 直通 planRecipe —— 不接则配方素材永远降级、卡内秒→帧换算缺基准。
+        const plan = recipe === undefined ? undefined : planRecipe({
+          title,
+          totalFrames: total,
+          recipe,
+          fps,
+          ...(a.assetSlots !== null && typeof a.assetSlots === 'object' && !Array.isArray(a.assetSlots)
+            ? { assetSlots: a.assetSlots as Record<string, Record<string, string>> }
+            : {}),
+          ...(typeof a.accentColor === 'string' && a.accentColor.trim() !== ''
+            ? { accentColor: a.accentColor.trim() }
+            : {}),
+        })
         const manifest = {
           // `manifest.id` 必填 —— 这正是事故里第一轮报错（"manifest.id 必须是非空字符串"）。
           id: `comp-${Date.now().toString(36)}`,
@@ -5241,6 +5263,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
     }),
     // 1（CV-463）：模板库清单（只读；模板是随包资产，不依赖项目注册表）。
     ...defineTemplateTools(),
+    ...defineRecipeTools(),
     // 2026-11-02：素材加工与便签类工具外置到 host-tools-artifact.ts（行数 / 函数跨度双棘轮）。
     ...defineArtifactTools({ registry, resolveProjectId }),
     // 4.2（2026-11-04）：数据导入组外置到 host-tools-data.ts（纯文本解析，零后端槽位）。

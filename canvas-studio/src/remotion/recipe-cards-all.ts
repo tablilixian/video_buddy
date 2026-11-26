@@ -21,6 +21,7 @@ import './recipe-cards-interaction.js'
 import './recipe-cards-rhythm.js'
 import './recipe-cards-opening.js'
 import './recipe-cards-outro.js'
+import './recipe-cards-orbit.js'
 
 export {
   registerCard,

@@ -72,6 +72,30 @@ test('反向变异：临时注册一张卡，目录必须跟着出现，且 box 
   )
 })
 
+test('反变异3（2026-11-26）：ORB1 必须输出轨道运动 —— 去掉 orbit 轨 / 位置折线即红', () => {
+  // 卡目录本身只抽 box/copy/label，去掉 orbit 轨不改这三列 ⇒ 目录文本不会红。
+  // 所以这条反变异的承接闸放这里：直接对 ORB1 的产物断言「有轨道运动」——
+  // 正圆走轨级 `orbit` 键，椭圆走位置 animate 折线（D3-b 双路径）。
+  const card = getCard('ORB1')
+  assert.ok(card, 'ORB1 未注册')
+  const ctx = {
+    segmentId: 'rv3', label: '轨道演示', copy: '匀速绕行',
+    startFrame: 0, durationInFrames: 180, index: 0, sectionCount: 1,
+    assetSrc: () => undefined, accentColor: '#4f9cf9',
+  }
+  const tracks = card.generate(ctx)
+  const flatten = (list) => list.flatMap((t) => (Array.isArray(t.children) ? [t, ...flatten(t.children)] : [t]))
+  const all = flatten(tracks)
+  const hasOrbitKey = all.some((t) => t.orbit !== undefined && t.orbit !== null)
+  const hasPosAnimate = all.some((t) => Array.isArray(t.animate)
+    && t.animate.some((s) => s && (s.from?.x !== undefined || s.from?.y !== undefined || s.to?.x !== undefined || s.to?.y !== undefined)))
+  assert.ok(
+    hasOrbitKey || hasPosAnimate,
+    'ORB1 产物既没有轨级 orbit 键、也没有位置 animate 折线 —— 轨道运动没了，'
+    + '这张卡就退化成静态图（反变异3 的变异形态）',
+  )
+})
+
 test('假编号不进表：非卡号的参数名 / 上游手法名一律不得出现在卡号列', () => {
   const text = readFileSync(OUTPUT, 'utf8')
   // shot-cards.md 里混进卡号坐标系的 17 个非卡号（复盘文档附录 C）

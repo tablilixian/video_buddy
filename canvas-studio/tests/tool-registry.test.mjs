@@ -52,7 +52,8 @@ const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
 // RQ-R9/P1-10（2026-11-14）：+validate_manifest（离线体检，复盘 #10）—— 53 / 关模板 52
 // REQ-041 第 2 批（2026-11-25）：+rerender_segment（单段重渲，N1）—— 54 / 关模板 53
 // REQ-041 F6（2026-11-26）：+patch_segment_tracks（段级手工轨，重编不丢）—— 55 / 关模板 54
-const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 55 : 54
+// 配方正确用法 D1（2026-11-26）：+list_recipes（配方五判据适配判定）—— 56 / 关模板 55
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 56 : 55
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -86,6 +87,8 @@ const EXPECTED_TOOL_NAMES = [
   'layout_table',
   'list_library_assets',
   'list_references',
+  // 配方正确用法 D1（2026-11-26）：片型配方清单 + 五判据适配判定（恒注册，不随模板通道下线）。
+  'list_recipes',
   'list_shots',
   // 1（CV-463）：模板清单（只读）。临时下线时随开关从基线移除，恢复时自动回来。
   ...(TEMPLATE_CHANNEL_ON ? ['list_templates'] : []),

@@ -61,6 +61,8 @@ export interface SpecUnit {
   accentColor?: string
   /** R11：单元级分段着色（覆盖屏级；语义同 `sections[].highlights`）。 */
   highlights?: Array<{ text: string; color: string }>
+  /** D5：结构化数值参数（单元优先于屏级；透传进卡的 `ctx.data`）。 */
+  data?: Record<string, number | string>
 }
 
 /**
@@ -176,6 +178,12 @@ export interface ContentSpec {
      * 两者都缺省 = 全屏（与今天行为逐字段一致）。
      */
     cell?: CellRect
+    /**
+     * D5（2026-11-26）：结构化数值参数通道 —— 键 → 有限数 / 短字符串，透传进该屏
+     * 卡生成器的 `ctx.data`（演示卡读轨道半径/周期等物理量的唯一入口，不 parse copy）。
+     * 单元级 `units[].data` 优先。
+     */
+    data?: Record<string, number | string>
     /**
      * 一屏多单元（RQ-25）：1–4 个，共享该屏的时间窗、各占自己的格位。
      * **与 `card` 互斥**（同给即校验失败）。
@@ -298,6 +306,26 @@ function checkHighlights(value: unknown, at: string, errors: string[]): void {
   })
 }
 
+/** D5：结构化数值通道形状校验 —— 键非空、值为有限数或短字符串（键名由卡消费，不做白名单）。 */
+function checkData(value: unknown, at: string, errors: string[]): void {
+  if (value === undefined) return
+  if (!isRecord(value)) {
+    errors.push(`${at}.data 必须是对象（键 → 有限数 / 短字符串）`)
+    return
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (key.trim() === '') {
+      errors.push(`${at}.data 的键不能为空字符串`)
+      continue
+    }
+    const okNumber = typeof entry === 'number' && Number.isFinite(entry)
+    const okString = typeof entry === 'string' && entry.length <= 200
+    if (!okNumber && !okString) {
+      errors.push(`${at}.data.${key} 必须是有限数或短字符串（≤200 字符），收到 ${typeof entry}`)
+    }
+  }
+}
+
 /**
  * 试算「换个目标屏长会得到几屏」。
  *
@@ -373,6 +401,7 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
       // R11：分段着色 —— 形态校验收在 spec 侧（manifest 侧还会再校一次子串命中）。
       // 只验形态不验命中：命中要求 copy 已定稿，而 copy 在 patch_spec_section 里还会改。
       checkHighlights(section.highlights, `${at}.highlights`, errors)
+      checkData(section.data, at, errors)
       if (section.highlights !== undefined && !isNonEmptyString(section.copy) && section.units === undefined) {
         warnings.push(`${at} 写了 highlights 但没有屏级 copy —— 高亮要落在具体文本上（units 型屏请写在各单元里）`)
       }
@@ -400,6 +429,7 @@ export function validateContentSpec(spec: unknown): ContentSpecValidation {
             if (!isNonEmptyString(unit.copy)) errors.push(`${unitAt}.copy 必须是非空字符串`)
             if (unit.cell !== undefined) checkCell(unit.cell, `${unitAt}.cell`, errors)
             checkHighlights(unit.highlights, `${unitAt}.highlights`, errors)
+            checkData(unit.data, unitAt, errors)
             if (unit.overlap !== undefined && typeof unit.overlap !== 'boolean') {
               errors.push(`${unitAt}.overlap 必须是布尔值（刻意叠层声明：true = 本格位允许与同屏其他单元相交）`)
             }
@@ -877,6 +907,8 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         return
       }
       const slots = unit.assetSlots ?? section.assetSlots ?? {}
+      // D5：帧率随卡（秒 → 帧换算）；与 stagePlan 的 fps 同口径（缺省 30）。
+      const fps = typeof spec.meta.fps === 'number' && spec.meta.fps >= 1 ? spec.meta.fps : 30
       const generated = card.generate({
         segmentId: multi ? `${slot.id}-u${String(unitIndex)}` : slot.id,
         label: unit.label ?? section.label ?? slot.label,
@@ -898,6 +930,12 @@ export function planFromSpec(spec: ContentSpec, totalFrames: number): RecipePlan
         ...((unit.highlights ?? section.highlights) === undefined
           ? {}
           : { highlights: (unit.highlights ?? section.highlights) as Array<{ text: string; color: string }> }),
+        // D5：结构化数值通道 —— 单元优先（与 dataSource/highlights 同风格）。
+        ...((unit.data ?? section.data) === undefined
+          ? {}
+          : { data: unit.data ?? section.data }),
+        // D5：帧率随卡（秒 → 帧换算，如 ORB1 的 periodSec）。
+        fps,
       })
       const pruned = dropRepeatedUnitChrome(generated, unitIndex)
       const cellOfUnit = unit.cell ?? section.cell

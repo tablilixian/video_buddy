@@ -375,6 +375,16 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // 要删掉的手工轨 id：合法值就是那几条轨自己的 id（`hi-orbit-1`），错值只会「没删到」
   // 并被 execute 显式报出「这一段没有这些手工轨」，不会贯穿到下游。
   ids: '短 id 数组（手工轨 id），未命中即由 execute 报出该段现有 id 列表',
+  // —— 配方正确用法 D1（2026-11-26）scaffold_manifest / list_recipes ——
+  // `assetSlots` 是**嵌套对象容器**（段 id → 槽名 → 同源 URL）：容器本身没有「整篇只是
+  // 占位词」的形态，URL 值的真风险（拿不到图）由卡生成器降级版式兜住，不进脏数据。
+  assetSlots: '嵌套对象容器（段id → 槽名 → 素材 URL），容器无占位形态；URL 拿不到图时卡生成器落降级版式，不会贯穿到渲染报错',
+  // `accentColor` 是 CSS 颜色串：非法值由渲染侧按缺省色回落，占位词（`placeholder`）
+  // 不是合法 CSS 色 ⇒ 天然不生效，没有「伪装成合法取值」的脏数据路径。
+  accentColor: 'CSS 颜色串（如 #4f9cf9），非法值按缺省强调色回落，占位词不是合法色值、直接不生效',
+  // `demoNeeds` 是演示需求词数组（`orbit` / `轨道`）：查不到映射的词直接忽略，
+  // 填错只会「没指名缺哪张卡」，由 gateRecipe 的表达力判据照常给出结论，无脏数据贯穿。
+  demoNeeds: '短词数组（演示需求同义词，如 orbit / 轨道），未命中映射即忽略；判据结论由 gateRecipe 正常给出',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

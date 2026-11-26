@@ -2847,3 +2847,19 @@
   - 配套文案反转：`SKILL.md` 附件纪律（发送即落卡，仅落败时才提醒点「落进画布」）、StudioFrame「待落画布」条（「AI 暂时用不了」→「agent 暂时引用不到」）。
 - **涉及文件**：`src/client/lobby-stash.ts`、`src/client/index.ts`、`src/client/StudioFrame.tsx`、`skills/canvas-studio-creation/SKILL.md`、`tests/lobby-stash.test.mjs`（断言反转）、`tests/file-size-guard.test.mjs`（棘轮 3051→3127 / 2787→2859 补登）。
 - **验证**：typecheck / build / verify:loader / 全量 smoke 四步全绿，4007·4007 失败 0。**⚑ 待桌面验收**：项目里贴图发送 → 画布出现参考节点 + 正文带 `@ref`，模型回复能描述图片内容；落盘失败时条目留在「待落画布」条可重试、文件不消失。
+
+#### CV-473 · 配方正确用法链路：list_recipes 五判据 + 配方 seed 编译器 + ORB1/DAT7 两卡（2026-11-27）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **问题**：配方从未被真正用上 —— 不是选错了，是走不到：① 结构起点三选一里「配方卡」档**零机器判据可选中**（意图卡 `structure` 裁决行只写 `list_templates` 五判据）；② 裁决结果无任何持久化字段承接（storyboard/ContentSpec/manifest 均无 `structure`）；③ `recipeAssetsJson` 的 `neededBy` 恒 `[]`、`segmentId`/`note` 不进 JSON ⇒ 素材清单是幽灵账；④ `scaffold_manifest` 调 `planRecipe` **漏传 `assetSlots`/`accentColor`** ⇒ 配方素材永远进不了卡、生成器一律吃缺省色与空槽位；⑤ recipe enum 漏 `product-promo-60s`；⑥ 58 张卡**零 `orbit` 轨**，「月亮绕地球」只能写脚本手改、下轮 scaffold 必冲掉。
+- **方案（D1–D8 已拍板，正本 = `plans/2026-11-26-配方正确用法与两张补充卡-开发文档.md`；seed 规格 = `plans/2026-11-26-配方seed-spec/`）**：
+  - **D1/C1**：新工具 `list_recipes`（第 56 号）—— 五判据（段数 / 素材 / 主题 / 表达力 / 互斥）逐条 ✅/❌，尾部三档结论：**0✅ 不得选配方、落自由编排**；1✅ 自主选；≥2✅ 列给用户挑。意图卡裁决行同步改（D8 文档漂移断言钉住：`intent-card.md` 含「0 个才自由编排」+ 描述含「不得选配方」「落自由编排」「0✅」）。
+  - **D5 数值通道**：`CardRenderContext.data` + `ContentSpec.data` + `planFromSpec`/`planRecipe` 透传 + 形状校验（键 → 有限数/短字符串），演示卡读物理量不再 parse copy。
+  - **D7 seed 载体**：新纯函数 `remotion/recipe-to-storyboard.ts` 的 `recipeToStoryboardSeed(recipe, requirements)` → **种子五节**（§00 brief 短句 / §02 `[{k:'theme',v:recipe.theme}]` / §04 一段一 scene 一 shot `S<n>`·`S<n>-Sh1`、frames=round(duration×fps) 同源 / §07 **pending + bare 数组 + neededBy 指向本批 shot** / §08 硬约束逐条）+ `specSeed`（segments id/card/copy/weight 原样、**只写 weight 不双写 durationSec**、theme→meta.theme、units/carry 留空、autoStages 不开）。过 `normalizeStoryboard` + 结构自检（tokens/scenes/shots 非空、语义 ID 唯一、frames 同源），**不跑 `validateForSeed`**（反变异 2b：pending 生成即拦 ⇒ 三套有素材配方死锁；真拦截点在落地 `storyboard-land.ts`）。seed 以 JSON 随 `list_recipes` 回执给出（bare 形态，标注节键→入参映射与「只填五节、其余保留现值」）。
+  - **事实错误修复**：`write_storyboard` 描述里 assets/constraints 教的 wrapper 形态 `{"assets":[…]}` 会被 `normalizeStoryboardSections` **静默清空成 `[]`**（`contracts/storyboard.ts:709-710`，node 直调实证）→ 改 bare 数组示例 + 注明理由；漂移断言防回潮。
+  - **两张卡**：**ORB1 轨道演示**（新类目 ORB；`animate` 按维度分段折线采样真椭圆 —— `orbit` 原语只支持正圆，折线走任意闭合路径；`scale` 独立维度表达近远点；数值全从参数注入，卡不写「+14%/超级月亮」题材结论）+ **DAT7 节拍赛跑**（data 类目）。
+  - **接线**：recipe enum 补 `product-promo-60s`（配套测试断言 enum 覆盖 `Object.keys(RECIPES)`）；`assetSlots`/`accentColor` 从工具入参传到 `planRecipe`；三档表登记 `list_recipes` A 档；param-guard 豁免 3 参数；名单闸 55→56。
+- **涉及文件**：`src/host-tools-template.ts`（list_recipes + seed 回执）、`src/host-tools.ts`（enum/接线/description bare 化）、`src/remotion/recipe-to-storyboard.ts`（新）、`src/remotion/recipe-cards-orbit.ts`（新）、`src/remotion/recipe-cards-data.ts`、`src/remotion/recipes.ts`、`src/remotion/content-spec.ts`、`src/tool-presentation.ts`、`src/param-guard.ts`、`skills/canvas-studio-creation/references/intent-card.md`、生成器 ×3 + 生成文档 ×4、`tests/recipe-seed.test.mjs`（新，9 条）、`tests/recipe-structure-gate.test.mjs`（新）、`tests/card-catalog-drift` / `card-rules-drift` / `spec-capability-drift` / `tool-registry`（+名单 56）。
+- **反变异 1–8**：1 文档漂移（D8 断言）/ 2 落地拒（story-arc seed → landStoryboard 必 throw，未就绪 + ghost neededBy 只进 warnings）/ 2b 生成不被拦（三套有素材配方直接调用不抛 + 源码文本断言无 `validateForSeed`）/ 3 ORB1 body 轨 / 4 DAT7 / 7 段窗+1帧 / 8 orbit 加 radiusX —— 全部先红后恢复。
+- **验证**：typecheck / 拆步 build / 生成器 --check ×7 / verify:loader / smoke **失败 0**；recipe-seed 9·9 绿；字面变异（pending→ready）3 条红后恢复。**⚑ 待桌面验收**：真机 `list_recipes({requirements})` → 五判据结论 + seed JSON 回执 → 喂 `write_storyboard` 五节 → §07 pending 挡落地、备齐后放行；ORB1 出真椭圆轨道、DAT7 节拍正常。

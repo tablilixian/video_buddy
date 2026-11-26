@@ -77,6 +77,17 @@ export interface CardRenderContext {
    * 卡把它原样写进标题轨的 `highlights`；不支持的卡（没有标题槽的）忽略即可。
    */
   readonly highlights?: readonly { readonly text: string; readonly color: string }[]
+  /**
+   * D5（2026-11-26）：结构化数值参数通道 —— 演示卡（ORB1/DAT7）读轨道半径、周期、
+   * 对齐次数等物理量的唯一入口（不经 copy 字符串解析）。键非空、值为有限数或短
+   * 字符串，由 `validateContentSpec` 形状校验把关；缺省无 ⇒ 既有卡零影响。
+   */
+  readonly data?: Readonly<Record<string, number | string>>
+  /**
+   * D5：合成帧率（spec `meta.fps`，缺省 30）——卡把「秒」换算成帧的依据
+   * （如 ORB1 的 `periodSec`）。既有卡不读它，缺省行为不变。
+   */
+  readonly fps?: number
 }
 
 export type CardTrackGenerator = (ctx: CardRenderContext) => Record<string, unknown>[]
@@ -86,6 +97,13 @@ export interface CardDefinition {
   readonly id: string
   readonly title: string
   readonly assets: readonly CardAssetDecl[]
+  /**
+   * D5（2026-11-26）：本卡消费的 `ctx.data` 键 —— 机器生成的规则表据此出「data 键」列。
+   * 声明即接口（与 `assets` 同级信任注册表）；键的产物响应由卡的确定性单测与
+   * 反向变异保证，不在生成器里做行为探测（copy 规则那次教训：行为只能跑出来，
+   * 接口声明可以写出来）。
+   */
+  readonly dataKeys?: readonly string[]
   readonly generate: CardTrackGenerator
 }
 
@@ -124,6 +142,10 @@ export function registerCard(card: CardDefinition): void {
       devFail(`卡 ${card.id} 的 assets[${decl.slot}] 是 ${decl.kind}，禁止 generated 通道（品牌红线 SB-5：logo/UI 禁 AI 近似重画）`)
     }
   }
+  if (card.dataKeys !== undefined
+    && (!Array.isArray(card.dataKeys) || card.dataKeys.some((key) => typeof key !== 'string' || key.trim() === ''))) {
+    devFail(`卡 ${card.id} 的 dataKeys 必须是非空字符串数组（消费的 ctx.data 键）`)
+  }
   REGISTRY.set(card.id, card)
 }
 
@@ -144,6 +166,26 @@ export function lookupCardId(card: string): string | null {
 /** 已注册卡编号（确定性顺序，测试与文档用）。 */
 export function registeredCardIds(): string[] {
   return [...REGISTRY.keys()].sort()
+}
+
+/**
+ * D5：`ctx.data` 宽容读数 —— 值域是「有限数 / 短字符串」（`validateContentSpec`
+ * 形状校验把关），数字字符串同样收；越界 clamp，缺省 / 非数回落 fallback。
+ * 演示卡读轨道半径、周期、对齐次数等物理量的公共入口。
+ */
+export function readDataNum(
+  data: Readonly<Record<string, number | string>> | undefined,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = data?.[key]
+  const value = typeof raw === 'number'
+    ? raw
+    : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : Number.NaN
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
 }
 
 /** 段轨道通用前缀的 id 拼装（确定性；同段多轨不撞 id）。 */

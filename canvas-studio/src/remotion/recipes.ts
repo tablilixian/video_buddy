@@ -42,6 +42,8 @@ export interface RecipeSegment {
   /** 时长权重（同一 recipe 内归一化到总时长）。 */
   readonly weight: number
   readonly copy: string
+  /** D5：结构化数值参数（键 → 有限数 / 短字符串）；透传进卡的 `ctx.data`。 */
+  readonly data?: Readonly<Record<string, number | string>>
 }
 
 export interface Recipe {
@@ -155,6 +157,8 @@ export interface RecipePlanInput {
   readonly assetSlots?: Readonly<Record<string, Readonly<Record<string, string>>>>
   /** RQ-10：卡生成器的强调色（缺省 #4f9cf9）。 */
   readonly accentColor?: string
+  /** D5：合成帧率（缺省 30）——卡把「秒」换算成帧的依据（如 ORB1 的 periodSec）。 */
+  readonly fps?: number
 }
 
 export interface RecipePlan {
@@ -223,6 +227,9 @@ export function planRecipe(input: RecipePlanInput): RecipePlan {
           sectionCount: recipe.segments.length,
           assetSrc: (name: string) => slots[name],
           accentColor,
+          // D5：配方段的结构化数值直通卡（演示卡读物理量，不 parse copy）。
+          ...(segment.data === undefined ? {} : { data: segment.data }),
+          fps: input.fps ?? 30,
         })
       }
       // 占位用 `subtitle` variant：它自带压暗与底边定位，不会盖住后面要加的视觉主体。

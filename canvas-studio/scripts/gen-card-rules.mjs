@@ -302,6 +302,7 @@ function rowOf(id, synonymsOf) {
     label: labelCell,
     highlights: capabilities.highlights,
     dataSource: capabilities.dataSource,
+    dataKeys: (card.dataKeys ?? []).join(' ') || '—',
     synonyms: synonymsOf(id),
   }
 }
@@ -348,14 +349,15 @@ export function renderCardRules() {
     '- **copy 解析规则**：`分段` = 实测能把多段拆开的分隔符；`→` 后面是段落的去向字段。',
     '  「每段整句上画面」= 键:值 写法不会拆 k/v（写了冒号也当普通文字）。',
     '- **highlights / dataSource**：`✓` = 传了真的进产物（R11 的分段着色 / 数据来源标注）；`—` = 不支持，传了被忽略。',
+    '- **data 键**（D5）：该卡消费的 `ctx.data` 结构化数值键（spec 写 `data: { "半径": 384 }` 时能传哪些键）；`—` = 不消费。键由卡注册时 `dataKeys` 声明，产物响应该卡的单测保证。',
     '- **同义卡**：主体轨型相同且素材依赖相同（渲染坏了 / 想换观感时按这列换，第 0 档降级）。',
     '',
-    '| 卡 | copy 解析规则 | label | highlights | dataSource | 同义卡 |',
-    '|---|---|---|---|---|---|',
+    '| 卡 | copy 解析规则 | label | highlights | dataSource | data 键 | 同义卡 |',
+    '|---|---|---|---|---|---|---|',
   ]
   for (const [, group] of byPrefix) {
     for (const row of group) {
-      lines.push(`| ${row.id} | ${row.copyRule} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.synonyms} |`)
+      lines.push(`| ${row.id} | ${row.copyRule} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.dataKeys} | ${row.synonyms} |`)
     }
   }
   lines.push('')

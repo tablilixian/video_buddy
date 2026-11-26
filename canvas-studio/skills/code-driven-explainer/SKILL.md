@@ -77,6 +77,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **单轮 ≤8 次工具调用、≤3 轨**；超了就降级收尾保住当前版本，不许「再做一点」。
 - **时钟行**：每次工具返回尾部会带 `⏱ M1 剩余 Nmin / 已达成`。超线就照它给的三条命令先出片，不要再美化。
 - **锚点**：每版成片自动落 `build/PROGRESS.md` + `build/versions/vN.json`。压缩 / 换会话后**先读它**再动手，不要重推整片。
+- **一屏要「多出来」的效果（沿路径运动 / 分段停顿 / 引线标注）**：用 `patch_segment_tracks`（`ref: "spec:s2"` + 手工轨），**不要手改 `build/manifest.json`** —— 那份文件每次 scaffold 都会整份重写，手改的轨静默消失（真机原话：「重编后恢复第 2 屏的椭圆轨道」）。手工轨存 `build/overrides/`，重编不丢、只有该段重渲；写完紧接着 `rerender_segment` 看效果。工具**只做新增**（id 不能与既有轨同名），时间窗必须落在本段内。
 - **临时产物只进 `build/tmp/`**：改 manifest 的一次性脚本（`make-*.mjs`）、`*-before-*.json` 副本、检查用抽帧目录，一律写到 `build/tmp/`。`build/` 根只留 `manifest.json` / `PROGRESS.md` / `versions/` / 段产物 —— 散在根上的临时文件会被下一轮 `list_references` 与磁盘统计带进上下文（真机里 16 张 check PNG + 5 份 before 副本每轮都在占预算）。
 
 ## 组装要点（细则已下沉分册）

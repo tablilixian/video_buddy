@@ -158,6 +158,8 @@ export interface CanvasSurfaceProps {
    * 缺省 = 不渲染段视频（未渲项目与既有调用方行为完全不变）。
    */
   segmentMediaByRef?: SegmentMediaByRef
+  /** REQ-041 F6：段 → 手工轨条数（角标；缺省不打，与段视频同一份清单派生）。 */
+  segmentOverrideByRef?: ReadonlyMap<string, number>
   /**
    * 档位继承来源（2026-10-27）：节点输入卡的清晰度 chip 要显示**真实生效值**，
    * 就必须知道项目预置与设置页两层。由 StudioFrame 读好传下来；本组件只按节点
@@ -1839,7 +1841,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               key={cell.id}
               box={cell.box}
               shot={cell.shot}
-              url={url}
+              url={url} overrideCount={props.segmentOverrideByRef?.get(cell.ref) ?? 0}
               selected={cardId !== undefined && selectedNodeIds.includes(cardId)}
               {...(cardId !== undefined ? { onSelect: () => { onSelectNode(cardId) } } : {})}
               onOpen={() => { onOpenSegmentPlayback?.(cell.ref, cell.shot) }}
@@ -1858,7 +1860,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               key={`free-seg-${slot.shot}`}
               box={slot.box}
               shot={slot.shot}
-              url={url}
+              url={url} overrideCount={props.segmentOverrideByRef?.get(slot.ref) ?? 0}
               selected={selectedNodeIds.includes(slot.cardId)}
               onSelect={() => { onSelectNode(slot.cardId) }}
               onOpen={() => { onOpenSegmentPlayback?.(slot.ref, slot.shot) }}

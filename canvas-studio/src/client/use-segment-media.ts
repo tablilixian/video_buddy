@@ -22,24 +22,33 @@ import { useEffect, useState } from 'react'
 import type { SegmentMediaByRef } from '../contracts/segment-media.js'
 import { fetchSegmentMedia } from './api.js'
 import { createSegmentMediaLoad } from '../segment-media-load.js'
-import { segmentMediaByRefOf } from '../segment-media-map.js'
+import { segmentMediaByRefOf, segmentOverrideByRefOf } from '../segment-media-map.js'
 import { subscribeSegmentMediaRefresh } from '../segment-media-signal.js'
 
 export type { SegmentMediaByRef } from '../contracts/segment-media.js'
 
-export function useSegmentMedia(projectId: string | null): SegmentMediaByRef {
-  const [byRef, setByRef] = useState<SegmentMediaByRef>(() => new Map())
+/** 同一份清单派生的两份索引：视频 URL + 手工轨条数（角标）。 */
+export interface SegmentMediaState {
+  byRef: SegmentMediaByRef
+  /** `ref → 手工轨条数`（REQ-041 F6；只含有 override 的段）。 */
+  overrideByRef: ReadonlyMap<string, number>
+}
+
+const EMPTY: SegmentMediaState = { byRef: new Map(), overrideByRef: new Map() }
+
+export function useSegmentMedia(projectId: string | null): SegmentMediaState {
+  const [state, setState] = useState<SegmentMediaState>(EMPTY)
 
   useEffect(() => {
     if (projectId === null || projectId === '') {
-      setByRef(new Map())
+      setState(EMPTY)
       return
     }
     // 清单不可用 = 这一段还没渲过（或宿主暂时不可达）：卡维持文案，静默。
     const loader = createSegmentMediaLoad(
       () => fetchSegmentMedia(projectId),
-      (items) => { setByRef(segmentMediaByRefOf(items)) },
-      () => { setByRef(new Map()) },
+      (items) => { setState({ byRef: segmentMediaByRefOf(items), overrideByRef: segmentOverrideByRefOf(items) }) },
+      () => { setState(EMPTY) },
     )
     void loader.run()
     const unsubscribe = subscribeSegmentMediaRefresh((changed) => {
@@ -51,5 +60,5 @@ export function useSegmentMedia(projectId: string | null): SegmentMediaByRef {
     }
   }, [projectId])
 
-  return byRef
+  return state
 }

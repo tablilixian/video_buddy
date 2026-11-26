@@ -12,6 +12,13 @@ export interface SegmentMediaItem {
   durationSec: number
   /** 段文件 mtimeMs，用作缓存版本。 */
   v: number
+  /**
+   * REQ-041 F6：这一屏的手工轨条数（`build/overrides/`）。
+   *
+   * 托盘角标的唯一来源：画面里有一层不在 spec 里，用户必须能看得出「这一屏为什么跟别的不一样」，
+   * 否则改效果时只会去手改 manifest。缺省 = 0 条。
+   */
+  overrides?: number
 }
 
 export interface SegmentMediaView {

@@ -26,6 +26,7 @@ import { sep } from 'node:path'
 import { throwError } from './error-system.js'
 import { MANIFEST_PREVIEW_LINES, writeManifestFile } from './manifest-file.js'
 import { droppedTracksNote } from './manifest-overwrite.js'
+import { overrideTrackIds } from './segment-overrides-io.js'
 import { validateManifest } from './remotion/manifest.js'
 import type { CompositionManifest } from './remotion/manifest.js'
 import type { ContentSpec } from './remotion/content-spec.js'
@@ -282,7 +283,13 @@ export function scaffoldFromSpec(input: SpecScaffoldInput): { text: string } {
       '```json',
       written.preview,
       '```',
-      ...(droppedTracksNote(written.droppedTracks) === '' ? [] : [droppedTracksNote(written.droppedTracks)]),
+      ...(droppedTracksNote(written.droppedTracks, {
+        ...(input.projectDir === undefined ? {} : { exempt: overrideTrackIds(input.projectDir) }),
+      }) === ''
+        ? []
+        : [droppedTracksNote(written.droppedTracks, {
+          ...(input.projectDir === undefined ? {} : { exempt: overrideTrackIds(input.projectDir) }),
+        })]),
       ...hints,
       `下一步：直接 \`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片。`,
       `改版面请改 **spec 文件**再重跑本工具（不要手改 manifest —— 排版是 spec 的产物，手改会被下次重编覆盖）。`,

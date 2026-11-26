@@ -18,6 +18,8 @@ import { join } from 'node:path'
 
 import { readSegmentMedia } from '../lib/segment-media.js'
 import { deriveSegmentRows } from '../lib/segment-media.js'
+import { segmentOverrideByRefOf } from '../lib/segment-media-map.js'
+import { writeProjectOverride } from '../lib/segment-overrides-io.js'
 
 function project(card, files = ['s1', 's2']) {
   const projectDir = mkdtempSync(join(tmpdir(), 'cs-seg-media-'))
@@ -135,4 +137,36 @@ test('路径穿越 id 直接跳过；中文 projectId 在 URL 中编码', async 
   const view = await readSegmentMedia({ ...p, projectId: '我的项目 3' })
   assert.deepEqual(view.segments.map((s) => s.id), ['s1'])
   assert.equal(view.segments[0].url, `/canvas-studio/assets/${encodeURIComponent('我的项目 3')}/seg-s1.mp4`)
+})
+
+// ─────────────────── REQ-041 F6：托盘角标的数据面 ───────────────────
+
+test('F6：有 override 的段带手工轨条数，没 override 的段不带字段', async () => {
+  const p = project({ segments: ROWS })
+  writeProjectOverride({
+    projectDir: p.projectDir,
+    override: {
+      version: 1,
+      ref: 'spec:s2',
+      anchor: { startFrame: 190, frames: 200 },
+      updatedAt: 1,
+      tracks: [{ id: 'hi-1', type: 'textCard', variant: 'subtitle', startFrame: 200, durationInFrames: 60, text: 'x' }],
+    },
+  })
+  const view = await readSegmentMedia({ ...p, projectId: 'p1' })
+  assert.equal(view.segments[0].overrides, undefined, 's1 没有手工轨 ⇒ 字段缺省（角标不出现）')
+  assert.equal(view.segments[1].overrides, 1)
+
+  // 角标索引与视频索引同源：只保留 >0 的段。
+  const badges = segmentOverrideByRefOf(view.segments)
+  assert.deepEqual([...badges], [['spec:s2', 1]])
+})
+
+test('F6：override 文件坏掉时角标静默为 0（提示层不毁清单）', async () => {
+  const p = project({ segments: ROWS })
+  mkdirSync(join(p.projectDir, 'build', 'overrides'), { recursive: true })
+  writeFileSync(join(p.projectDir, 'build', 'overrides', 'spec-s2.json'), '{ 坏 JSON', 'utf8')
+  const view = await readSegmentMedia({ ...p, projectId: 'p1' })
+  assert.equal(view.segments.length, 2, '清单照常')
+  assert.ok(view.segments.every((segment) => segment.overrides === undefined))
 })

@@ -65,7 +65,7 @@ test('文案：说清「丢了几条 / 是哪几条 / 为什么 / 怎么办」',
   assert.match(note, /2 条轨/)
   assert.match(note, /orbit-a、orbit-b/)
   assert.match(note, /手工轨/, '要让模型知道这不是模板产出的')
-  assert.match(note, /别以为重编会保留/)
+  assert.match(note, /patch_segment_tracks/, 'F6 之后必须指向新载体，而不是让模型「重新加回」')
 })
 
 test('writeManifestFile：覆盖时把丢失的轨带出来（接线行为断言）', () => {

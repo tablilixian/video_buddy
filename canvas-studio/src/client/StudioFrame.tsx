@@ -910,7 +910,9 @@ export function StudioFrame(props: StudioFrameProps) {
 
   const projectId = selectedProjectId
   // REQ-041 L2：段产物按 segmentRef 索引；空 Map = 没有段 / 清单不可用（卡维持文案）。
-  const segmentMediaByRef = useSegmentMedia(projectId)
+  // F6：同一份清单还派生出「这一屏有几条手工轨」—— 托盘角标与视频必须同源，
+  // 否则角标说 2 条、视频还是旧的那一版。
+  const { byRef: segmentMediaByRef, overrideByRef: segmentOverrideByRef } = useSegmentMedia(projectId)
 
   /**
    * 阶段一覆盖层的**自动**可见性 —— 派生，不在 effect 里 setState。
@@ -2274,6 +2276,7 @@ export function StudioFrame(props: StudioFrameProps) {
           <CanvasSurface
             nodes={visibleNodes}
             segmentMediaByRef={segmentMediaByRef}
+            segmentOverrideByRef={segmentOverrideByRef}
             onOpenSegmentPlayback={(ref, shot) => { setPlaybackNodeId(null); setSegmentPlayback({ ref, shot }) }}
             resolutionInherit={resolutionInherit}
             shotIndexOf={shotIndexOf}

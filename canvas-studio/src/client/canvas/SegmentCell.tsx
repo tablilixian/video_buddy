@@ -43,9 +43,16 @@ export interface SegmentCellProps {
   selected?: boolean
   /** 单击：选中这一镜（与点分镜卡同语义，工具条据此锚到本格）。 */
   onSelect?(): void
+  /**
+   * REQ-041 F6：这一屏的手工轨条数（`build/overrides/`）。0 / 缺省 = 不显示角标。
+   *
+   * 为什么需要角标：手工轨是「画面里有一层不在 spec 里」—— 没有角标，用户看到这一屏
+   * 与别的不一样时无从判断差异来自哪里，改效果只会去手改 manifest（真机原话）。
+   */
+  overrideCount?: number
 }
 
-function SegmentCellInner({ box, shot, url, onOpen, selected = false, onSelect }: SegmentCellProps): React.ReactElement {
+function SegmentCellInner({ box, shot, url, onOpen, selected = false, onSelect, overrideCount = 0 }: SegmentCellProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hoverTimer = useRef<number | null>(null)
   const [durationLabel, setDurationLabel] = useState<string | null>(null)
@@ -100,7 +107,12 @@ function SegmentCellInner({ box, shot, url, onOpen, selected = false, onSelect }
     height: box.height,
     containIntrinsicSize: `${box.width}px ${box.height}px`,
   }
-  const badge = durationLabel === null ? '分镜段' : `分镜段 · ${durationLabel}`
+  // 角标顺序：段身份 → 时长 → 手工轨层。手工轨放最后，因为它才是「这一屏跟别的不一样」的原因。
+  const badge = [
+    '分镜段',
+    ...(durationLabel === null ? [] : [durationLabel]),
+    ...(overrideCount > 0 ? [`手工轨 ×${String(overrideCount)}`] : []),
+  ].join(' · ')
 
   return (
     <div
@@ -112,7 +124,10 @@ function SegmentCellInner({ box, shot, url, onOpen, selected = false, onSelect }
       onPointerEnter={handleEnter}
       onPointerLeave={stop}
       onDoubleClick={onOpen}
-      title={selected ? '已选中这一镜：预览 / 下载 / 引用到对话在卡上方' : '这一屏渲出来的样子（单击选中，双击播放带旁白）'}
+      title={[
+        selected ? '已选中这一镜：预览 / 下载 / 引用到对话在卡上方' : '这一屏渲出来的样子（单击选中，双击播放带旁白）',
+        ...(overrideCount > 0 ? [`本屏额外叠了 ${String(overrideCount)} 条手工轨（build/overrides/，不在 spec 里）`] : []),
+      ].join('｜')}
       data-segment-shot={shot}
       data-segment-url={url}
     >

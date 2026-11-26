@@ -34,6 +34,7 @@ import type { CompositionManifest } from './remotion/manifest.js'
 import { planSegmentArtifacts, segmentAssetName, segmentPointers } from './segment-artifacts.js'
 import { segmentVoiceName } from './segment-audio.js'
 import { boundariesFromSpec, resolveShotBoundaries, sliceByShots } from './shot-slice.js'
+import { overrideCountByRef } from './segment-overrides-io.js'
 
 export type { SegmentMediaItem, SegmentMediaView } from './contracts/segment-media.js'
 
@@ -127,6 +128,8 @@ export async function readSegmentMedia(input: {
   }
   // 卡片有明确指针 ⇒ 它是权威（历史卡不回填、不覆盖）；无卡或无指针 ⇒ 只读派生。
   if (!cardRead || rows.length === 0) rows = await derivedRowsFromBuild(input.projectDir)
+  // REQ-041 F6：手工轨条数（托盘角标）。读盘失败按 0 处理 —— 角标是提示，不是判据。
+  const overridesByRef = overrideCountByRef(input.projectDir)
   const segments: SegmentMediaItem[] = []
   for (const row of rows) {
     if (typeof row.id !== 'string' || !SAFE_ID.test(row.id)) continue
@@ -150,9 +153,11 @@ export async function readSegmentMedia(input: {
     } catch {
       // 没合过声 / 合并失败：维持无声版（诚实回退）
     }
+    const overrideCount = typeof row.ref === 'string' ? overridesByRef.get(row.ref) ?? 0 : 0
     segments.push({
       id: row.id,
       ...(typeof row.ref === 'string' && row.ref.length > 0 ? { ref: row.ref } : {}),
+      ...(overrideCount > 0 ? { overrides: overrideCount } : {}),
       url: `/canvas-studio/assets/${encodeURIComponent(input.projectId)}/${encodeURIComponent(file)}`,
       startFrame: finiteNumber(row.startFrame),
       frames: finiteNumber(row.frames),

@@ -53,7 +53,10 @@ const SKILLS_DIR = join(ROOT, 'skills')
  *  2026-11-11 模板库（CV-463）：补 host-tools-template.ts —— `list_templates` 经
  *  defineTemplateTools 工厂展开注册，名字只在该文件源文本出现；漏列会把新写的
  *  template-usage.md（正确引用 list_templates）误判成幽灵引用。 */
-const TOOL_SOURCES = ['host-tools.ts', 'host-tools-template.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'host-tools-canvas-asset.ts', 'skills/placeholder-tools.ts']
+// 2026-11-26（REQ-041 F6）：补 host-tools-rerender.ts / host-tools-overrides.ts ——
+// `rerender_segment` / `patch_segment_tracks` 的名字只在这两个文件里（工厂展开注册），
+// 漏列会让 skill 正文里**正确**引用它们被误判成幽灵工具。
+const TOOL_SOURCES = ['host-tools.ts', 'host-tools-template.ts', 'host-tools-audio.ts', 'host-tools-artifact.ts', 'host-tools-remake.ts', 'host-tools-data.ts', 'host-tools-series.ts', 'host-tools-canvas-asset.ts', 'host-tools-rerender.ts', 'host-tools-overrides.ts', 'skills/placeholder-tools.ts']
 
 function collectFiles(dir, out = []) {
   for (const entry of readdirSync(dir)) {

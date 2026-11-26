@@ -51,7 +51,8 @@ import { templateChannelEnabled } from '../lib/template-channel.js'
 const TEMPLATE_CHANNEL_ON = templateChannelEnabled()
 // RQ-R9/P1-10（2026-11-14）：+validate_manifest（离线体检，复盘 #10）—— 53 / 关模板 52
 // REQ-041 第 2 批（2026-11-25）：+rerender_segment（单段重渲，N1）—— 54 / 关模板 53
-const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 54 : 53
+// REQ-041 F6（2026-11-26）：+patch_segment_tracks（段级手工轨，重编不丢）—— 55 / 关模板 54
+const EXPECTED_TOOL_COUNT = TEMPLATE_CHANNEL_ON ? 55 : 54
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -97,6 +98,8 @@ const EXPECTED_TOOL_NAMES = [
   // REQ-036 C1（2026-11-03）：视频页链接 → 参考视频落盘（抖音/B站/YouTube 白名单）。
   'download_video',
   // CV-445 S3（2026-11-05，rea-video A4）：生成单元规划（拆解表 → 最少调用次数的单元计划）。
+  // REQ-041 F6（2026-11-26）：段级手工轨（build/overrides/，重编 manifest 不丢）。
+  'patch_segment_tracks',
   // R11-B3（2026-11-16）：段级原子改（spec 一屏一个字段 + 整份复校 + 重编）。
   'patch_spec_section',
   // REQ-041 第 2 批（2026-11-25）：单段重渲（只换一屏，不改 spec）。

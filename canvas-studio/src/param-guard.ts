@@ -364,6 +364,17 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   unitIndex: '数值（单元下标，0 基整数），越界由 applySpecPatch 点名现有单元数',
   unitCard: '枚举（卡编号如 A4 / B1），未注册由 validateContentSpec 警告并走占位回落，无脏数据贯穿',
   dataSource: '自由文本（数据集名 + 可复核 URL / observed / inline）：内容即来源描述，占位词与真来源不可区分；填错只影响告警质量，不进画面',
+  // —— REQ-041 F6（2026-11-26）patch_segment_tracks ——
+  // `ref` 是段指针（`spec:s2`）：合法值天然极短（通用尺子会误伤 `s2`），且它指向的是
+  // **spec 文件里的屏**而不是别处产出的对象 id；填错由 validateOverrideTracks 列出
+  // 当前全部段 ref 并拒收（比占位尺子精确）。
+  ref: '段指针 `spec:<段id>`（也接受裸段 id），不存在即由 validateOverrideTracks 列出当前段表并拒收',
+  // 手工轨数组是**结构化容器**：占位形态（`[{}]` / 缺字段）由 validateOverrideTracks
+  // 逐条拒收（时间窗越段 / id 撞既有轨 / 类型未知），容器本身没有「整篇只是占位词」的形态。
+  tracks: '对象数组（manifest 轨形状，≤8 条），逐条由 validateOverrideTracks 拒收（时间窗 / id / 类型），容器本身无占位形态',
+  // 要删掉的手工轨 id：合法值就是那几条轨自己的 id（`hi-orbit-1`），错值只会「没删到」
+  // 并被 execute 显式报出「这一段没有这些手工轨」，不会贯穿到下游。
+  ids: '短 id 数组（手工轨 id），未命中即由 execute 报出该段现有 id 列表',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

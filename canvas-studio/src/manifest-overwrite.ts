@@ -80,12 +80,24 @@ export function diffOverwrittenTracks(
  *
  * 文案必须点出「为什么丢」和「怎么办」：模型看到 `V2-orbit` 这类 id 会立刻明白
  * 那是自己手写的轨，而不是模板产出的。
+ *
+ * `exempt` = **不算丢失**的轨 id（F6：`build/overrides/` 里的手工轨会被重编冲掉，
+ * 但它们本来就有独立住所，下次渲染自动并回来）。不过滤的话每次重编都会假报
+ * 「手工轨丢了」—— 告警一旦常亮，真丢失就再也没人看。
  */
-export function droppedTracksNote(diff: OverwriteTrackDiff | null, shown = 6): string {
-  if (diff === null || diff.dropped.length === 0) return ''
-  const named = diff.dropped.slice(0, shown).join('、')
-  const rest = diff.dropped.length > shown ? ` 等 ${String(diff.dropped.length)} 条` : ''
-  return `⚠️ 旧 manifest 里有 ${String(diff.dropped.length)} 条轨不在本次产物中，已被覆盖：${named}${rest}。`
+export function droppedTracksNote(
+  diff: OverwriteTrackDiff | null,
+  options: { shown?: number; exempt?: ReadonlySet<string> } = {},
+): string {
+  if (diff === null) return ''
+  const shown = options.shown ?? 6
+  const exempt = options.exempt
+  const dropped = exempt === undefined ? diff.dropped : diff.dropped.filter((id) => !exempt.has(id))
+  if (dropped.length === 0) return ''
+  const named = dropped.slice(0, shown).join('、')
+  const rest = dropped.length > shown ? ` 等 ${String(dropped.length)} 条` : ''
+  return `⚠️ 旧 manifest 里有 ${String(dropped.length)} 条轨不在本次产物中，已被覆盖：${named}${rest}。`
     + '这些是 spec 表达不了的**手工轨**（沿路径运动 / 分段停顿 / 引线之类）——'
-    + '需要它们就重新加回（并记进 PROGRESS 的已知未决），别以为重编会保留。'
+    + '要它们活过重编，用 `patch_segment_tracks` 存进 `build/overrides/`（那里不会被 scaffold 碰）；'
+    + '临时加回 manifest 的话，下次重编还会丢。'
 }

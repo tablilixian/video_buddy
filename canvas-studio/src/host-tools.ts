@@ -38,9 +38,12 @@ import { frameCountNote, noteFrameRender } from './render-probe-budget.js'
 // 段级抽帧在 shot-frames.ts（宿主 ffmpeg，失败只记一行不影响出片）。
 import { segmentRenderOptions } from './shot-cache.js'
 import { readProjectSpec, runShotRender } from './shot-render.js'
+import { mergeProjectOverrides, overrideTrackIds } from './segment-overrides-io.js'
+import { withoutOverrideTracks } from './segment-overrides.js'
 import type { ShotRenderDeps } from './shot-render.js'
 import { fillMissingSegments } from './segment-render.js'
 import { defineRerenderSegmentTool } from './host-tools-rerender.js'
+import { definePatchSegmentTracksTool } from './host-tools-overrides.js'
 import { writeRenderedManifest } from './rendered-manifest.js'
 import { publishSegmentPreview } from './segment-preview-publish.js'
 import { sampleSegmentFrame } from './shot-frames.js'
@@ -171,6 +174,12 @@ const resultSchema = {
     // 2026-09-11-filename-consumability.md）。要把它当输入用，只能引用画布节点。
     filename: { type: 'string' as const, description: 'Drama Backend 的产物名（图片类产物，形如 img_01287_.png）。⚠️ 产物名不能直接当其它工具的 filename / filenames 入参（会 500）。要把它用作输入：引用画布节点 @ref[节点标题]（Host 会自动换成可用句柄），或先调 upload_image(url=...)。' },
     warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '提示（可选）：本次未生效或被后端拒绝的参数说明（如 model 未接入），或产物探测失败时的回退说明。非空时必须告知用户，不要声称已按该参数生成' },
+    // REQ-041 F6：手工轨覆盖的合并结果 —— 画面里有一层不在 spec 里这个事实，必须能回给模型。
+    overrideLines: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: '本次并入的段级手工轨覆盖（`build/overrides/`，不在 spec 里、重编 manifest 不会丢），以及没能并入的原因。要改这些轨用 `patch_segment_tracks`，不要手改 manifest',
+    },
     nodeId: { type: 'string' as const, description: '本次产物落到的画布节点 id；可填进 compose_video 的 clipIds 精确指定拼接范围，或填进 video_generate / video_composite 的 replaces 声明「这版取代哪版」' },
     superseded: { type: 'array' as const, items: { type: 'string' as const }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
     clipCount: { type: 'integer' as const, description: '成片合成专用：本次纳入拼接的片段数' },
@@ -425,6 +434,13 @@ interface ComposeToolResult {
   skippedCount: number
   audioComposition: StudioAudioComposition
   warnings?: string[]
+  /**
+   * REQ-041 F6：本次并入的段级手工轨覆盖（以及**没能并入**的原因）。
+   *
+   * 单独一栏而不是塞 warnings：它不是降级/告警，而是「这次画面里有一层不在 spec 里」
+   * 这个事实 —— 模型与用户都需要知道改效果的正确入口是 `patch_segment_tracks`。
+   */
+  overrideLines?: string[]
   /**
    * 三期 W6-1：渲后抽帧（绝对帧号 + 同源 URL；agent 可直接看图）。
    * `path` = 同一张图的项目内绝对路径（A4/P1-6：`read_image` 只认磁盘路径，
@@ -813,13 +829,15 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const v0 = value as { spot?: boolean }
   // V1：spot-check 结果没有成片 URL，走专用文案（不进「已生成产物」模板）。
   if (v0.spot === true) {
-    const v = value as Pick<ComposeToolResult, 'frames' | 'warnings' | 'report' | 'job'>
+    const v = value as Pick<ComposeToolResult, 'frames' | 'warnings' | 'report' | 'job' | 'overrideLines'>
     const lines = ['spot-check 完成（只渲指定帧，未编码成片）：']
     const spotFrames = [...(v.frames ?? [])].sort((a, b) => a.frame - b.frame)
     if (spotFrames.length > 0) {
       lines.push(`静帧 ${spotFrames.length} 张（画面类判据请逐张 read_image 看图取证后再汇报；确实没做成要明说"未做画面自检"）：`)
       for (const sample of spotFrames) lines.push(`- 第 ${sample.frame} 帧: ${sample.path ?? sample.url}`)
     }
+    // 静帧是**合并后**的画面：手工轨若没并进来，这张图看不出差异，必须说清。
+    for (const line of v.overrideLines ?? []) lines.push(line)
     for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
     if (v.report !== undefined) {
       const verdict = formatRenderVerdict(v.report)
@@ -841,6 +859,7 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     job?: ComposeToolResult['job']
     probe?: boolean
     anchor?: ComposeToolResult['anchor']
+    overrideLines?: string[]
   }
   if (v.clipCount === undefined) return blocks
   const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`
@@ -851,6 +870,9 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const lines = [`${base}（纳入 ${v.clipCount} 段${skipped}${audio}）`]
   // CV-138 / CV-141：降级与「成片无声」这类事实不能被吞掉——模型看不见就等于用户不知道。
   for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
+  // REQ-041 F6：手工轨覆盖是「画面里有一层不在 spec 里」的事实，必须进可见回执 ——
+  // 否则模型改效果时仍会去手改 manifest（那正是真机要把第 2 屏椭圆轨道「重编后恢复」的起因）。
+  for (const line of v.overrideLines ?? []) lines.push(line)
   // A4（2026-11-11）：自检行必须排在抽帧之前 —— 它决定「要看几张图」，排在后面等于
   // 判据晚到一步（真机会话实测：8 次 read_image 全发生在读完报告之前）。
   const verdict = v.report === undefined ? '' : formatRenderVerdict(v.report)
@@ -3973,11 +3995,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         if (normalized.errors.length > 0) {
           throwError('CS-USER-ERR', { message: `manifest 顺序衔接解析失败：${normalized.errors.join('；')}` })
         }
+        // REQ-041 F6：段级手工轨覆盖在**校验之前**并入 —— 让它和 manifest 自带轨走同一套
+        // 规则（box / orbit / 未知字段 / 时长自洽），而不是合并完再想办法「相信它」。
+        // 坏 override 逐份跳过并进回执（辅助设施不陪葬），绝不因此拦片。
+        const overrides = mergeProjectOverrides({
+          projectDir: registry.projectDir(projectId),
+          manifest: normalized.manifest,
+          spec: readProjectSpec(registry.projectDir(projectId)),
+        })
         // 分组展开（2026-10-25 · shotcraft P1 / 解析用户 @143min 那句「做到一起就不用管全局坐标」）：
         // `groups` 是**写作者糖** —— 组声明一个绝对矩形，组内轨道的 `box` 用组内百分比，
         // 在这里展开成画布绝对坐标。渲染器 / 校验器 / 客户端一律看不到组，
         // 否则「组内 x」与「画布 x」就会变成两套互相打架的坐标体系。
-        const expanded = expandGroups(normalized.manifest)
+        const expanded = expandGroups(overrides.manifest)
         // 分组有降级（未知组名 / 组内轨缺 box / 组 id 重复）时**直接拒收**而不是静默按原样渲：
         // 静默降级的结果是「画面位置对不上但没人报错」，比一次明确的拒收难查得多。
         if (expanded.warnings.length > 0) {
@@ -4132,9 +4162,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         // 算段、渲染按新帧窗出片，卡上会出现「这一段其实是隔壁那一段的画面」。
         // 只在渲成之后写（渲挂的 reconcile 结果不该覆盖用户手里的文件）；写失败只记一行。
         if (!probe && !spot) {
+          // REQ-041 F6：手工轨**不进** `build/manifest.json` —— 这份文件同时是下一次渲染的
+          // 输入，手工轨一旦写进去就成了「删掉 override 也还在」的僵尸轨。它的住所只有
+          // `build/overrides/`，两处都在就必然有一处变成谎话。
           const persisted = writeRenderedManifest({
             projectDir: registry.projectDir(projectId),
-            manifest: renderManifest,
+            manifest: withoutOverrideTracks(renderManifest, overrides.trackIds),
           })
           if (persisted.note !== undefined) shotReceipt.push(`ℹ️ ${persisted.note}`)
         }
@@ -4376,6 +4409,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(job.spot === true ? { spot: true } : {}),
           ...(anchor === undefined ? {} : { anchor }),
           ...(effectiveWarnings.length > 0 ? { warnings: effectiveWarnings } : {}),
+          ...(overrides.lines.length > 0 ? { overrideLines: overrides.lines } : {}),
           ...(job.frames.length > 0
             ? {
               frames: job.frames.map((sample) => {
@@ -5182,7 +5216,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               '```json',
               written.preview,
               '```',
-              ...(droppedTracksNote(written.droppedTracks) === '' ? [] : [droppedTracksNote(written.droppedTracks)]),
+              ...(droppedTracksNote(written.droppedTracks, { exempt: overrideTrackIds(registry.projectDir(projectId)) }) === ''
+                ? []
+                : [droppedTracksNote(written.droppedTracks, { exempt: overrideTrackIds(registry.projectDir(projectId)) })]),
               ...hints,
               `下一步：直接 \`render_composition({ manifestPath: ${JSON.stringify(written.path)}, quality: "draft" })\` 出片 —— 不要先美化、不要先读源码。`,
               `改文案/加轨请改这个小文件；改末尾轨时长仍要同步 \`meta.durationInFrames\`（当前 ${String(total)}，必须始终 = 最大结束帧）。`,
@@ -5706,6 +5742,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         manifest: renderInput.manifest,
         quality: renderInput.quality,
       }),
+    }),
+    // REQ-041 F6（2026-11-26）· 段级手工轨写入口。与 rerender_segment 配对：
+    // 「patch 手工轨 → 只重渲这一段」。它不挂故事板闸（同 patch_spec_section：编辑类，
+    // 不产出媒体），也不写画布 —— 手工轨的住所只有 build/overrides/。
+    definePatchSegmentTracksTool({
+      registry,
+      resolveProjectId: (cwd) => resolveProjectId(registry, cwd),
     }),
   ]
   // 故事板强约束 L1：**单一放行点**。所有产出类工具在这里统一套「故事板已落地」前置，

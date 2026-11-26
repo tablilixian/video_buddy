@@ -84,6 +84,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   scaffold_manifest: { tier: 'A', title: '生成骨架', icon: '骨' },
   // R11-B3（2026-11-16）：段级原子改 —— 与「生成骨架」同为结构层操作，同档 A。
   patch_spec_section: { tier: 'A', title: '改一屏', icon: '段' },
+  // REQ-041 F6（2026-11-26）：段级手工轨 —— 与「改一屏」同一层的结构操作（改的是这一屏
+  // 里画什么），同档 A；它不直接出片（下一步才是 rerender_segment）。
+  patch_segment_tracks: { tier: 'A', title: '加手工轨', icon: '轨' },
   // RQ-R9/P1-10（2026-11-14 复盘 #10）：离线体检——schema/编排/文字容量一次列全，零副作用。
   validate_manifest: { tier: 'A', title: '离线体检', icon: '检' },
   // 1（CV-463）：模板清单（只读；选模板是「生成骨架」的前一步，所以同档 A）。

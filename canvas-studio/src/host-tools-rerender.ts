@@ -38,6 +38,7 @@ import { matchSegmentVoices } from './segment-audio.js'
 import { mergeSegmentVoice } from './segment-voice-merge.js'
 import { rerenderSegmentArtifact, type SegmentRenderIo } from './segment-render.js'
 import { planSegmentTable } from './segment-table.js'
+import { mergeProjectOverrides } from './segment-overrides-io.js'
 import { renderedManifestPath } from './rendered-manifest.js'
 import { segmentRefOf } from './segment-binding.js'
 import { resolveSegmentIdFromNode } from './host-tools-spec-patch.js'
@@ -189,7 +190,7 @@ export function defineRerenderSegmentTool(ctx: RerenderSegmentContext) {
 
       const projectDir = ctx.registry.projectDir(projectId)
       const assetsDir = ctx.registry.assetsDir(projectId)
-      const manifest = readManifestFile(projectDir)
+      const manifestOnDisk = readManifestFile(projectDir)
       const spec = ((): unknown => {
         try {
           return JSON.parse(readFileSync(join(projectDir, 'build', 'spec.json'), 'utf8')) as unknown
@@ -197,6 +198,11 @@ export function defineRerenderSegmentTool(ctx: RerenderSegmentContext) {
           return null
         }
       })()
+      // REQ-041 F6：与 `render_composition` **同一个**合并入口。段缓存的钥匙是合并后轨的
+      // hash —— 两条路径各写一遍合并逻辑，一处漏掉 override 就会让同一段算出两个 hash
+      // （表现是「改一屏每次整片重渲」，且不报错）。
+      const overrides = mergeProjectOverrides({ projectDir, manifest: manifestOnDisk, spec })
+      const manifest = overrides.manifest
       const plan = planSegmentTable({ manifest, spec })
       if (plan === null) {
         throwError('CS-USER-ERR', {
@@ -279,6 +285,7 @@ export function defineRerenderSegmentTool(ctx: RerenderSegmentContext) {
           ? '这段没有可合的旁白 ⇒ 卡上播无声版（画面已换新）。'
           : '已生成带声副本（画面 + 该段旁白），预览听到的就是成片这一段。',
         '其余段未动（文件与 URL 都没变）。结构性改动（拆屏 / 增删屏）请走 scaffold_manifest 重编段表。',
+        ...overrides.lines,
         ...(voiceNote === undefined ? [] : [`旁白备注：${voiceNote}`]),
         ...(result.warnings.length === 0 ? [] : [`渲染告警：${result.warnings.join('；')}`]),
       ]

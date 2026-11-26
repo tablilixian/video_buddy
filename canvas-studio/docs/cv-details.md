@@ -2832,3 +2832,18 @@
 - **回放（真实 canvas.json）**：11 格全部与「分镜卡 300 → 段 480 → 台词」同一行；槽右 3500 / 台词左 3580，不重叠；行距 318（行高 270 + 48）。
 - **涉及文件**：`src/canvas-view.ts`（泳道表 / 预留 / `computeShotSegmentSlots` / `SEGMENT_CELL_*`）、`src/client/canvas/CanvasSurface.tsx`（渲染、锚点、镜位框、`freeSegmentSlots`）、`tests/canvas-arrange.test.mjs`（+3）。
 - **验证**：typecheck / 双 tsc / verify:loader / 全量 smoke 全绿、失败 0。**⚑ 待桌面验收**：自由画布每镜出现片段格（悬停静音播 / 双击播放带旁白）、点格出三钮、整理布局后与历程视图同形。
+
+#### CV-472 · 对话附件发送即落画布 + 图片直达模型（2026-11-26，反转 CV-407）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **用户口径**：「我想要的效果，是用户粘贴到 agent 对话中的图片，也能直接落到画布上，并且大模型也能拿到图片信息……在不修改 dsh 的情况下。」
+- **根因**：REQ-037/CV-407（2026-11-03 拍板「发送时不自动落卡」）把链路拆成两半 —— `divertAttachments` 只 `stashLobbyFiles` 暂存 + 注入纯文本占位说明（`（1 个附件已暂存、尚未落画布…）`），`divertSend` 再把附件列表清成 `[]` 发出。模型收到的只有文字：既看不到图、也没有节点 id，复盘 §12.3 还因此翻全局缓存 `~/.videobuddy/cache/attachments/request-images/` 捞到无关旧图。
+- **方案（2026-11-26 用户拍板反转；前提已成立：模型有视觉 + 落败件有兜底条）**：
+  - `lobby-stash.ts` 抽出纯校验 `classifyLobbyFiles(fileList)`（accepted/unknown/oversized），`stashLobbyFiles` 与对话附件旁路共用**唯一判定源**（同一文件两条入口同一口径）。
+  - `divertAttachments` 重写：分类 → **`await landStudioFiles` 先落卡** → 正文并进 `@ref` 令牌 → 落败件 `stashLobbyFiles(failed, …)` 留「待落画布」条可重试 → `registerLandedUserRefs` 登记 §07（CV-459，从 `landLobbyStash` 抽出共用，含 bumpStoryboardRev）。占位说明作废。
+  - `divertSend` 改回 `original.call(conversation, session, divertedText, attachmentIds, mode, signal)` —— **附件列表原样放行**，宿主原生 `sendSession` 把图片编码成 image block 直达模型；`releaseDrafts` 保留（0.2.x 成功后幂等空操作、0.1.x 代际唯一释放途径，lobby-claim 门禁钉住）。
+  - 可行性已查证（只读）：DSH 原生 `sendSession` 会编 image block（`ui-conversation/src/client/service.ts:229-290`）；`llm-pi-ai` 只要求 durable attachment service（CV-431 已挂）；网关已声明 `input:[text,image]`（CV-431）；纯文本模型降级 `projectImagesForTextModel` 不抛错。
+  - 配套文案反转：`SKILL.md` 附件纪律（发送即落卡，仅落败时才提醒点「落进画布」）、StudioFrame「待落画布」条（「AI 暂时用不了」→「agent 暂时引用不到」）。
+- **涉及文件**：`src/client/lobby-stash.ts`、`src/client/index.ts`、`src/client/StudioFrame.tsx`、`skills/canvas-studio-creation/SKILL.md`、`tests/lobby-stash.test.mjs`（断言反转）、`tests/file-size-guard.test.mjs`（棘轮 3051→3127 / 2787→2859 补登）。
+- **验证**：typecheck / build / verify:loader / 全量 smoke 四步全绿，4007·4007 失败 0。**⚑ 待桌面验收**：项目里贴图发送 → 画布出现参考节点 + 正文带 `@ref`，模型回复能描述图片内容；落盘失败时条目留在「待落画布」条可重试、文件不消失。

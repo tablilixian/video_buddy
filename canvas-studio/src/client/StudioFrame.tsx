@@ -2810,7 +2810,7 @@ export function StudioFrame(props: StudioFrameProps) {
         {mode === 'work' && projectId !== null && pendingStash.length > 0 && (
           <div className="csPendingLanding" role="status">
             <span className="csPendingLandingLabel">
-              待落画布（{pendingStash.length}）——附件尚未进入画布，AI 暂时用不了：
+              待落画布（{pendingStash.length}）——附件尚未进入画布，agent 暂时引用不到：
             </span>
             {pendingStash.map(item => (
               <span key={item.id} className="csPendingLandingChip" title={item.name}>

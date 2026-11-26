@@ -137,18 +137,29 @@ test('CV-261 落地：四类各有落卡动作，且先载画布再落素材再�
   assert.match(INDEX, /actions\.addVideoNode\(projectId, \{/, '视频必须落 addVideoNode')
   assert.match(INDEX, /actions\.addAudioNode\(projectId, item\.url/, '音频必须落 addAudioNode')
   assert.match(INDEX, /actions\.addTextAssetNode\(projectId, item\.url/, '文本必须落 addTextAssetNode')
-  // REQ-037/CV-407（2026-11-03 拍板，反转 09-05「附件自动落卡」）：对话附件旁路**发送时
-  // 不再直接落卡**——复用同一份暂存机制（stashLobbyFiles）等用户点「落进画布」，消费
-  // 仍走 landLobbyStash → landStudioFiles（同一个文件两条入口仍得到同一个节点，不得留
-  // 第二份落盘实现）。
-  assert.match(INDEX, /const divertAttachments = async \([\s\S]{0,900}?stashLobbyFiles\(files, storeInstance\.actions\)/,
-    '对话附件旁路必须复用 lobbyStash 暂存（不得另立一套登记实现）')
+  // 2026-11-26 反转 CV-407（用户拍板；两个前提已成立：模型有视觉 + 落败件有兜底）：
+  // 对话附件**发送时先落卡，再把附件原样放行**——落卡复用同一份 landStudioFiles（同一
+  // 文件两条入口仍得到同一个节点，不得留第二份落盘实现）；正文只改写，附件列表**不动**，
+  // 由宿主原生 sendSession 把图片编成 image block 直达模型。
+  const divertFnAt = INDEX.indexOf('const divertAttachments = async (')
+  assert.ok(divertFnAt > 0, '找不到对话附件旁路')
+  const classifyAt = INDEX.indexOf('classifyLobbyFiles(files)', divertFnAt)
+  const landCallAt = INDEX.indexOf('await landStudioFiles(projectId, verdict.accepted', divertFnAt)
+  const passAt = INDEX.indexOf('divertedText, attachmentIds, mode, signal', divertFnAt)
+  assert.ok(classifyAt > divertFnAt, '分类与限额必须走 lobby-stash 的唯一判定源（不得另立一套口径）')
+  assert.ok(landCallAt > classifyAt, '对话附件旁路必须在发送时直接落卡（2026-11-26 反转 CV-407）')
+  assert.ok(passAt > landCallAt, '必须先落卡、再把附件原样放行给宿主')
   assert.ok(
-    !/const divertAttachments = async \([\s\S]{0,900}?await landStudioFiles\(projectId, files/u.test(INDEX),
-    '对话附件旁路不得在发送时自动落卡（REQ-037：落卡权交给用户的「落进画布」按钮）',
+    !INDEX.includes('divertedText, [], mode, signal'),
+    '不得清空附件列表（那是图片到不了模型的唯一原因）',
   )
+  assert.match(INDEX, /stashLobbyFiles\(failed, storeInstance\.actions\)/,
+    '落败件必须留在「待落画布」条（文件不静默消失，用户可重试）')
+  assert.match(INDEX, /registerLandedUserRefs\(projectId, refs, signal\)/,
+    '落卡成功必须登记故事板 §07（CV-459，与 landLobbyStash 共用同一实现）')
   assert.match(INDEX, /LOBBY_LAND_STASH_EVENT/, '「落进画布」必须经事件消费暂存（index.ts 侧 landLobbyStash）')
-  assert.match(INDEX, /尚未落画布/, '正文占位说明必须写明「未落卡」事实（agent 靠它提醒用户落卡，不假装可用）')
+  assert.doesNotMatch(INDEX, /先提醒用户点画布上方/,
+    '占位说明已作废：图已随附件直达模型，没有「尚未落卡」可提醒')
 
   const claimAt = INDEX.indexOf('const claimAndSend')
   assert.ok(claimAt > 0, '找不到认领分支')

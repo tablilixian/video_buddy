@@ -57,12 +57,48 @@ const newStashId = (): string =>
 export interface LobbyStashResult {
   /** 真正登记进暂存的条目数（0 表示这一批一件都没收）。 */
   accepted: number
-  /** 真正登记进暂存的文件名（顺序同文件批；REQ-037/CV-407 占位说明要用）。 */
+  /** 真正登记进暂存的文件名（顺序同文件批；调用方回执要用）。 */
   acceptedNames: readonly string[]
   /** 扩展名不在四类白名单内（与 `classifyFile` 同一判据）。 */
   unknown: readonly string[]
   /** 在白名单内但超过该类限额（已带上「哪一类、上限多少」）。 */
   oversized: readonly string[]
+}
+
+/** 分类 + 限额的**纯判定**（不登记、不建句柄）。 */
+export interface LobbyFileVerdict {
+  /** 四类白名单内且未超限的文件（顺序同入参；`kind` 随件给出，免得调用方再判一次）。 */
+  accepted: readonly { file: File; kind: MediaKind }[]
+  /** 扩展名不在四类白名单内（与 `classifyFile` 同一判据）。 */
+  unknown: readonly string[]
+  /** 在白名单内但超过该类限额（已带上「哪一类、上限多少」）。 */
+  oversized: readonly string[]
+}
+
+/**
+ * 按四类白名单与限额筛一批文件。**唯一判定源**：暂存登记（`stashLobbyFiles`）
+ * 与对话附件自动落卡（index.ts 的 `divertAttachments`）共用，两处口径不得分叉。
+ *
+ * @param fileList - 用户拖入 / 选择 / 粘贴的文件（顺序保留）。
+ * @returns 收哪些、哪几件不收（调用方负责提示）。
+ */
+export function classifyLobbyFiles(fileList: readonly File[]): LobbyFileVerdict {
+  const unknown: string[] = []
+  const oversized: string[] = []
+  const accepted: { file: File; kind: MediaKind }[] = []
+  for (const file of fileList) {
+    const kind = classifyFile(file.name)
+    if (kind === null) {
+      unknown.push(file.name)
+      continue
+    }
+    if (file.size > MEDIA_UPLOAD_LIMITS[kind]) {
+      oversized.push(`${file.name}（${MEDIA_KIND_LABEL[kind]}上限 ${formatLimit(kind)}）`)
+      continue
+    }
+    accepted.push({ file, kind })
+  }
+  return { accepted, unknown, oversized }
 }
 
 /**
@@ -76,20 +112,10 @@ export function stashLobbyFiles(
   fileList: readonly File[],
   actions: LobbyStashActions,
 ): LobbyStashResult {
-  const unknown: string[] = []
-  const oversized: string[] = []
+  const verdict = classifyLobbyFiles(fileList)
   const acceptedNames: string[] = []
   const accepted: LobbyStashItem[] = []
-  for (const file of fileList) {
-    const kind = classifyFile(file.name)
-    if (kind === null) {
-      unknown.push(file.name)
-      continue
-    }
-    if (file.size > MEDIA_UPLOAD_LIMITS[kind]) {
-      oversized.push(`${file.name}（${MEDIA_KIND_LABEL[kind]}上限 ${formatLimit(kind)}）`)
-      continue
-    }
+  for (const { file, kind } of verdict.accepted) {
     const id = newStashId()
     files.set(id, file)
     acceptedNames.push(file.name)
@@ -103,7 +129,7 @@ export function stashLobbyFiles(
     })
   }
   if (accepted.length > 0) actions.stashLobbyFiles(accepted)
-  return { accepted: accepted.length, acceptedNames, unknown, oversized }
+  return { accepted: accepted.length, acceptedNames, unknown: verdict.unknown, oversized: verdict.oversized }
 }
 
 /** 摘掉一条暂存：丢掉文件句柄 + 落 store（预览 URL 由 `releaseLobbyStash` 统一回收）。 */

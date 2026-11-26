@@ -76,7 +76,7 @@ import { ToolCallRow } from './ToolCallRow.js'
 import { TOOLVIEW_KEYS } from '../tool-presentation.js'
 // CV-261：首页暂存的文件侧（File 登记表 + 取出/回收）。展示事实在 store 的
 // `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
-import { dismissLobbyStashItem, LOBBY_LAND_STASH_EVENT, releaseLobbyStash, stashLobbyFiles, takeLobbyStashFiles } from './lobby-stash.js'
+import { dismissLobbyStashItem, LOBBY_LAND_STASH_EVENT, releaseLobbyStash, classifyLobbyFiles, stashLobbyFiles, takeLobbyStashFiles } from './lobby-stash.js'
 import { classifyFile, type MediaKind } from '../media-extension.js'
 import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -640,37 +640,91 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     }
     return { landed, tokens, deferred, refs: refs.filter((ref) => ref.assetFile !== '') }
   }
+  /**
+   * 落盘成功 → CV-459：同拍确定性登记进故事板 §07（`source:"user"`），登记不再依赖
+   * agent 记得写。**与 `landLobbyStash` 共用**：对话附件旁路现在也直接落卡，不共用
+   * 就会漏登记 —— 用户贴的图在故事板「参考素材」节里消失。失败只留日志：画布节点
+   * 已落成，登记失败不回滚。
+   */
+  const registerLandedUserRefs = (
+    projectId: string,
+    refs: readonly { name: string; kind: MediaKind; assetFile: string }[],
+    signal?: AbortSignal,
+  ): void => {
+    if (refs.length === 0) return
+    void registerStoryboardUserRefs(projectId, refs, signal)
+      .then((registered) => {
+        // 登记成功必须 bump 覆盖层刷新信号：覆盖层是渲染快照，不会自己重载 ——
+        // 否则条目已在 storyboard.json、画面却是空的（2026-11-10 真机实证）。
+        if (registered.registered > 0) bumpStoryboardRev(projectId)
+      })
+      .catch((cause: unknown) => {
+        ctx.logger.warn(`canvas-studio: register user refs failed (canvas landing unaffected): ${cause instanceof Error ? cause.message : String(cause)}`)
+      })
+  }
+  /**
+   * 对话附件：**先落画布，再把附件原样放行给宿主**。
+   *
+   * 2026-11-26 反转 REQ-037/CV-407 的「2026-11-03 发送时不自动落卡」拍板（用户拍板），
+   * 两个前提都已成立：① 主模型有视觉 —— 网关模型行自 CV-431 起声明 `input:[text,image]`；
+   * ② 落卡失败已有兜底 —— 失败件进「待落画布」条可手动重试，文件不静默消失。
+   *
+   * 两件事并存，缺一不可：
+   * - **落卡**：`landStudioFiles` 落成画布节点，`@ref` 令牌并进正文 —— agent 由此拿到
+   *   节点 id，与 `list_references` 对得上；
+   * - **发图**：这里只改写正文，**绝不动 `attachmentIds`** —— 宿主原生 `sendSession` 把
+   *   图片附件编码成 image block 随 prompt 发出（ui-conversation `service.ts` 的
+   *   `serializeAttachments`），模型直接看到像素。万一换回纯文本模型，llm 层把图片
+   *   投影成文本降级（`llm/src/index.ts` 的 `projectImagesForTextModel`），发送不失败。
+   *
+   * 返回 `undefined` = 没有可改写的正文，调用方走原生路径（附件同样原样放行）。
+   */
   const divertAttachments = async (
     files: readonly File[],
     text: string,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<string | undefined> => {
     if (files.length === 0) return undefined
     const projectId = resolveActiveProjectId()
     if (projectId === null) return undefined
-    // REQ-037/CV-407（2026-11-03 拍板，反转 2026-09-05「附件自动标参考落卡」）：
-    // 项目内附件**发送时不再自动落卡**——登记进暂存（复用 lobbyStash 机制，文件本体
-    // 留在 lobby-stash 的模块级表），用户点「待落画布」条的「落进画布」才落
-    // （走 landLobbyStash，与首页暂存同一落卡链路）。正文追加占位说明：agent 必须
-    // 知道「附件存在但未落卡」，产线要用时先提醒用户点击，不要假装可用。
-    const result = stashLobbyFiles(files, storeInstance.actions)
+    // 分类与限额走唯一判定源（与暂存条同口径），但**不登记**暂存 —— 落成了就没有
+    // 「待落画布」的事实，先登记只会让条子闪一下再消失。
+    const verdict = classifyLobbyFiles(files)
     const notes: string[] = []
-    if (result.accepted > 0) {
-      notes.push(
-        `（${String(result.accepted)} 个附件已暂存、尚未落画布：${result.acceptedNames.join('、')}。`
-        + '需要用作生成素材时，先提醒用户点画布上方「待落画布」条里的「落进画布」；'
-        + '落卡后用 list_references 可查到节点 id。）',
-      )
+    if (verdict.unknown.length > 0) {
+      notes.push(`（${String(verdict.unknown.length)} 个附件未落画布——类型不支持：${verdict.unknown.join('、')}）`)
     }
-    if (result.unknown.length > 0) {
-      notes.push(`（${String(result.unknown.length)} 个附件未收——类型不支持：${result.unknown.join('、')}）`)
+    if (verdict.oversized.length > 0) {
+      notes.push(`（${String(verdict.oversized.length)} 个附件未落画布——超过限额：${verdict.oversized.join('、')}）`)
     }
-    if (result.oversized.length > 0) {
-      notes.push(`（${String(result.oversized.length)} 个附件未收——超过限额：${result.oversized.join('、')}）`)
+    let tokens: readonly string[] = []
+    if (verdict.accepted.length > 0) {
+      let outcome: LandOutcome | undefined
+      try {
+        outcome = await landStudioFiles(projectId, verdict.accepted.map((entry) => entry.file), signal)
+      } catch (cause) {
+        // 落卡失败不拦发送：图仍随附件原样发出去，只是画布上暂时没有节点。
+        ctx.logger.warn(`canvas-studio: attachment landing failed, message still sent: ${cause instanceof Error ? cause.message : String(cause)}`)
+      }
+      if (outcome !== undefined) {
+        const { landed, refs } = outcome
+        tokens = outcome.tokens
+        // 落败件进「待落画布」条：用户点「落进画布」可重试，文件不静默消失
+        //（与 landLobbyStash 同一条纪律：只摘落成的，失败件留着）。
+        const failed = verdict.accepted.filter((_, index) => landed[index] !== true).map((entry) => entry.file)
+        if (failed.length > 0) {
+          stashLobbyFiles(failed, storeInstance.actions)
+          ctx.logger.warn(`canvas-studio: ${String(failed.length)} attachment(s) not landed; kept in the pending bar`)
+        }
+        registerLandedUserRefs(projectId, refs, signal)
+      }
     }
-    if (notes.length === 0) return text.trim() === '' ? undefined : text
-    const noteText = notes.join('\n')
-    return text.trim() === '' ? noteText : `${text}\n${noteText}`
+    const chunks: string[] = []
+    if (text.trim() !== '') chunks.push(text)
+    if (tokens.length > 0) chunks.push(tokens.join(' '))
+    chunks.push(...notes)
+    if (chunks.length === 0) return undefined
+    return chunks.join('\n')
   }
   // REQ-037/CV-407：「落进画布」按钮（StudioFrame 待落画布条）→ 消费暂存。
   // 与 lobby-stash 其它跨树事件同一套 window 约定（组件树与本文件没有可传递
@@ -706,19 +760,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
     // CV-459：落盘成功 = 文件已进 assets/ → 同拍确定性登记进故事板 §07（source:"user"），
     // 登记不再依赖 agent 记得写（CV-458 解决「看得见」，这里解决「一定在」）。失败只留
     // 日志：画布节点与待落画布条语义不变，agent 登记纪律（CV-405）仍是兜底。
-    if (outcome.refs.length > 0) {
-      void registerStoryboardUserRefs(projectId, outcome.refs, signal)
-        .then((registered) => {
-          // 登记成功必须 bump 覆盖层刷新信号：覆盖层是渲染快照，不会自己重载 ——
-          // 首页附件在故事板打开**之后**才登记完成（上传要几秒），不 bump 用户看到
-          // 的就是永远空着的「参考素材」节（2026-11-10 真机实证，storyboard.json 里
-          // 条目已在、画面没有）。
-          if (registered.registered > 0) bumpStoryboardRev(projectId)
-        })
-        .catch((cause: unknown) => {
-          ctx.logger.warn(`canvas-studio: register user refs failed (canvas landing unaffected): ${cause instanceof Error ? cause.message : String(cause)}`)
-        })
-    }
+    registerLandedUserRefs(projectId, outcome.refs, signal)
     const done = pairs.filter((_, index) => outcome.landed[index] === true).map((pair) => pair.item)
     const kept = pairs.filter((_, index) => outcome.landed[index] !== true).map((pair) => pair.item)
     const consumed = [...done, ...ghosts]
@@ -922,7 +964,7 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
       const attachmentDivert = typeof conversation.resolveDraftAttachments === 'function'
         || typeof conversation.draftImages === 'function'
       const original = conversation.sendSession
-      /** 附件改道链路（CV-247 原逻辑，抽出复用）：纯文本直通，带图落盘 + @ref。 */
+      /** 附件改道链路：纯文本直通；带附件 = 落卡改写正文 + **附件原样放行**（见 divertAttachments）。 */
       const divertSend = (args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         const [session, text, attachmentIds, mode, signal] = args
         if (!attachmentDivert || attachmentIds.length === 0) return original.apply(conversation, args)
@@ -933,11 +975,13 @@ function studioClient(ctx: ClientContext, layout: StudioLayoutController): void 
         const files = attachments.map((attachment) => attachment.file)
         return divertAttachments(files, text, signal)
           .then((divertedText) => {
-            // 无激活项目等场景：divertAttachments 返回 undefined → 原生路径。
+            // 没有可改写的正文（无项目 / 全部没落成也没提示）→ 原生路径，附件照发。
             if (divertedText === undefined) return original.apply(conversation, args)
-            // 纯文本提交（空附件列表）；成功后自行释放草稿（含 blob URL 回收），
-            // 与原补丁「草稿在 prompt 成功结算后才释放」语义一致。
-            return original.call(conversation, session, divertedText, [], mode, signal)
+            // **附件原样放行**：宿主原生 sendSession 负责把图片编码成 image block 发出。
+            // 草稿回收：0.2.1 原生侧按 observed 结算自己会摘（含 blob URL 回收），成功后
+            // 这次释放是幂等空操作；0.1.x 只有 `releaseDraftImages` 的代际没有原生结算，
+            // 全靠这里释放 —— 适配层两代都认，故保留（lobby-claim 门禁钉住）。
+            return original.call(conversation, session, divertedText, attachmentIds, mode, signal)
               .then((result) => {
                 if (result.kind === 'success') releaseDrafts(attachments)
                 return result

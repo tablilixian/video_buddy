@@ -1,0 +1,58 @@
+file,lang,gender,genderCn,age,ageCn,cvAge,durationSec,source,license,sourceId,note
+ar/ar-f-young-01.wav,ar,female,女,young,青年,teens,6.23,Common Voice 22.0,CC0-1.0,common_voice_ar_24023335.mp3,وَالْمَلَكُ عَلَى أَرْجَائِهَا وَيَحْمِلُ عَرْشَ رَبِّكَ فَوْقَهُمْ يَوْمَئِذٍ ثَمَانِيَةٌ
+ar/ar-m-young-01.wav,ar,male,男,young,青年,twenties,6.22,Common Voice 22.0,CC0-1.0,common_voice_ar_19238781.mp3,يمكن أن يشير عدد من الأشخاص الذين شاركوا بسهولة إلى المشكلة
+de/de-f-young-01.wav,de,female,女,young,青年,thirties,8.54,Common Voice 22.0,CC0-1.0,common_voice_de_17326189.mp3,"Der Flughafen Leipzig/Halle ist so gebaut, dass kleine Flugzeuge notfalls auch auf der Autobahn landen könnten."
+de/de-m-mid-01.wav,de,male,男,mid,中年,twenties,6.38,Common Voice 22.0,CC0-1.0,common_voice_de_17300423.mp3,Valerie wohnt in einem alten Plattenbau aus DDR-Zeiten.
+de/de-m-senior-01.wav,de,male,男,senior,中老年,thirties,6.77,Common Voice 22.0,CC0-1.0,common_voice_de_17304714.mp3,Jetzt fängt es doch tatsächlich an zu hageln.
+en/en-f-elder-01.wav,en,female,女,elder,老年,seventies,7.58,Common Voice 22.0,CC0-1.0,common_voice_en_1717.mp3,You can avoid this in your own code by preferring easily recognized identifiers.
+en/en-f-mid-01.wav,en,female,女,mid,中年,twenties,4.01,Common Voice 22.0,CC0-1.0,common_voice_en_110778.mp3,Owls are always intellectual in fairy-tales.
+en/en-f-teen-01.wav,en,female,女,teen,少年,twenties,4.01,Common Voice 22.0,CC0-1.0,common_voice_en_110778.mp3,Owls are always intellectual in fairy-tales.
+en/en-m-senior-01.wav,en,male,男,senior,中老年,thirties,7.13,Common Voice 22.0,CC0-1.0,common_voice_en_115769.mp3,Every one knows best where the shoe pinches him
+en/en-m-young-01.wav,en,male,男,young,青年,thirties,7.13,Common Voice 22.0,CC0-1.0,common_voice_en_115769.mp3,Every one knows best where the shoe pinches him
+es/es-f-elder-01.wav,es,female,女,elder,老年,fifties,6.26,Common Voice 22.0,CC0-1.0,common_voice_es_18346372.mp3,"retorciéndose las manos , pálida , casi trágica , se adelantaba exclamando :"
+es/es-f-young-01.wav,es,female,女,young,青年,twenties,6.14,Common Voice 22.0,CC0-1.0,common_voice_es_18311718.mp3,"a lo lejos cruzaban por delante de los caballos islas flotantes de gigantescas ninfea ,"
+es/es-m-mid-01.wav,es,male,男,mid,中年,thirties,6.74,Common Voice 22.0,CC0-1.0,common_voice_es_18311459.mp3,sus sangrientas hazañas son las hazañas que en otro tiempo hicieron florecer las epopeyas .
+fr/fr-f-senior-01.wav,fr,female,女,senior,中老年,fourties,5.5,Common Voice 22.0,CC0-1.0,common_voice_fr_17307405.mp3,On constate une forte hausse de la demande avec le temps.
+fr/fr-f-young-01.wav,fr,female,女,young,青年,teens,4.8,Common Voice 22.0,CC0-1.0,common_voice_fr_17306720.mp3,"Elle l'avait repris alors, elle l'avait ramené chez elle avec une joie triomphale."
+fr/fr-m-young-01.wav,fr,male,男,young,青年,thirties,6.36,Common Voice 22.0,CC0-1.0,common_voice_fr_17300270.mp3,Elle va permettre de favoriser durablement une filière riche en emplois non délocalisables.
+hi/hi-f-young-01.wav,hi,female,女,young,青年,fourties,7.22,Common Voice 22.0,CC0-1.0,common_voice_hi_23809919.mp3,आतंकवादी लखनऊ को भी दे सकते हैं पठानकोट जैसा घाव!
+hi/hi-m-young-01.wav,hi,male,男,young,青年,twenties,6.98,Common Voice 22.0,CC0-1.0,common_voice_hi_25998260.mp3,"मुख्तार अंसारी, अतीक अहमद के बाद मुन्ना बजरंगी का भी बदला ठिकाना"
+id/id-f-young-01.wav,id,female,女,young,青年,twenties,7.49,Common Voice 22.0,CC0-1.0,common_voice_id_25902155.mp3,"Di kota itu, ia merasa kesulitan dalam bekerja karena kemampuan bahasa Inggrisnya buruk."
+id/id-m-young-01.wav,id,male,男,young,青年,twenties,6.7,Common Voice 22.0,CC0-1.0,common_voice_id_25978850.mp3,Pemain memukul bola kecil di sekitar es dengan tongkat yang disebut sapu.
+it/it-f-young-01.wav,it,female,女,young,青年,thirties,6.62,Common Voice 22.0,CC0-1.0,common_voice_it_17443325.mp3,Un Internet in cui l’individuo possa plasmare la propria personale esperienza sul Web.
+it/it-m-mid-01.wav,it,male,男,mid,中年,twenties,8.5,Common Voice 22.0,CC0-1.0,common_voice_it_17416179.mp3,"Portava lui lo scettro reale, un semplice bastone bianco di betulla con punta in avorio e ricami in argento, che aveva una lunghissima storia."
+ja/ja-f-mid-01.wav,ja,female,女,mid,中年,twenties,7.3,Common Voice 22.0,CC0-1.0,common_voice_ja_20815273.mp3,わたしはあの先生に日本語を習っています。
+ja/ja-f-young-01.wav,ja,female,女,young,青年,twenties,7.3,Common Voice 22.0,CC0-1.0,common_voice_ja_20815273.mp3,わたしはあの先生に日本語を習っています。
+ja/ja-m-senior-01.wav,ja,male,男,senior,中老年,fifties,6.72,Common Voice 22.0,CC0-1.0,common_voice_ja_20097401.mp3,ドラマは、あくまでもドラマであり、虚構であって、現実ではない。
+ja/ja-m-young-01.wav,ja,male,男,young,青年,twenties,7.63,Common Voice 22.0,CC0-1.0,common_voice_ja_19779364.mp3,ヴェーザー自転車道やミューレンルートに従ったサイクリングツアーはペータースハーゲンを経由する
+ko/ko-f-young-01.wav,ko,female,女,young,青年,twenties,7.78,Common Voice 22.0,CC0-1.0,common_voice_ko_36880067.mp3,그 이웃을 쳐서 거짓 증거하는 사람은 방망이요 칼이요 뾰족한 살이니라
+ko/ko-m-young-01.wav,ko,male,男,young,青年,thirties,8.64,Common Voice 22.0,CC0-1.0,common_voice_ko_35844067.mp3,그는 이 우중에 우장도 없이 그 먼 곳을 철벅거리고 가기가 싫었음일까?
+nl/nl-f-mid-01.wav,nl,female,女,mid,中年,fifties,4.66,Common Voice 22.0,CC0-1.0,common_voice_nl_20149006.mp3,De grafische kaart komt volgende maand in de winkel.
+nl/nl-m-mid-01.wav,nl,male,男,mid,中年,fourties,6.38,Common Voice 22.0,CC0-1.0,common_voice_nl_22065732.mp3,"Zij hebben reeds uitvoerig uitgelegd wat niet werd gedaan, na al het werk."
+pl/pl-f-young-01.wav,pl,female,女,young,青年,thirties,6.34,Common Voice 22.0,CC0-1.0,common_voice_pl_20818554.mp3,"Zdawała się szukać czegoś, czego znaleźć nie mogła. Nory pod zwalonymi drzewami"
+pl/pl-m-young-01.wav,pl,male,男,young,青年,twenties,6.34,Common Voice 22.0,CC0-1.0,common_voice_pl_20771218.mp3,"Musi się pan nauczyć, że pewne słowa są nieodpowiednie w pewnych miejscach."
+pt/pt-f-young-01.wav,pt,female,女,young,青年,thirties,6.34,Common Voice 22.0,CC0-1.0,common_voice_pt_19399087.mp3,Um bebê dormindo está chupando os dedos e está vestindo uma roupa asiática.
+pt/pt-m-mid-01.wav,pt,male,男,mid,中年,thirties,6.5,Common Voice 22.0,CC0-1.0,common_voice_pt_19331213.mp3,"O garoto ofereceu sua garrafa, esperando que o velho o deixasse em paz."
+ru/ru-f-senior-01.wav,ru,female,女,senior,中老年,fifties,7.02,Common Voice 22.0,CC0-1.0,common_voice_ru_24001600.mp3,Запуск виртуальной машины в свою очередь начинает загрузку операционной системы
+ru/ru-f-young-01.wav,ru,female,女,young,青年,twenties,9.02,Common Voice 22.0,CC0-1.0,common_voice_ru_18913213.mp3,Благодаря скоординированным и решительным международным мерам реагирования число успешных нападений существенно уменьшилось.
+ru/ru-m-young-01.wav,ru,male,男,young,青年,twenties,6.5,Common Voice 22.0,CC0-1.0,common_voice_ru_18849051.mp3,"В особенности, я повторяю, мы отводим высочайший приоритет ядерному разоружению."
+th/th-f-young-01.wav,th,female,女,young,青年,twenties,8.74,Common Voice 22.0,CC0-1.0,common_voice_th_23657106.mp3,คุณเข้าใจไหมว่าฉันค่อนข้างเด็ก อายุเพียงสิบแปดปีเท่านั้น และฉันปรารถนาที่จะมีชีวิตอยู่ต่อไป
+th/th-m-young-01.wav,th,male,男,young,青年,twenties,7.42,Common Voice 22.0,CC0-1.0,common_voice_th_23714229.mp3,คุณช่วยบอกรายละเอียดของเขาให้ฉันฟังหน่อยได้ไหม ?
+tr/tr-f-young-01.wav,tr,female,女,young,青年,thirties,5.69,Common Voice 22.0,CC0-1.0,common_voice_tr_40000800.mp3,Eserlerinin çoğunu Halep'te geçirdiği bu yıllarda kaleme alır.
+tr/tr-m-mid-01.wav,tr,male,男,mid,中年,fifties,7.02,Common Voice 22.0,CC0-1.0,common_voice_tr_25365266.mp3,Yüzünün bütün iptidai ve vahşi ifadesine rağmen acınacak bir tarafı vardı.
+vi/vi-f-senior-01.wav,vi,female,女,senior,中老年,thirties,6.67,Common Voice 22.0,CC0-1.0,common_voice_vi_21965267.mp3,hà Sợ quá giật lùi lại phía sau suýt ngã ngửa ra đất
+vi/vi-f-young-01.wav,vi,female,女,young,青年,,4.97,Common Voice 22.0,CC0-1.0,,既有文件补录（早于清单记录）
+vi/vi-m-senior-01.wav,vi,male,男,senior,中老年,sixties,6.1,Common Voice 22.0,CC0-1.0,common_voice_vi_23925094.mp3,Khóc nhiều cũng đến lúc đôi mắt của quân mệt mỏi
+yue/yue-f-young-01.wav,yue,female,女,young,青年,thirties,6.52,Common Voice 22.0,CC0-1.0,common_voice_yue_31263272.mp3,到而家呢一步，係唔係等就得㗎喇
+yue/yue-m-mid-01.wav,yue,male,男,mid,中年,twenties,6.66,Common Voice 22.0,CC0-1.0,common_voice_yue_31206866.mp3,相姦何太急，唔分尖團音嘅方言就會變成噉
+zh-cn/zh-cn-f-young-01.wav,zh-CN,female,女,young,青年,thirties,10.1,Common Voice 22.0,CC0-1.0,common_voice_zh-CN_20018650.mp3,凡在限期时持有有效或可续期的澳门居民身份证居民均是为此计划之受惠对象。
+zh-cn/zh-cn-m-young-01.wav,zh-CN,male,男,young,青年,teens,8.3,Common Voice 22.0,CC0-1.0,common_voice_zh-CN_18531536.mp3,汉元鼎六年，武帝平定南越国，南越之地重新划郡，番禺仍为南海郡治。
+zh-tw/zh-tw-f-young-01.wav,zh-TW,female,女,young,青年,twenties,4.22,Common Voice 22.0,CC0-1.0,common_voice_zh-TW_17389889.mp3,咖啡好喝，點心也很好吃
+zh-tw/zh-tw-m-mid-01.wav,zh-TW,male,男,mid,中年,twenties,4.61,Common Voice 22.0,CC0-1.0,common_voice_zh-TW_17382870.mp3,證明文件應經審查並妥善保存
+zh/zh-f-child-01.wav,zh,female,女,child,儿童,,10.39,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-f-mid-01.wav,zh,female,女,mid,中年,,10.15,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-f-senior-01.wav,zh,female,女,senior,中老年,,10.17,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-f-teen-01.wav,zh,female,女,teen,少年,,12.03,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-m-mid-01.wav,zh,male,男,mid,中年,,6.38,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-m-senior-01.wav,zh,male,男,senior,中老年,,7.71,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）
+zh/zh-m-teen-01.wav,zh,male,男,teen,少年,,10.85,AISHELL-3,Apache-2.0,,既有文件补录（早于清单记录）

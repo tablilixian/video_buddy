@@ -288,3 +288,61 @@ test('回核实现抛错 ⇒ 成片照常返回，只记一行（回核不吞成
   assert.ok(result.outcome.url.length > 0)
   assert.match(result.receipt.join('\n'), /\[时序回核\] 未执行/)
 })
+
+test('段合声：分镜路径发布段之后必须过合声（整片路径有、分镜路径此前漏 = 无声段）', async () => {
+  const project = makeProject()
+  const audioManifest = {
+    ...manifest(),
+    audio: { voiceOver: [{ src: '/canvas-studio/assets/p/vo-1.mp3', startFrame: 0 }] },
+  }
+  const calls = []
+  const { deps: d } = deps(project, {
+    // 带 audio 也会走 muxAudio（成片整轨混音）—— 这里只验合声接线，混音用假实现避开 ffmpeg。
+    muxAudio: async ({ videoPath }) => ({ mixed: false, videoPath }),
+    mergeVoices: async (input) => {
+      calls.push({ pointers: input.pointers.map((p) => p.id), artifacts: input.artifacts.map((a) => a.id), projectId: input.projectId })
+      return { note: undefined, voiceCost: { merged: 3, totalMs: 240, maxMs: 90 } }
+    },
+    projectId: 'proj-1',
+  })
+  const result = await runShotRender(audioManifest, d)
+
+  assert.ok(result.outcome !== null, '带 audio 但无 video 轨 ⇒ 仍走分镜')
+  assert.equal(calls.length, 1, '段发布之后必须调一次合声')
+  assert.deepEqual(calls[0].pointers, ['s1', 's2', 's3'], '合声入参必须是刚发布的段指针')
+  assert.deepEqual(calls[0].artifacts, ['s1', 's2', 's3'], '旁白按段窗配对需要段拆解表')
+  assert.equal(calls[0].projectId, 'proj-1', '跨项目错配防护必须透传 projectId')
+  assert.match(result.receipt.join('\n'), /🔊 段合声：3 段/, '合声耗时要有回执（用户问「发段会不会更慢」时有数）')
+})
+
+test('段合声抛错 ⇒ 段指针照常返回，只记一行（无声段仍可用）', async () => {
+  const project = makeProject()
+  const audioManifest = {
+    ...manifest(),
+    audio: { voiceOver: [{ src: '/canvas-studio/assets/p/vo-1.mp3', startFrame: 0 }] },
+  }
+  const { deps: d } = deps(project, {
+    muxAudio: async ({ videoPath }) => ({ mixed: false, videoPath }),
+    mergeVoices: async () => {
+      throw new Error('ffmpeg 缺失')
+    },
+  })
+  const result = await runShotRender(audioManifest, d)
+
+  assert.equal(result.segments.length, 3, '合声失败不能没收段产物')
+  assert.ok(result.outcome !== null)
+  assert.match(result.receipt.join('\n'), /段合声失败（无声段仍可用）：ffmpeg 缺失/)
+})
+
+test('无 audio 的片不调合声（没有旁白可配，别白跑一轮）', async () => {
+  const project = makeProject()
+  let called = 0
+  const { deps: d } = deps(project, {
+    mergeVoices: async () => {
+      called += 1
+      return {}
+    },
+  })
+  await runShotRender(manifest(), d)
+  assert.equal(called, 0, 'manifest.audio 缺失时不应触达合声')
+})

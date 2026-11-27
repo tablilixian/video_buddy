@@ -370,6 +370,12 @@ function rowOf(id, synonymsOf) {
     title: card.title,
     copyRule: probeCopyParsing(card),
     capacity: probeCapacity(card),
+    // 素材槽名：卡目录只说「2图」，不说「叫什么」。2026-11-27 真机会话里模型只能猜
+    // `body1`（真名 core / satellite），猜错 ⇒ assetSrc 拿不到 ⇒ 静默降级纯色圆，
+    // 观感塌成「两个圆圈」。槽名必须可查，`(选)` = required:false（缺图有降级、不报错）。
+    assetSlots: card.assets.length === 0
+      ? '—'
+      : card.assets.map((decl) => `${decl.slot}${decl.required === true ? '' : '(选)'}`).join(' '),
     label: labelCell,
     highlights: capabilities.highlights,
     dataSource: capabilities.dataSource,
@@ -422,16 +428,18 @@ export function renderCardRules() {
     '- **容量**（`条 / 行`）：**这张卡装得下多少**——喂 8 条探针后产物里还剩几条（`不限条` = 不截断，'
       + '但超出行数会溢出/缩字，不是"安全"），以及正文最多显示几行（由 textCard 变体决定）。'
       + '**写文案前先看这列**：`4 条 / 3 行` 的卡塞 6 条要点，后 2 条会直接消失。',
+    '- **素材槽**：`assetSlots` 里能写的**键名**（`(选)` = 可选槽，缺图自动降级、不报错）。'
+      + '卡目录的「素材」列只说几张，槽名只有本列有 —— 猜错名字不会报错，图会静默丢掉。',
     '- **highlights / dataSource**：`✓` = 传了真的进产物（R11 的分段着色 / 数据来源标注）；`—` = 不支持，传了被忽略。',
     '- **data 键**（D5）：该卡消费的 `ctx.data` 结构化数值键（spec 写 `data: { "半径": 384 }` 时能传哪些键）；`—` = 不消费。键由卡注册时 `dataKeys` 声明，产物响应该卡的单测保证。',
     '- **同义卡**：主体轨型相同且素材依赖相同（渲染坏了 / 想换观感时按这列换，第 0 档降级）。',
     '',
-    '| 卡 | copy 解析规则 | 容量 | label | highlights | dataSource | data 键 | 同义卡 |',
-    '|---|---|---|---|---|---|---|---|',
+    '| 卡 | copy 解析规则 | 容量 | 素材槽 | label | highlights | dataSource | data 键 | 同义卡 |',
+    '|---|---|---|---|---|---|---|---|---|',
   ]
   for (const [, group] of byPrefix) {
     for (const row of group) {
-      lines.push(`| ${row.id} | ${row.copyRule} | ${row.capacity} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.dataKeys} | ${row.synonyms} |`)
+      lines.push(`| ${row.id} | ${row.copyRule} | ${row.capacity} | ${row.assetSlots} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.dataKeys} | ${row.synonyms} |`)
     }
   }
   lines.push('')

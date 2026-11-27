@@ -40,6 +40,78 @@ export interface PublishSegmentPreviewResult {
   voiceCost?: { merged: number; totalMs: number; maxMs: number }
 }
 
+export interface MergeVoicesForPointersInput {
+  projectDir: string
+  assetsDir: string
+  manifest: CompositionManifest
+  /** 已发布的段指针（`publishSegmentArtifacts` / `publishSegmentsFromCache` 的产物）。 */
+  pointers: readonly SegmentPointer[]
+  /** 段拆解表（旁白按 `startFrame` 落窗配对，不按序号）。 */
+  artifacts: readonly { id: string; startFrame: number; frames: number }[]
+  /** 本项目 id：校验旁白 URL 的 projectId，防跨项目同名错配（缺省跳过校验）。 */
+  projectId?: string
+  signal?: AbortSignal
+  runFfmpeg?: FfmpegRun
+}
+
+export interface MergeVoicesForPointersResult {
+  note?: string
+  voiceCost?: { merged: number; totalMs: number; maxMs: number }
+}
+
+/**
+ * **段合声（唯一实现）**：把已发布的无声段与各自旁白合成 `seg-<id>-voice.mp4`。
+ *
+ * 从 `publishSegmentPreview` 里抽出来是因为 2026-11-27 发现**两条路径只发段、不合声**：
+ * 整片路径靠 `publishSegmentPreview` 补上了，分镜路径（`shot-render.ts` 自己 publish）
+ * 却漏了 —— 于是「分镜先出、每屏可单独看」的承诺只对了一半：段是无声的。
+ * 发布口径可以有两套（缓存发布 / 直发），合声口径必须只有一套。
+ *
+ * 失败只收进 `note`，不抛：合声是锦上添花，段本体（无声版）已经在盘上。
+ */
+export async function mergeVoicesForPointers(
+  input: MergeVoicesForPointersInput,
+): Promise<MergeVoicesForPointersResult> {
+  if (input.pointers.length === 0) return {}
+  const matches = matchSegmentVoices({ manifest: input.manifest, artifacts: input.artifacts })
+  const notes: string[] = []
+  /** 合声实测：只收真正跑过 ffmpeg 的段（有旁白且同源）。 */
+  const costs: number[] = []
+  // 合声串行（每段 ffmpeg 独立，串行避免 N 路并发打爆本机；段数 ≤ 12，可接受）。
+  for (const pointer of input.pointers) {
+    const match = matches.get(pointer.id)
+    if (match === undefined) continue
+    try {
+      const result = await mergeSegmentVoice({
+        projectDir: input.projectDir,
+        assetsDir: input.assetsDir,
+        id: pointer.id,
+        ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+        silentFile: pointer.assetFile ?? `seg-${pointer.id}.mp4`,
+        durationSec: pointer.durationSec,
+        match,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(input.runFfmpeg === undefined ? {} : { run: input.runFfmpeg }),
+      })
+      if (result.elapsedMs !== undefined) costs.push(result.elapsedMs)
+      if (result.note !== undefined) notes.push(result.note)
+    } catch (cause) {
+      // 单段合声炸了不该带走其余段：记一行、继续下一段。
+      notes.push(`段 ${pointer.id} 合声异常：${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+  return {
+    ...(notes.length === 0 ? {} : { note: notes.join('；') }),
+    ...(costs.length === 0 ? {} : {
+      voiceCost: {
+        merged: costs.length,
+        totalMs: costs.reduce((sum, ms) => sum + ms, 0),
+        maxMs: Math.max(...costs),
+      },
+    }),
+  }
+}
+
 /**
  * 旁路发布 + 合声。返回指针（仅供清单/回执参考，清单本身独立读盘）；
  * 任何一步失败都退化为「少几段 / 没声音」，绝不让成片陪葬。
@@ -61,37 +133,20 @@ export async function publishSegmentPreview(input: PublishSegmentPreviewInput): 
     return { pointers: [], ...(published.note === undefined ? {} : { note: published.note }) }
   }
 
-  const matches = matchSegmentVoices({ manifest: input.manifest, artifacts: published.artifacts })
-  const notes: string[] = published.note === undefined ? [] : [published.note]
-  /** 合声实测：只收真正跑过 ffmpeg 的段（有旁白且同源）。 */
-  const costs: number[] = []
-  // 合声串行（每段 ffmpeg 独立，串行避免 N 路并发打爆本机；段数 ≤ 12，可接受）。
-  for (const pointer of published.pointers) {
-    const match = matches.get(pointer.id)
-    if (match === undefined) continue
-    const result = await mergeSegmentVoice({
-      projectDir: input.projectDir,
-      assetsDir: input.assetsDir,
-      id: pointer.id,
-      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
-      silentFile: pointer.assetFile ?? `seg-${pointer.id}.mp4`,
-      durationSec: pointer.durationSec,
-      match,
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-      ...(input.runFfmpeg === undefined ? {} : { run: input.runFfmpeg }),
-    })
-    if (result.elapsedMs !== undefined) costs.push(result.elapsedMs)
-    if (result.note !== undefined) notes.push(result.note)
-  }
+  const merged = await mergeVoicesForPointers({
+    projectDir: input.projectDir,
+    assetsDir: input.assetsDir,
+    manifest: input.manifest,
+    pointers: published.pointers,
+    artifacts: published.artifacts,
+    ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+    ...(input.runFfmpeg === undefined ? {} : { runFfmpeg: input.runFfmpeg }),
+  })
+  const notes = [published.note, merged.note].filter((note): note is string => note !== undefined)
   return {
     pointers: published.pointers,
     ...(notes.length === 0 ? {} : { note: notes.join('；') }),
-    ...(costs.length === 0 ? {} : {
-      voiceCost: {
-        merged: costs.length,
-        totalMs: costs.reduce((sum, ms) => sum + ms, 0),
-        maxMs: Math.max(...costs),
-      },
-    }),
+    ...(merged.voiceCost === undefined ? {} : { voiceCost: merged.voiceCost }),
   }
 }

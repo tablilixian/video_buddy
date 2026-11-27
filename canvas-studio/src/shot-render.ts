@@ -60,6 +60,11 @@ import {
   type MuxManifestAudioInput,
   type MuxManifestAudioResult,
 } from './manifest-audio-mux.js'
+import {
+  mergeVoicesForPointers,
+  type MergeVoicesForPointersInput,
+  type MergeVoicesForPointersResult,
+} from './segment-preview-publish.js'
 import type { TeardownSegment } from './teardown-verify.js'
 import { verifyTeardown } from './teardown-verify.js'
 import {
@@ -75,6 +80,8 @@ import './errors/catalog.js'
 export interface ShotRenderDeps {
   projectDir: string
   assetsDir: string
+  /** 本项目 id：段合声时校验旁白 URL 归属，防跨项目同名错配（缺省跳过校验）。 */
+  projectId?: string
   quality: RenderQuality
   signal: AbortSignal
   /** 渲染一段（含 E2「渲染器卡死」重试包装 —— 那层留在调用方）。 */
@@ -114,6 +121,14 @@ export interface ShotRenderDeps {
    * `manifest.audio` 整轨混音，画面零重编码，增量收益保留。
    */
   muxAudio?: (input: MuxManifestAudioInput) => Promise<MuxManifestAudioResult>
+  /**
+   * 段合声实现（缺省 {@link mergeVoicesForPointers}；测试注入假实现）。
+   *
+   * 2026-11-27：本路径自己 `publishSegmentArtifacts` 发段，却漏了整片路径那一步
+   * 旁白合声 —— 段是无声的，「先出分镜、每屏可单独看」只对了一半。合声实现只有
+   * 一份（`segment-preview-publish.ts`），两条发布路径都必须过它。
+   */
+  mergeVoices?: (input: MergeVoicesForPointersInput) => Promise<MergeVoicesForPointersResult>
 }
 
 /** 一次分镜渲染的结果：`outcome = null` ⇒ 走了回退（回执里有原因）。 */
@@ -404,6 +419,29 @@ export async function runShotRender(
       })
       pointers = published.pointers
       if (published.note !== undefined) receipt.push(`⚠️ 段产物未完整落地：${published.note}`)
+      // 2026-11-27：段发布之后必须过一遍合声 —— 整片路径有这一步（`publishSegmentPreview`），
+      // 本路径此前没有，于是「先出分镜、每屏可单独看」拿到的是无声段。合声失败只记一行：
+      // 无声段本体已经在盘上，成片也已经带声（上限那条路走 muxAudio）。
+      if (pointers.length > 0 && manifest.audio !== undefined) {
+        const merge = deps.mergeVoices ?? mergeVoicesForPointers
+        try {
+          const voiced = await merge({
+            projectDir: deps.projectDir,
+            assetsDir: deps.assetsDir,
+            manifest,
+            pointers,
+            artifacts,
+            ...(deps.projectId === undefined ? {} : { projectId: deps.projectId }),
+            signal: deps.signal,
+          })
+          if (voiced.note !== undefined) receipt.push(`⚠️ 段合声：${voiced.note}`)
+          if (voiced.voiceCost !== undefined) {
+            receipt.push(`🔊 段合声：${String(voiced.voiceCost.merged)} 段 / ${(voiced.voiceCost.totalMs / 1000).toFixed(1)}s`)
+          }
+        } catch (cause) {
+          receipt.push(`⚠️ 段合声失败（无声段仍可用）：${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+      }
     }
 
     // Q2 时序闸：拆解表 ≥2 段才回核（单段没有边界可比）。失败只降级为一行提示，

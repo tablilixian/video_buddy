@@ -1622,6 +1622,7 @@ function buildShotRenderDeps(input: {
   return {
     projectDir,
     assetsDir,
+    projectId: input.projectId,
     quality: input.quality,
     signal: input.signal,
     renderSegment: (segment) => runRenderJobWithStuckRetry({

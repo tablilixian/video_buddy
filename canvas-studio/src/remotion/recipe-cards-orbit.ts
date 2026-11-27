@@ -197,7 +197,7 @@ registerCard({
       color: accent,
       d: `M ${f(CENTER_X - rx)} ${f(CENTER_Y)} A ${f(rx)} ${f(ry)} 0 0 1 ${f(CENTER_X + rx)} ${f(CENTER_Y)} A ${f(rx)} ${f(ry)} 0 0 1 ${f(CENTER_X - rx)} ${f(CENTER_Y)}`,
       strokeWidth: 0.5,
-      draw: { from: 0, to: 1, durationInFrames: Math.min(30, dur), easing: 'easeOutCubic' },
+      draw: { to: 1, durationInFrames: Math.min(30, dur), easing: 'easeOutCubic' },
       startFrame: ctx.startFrame,
       durationInFrames: dur,
       fadeFrames: Math.min(8, Math.floor(dur / 8)),

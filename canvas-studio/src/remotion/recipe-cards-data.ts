@@ -349,7 +349,10 @@ registerCard({
       tracks.push({
         id: tid(`read${i + 1}`),
         type: 'textCard',
-        variant: 'dataCard',
+        // 读数走 subtitle 不走 dataCard：dataCard 不吃 background（自带深蓝底），
+        // 深橙字压深底真机近不可读（CV-473 验收截图实证）；本卡底是浅色 #faf7f2，
+        // 透明底 + 深橙字直接可读。
+        variant: 'subtitle',
         text: `重合 ${i + 1}/${alignAt}`,
         box: { x: readX, y: 76, w: 22, h: 6 },
         background: 'transparent',

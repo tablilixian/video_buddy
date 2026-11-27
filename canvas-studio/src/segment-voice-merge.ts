@@ -11,6 +11,7 @@
  * - 合流失败不抛（成片和清单照常，只是这一段没声音）；
  * - `runFfmpeg` 可注入 —— 行为测试用假执行器，不依赖本机 ffmpeg。
  */
+import { renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildMuxArgs } from './audio-compose.js'
 import { resolveAssetPathIn } from './asset-path.js'
@@ -89,26 +90,42 @@ export async function mergeSegmentVoice(input: MergeSegmentVoiceInput): Promise<
   }
   const voiceFile = segmentVoiceName(input.id)
   const outputPath = join(input.assetsDir, voiceFile)
+  // P1-3（2026-11-27 审查）：ffmpeg 输出先写临时文件、成功再原子替换。此前直接写最终
+  // 路径 —— 失败留半截文件（`size > 0` 就会被清单当带声副本采用）或把旧版带声副本原地
+  // 留下（画面已换新、声音还是旧的 = 「改了又变回去」）。失败分支**删掉**最终路径上的
+  // 残留，让「清单回退无声版」这句 note 成为真话。
+  const tmpPath = `${outputPath}.tmp.mp4`
   const startedAt = Date.now()
+  const discardStale = (): void => {
+    try {
+      rmSync(tmpPath, { force: true })
+      rmSync(outputPath, { force: true })
+    } catch {
+      // 清理失败只影响「回退无声版」的诚实度，不改本次合声的成败 —— 不抛。
+    }
+  }
   try {
     const run = input.run ?? runFfmpeg
     // REQ-041 P1-4：`offsetSec` = 台词相对段首的偏移。段窗起点不是台词起点
     // （实测每段差 10 帧 = 0.333s），整条贴段首会让预览比成片早开口。
     const result = await run(
       resolveFfmpegPath(),
-      buildMuxArgs(silentPath, voicePath, outputPath, input.durationSec, input.match.offsetSec),
+      buildMuxArgs(silentPath, voicePath, tmpPath, input.durationSec, input.match.offsetSec),
       FFMPEG_TIMEOUT_MS,
       input.signal,
     )
     const elapsedMs = Date.now() - startedAt
     if (result.code !== 0) {
+      discardStale()
       return {
         elapsedMs,
         note: `${input.id} 合声失败（ffmpeg ${String(result.code)}，${String(elapsedMs)}ms），清单回退无声版`,
       }
     }
+    renameSync(tmpPath, outputPath)
     return { voiceFile, elapsedMs, ...(input.match.note === undefined ? {} : { note: input.match.note }) }
   } catch (cause) {
+    discardStale()
     return {
       elapsedMs: Date.now() - startedAt,
       note: `${input.id} 合声异常（${cause instanceof Error ? cause.message : String(cause)}），清单回退无声版`,

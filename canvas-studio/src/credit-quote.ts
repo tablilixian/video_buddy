@@ -39,6 +39,8 @@ export interface GenerationQuoteRequest {
 
 /** 视频时长的兜底（与 `generate.ts` 的 `video_generate` 缺省同值 5s）。 */
 const DEFAULT_VIDEO_DURATION = 5
+/** `video_composite` 的缺省时长（与 `host-tools.ts` 该车道的 clampDuration fallback 同源）。 */
+const DEFAULT_VIDEO_COMPOSITE_DURATION = 10
 /** music 时长的兜底（与 `generate.ts` 的 `DEFAULT_MUSIC_DURATION` 同值）。 */
 const DEFAULT_MUSIC_DURATION = 30
 /** 分辨率档位缺省（`resolution-tiers.ts` 的出厂值，不在本地另写一个）。 */
@@ -103,9 +105,19 @@ function imageQuote(params: CreditQuoteParams): GenerationQuoteRequest {
  * 与生成请求长得一样，方便对照日志。
  */
 function videoQuote(params: CreditQuoteParams): GenerationQuoteRequest {
-  const duration = params.duration !== undefined && Number.isFinite(params.duration)
-    ? Math.max(1, Math.round(params.duration))
+  // P1-7（2026-11-27 审查）：时长口径与生成链同源 —— ① 缺省按车道取（video_composite
+  // 10s / 其余 5s，与 `host-tools.ts` 两条车道的 fallback 一致，此前一律 5s ⇒ composite
+  // 报 30 实扣 60）；② 上钳 `maxVideoSeconds`（路由从 runtime 注入，与 `clampDuration`
+  // 同一把尺）。不传 maxVideoSeconds 不钳（fail-open，别把读数变成拦路）。
+  const fallback = params.videoTool === 'video_composite'
+    ? DEFAULT_VIDEO_COMPOSITE_DURATION
     : DEFAULT_VIDEO_DURATION
+  const rounded = params.duration !== undefined && Number.isFinite(params.duration)
+    ? Math.max(1, Math.round(params.duration))
+    : fallback
+  const duration = params.maxVideoSeconds !== undefined && Number.isFinite(params.maxVideoSeconds)
+    ? Math.min(rounded, Math.max(1, Math.round(params.maxVideoSeconds)))
+    : rounded
   const megapixels = megapixelsOf(params.resolution)
   return {
     model: BUSINESS_MODEL_CODES.videoH3,
@@ -174,6 +186,10 @@ export function parseQuoteParams(value: unknown): CreditQuoteParams | null {
   const aspectRatio = typeof raw['aspectRatio'] === 'string' ? raw['aspectRatio'] : undefined
   const imageTool = raw['imageTool']
   const duration = typeof raw['duration'] === 'number' && Number.isFinite(raw['duration']) ? raw['duration'] : undefined
+  const videoTool = raw['videoTool']
+  const maxVideoSeconds = typeof raw['maxVideoSeconds'] === 'number' && Number.isFinite(raw['maxVideoSeconds'])
+    ? raw['maxVideoSeconds']
+    : undefined
   const videoMode = raw['videoMode']
   const audioFn = raw['audioFn']
   const modelOverride = raw['modelOverride']
@@ -188,6 +204,8 @@ export function parseQuoteParams(value: unknown): CreditQuoteParams | null {
       ? { imageTool }
       : {}),
     ...(duration !== undefined ? { duration } : {}),
+    ...(videoTool === 'video_generate' || videoTool === 'video_composite' ? { videoTool } : {}),
+    ...(maxVideoSeconds !== undefined ? { maxVideoSeconds } : {}),
     ...(videoMode === 'fl' || videoMode === 'omni' ? { videoMode } : {}),
     ...(audioFn === 'music' || audioFn === 'voice' || audioFn === 'design' ? { audioFn } : {}),
     ...(modelOverride === 'textRender' || modelOverride === 'krea2' ? { modelOverride } : {}),
@@ -208,6 +226,7 @@ export function quoteFingerprint(params: CreditQuoteParams): string {
     params.aspectRatio ?? '',
     params.hasImages === true ? 'ref' : 'text',
     params.duration === undefined ? '' : String(Math.round(params.duration)),
+    params.videoTool ?? '',
     params.videoMode ?? '',
     params.audioFn ?? '',
     params.modelOverride ?? '',

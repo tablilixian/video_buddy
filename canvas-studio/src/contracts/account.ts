@@ -74,6 +74,17 @@ export interface CreditQuoteParams {
   readonly imageTool?: 'image_generate' | 'image_generate_withtxt' | 'character_generate'
   /** 视频时长（秒）；music 也用它当请求时长。 */
   readonly duration?: number
+  /**
+   * 视频车道的发起工具（P1-7，2026-11-27 审查）：`video_composite` 缺省 10s、
+   * `video_generate` 缺省 5s（与 `host-tools.ts` 两条车道的 clampDuration fallback
+   * 同源）。不传按 `video_generate` 处理。判错这一维会让 composite 报 30 分、实扣 60。
+   */
+  readonly videoTool?: 'video_generate' | 'video_composite'
+  /**
+   * 时长上钳（秒）——与生成链 `clampDuration` 同读 `runtime().maxVideoSeconds()`。
+   * 由报价路由注入（服务端设置，client 不知道）；不传则不上钳（fail-open）。
+   */
+  readonly maxVideoSeconds?: number
   /** 视频模式：`fl` = 首尾帧（fl2va）／`omni` = 全能参考（ref2va）。 */
   readonly videoMode?: 'fl' | 'omni'
   /** 音频功能：music（按时长）／voice・design（固定价）。 */

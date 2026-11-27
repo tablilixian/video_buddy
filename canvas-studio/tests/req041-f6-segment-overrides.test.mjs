@@ -338,7 +338,13 @@ test('F6：ref 归一化 / 文件名派生 / 读盘拒收要点', () => {
   // 中文段 id 不能一律折成 `-`：`spec:第二屏` 与 `spec:第三屏` 会撞到同一个文件名，
   // 后写的静默覆盖前一个。按码点编码后必须不同。
   assert.notEqual(overrideFileName('spec:第二屏'), overrideFileName('spec:第三屏'))
-  assert.match(overrideFileName('spec:第二屏'), /^spec-_/)
+  assert.match(overrideFileName('spec:第二屏'), /^spec-~/)
+  // P2-3（2026-11-27 审查）：转义符与白名单字符同形会让字面 id 撞上编码名 ——
+  // `spec:第`（第 → ~7b2c~）与字面 `spec:_7b2c_` 在旧式 `_<hex>_` 下同名。
+  assert.notEqual(overrideFileName('spec:第'), overrideFileName('spec:_7b2c_'),
+    '转义序列与字面 id 必不同名（否则后写静默覆盖前一个）')
+  assert.notEqual(overrideFileName('spec:~7b2c~'), overrideFileName('spec:第'),
+    '字面转义形态同样不许撞')
   assert.ok('reason' in readOverrideDoc({ version: SEGMENT_OVERRIDES_VERSION, ref: 's2' }), 'ref 必须带 spec: 前缀')
   assert.ok('reason' in readOverrideDoc({ version: SEGMENT_OVERRIDES_VERSION, ref: 'spec:s2', anchor: { startFrame: 0, frames: 0 }, tracks: [] }), 'frames 必须 > 0')
 })

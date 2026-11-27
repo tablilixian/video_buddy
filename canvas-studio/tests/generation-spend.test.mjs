@@ -357,15 +357,39 @@ test('接线：卡面角标与详情行都读 same 一份 spend-store（不各�
   assert.match(store, /MERGE_WINDOW_MS/, '必须合并批量请求（一屏几十个节点各发一次就是几十次往返）')
 })
 
-test('接线：生成结果文本拿到实扣要改写，拿不到保留预估', async () => {
+test('接线：生成结果文本的改写是**行为**断言（P1-4：源码字符串抓不住替换变追加）', async () => {
+  const { noteGenerationSettled, estimateCreditNote } = await import('../lib/credit-settle.js')
+  const note = estimateCreditNote(21.1354)
+  assert.ok(note !== null)
+
+  // ① 就地替换而不是追加：长度不变、原句被换掉。
+  const warnings = ['别的告警', note]
+  await noteGenerationSettled(warnings, note, 'g-1', 21.1354, async () => 21.1354)
+  assert.equal(warnings.length, 2, '同一笔钱只该有一句陈述 —— 替换不是追加')
+  assert.match(warnings[1], /与预估一致/)
+  assert.ok(!warnings.includes(note), '「预估」那句必须真的被换掉')
+
+  // ② 实扣与预估不同 ⇒ 明说「实际」并带预估。
+  const warnings2 = [note]
+  await noteGenerationSettled(warnings2, note, 'g-2', 21.1354, async () => 26.42)
+  assert.equal(warnings2.length, 1)
+  assert.match(warnings2[0], /实际消耗 26\.42/)
+  assert.match(warnings2[0], /预估 21\.1354/)
+
+  // ③ 查不到实扣 ⇒ 保留预估（绝不猜一个数字）。
+  const warnings3 = [note]
+  await noteGenerationSettled(warnings3, note, 'g-3', 21.1354, async () => null)
+  assert.equal(warnings3[0], note, '账没落库就保留预估')
+
+  // ④ 预估句不在 warnings 里（indexOf 失配）⇒ 不抛、不动别的句子。
+  const warnings4 = ['无关']
+  await noteGenerationSettled(warnings4, note, 'g-4', 21.1354, async () => 21.1354)
+  assert.deepEqual(warnings4, ['无关'])
+
+  // ⑤ 接线面（generate.ts 的调用点）——行为测不到的部分才留源码断言。
   const generate = await read('src/generate.ts')
-  const settle = await read('src/credit-settle.ts')
   assert.match(generate, /noteGenerationSettled\(/, '生成成功后要按流水改写「预估消耗」那句')
   assert.match(generate, /estimateCreditNote\(estimated\)/, '提交时只能写「预估」（这一刻服务端还没结算）')
-  assert.match(settle, /本次生成实际消耗 \$\{round\(spent\)\}/, '实扣文案要明说「实际」')
-  assert.match(settle, /SPEND_LOOKUP_TIMEOUT_MS/, '查账要有上限：不能让它拖慢一次已经成功的生成')
-  // 替换而不是追加：同一笔钱在结果文本里只该有一句陈述。
-  assert.match(settle, /warnings\[index\] = /, '必须就地替换那条 warning，不能两条并存')
 })
 
 test('接线：账务页有积分流水段（金额 4 位小数，不取整）', async () => {

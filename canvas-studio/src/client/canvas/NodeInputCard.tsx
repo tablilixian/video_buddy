@@ -964,8 +964,12 @@ export function NodeInputCard(props: NodeInputCardProps) {
   }
 
   // ---- video 形态底栏（CV-282 Step 2）：时长读数 + 积分读数 ----
+  // P1-7（2026-11-27 审查）：缺省时长按车道分（composite 10s / 其余 5s，与
+  // `host-tools.ts` 两条车道的 clampDuration fallback 同源），并把 videoTool 带给
+  // 报价 —— 此前一律按 5s 报，composite 会「预估 30、实扣 60」。
+  const videoTool = node.toolName === 'video_composite' ? 'video_composite' as const : 'video_generate' as const
   const durationRaw = generationParamOf(rawRef.current, 'duration')
-  const duration = typeof durationRaw === 'number' ? durationRaw : 5
+  const duration = typeof durationRaw === 'number' ? durationRaw : (videoTool === 'video_composite' ? 10 : 5)
   const generationParamCount = (key: string): number => {
     const value = generationParamOf(rawRef.current, key)
     return Array.isArray(value) ? value.filter(item => typeof item === 'string').length : 0
@@ -978,6 +982,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
     resolution,
     aspectRatio,
     duration,
+    videoTool,
     videoMode: mode === 'fl' ? 'fl' : 'omni',
   }
   /**

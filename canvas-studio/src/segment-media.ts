@@ -143,10 +143,13 @@ export async function readSegmentMedia(input: {
     // REQ-041 P1：带声副本存在 ⇒ 清单改指它（`v` 也用带声版 mtime）。
     // 无声段必须仍在（上面已 stat）—— 带声副本是附加文件，不是替代发布。
     // 任一读盘异常都静默回退无声版（清单不因预览副本坏掉而丢掉这段）。
+    // P1-3（2026-11-27 审查）：加 mtime 判据 —— 带声副本必须**不早于**无声段。
+    // 合声失败清理后的残留、或重渲后没重新合声的旧副本（旧画面+旧声音）不算数，
+    // 否则「改了又变回去」：清单指回旧带声副本，新画面根本出不来。
     const voiceFile = segmentVoiceName(row.id)
     try {
       const voiceStat = await stat(join(input.assetsDir, voiceFile))
-      if (voiceStat.isFile() && voiceStat.size > 0) {
+      if (voiceStat.isFile() && voiceStat.size > 0 && voiceStat.mtimeMs >= v) {
         file = voiceFile
         v = voiceStat.mtimeMs
       }

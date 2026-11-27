@@ -98,7 +98,9 @@ function withStoryboardGate(value, body) {
 /** 一份两段、段表对齐、能切出段的 manifest。 */
 function seededManifest(dir) {
   const manifest = {
+    id: 'm-test',
     meta: {
+      title: 'rerender 工具夹具',
       fps: 30,
       durationInFrames: 400,
       width: 1920,
@@ -113,6 +115,9 @@ function seededManifest(dir) {
   }
   mkdirSync(join(dir, 'build'), { recursive: true })
   writeFileSync(join(dir, 'build', 'manifest.json'), JSON.stringify(manifest))
+  // 旁白素材必须在盘上：P1-2 后 rerender 走与 render_composition 同一条变换管线
+  // （含素材核对）——旧夹具缺这份文件只因旧路径不核对，不是合法形态。
+  writeFileSync(join(dir, 'assets', 'v1.mp3'), Buffer.from('fake-mp3-bytes'))
   return manifest
 }
 

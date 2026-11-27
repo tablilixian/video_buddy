@@ -21,7 +21,7 @@ import type { AssetLibrary, LibraryMediaSource, LibraryUpdatePatch } from './ass
 import { collectNodeMediaSources } from './asset-library.js'
 import type { LibAnchorRef, LibCategory, LibMedia } from './contracts/asset-library.js'
 import { isLibCategory } from './contracts/asset-library.js'
-import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, handlesOfAssetFile, unlinkValuesInPromptJson, type GenerateParams } from './generate.js'
+import { generateAsset, maxVideoSecondsNow, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, handlesOfAssetFile, unlinkValuesInPromptJson, type GenerateParams } from './generate.js'
 import { gcProjectAssets, gcLibraryAssets, deleteUnreferencedAssets, collectReferencedBasenames, basenameOfUrl } from './asset-gc.js'
 import { isAssetFileName } from './asset-path.js'
 import { storyboardUserTextResolver } from './storyboard-user-text.js'
@@ -1254,7 +1254,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           sendJson(res, 400, { error: 'quote requires kind: image | video | audio' })
           return
         }
-        const view = await quoteCredits(params)
+        // P1-7（2026-11-27 审查）：时长上钳与生成链 `clampDuration` 同一把尺 ——
+        // client 不知道 `maxVideoSeconds`（服务端设置），在这里注入。
+        const view = await quoteCredits({ ...params, maxVideoSeconds: maxVideoSecondsNow() })
         if (!res.destroyed) sendJson(res, 200, view)
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '积分报价失败，请稍后重试。')

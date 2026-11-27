@@ -27,9 +27,11 @@
  * - **不抛**：写盘失败只回一句 note（成片已经好了，段清单退化为「少了 draft 段行」）；
  * - 不写画布、不动 `canvas.json`（D15）。
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { CompositionManifest } from './remotion/manifest.js'
+import { diffOverwrittenTracks, droppedTracksNote } from './manifest-overwrite.js'
+import { overrideTrackIds } from './segment-overrides-io.js'
 
 /** `build/manifest.json` 的绝对路径（派生读盘与宿主落盘必须同一条路径）。 */
 export function renderedManifestPath(projectDir: string): string {
@@ -38,17 +40,31 @@ export function renderedManifestPath(projectDir: string): string {
 
 /**
  * 把**实际渲出去的那份** manifest 落盘。返回 `note` 表示没写成（原因），调用方
- * 把它并进回执，不要抛。
+ * 把它并进回执，不要抛。`droppedNote` 是 P2-1（2026-11-27 审查）的丢轨点名：
+ * 渲后快照整份覆盖 `build/manifest.json`，此前**不跑** `diffOverwrittenTracks` ——
+ * 模型手改 manifest 加的轨会被静默冲掉，`droppedTracksNote` 全程不响（它只护
+ * scaffold/patch 的 `writeManifestFile`）。这里照抄同一套点名，override 轨豁免
+ * （它们的住所在 `build/overrides/`，本来就该被快照剔掉）。
  */
 export function writeRenderedManifest(input: {
   projectDir: string
   manifest: CompositionManifest
-}): { path: string; note?: string } {
+}): { path: string; note?: string; droppedNote?: string } {
   const path = renderedManifestPath(input.projectDir)
+  let previous: string | undefined
+  try {
+    previous = readFileSync(path, 'utf8')
+  } catch {
+    previous = undefined
+  }
+  const nextJson = JSON.stringify(input.manifest, null, 2)
   try {
     mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, `${JSON.stringify(input.manifest, null, 2)}\n`, 'utf8')
-    return { path }
+    writeFileSync(path, `${nextJson}\n`, 'utf8')
+    const droppedNote = droppedTracksNote(diffOverwrittenTracks(previous, nextJson), {
+      exempt: overrideTrackIds(input.projectDir),
+    })
+    return { path, ...(droppedNote === '' ? {} : { droppedNote }) }
   } catch (cause) {
     return { path, note: `渲后 manifest 落盘失败（${cause instanceof Error ? cause.message : String(cause)}）：段清单将退回上一版帧窗` }
   }

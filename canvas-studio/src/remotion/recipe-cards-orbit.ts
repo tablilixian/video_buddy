@@ -123,7 +123,13 @@ function assertOrbitStructure(tracks: readonly Record<string, unknown>[]): void 
         posCount += 1
         const start = seg.startFrame ?? 0
         const duration = seg.durationInFrames ?? 0
-        if (prevEnd !== null && (start !== prevEnd || from?.x !== prevTo?.x || from?.y !== prevTo?.y)) {
+        // P1-8 附带（不严谨 #13）：to/from 是 `toFixed(3)` 的坐标 —— 理论同点的两条
+        // 路径（末段 `pt(bodyStart + k*360)` vs 首尾 hold 的 `pt(bodyStart)`）浮点路径
+        // 不同，精确相等在进位边界会误抛。按 1e-3（= 显示精度）比。
+        const close = (a: number | undefined, b: number | undefined): boolean =>
+          (a === undefined && b === undefined)
+          || (a !== undefined && b !== undefined && Math.abs(a - b) < 1e-3)
+        if (prevEnd !== null && (start !== prevEnd || !close(from?.x, prevTo?.x) || !close(from?.y, prevTo?.y))) {
           throwError(
             'CS-DEV-ERR',
             { detail: `ORB1 自检失败：位置折线段 #${posCount} 窗口不相接或 to/from 断裂（start=${start}，上一段 end=${prevEnd}）` },
@@ -179,8 +185,15 @@ registerCard({
     // 椭圆折线的时间线：首尾 hold，中间 k 圈 × N 段整数分界（相邻差 ≥ 1 帧）。
     const n = sampleCount(rx, ry)
     const k = Math.max(1, Math.ceil(dur / period))
-    const total = n * k
-    const usable = Math.max(total, dur - 2 * hold)
+    // P1-8（2026-11-27 审查）：采样段数必须**裁进**时间预算。原式
+    // `usable = Math.max(total, dur - 2 * hold)` 写反成「放大 usable」—— total 大于
+    // 预算时 bounds 铺出轨长（hold + total > dur − hold），卡内自检随即抛 CS-DEV-ERR：
+    // 合法参数（periodSec≤2 / 大半径 / 2s 短段）把整卡生成打成「产品缺陷」。
+    // 裁段后角度步长同步改 `k*360/total`（未裁时与原 `360/n` 逐位相同），仍走满 k 圈。
+    const budget = Math.max(1, dur - 2 * hold)
+    const total = Math.min(n * k, budget)
+    const usable = budget
+    const degStep = (k * 360) / total
     const bounds: number[] = [hold]
     for (let i = 1; i <= total; i += 1) bounds.push(hold + Math.round((i * usable) / total))
 
@@ -300,8 +313,8 @@ registerCard({
           const segStart = bounds[i] ?? 0
           const segEnd = bounds[i + 1] ?? segStart
           moveSegs.push({
-            from: pt(bodyStart + (i * 360) / n),
-            to: pt(bodyStart + ((i + 1) * 360) / n),
+            from: pt(bodyStart + i * degStep),
+            to: pt(bodyStart + (i + 1) * degStep),
             startFrame: segStart,
             durationInFrames: Math.max(1, segEnd - segStart),
             easing: 'linear',

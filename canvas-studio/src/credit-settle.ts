@@ -63,12 +63,18 @@ export async function noteGenerationSettled(
   estimateNote: string | null,
   generationId: string,
   estimated: number | null,
+  /**
+   * 查实扣（缺省 `settledCreditsOf`）。测试注入桩 —— 行为（就地替换 / 保留预估 /
+   * 超时不拖慢）必须是行为断言，源码字符串断言抓不住「替换变追加」「indexOf 永远 -1」
+   * 这类破坏（2026-11-27 审查 P1-4）。
+   */
+  spendLookup: (generationId: string) => Promise<number | null> = settledCreditsOf,
 ): Promise<void> {
   markGenerationSpendPending(generationId)
   if (warnings === undefined || estimateNote === null || estimated === null) return
   const index = warnings.indexOf(estimateNote)
   if (index < 0) return
-  const spent = await settledCreditsOf(generationId)
+  const spent = await spendLookup(generationId)
   if (spent === null) return
   warnings[index] = Math.abs(spent - estimated) < 0.00005
     ? `本次生成消耗 ${round(spent)} 积分（服务端结算，与预估一致）。`

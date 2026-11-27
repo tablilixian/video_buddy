@@ -142,11 +142,12 @@ export interface ProjectOverridesMerge {
   applied: ApplyOverridesResult['applied']
   skipped: ApplyOverridesResult['skipped']
   /**
-   * 本次并入的手工轨 id 集合。
+   * 本次**已并入**的手工轨 id 集合（skipped 的不进集合）。
    *
    * 渲后 `build/manifest.json` 落盘时要**剔除**它们：那份文件同时是下一次渲染的输入，
    * 手工轨一旦写进去就成了「没有 override 也还在」的僵尸轨（删掉 override 也不消失）。
-   * 手工轨的唯一住所是 `build/overrides/`。
+   * 手工轨的唯一住所是 `build/overrides/`。**反过来，被跳过的 override 轨 id 一个都不能
+   * 进来** —— 它们撞的往往是 manifest 既有轨的名字，剔了等于删合法轨（P1-1）。
    */
   trackIds: Set<string>
 }
@@ -188,8 +189,14 @@ export function mergeProjectOverrides(input: {
   }
   const artifacts: readonly SegmentArtifact[] = plan.artifacts
   const result = applySegmentOverrides({ manifest: input.manifest, artifacts, overrides })
+  // P1-1（2026-11-27 审查）：只剔**已并入**（`result.applied`）的 override 轨 id。
+  // 此前收集的是**全部** override —— 被跳过的那份（尤其「id 与 manifest 既有轨
+  // 同名」这个确定场景）会把同名的合法 spec 轨从渲后快照里误删，而 `build/manifest.json`
+  // 是段清单派生的事实源 ⇒ 「卡上这一段其实是隔壁那一段」的静默错位复发。
+  const appliedRefs = new Set(result.applied.map((entry) => entry.ref))
   const trackIds = new Set<string>()
   for (const override of overrides) {
+    if (!appliedRefs.has(override.ref)) continue
     for (const track of override.tracks) {
       const trackId = (track as { id?: unknown }).id
       if (typeof trackId === 'string' && trackId !== '') trackIds.add(trackId)

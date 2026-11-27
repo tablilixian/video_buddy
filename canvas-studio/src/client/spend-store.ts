@@ -94,7 +94,10 @@ function subscribeId(id: string, listener: () => void): () => void {
 
 /** 把 id 排进合并窗口（已在窗口里 / 已解析 / 已判 unknown 的跳过）。 */
 export function requestGenerationSpend(id: string): void {
-  if (id === '' || queue.has(id) || inFlight !== null) return
+  // P2-7（2026-11-27 审查）：flush 在飞期间**照常入队** —— 原来 `inFlight !== null`
+  // 直接丢弃且无重试路径（unknown 态不重试），画布分批挂载落在窗口里时实扣角标
+  // 永远不出现。入队后由 flush 的 finally 发现队列非空再排一拍。
+  if (id === '' || queue.has(id)) return
   if (spendSnapshot(id).phase !== 'unknown') return
   queue.add(id)
   if (timer === null) {
@@ -138,7 +141,16 @@ async function flush(): Promise<void> {
     if (view.error !== null) {
       for (const id of ids) unknownIds.delete(id)
     }
-  })().finally(() => { inFlight = null })
+  })().finally(() => {
+    inFlight = null
+    // P2-7：在飞期间入队的请求不丢 —— 队列非空就再排一拍（窗口照旧合并）。
+    if (queue.size > 0 && timer === null) {
+      timer = setTimeout(() => {
+        timer = null
+        void flush()
+      }, MERGE_WINDOW_MS)
+    }
+  })
   return inFlight
 }
 
@@ -177,9 +189,15 @@ export function useGenerationSpend(id: string | undefined): SpendSnapshot {
 
 /** 生成结束后清缓存并重问（`client/index.ts` 的队列信号调用）。 */
 export function invalidateSpendCache(): void {
-  // 只清 pending 的重试轮次：让它们从头再问三轮（这次账多半已经落库）。
-  for (const id of pendingIds) retryRound.delete(id)
-  for (const id of pendingIds) requestGenerationSpend(id)
+  // P2-6（2026-11-27 审查）：pending 态会被 `requestGenerationSpend` 的 phase 早退
+  // 挡掉 —— 原实现「全部早退」，一个都没重问（注释说的重问从未发生），3 轮重试
+  // 耗尽后「结算中」永驻。先把 pending 标记让开（phase 归 unknown）再入队。
+  const stale = [...pendingIds]
+  for (const id of stale) {
+    retryRound.delete(id)
+    pendingIds.delete(id)
+  }
+  for (const id of stale) requestGenerationSpend(id)
 }
 
 /** 登出 / 换账号：全部清掉，避免下一个账号看到上一个的账。 */

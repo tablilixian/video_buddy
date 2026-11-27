@@ -29,6 +29,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
 import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import { assertRequiredToolParams } from './tool-required-params.js'
+import { assertBillableBalance, isBillingTool } from './billing-gate.js'
 import { commitProbeBudget, guardProbeBudget } from './render-probe-budget.js'
 import { noteIntentCard, noteScaffold, noteStoryboard, specGateSnapshot } from './spec-gate.js'
 import { throwError } from './error-system.js'
@@ -191,11 +192,13 @@ function commitSpecGate(toolName: string, sessionKey?: string): void {
 /**
  * 包住一条工具定义的 `execute`：异常不再裸穿，而是统一过错误系统后抛出。
  *
- * 做两件事，都在「所有工具的唯一入口」这一点上完成：
+ * 做三件事，都在「所有工具的唯一入口」这一点上完成：
  * 1. **入参占位守卫（CV-235）**：`execute` **之前**先查一遍入参（见 `param-guard.ts`），
  *    命中占位值时抛 `CS-PARAM-002`。放在这里而不是各工具的 `execute` 内部，是因为
  *    这里是唯一实现点，且拒收发生在任何副作用之前（不解析项目、不落节点、不发请求）。
- * 2. **异常归口**：`execute` 抛出的任何异常统一收敛为 `CanvasStudioError`。
+ * 2. **计费闸（P3 / 2026-11-27 审查 P0-1 归位）**：消耗型工具（`billing-gate.ts`
+ *    白名单）在 `execute` 之前拦 G1 余额闸（CS-BILL-001），同样拒收先于副作用。
+ * 3. **异常归口**：`execute` 抛出的任何异常统一收敛为 `CanvasStudioError`。
  *
  * 另外按参数分类给**有句柄入参**的工具描述追加一层占位纪律（事前提示）：错误文案只在
  * 犯错那一刻出现，模型在没犯错时也得读到「本工具不接受占位值」。判定从工具自己声明的
@@ -230,6 +233,12 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
       assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       // OPT-12：按工具的必填参数校验（同样零副作用，先于一切 execute 逻辑）。
       assertRequiredToolParams(typeof source.name === 'string' ? source.name : '未知工具', args)
+      // P3 计费拦截（2026-11-27 审查 P0-1 归位）：G1 余额闸 —— 消耗型工具在
+      // `execute` **之前**拦住「余额见底还在白跑生成」（CS-BILL-001）。放在这里
+      // 而不是各生成车道内部，是因为这里是唯一实现点 —— 此前闸散在 execute 层，
+      // video 车道抄漏了 G1（审查 P1-6），且两份 quote 闸可独立漂移。
+      // 删掉本行即失去守卫（反向变异靶见 tests/billing-gate.test.mjs）。
+      if (typeof source.name === 'string' && isBillingTool(source.name)) assertBillableBalance()
       // 记账在**成功返回之后**：校验失败 / 宿主失联 / 用户打断都是抛错路径，
       // 一律不消耗探针额度（真机实测：3 次额度里 2 次被这两种失败吃掉，零张图）。
       // 放在这里而不是各工具内部，同样因为这是唯一实现点。

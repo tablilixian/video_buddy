@@ -98,17 +98,20 @@ export interface ApplyOverridesResult {
  * ref → 文件名（`spec:s2` → `spec-s2.json`）。文件名只是寻址，**真值在文件内的 `ref`**。
  *
  * 两条约束同时对：
- * - **可读**：ASCII 段 id（`s1` / `open`）保留原样，人打开 `build/overrides/` 一眼能认；
- * - **不撞车**：中文 / emoji 段 id 若一律折成 `-`，`spec:第二屏` 与 `spec:第三屏` 会落到
- *   同一个 `spec.json` 上 —— 后写的把前一个覆盖掉，且没有任何报错。所以非白名单字符按
- *   码点编成 `_<hex>_`（可逆、必不同名），超长再截断加哈希尾巴。
+ * - **可读**：ASCII 段 id（`s1` / `open` / `seg_1`）保留原样，人打开 `build/overrides/`
+ *   一眼能认（`_` 是 id 里的常见字符，必须原样留）；
+ * - **不撞车**：非白名单字符按码点编成 `~<hex>~`（可逆、必不同名），超长再截断加
+ *   哈希尾巴。转义符 `~` **不在**白名单里（自身编成 `~7e~`）—— P2-3（2026-11-27
+ *   审查）：旧式 `_<hex>_` 与白名单里的 `_` 同形 ⇒ 字面 id `spec:_7b2c_` 与
+ *   `spec:第` 产出同一个文件名，后写静默覆盖前一个。读盘按目录扫描取文件内 ref
+ *   （文件名不符只提示），换转义式不孤儿化存量文件。
  */
 export function overrideFileName(ref: string): string {
-  // `spec:` 前缀是固定语法，单独折成 `spec-`（否则每份文件都以 `_3a_` 开头，很难读）。
+  // `spec:` 前缀是固定语法，单独折成 `spec-`（否则每份文件都以转义序列开头，很难读）。
   const body = ref.startsWith('spec:') ? `spec-${ref.slice('spec:'.length)}` : ref
   let encoded = ''
   for (const char of body) {
-    encoded += /^[A-Za-z0-9_-]$/.test(char) ? char : `_${(char.codePointAt(0) ?? 0).toString(16)}_`
+    encoded += /^[A-Za-z0-9_-]$/.test(char) ? char : `~${(char.codePointAt(0) ?? 0).toString(16)}~`
   }
   if (encoded.length <= 48) return `${encoded === '' ? 'override' : encoded}.json`
   // 太长：保留前 32 个字符 + 原 ref 的哈希尾巴（同一 ref 稳定，不同 ref 极难相撞）。
@@ -339,6 +342,19 @@ export function applySegmentOverrides(input: {
     })
     if (!check.ok) {
       skipped.push({ ref: override.ref, reason: `校验未通过：${check.issues.join('；')}` })
+      continue
+    }
+    // P2-2（2026-11-27 审查）：跨 override 文件的轨 id 撞名零校验 —— `validateOverrideTracks`
+    // 只比对基 manifest，两份 override 各自合法地新增同名轨时 `mergeOverrideTracks`
+    // 会**都追加**（重复 id ⇒ React key / z 序语义未定义、hash 与清单不再唯一对应）。
+    // 这里对本批次已收集的 id 查重：撞名的那份整体跳过并点名。
+    const batchIds = new Set(collected.map((track) => track.id))
+    const duplicated = check.tracks.filter((track) => batchIds.has(track.id)).map((track) => String(track.id))
+    if (duplicated.length > 0) {
+      skipped.push({
+        ref: override.ref,
+        reason: `轨 id 与另一份 override 撞名（${duplicated.join('、')}）—— 手工轨 id 全局唯一，换新 id 后重新 patch`,
+      })
       continue
     }
     collected.push(...check.tracks)

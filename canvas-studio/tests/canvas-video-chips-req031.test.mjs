@@ -41,7 +41,12 @@ test('REQ-031 spec chip：画幅三选 + 时长六档写数字 + 清晰度内部
   // 时长：六档数字参数（拍板④）。
   assert.match(card, /const VIDEO_DURATIONS = \[4, 6, 8, 10, 12, 15\] as const/, '时长必须为预设六档')
   assert.match(card, /commitRaw\('duration', d\)/, '时长必须写 duration 数字参数（clampDuration 消费）')
-  assert.match(card, /typeof durationRaw === 'number' \? durationRaw : 5/, '时长缺省读数必须落 5s（video_generate fallback 同值）')
+  // 时长缺省按车道分（P1-7，2026-11-27）：video_generate 5s / video_composite 10s，
+  // 与 `host-tools.ts` 两条车道的 clampDuration fallback 同源（此前一律 5s ⇒
+  // composite 预估 30、实扣 60）。videoTool 同时进报价参数。
+  assert.match(card, /typeof durationRaw === 'number' \? durationRaw : \(videoTool === 'video_composite' \? 10 : 5\)/,
+    '时长缺省读数必须按车道分（video_generate 5s / video_composite 10s）')
+  assert.match(card, /videoTool,/, '报价参数必须带 videoTool（缺省时长按它取）')
   // 清晰度：写**规范档位键**（480p/720p/1080p），显示名只用于渲染。
   // 2026-10-27：明确「跟随项目 / 默认」= 删键（`undefined`），而不是写一个占位档位 ——
   // 写占位值会把「继承」变成「硬指定」，用户之后改项目预置就再也影响不到这个节点。

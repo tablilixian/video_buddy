@@ -39,6 +39,7 @@ import { mergeSegmentVoice } from './segment-voice-merge.js'
 import { rerenderSegmentArtifact, type SegmentRenderIo } from './segment-render.js'
 import { planSegmentTable } from './segment-table.js'
 import { mergeProjectOverrides } from './segment-overrides-io.js'
+import { prepareRenderManifest } from './prepare-render-manifest.js'
 import { renderedManifestPath } from './rendered-manifest.js'
 import { segmentRefOf } from './segment-binding.js'
 import { resolveSegmentIdFromNode } from './host-tools-spec-patch.js'
@@ -202,7 +203,16 @@ export function defineRerenderSegmentTool(ctx: RerenderSegmentContext) {
       // hash —— 两条路径各写一遍合并逻辑，一处漏掉 override 就会让同一段算出两个 hash
       // （表现是「改一屏每次整片重渲」，且不报错）。
       const overrides = mergeProjectOverrides({ projectDir, manifest: manifestOnDisk, spec })
-      const manifest = overrides.manifest
+      // P1-2（2026-11-27 审查）：合并后必须走**同一套变换管线**（组展开 → 校验 → 素材
+      // 物化 → 素材核对 → alpha 标记 → video 时长真值回核）。此前这里把 raw override 轨
+      // 直接并回已变换的快照、跳过全部变换 ⇒ 同一条手工轨算出两个 hash（两路径互不命中
+      // 还互删缓存）；素材类手工轨的本地路径没物化 ⇒ 单段重渲渲出缺图的段。
+      const prepared = await prepareRenderManifest({
+        manifest: overrides.manifest,
+        assetsDir,
+        projectId,
+      })
+      const manifest = prepared.manifest
       const plan = planSegmentTable({ manifest, spec })
       if (plan === null) {
         throwError('CS-USER-ERR', {

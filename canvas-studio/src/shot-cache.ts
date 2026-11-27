@@ -205,9 +205,14 @@ export function canonicalTracks(tracks: readonly CompositionManifest['tracks'][n
  * 真正的画序调整）都会换 hash。确定性：同输入同输出。`globals` 是**必传**参数
  * （`manifestGlobalsFingerprint` 的产物）：必须显式出现在每个调用点，防止再犯
  * 「忘了全局态」的集成错误。
+ *
+ * P2-4（2026-11-27 审查）：payload 走 `stableStringify` 而非 `JSON.stringify` ——
+ * 模型重写 manifest 时轨对象的**键序**变了必须算出同一个指纹，否则键序抖动会让
+ * 所有段 hash 一起变 = 全片重渲（F2 归一化轨序要消灭的症状换个形态回来）。
+ * 本次改动会让存量缓存一次性失效（重渲一遍）——缓存是可再生产物，不是历史数据。
  */
 export function segmentHash(segment: ShotSegment, quality: string, globals: string): string {
-  const payload = JSON.stringify({
+  const payload = stableStringify({
     start: segment.startFrame,
     end: segment.endFrame,
     quality,
@@ -222,6 +227,19 @@ export function segmentHashes(segments: readonly ShotSegment[], quality: string,
   return segments.map((segment) => segmentHash(segment, quality, globals))
 }
 
+/**
+ * 孤儿回收的**合法集合**：当前各段在**全部质量档**下的 hash。
+ *
+ * P1-4（2026-11-27 审查）：合法集只放本次档 ⇒ 渲 draft 时 high 条目被当孤儿清光
+ * （下次渲 high 全量重渲）；反过来渲 high 也会清掉还能用的 draft。任一档的条目都可能
+ * 再被命中（`lookupSegmentsCache` 跨档复用），只有**内容对不上任何现存段**的条目才是
+ * 真孤儿。与 `plan.hashes`（本次档、一段一 hash、拼接清单主体）刻意分开：那是一次
+ * 运行的清单，这是目录清扫的白名单。
+ */
+export function allTierCacheHashes(segments: readonly ShotSegment[], globals: string): string[] {
+  return QUALITY_HIGH_TO_LOW.flatMap((quality) => segmentHashes(segments, quality, globals))
+}
+
 function entryPaths(cacheDir: string, hash: string): { videoPath: string; metaPath: string } {
   return { videoPath: join(cacheDir, `${hash}.mp4`), metaPath: join(cacheDir, `${hash}.json`) }
 }
@@ -229,32 +247,27 @@ function entryPaths(cacheDir: string, hash: string): { videoPath: string; metaPa
 /**
  * 缓存比对：命中（mp4 + 元数据都在）→ reused；否则 → dirty。
  * 顺序与 segments 一致（拼接按段序）。`globals` 必传（见 segmentHash）。
+ *
+ * P1-4（2026-11-27 审查）：命中判据**委托 `lookupSegmentsCache`**（跨档复用：有更高档
+ * 直接算命中，不为同档白烧一遍）。此前这里只按**精确档** hash 判 —— F1 的「有 high 渲
+ * draft 直接复用」只修了整片补段路径，分镜路径反而全量重渲，且下面的孤儿回收会把
+ * high 条目当垃圾清光（下次渲 high 又全量重渲）。两处判据必须同源，否则 F1 的承诺
+ * 只有一半成立。
  */
 export function getDirtySegments(segments: readonly ShotSegment[], quality: string, cacheDir: string, globals: string): ShotCachePlan {
   const reused: ShotCachePlan['reused'] = []
   const dirty: ShotSegment[] = []
   if (!existsSync(cacheDir)) return { reused, dirty: [...segments] }
-  for (const segment of segments) {
-    const hash = segmentHash(segment, quality, globals)
-    const { videoPath, metaPath } = entryPaths(cacheDir, hash)
-    if (existsSync(videoPath) && existsSync(metaPath)) {
-      reused.push({ segment, entry: { hash, videoPath } })
+  const states = lookupSegmentsCache({ segments, cacheDir, globals, minQuality: quality })
+  for (const [index, state] of states.entries()) {
+    const segment = segments[index] as ShotSegment
+    if (state.kind === 'hit') {
+      reused.push({ segment, entry: { hash: state.hash, videoPath: state.videoPath } })
     } else {
       dirty.push(segment)
     }
   }
   return { reused, dirty }
-}
-
-/** 命中段的缓存条目（按段序）。 */
-export function reusedEntries(segments: readonly ShotSegment[], quality: string, cacheDir: string, globals: string): Array<{ segment: ShotSegment; entry: ShotCacheEntry }> {
-  return segments
-    .map((segment) => {
-      const hash = segmentHash(segment, quality, globals)
-      const { videoPath, metaPath } = entryPaths(cacheDir, hash)
-      return existsSync(videoPath) && existsSync(metaPath) ? { segment, entry: { hash, videoPath } } : null
-    })
-    .filter((v) => v !== null)
 }
 
 /** 缓存里出现过的帧窗集合（`start:end`）。只用于区分「没渲过」与「渲过但内容变了」。 */
@@ -386,11 +399,15 @@ export function pruneStaleWindowEntries(input: {
   startFrame: number
   endFrame: number
   keepHash: string
-  /** 本次落盘的档；更高档的旧条目保留。缺省 = 不设防（旧调用口径）。 */
-  keepQuality?: string
+  /**
+   * 本次落盘的档；更高档的旧条目保留。**必填**（2026-11-27 审查不严谨 #5）：
+   * 原来缺省 `Number.POSITIVE_INFINITY` 与保护意图相反（rank > Infinity 恒假 ⇒
+   * 同帧窗全删尽）。唯一调用方一直显式传值，这里把危险缺省改成类型强制。
+   */
+  keepQuality: string
 }): string[] {
   const removed: string[] = []
-  const keepRank = input.keepQuality === undefined ? Number.POSITIVE_INFINITY : qualityRankOf(input.keepQuality)
+  const keepRank = qualityRankOf(input.keepQuality)
   try {
     if (!existsSync(input.cacheDir)) return removed
     for (const name of readdirSync(input.cacheDir)) {

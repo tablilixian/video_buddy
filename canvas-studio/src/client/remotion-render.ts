@@ -478,6 +478,12 @@ export async function renderSpotFramesOnWeb(
     calculateMetadata: null,
   } as const
   // REQ-041 F3：逐帧独立计预算 —— 一帧卡死只丢这一帧（口径在 `spot-frame-budget.ts`）。
+  //
+  // 边渲边传（2026-11-27 审查 P0-2 修复）：`onSample` 在**每帧字节到手时**立刻回调，
+  // 不等整批 —— 此前回调在批末回放、且 `run.aborted` 抛在交付之前，同步卡死时已渲帧
+  // 全丢（`spot-upload-ledger` 口径 1「渲出一张就立刻发」就是缺的那条）。回调放进
+  // renderOne 闭包后，任何中途死亡（取消 / 看门狗撤单 / 页面崩）都已经把前面的帧
+  // 逐张交出去了；`onProgress` 同样逐帧推进（此前批内进度恒 0、末尾瞬跳 100%）。
   let settled = 0
   const run = await runSpotFramesWithTimeout(frames, async (frame, frameSignal) => {
     const still = await renderStillOnWeb({
@@ -490,24 +496,24 @@ export async function renderSpotFramesOnWeb(
       signal: frameSignal,
     })
     const blob = await still.blob({ format: 'jpeg', quality: 0.85 })
-    return new Uint8Array(await blob.arrayBuffer())
-  }, {
-    timeoutMs: perFrameTimeoutMs,
-    ...(signal === undefined ? {} : { signal }),
-    ...(options.onFrameStart === undefined ? {} : { onFrameStart: options.onFrameStart }),
-  })
-  if (run.aborted) throw new WebRenderError('渲染已取消。')
-  // 渲出一张就交一张（执行器立刻回写宿主，卡死后前面的帧仍在盘上）。
-  for (const entry of run.done) {
-    const bytes = entry.value
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    // 这一帧的字节到手就交（执行器立刻回写宿主），不攒批、不等 run 返回。
     if (bytes.length > 0) {
-      const sample: RenderSample = { frame: entry.frame, bytes }
+      const sample: RenderSample = { frame, bytes }
       samples.push(sample)
       options.onSample?.(sample, samples.length - 1, total)
     }
     settled += 1
     options.onProgress?.(settled / total)
-  }
+    return bytes
+  }, {
+    timeoutMs: perFrameTimeoutMs,
+    ...(signal === undefined ? {} : { signal }),
+    ...(options.onFrameStart === undefined ? {} : { onFrameStart: options.onFrameStart }),
+  })
+  // 中途取消：已渲帧已在上面逐帧交出（执行器 ledger 逐张上传，盘上是真的），
+  // 这里如实抛出取消 —— 不要把 `run.done` 扣下来不交（那是 P0-2 的事故形态）。
+  if (run.aborted) throw new WebRenderError('渲染已取消。')
   // 被放弃的帧也推进进度：进度条不能卡在「渲到一半」，否则宿主看到的是「没动静」。
   for (let index = 0; index < run.skipped.length; index += 1) {
     settled += 1
@@ -515,7 +521,7 @@ export async function renderSpotFramesOnWeb(
   }
   // 一帧都没渲出来 ⇒ 这是失败，不是「成功但没图」（否则模型会以为画面就是这样）。
   if (samples.length === 0) {
-    throw new WebRenderError(`静帧一张都没渲出来：${run.skipped.map((skip) => skip.message).join('；')}。请降低目标帧数或换 quality:"draft" 再试。`)
+    throw new WebRenderError(`静帧一张都没渲出来：${run.skipped.map((skip) => skip.message).join('；')}。请降低目标帧数或换 quality:"draft" 再试；画布页被切到后台/隐藏时渲染不推进，也请保持画布页可见。`)
   }
   const skipWarnings = run.skipped.map((skip) => `⚠️ ${skip.message}；其余 ${samples.length} 张已渲出`)
   const totalMs = Date.now() - startedAt

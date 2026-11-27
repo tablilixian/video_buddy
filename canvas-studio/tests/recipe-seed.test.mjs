@@ -202,13 +202,22 @@ test('specSeed：weight 不双写 durationSec、units/carry 留空、autoStages 
     ['00_creative', '02_visual', '04_storyboard', '07_assets', '08_constraints'])
 })
 
-test('写盘自检失败必须抛：frames 与 duration 不同源的 seed 不返回', () => {
-  // 结构自检在函数内 —— 直接验证正常路径全过即自检生效（坏数据进不来：
-  // 归一化 + 逐项检查在 return 前，抛错路径由构造保证不被绕过）。
-  const seed = seedOf('product-walkthrough')
-  const shots = seed.sections['04_storyboard'].scenes.flatMap((scene) => scene.shots)
-  for (const shot of shots) {
-    assert.equal(shot.frames, Math.round(shot.duration * FPS))
+test('性质：全部配方 seed 的 frames = round(duration×fps)（结构自检的恒真锚）', () => {
+  // 诚实说明（2026-11-27 审查 P1-5 修正）：这里**不能**测「坏数据必抛」——
+  // frames/duration 由 `frames` 单源派生（duration = frames/fps），坏组合在公开 API
+  // 面根本构造不出来，旧标题「写盘自检失败必须抛」名实不符（删自检照样绿 = ❌假守卫）。
+  // 改为跨**全部**配方的性质断言：谁改坏了 frames/duration 的派生，这里立刻红。
+  // （函数内的结构自检是防未来改动的回归锚，不是现值校验。）
+  const ids = Object.keys(RECIPES)
+  assert.ok(ids.length >= 4, `配方数异常（${String(ids.length)}）—— 注册表没加载全？（现为 4 套配方模板）`)
+  for (const id of ids) {
+    const seed = seedOf(id)
+    const shots = seed.sections['04_storyboard'].scenes.flatMap((scene) => scene.shots)
+    assert.ok(shots.length > 0, `${id} 的 seed 必须有 shot`)
+    for (const shot of shots) {
+      assert.equal(shot.frames, Math.round(shot.duration * FPS),
+        `${id}/${shot.id}：frames 与 duration 不同源（派生被改坏了？）`)
+    }
   }
 })
 

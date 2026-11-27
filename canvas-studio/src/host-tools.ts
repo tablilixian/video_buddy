@@ -8,7 +8,7 @@
  * 既规避浏览器 CORS，也避免跨进程 HTTP 往返。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -26,7 +26,8 @@ import { landStoryboard } from './storyboard-land.js'
 import { assertStoryboardLanded, enforceAssetReadinessEnabled, withStoryboardGate } from './storyboard-gate.js'
 import { sectionsFromShotCards } from './storyboard-adopt.js'
 import { layoutTableToManifestSnippet, loadLayoutFile, normalizeLayoutTable, saveLayoutFile } from './layout-table.js'
-import { expandGroups } from './remotion/groups.js'
+// 渲染前 manifest 变换管线的唯一实现点（2026-11-27 审查 P1-2，与 rerender_segment 共用）。
+import { prepareRenderManifest } from './prepare-render-manifest.js'
 // 骨架优先出片（2026-11-05）：真成片落锚点（build/PROGRESS.md + 版本快照）。
 // 核心逻辑在 render-anchor.ts —— 这里只是接线，省掉本文件的行数棘轮压力。
 import { readAnchorState, segmentDriftNote, writeRenderAnchor } from './render-anchor.js'
@@ -129,12 +130,9 @@ import { cutAudioSegment } from './audio-cut.js'
 import { isAssetFileName } from './asset-path.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
-import { ASSET_URL_PREFIX, collectAnimationWindows, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
-import { mapTracksDeep } from './remotion/group-children.js'
+import { collectAnimationWindows, collectManifestSourceIds, deriveAudioComposition, manifestTruncationError, validateManifest, type CompositionManifest, type RenderQuality } from './remotion/manifest.js'
 import { decodePng, dominantColors, luminanceBBox, luminanceGrid, profileImage, samplePixels } from './inspect-image.js'
-import { checkManifestAssets } from './remotion/asset-check.js'
 import { checkManifestResolution } from './remotion/resolution-check.js'
-import { materializeManifestSources } from './remotion/materialize.js'
 import { formatResolvedStarts, normalizeManifestTiming } from './remotion/normalize-timing.js'
 import { lintMotion } from './remotion/motion-lint.js'
 import { lintReceiptLines, writeLintReport } from './lint-report.js'
@@ -143,7 +141,7 @@ import { lintReceiptLines, writeLintReport } from './lint-report.js'
 import { formatRenderReport, formatRenderVerdict, type ComposeRenderReport } from './render-report-text.js'
 import { readPendingFactWarning } from './data-provenance-file.js'
 import { runRenderJobWithStuckRetry, type RenderJobDiagnostics, type RenderJobOutcome } from './remotion/render-job.js'
-import { pickSampleFrames, reconcileManifestVideoDurations } from './remotion/timing.js'
+import { pickSampleFrames } from './remotion/timing.js'
 import { MAX_SPOT_FRAMES, withStructuralSpotFrames } from './remotion/spot-frames.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
@@ -741,36 +739,6 @@ export function collapseLintWarnings(warnings: readonly string[]): string[] {
     `[编排体检] 命中 ${lint.length} 条：${brief}（前 5 条原文与完整清单落盘路径见下方渲染报告；文案已折叠以免挤占上下文）`,
     ...rest,
   ]
-}
-
-/**
- * REQ-035 F-08：素材缺失时的"相近文件名"提示。
- *
- * 为什么需要：`watch-hero.png` 被 GC 删掉后，同目录还有 `watch-720.png` 和原始出图，
- * 但报错只说"缺失"，agent 只能重新裁一遍（事故里重裁后又撞同一堵墙）。
- * 这里按词干做子串互含匹配，把候选列出来 —— 只提示，不改语义。
- */
-function nearMissAssetHint(assetsDir: string, missing: readonly string[]): string {
-  let names: string[]
-  try {
-    names = readdirSync(assetsDir)
-  } catch {
-    return ''
-  }
-  const hints: string[] = []
-  for (const entry of missing) {
-    const base = entry.split('→').pop()?.trim().split('/').pop() ?? ''
-    if (base.length === 0) continue
-    const stem = base.replace(/\.[^.]+$/u, '').toLowerCase()
-    const probe = stem.slice(0, 8)
-    const near = names.filter((name) => {
-      if (name === base) return false
-      const other = name.replace(/\.[^.]+$/u, '').toLowerCase()
-      return other.includes(probe) || stem.includes(other)
-    })
-    if (near.length > 0) hints.push(`${base} → 同目录相近文件：${near.slice(0, 3).join(' / ')}`)
-  }
-  return hints.length === 0 ? '' : `提示：${hints.join('；')}。若目标就是其中某张，把 manifest 的 src 改成它即可。`
 }
 
 /** 把产物结果渲染成模型可读的文本块。 */
@@ -4003,85 +3971,28 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           manifest: normalized.manifest,
           spec: readProjectSpec(registry.projectDir(projectId)),
         })
-        // 分组展开（2026-10-25 · shotcraft P1 / 解析用户 @143min 那句「做到一起就不用管全局坐标」）：
-        // `groups` 是**写作者糖** —— 组声明一个绝对矩形，组内轨道的 `box` 用组内百分比，
-        // 在这里展开成画布绝对坐标。渲染器 / 校验器 / 客户端一律看不到组，
-        // 否则「组内 x」与「画布 x」就会变成两套互相打架的坐标体系。
-        const expanded = expandGroups(overrides.manifest)
-        // 分组有降级（未知组名 / 组内轨缺 box / 组 id 重复）时**直接拒收**而不是静默按原样渲：
-        // 静默降级的结果是「画面位置对不上但没人报错」，比一次明确的拒收难查得多。
-        if (expanded.warnings.length > 0) {
-          throwError('CS-USER-ERR', {
-            message: `分组声明有问题，已拒收（避免静默降级成错位的画面）：${expanded.warnings.join('；')}。`
-              + 'groups 里每条需要 {id, box:{x,y,w,h}}；成员轨用 `group` 引用组 id 且必须自带 `box`（组内 0–100 百分比）。',
-          })
-        }
-        const validation = validateManifest(expanded.manifest)
-        if (!validation.ok) {
-          throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
-        }
         // CV-360：尾部截断检测（宿主入口专属，客户端校正路径不用 —— 真值校正会合法缩短轨道）。
         // 真机教训：截断的 manifest（meta 声明 60s、轨道只排到 21s）通过了当时的校验，
         // 照样发起渲染白烧一次窗口。这里按「总时长应 = 最大结束帧」的明文契约硬拦。
-        const truncation = manifestTruncationError(expanded.manifest)
+        // 判据只看时序 —— 后面管线的组展开只改 box 不改帧窗，等价。
+        const truncation = manifestTruncationError(overrides.manifest)
         if (truncation !== null) {
           throwError('CS-USER-ERR', { message: truncation })
         }
-        const manifest = expanded.manifest
-        // 1.5) 素材物化（R3）：域内本地绝对路径 → 同源 URL；域外路径**显式拒收**。
-        //      route B 的渲染发生在渲染进程的**浏览器环境**，域外绝对路径会被解析成
-        //      `http://<origin>/…` 而必然 404，且失败只发生在渲染进程、宿主无感 ⇒ 不能放行。
-        const materialized = materializeManifestSources(manifest, registry.assetsDir(projectId), projectId)
-        if (materialized.rejected.length > 0) {
-          throwError('CS-USER-ERR', {
-            message: `成片素材引用不可用（${materialized.rejected.join('；')}）。`
-              + `素材须用 ${ASSET_URL_PREFIX} 开头的画布资产 URL，或位于本项目资产目录内的绝对路径；`
-              + '其它位置的文件请先导入本项目再渲染。',
-          })
-        }
-        const source = materialized.manifest
+        // 变换管线收口 `prepare-render-manifest.ts`（2026-11-27 审查 P1-2）：组展开 →
+        // 校验 → 素材物化（R3：域内本地绝对路径 → 同源 URL，域外显式拒收）→ 素材核对
+        // （缺盘硬失败 + 相近文件名提示）→ alpha 标记 → video 时长真值回核 → 复校。
+        // `rerender_segment` 走**同一函数**：两条路径对同一手工轨必须算出同一个段 hash，
+        // 否则互不命中还会互删缓存（「改一屏每次整片重渲」/ 单段重渲缺图）。
+        const prepared = await prepareRenderManifest({
+          manifest: overrides.manifest,
+          assetsDir: registry.assetsDir(projectId),
+          projectId,
+        })
+        const source = prepared.manifest
         // 音轨构成由宿主派生（非 Manifest 输入），避免模型编一个骗过校验。
         const audioComposition = deriveAudioComposition(source)
-        // 2) 素材核对（宿主侧，无浏览器，§8.2）+ 按真值校正 video 轨时长（§10.4）
-        //    缺失素材**硬失败**（Z-8）：宿主侧已能判定，放行只会得到一条无上下文的渲染失败。
-        const pre = await checkManifestAssets(source, registry.assetsDir(projectId))
-        if (pre.missing.length > 0) {
-          // REQ-035 F-08：素材被清掉时，光说"缺失"没法自救 —— 同目录常有名字相近的替代
-          // （事故里 watch-hero.png 被 GC 删了，而 watch-720.png / 源图都还在）。
-          throwError('CS-USER-ERR', {
-            message: `成片素材缺失或不可用（${pre.missing.join('；')}），请补齐素材后再渲染。`
-              + nearMissAssetHint(registry.assetsDir(projectId), pre.missing),
-          })
-        }
-        // 透明素材标记：宿主探到 alpha 通道的 image 轨写 `hasAlpha: true`，渲染组件
-        // 据此跳过媒体层垫底色（甜品复刻复盘：硬编码 `#05080f` 是「透明图带深底」根因）。
-        // 只在有 alpha 时改写 —— 无 alpha 的轨保持原样，老 manifest 逐帧不变。
-        // S1-B：容器子轨的 image 同样要标记（mapTracksDeep 深映射，无子轨变化返回原对象）。
-        const alphaMarkedTracks = mapTracksDeep(source.tracks, (track) => {
-          if (track.type !== 'image' || pre.alphaSources[track.src] !== true) return track
-          if (track.hasAlpha === true) return track
-          return { ...track, hasAlpha: true }
-        })
-        const reconciled = reconcileManifestVideoDurations(
-          { ...source, tracks: alphaMarkedTracks } as CompositionManifest,
-          pre.realDurations,
-          source.meta.fps,
-        )
-        const renderManifest: CompositionManifest = { ...source, tracks: reconciled.tracks }
-        // 2.5) **校正后复校**（2026-10-16 补）：上面的校验跑在**校正前**的排布上，而
-        //      `reconcileManifestVideoDurations` 会按 ffprobe 真值改写 video 轨的
-        //      `durationInFrames` —— 这会让原本合法的排布失效：轨道缩短后相邻两轨不再重叠
-        //      （转场无意义 = error），或转场窗口掉出重叠区（warning）。此前这部分**无人拦**
-        //      就直接进渲染：模型声明 125 帧、真值 3.0s → 校正为 90 帧 → 转场两侧缺空，成片
-        //      的过渡静默变成硬切。复校放在渲染工单**之前**，失败即拒收（零副作用）。
-        const revalidation = validateManifest(renderManifest)
-        if (!revalidation.ok) {
-          throwError('CS-USER-ERR', {
-            message: `manifest 按素材真值校正时长后不再自洽：${revalidation.errors.join('；')}。`
-              + (reconciled.warnings.length > 0 ? `已校正的轨道：${reconciled.warnings.join('；')}。` : '')
-              + '请按真实时长重排相邻轨与转场窗口后重试（不要原样重试）。',
-          })
-        }
+        const renderManifest: CompositionManifest = source
         // 3) 建「渲染工单」→ 等画布客户端 CSR 渲染 → 收成片字节（宿主在结算时落盘 + 探真值）
         //    三期 W5-3：质量档由工具参数决定（缺省 standard = 与原来完全一致）；
         //    W5-4：把宿主探到的真值透传给客户端 ⇒ 不再二次探测；
@@ -4127,7 +4038,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
               signal: exec.signal,
               manifest: renderManifest,
               quality: quality ?? 'standard',
-              ...(pre.realDurations === undefined ? {} : { realDurations: pre.realDurations }),
+              ...(prepared.realDurations === undefined ? {} : { realDurations: prepared.realDurations }),
               ...(timingSegments === undefined ? {} : { timingSegments }),
             }))
             shotOutcome = shot.outcome
@@ -4148,7 +4059,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(probe ? { probe } : {}),
           ...(spot ? { spotFrames: withStructuralSpotFrames(renderManifest, a.spotFrames as number[]) } : {}),
           ...(timingSegments !== undefined ? { timingSegments } : {}),
-          realDurations: pre.realDurations,
+          realDurations: prepared.realDurations,
           // R11-B4：probe 也返抽帧。批注预算的铁律是「额度只在对图片有产出时扣」，
           // 而 probe 此前恒传空数组 ⇒ 扣掉唯一一次批注额度却一张图都不给（真机会话
           // 6f8ba13c：step41 probe 吃满额度、step43 想看画面直接被拒，之后 4 次盲改）。
@@ -4170,6 +4081,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
             manifest: withoutOverrideTracks(renderManifest, overrides.trackIds),
           })
           if (persisted.note !== undefined) shotReceipt.push(`ℹ️ ${persisted.note}`)
+          // P2-1：渲后快照覆盖 `build/manifest.json` 时对旧文件跑丢轨点名（override 轨豁免）。
+          if (persisted.droppedNote !== undefined) shotReceipt.push(persisted.droppedNote)
         }
         // REQ-041 P0-b/P1：整片路径（含带 audio 的片子）渲完后，从段缓存按帧窗
         // 旁路发布无声段 + 合成带声预览副本。失败全部收敛成一行 note，成片不陪葬。
@@ -4188,7 +4101,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
                 signal: exec.signal,
                 manifest: renderManifest,
                 quality: quality ?? 'standard',
-                ...(pre.realDurations === undefined ? {} : { realDurations: pre.realDurations }),
+                ...(prepared.realDurations === undefined ? {} : { realDurations: prepared.realDurations }),
               }),
               manifest: renderManifest,
               spec: readProjectSpec(registry.projectDir(projectId)),
@@ -4371,13 +4284,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const warnings = [
           framesNote,
           ...shotReceipt,
-          ...validation.warnings,
-          ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
+          ...prepared.validationWarnings,
+          ...prepared.revalidationWarnings.filter((w) => !prepared.validationWarnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
-          ...reconciled.warnings,
+          ...prepared.reconciledWarnings,
           // O-12：素材真实像素 vs 成片分辨率（上采样 = 细节在出片时就没了）。
           // 放在 reconciled 之后：判的是**真正要渲染的**那份排布。
-          ...checkManifestResolution(renderManifest, pre.realSizes, quality),
+          ...checkManifestResolution(renderManifest, prepared.realSizes, quality),
           ...(resolvedNote.length > 0 ? [`顺序衔接已解析：${resolvedNote}`] : []),
           ...(pendingFactNote !== '' ? [pendingFactNote] : []),
           ...(segmentDrift !== '' ? [segmentDrift] : []),

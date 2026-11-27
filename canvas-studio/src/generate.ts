@@ -97,10 +97,10 @@ import { isTerminalJobPhase, readDramaJobs, recordGenerationIntent, recordGenera
 import { extractLastFrame } from './video-frames.js'
 // P2 登录态接线：Drama 请求的 Bearer 头单点 + 鉴权开关（见 auth-session.ts）。
 import { dramaAuthHeaders, getAuthSession, isDramaAuthRequired } from './auth-session.js'
-// G1 余额门禁（方案 20261102 §7）：只读 Host 侧已缓存的余额视图，零额外网络。
-import { creditsView } from './account-state.js'
+// 计费拦截（G1 + B4）的唯一实现点（2026-11-27 审查 P0-1 归位）。G1 在
+// wrapStudioToolDefinition execute 前置拦；这里只在报价点用 B4。
+import { assertQuoteWithinBalance } from './billing-gate.js'
 import { estimateCreditNote, noteGenerationSettled } from './credit-settle.js'
-import { formatCredits } from './account-format.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
 // 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
@@ -303,6 +303,14 @@ export function clampDuration(value: number | undefined, fallback: number): numb
 }
 
 /**
+ * 时长上钳的当前值（P1-7，2026-11-27 审查）：报价层（`credit-quote.ts`，纯函数）
+ * 必须与 `clampDuration` 用同一把尺 —— 由报价路由读这里注入 `maxVideoSeconds`。
+ */
+export function maxVideoSecondsNow(): number {
+  return runtime().maxVideoSeconds()
+}
+
+/**
  * 生成提示词组装 —— 节点卡「节奏 / 摄像机 / 风格」参数以**前缀注入**落到提示词最前。
  *
  * CV-288 验收反馈批：**实现已移到 `src/prompt-injection.ts`**（纯函数、无运行时依赖），
@@ -431,36 +439,11 @@ function requireDramaAuth(): void {
 }
 
 /**
- * G1 余额预检（方案 `订阅与积分接入方案-20261102.md` §7）。
- *
- * **只拦「确定读到余额 ≤ 0」**，其余一律放行（fail-open）：
- *
- * | 情形 | 行为 | 理由 |
- * | --- | --- | --- |
- * | 本地模式（未配置账号体系） | 放行 | 没有账号就没有钱包，门禁无从判起 |
- * | `balance === null`（从未读到 / 未登录 / 管理面关闭 / 网络失败） | 放行 | 把网络抖动变成「不能生成」是负优化；`CS-AUTH-001` 已单独拦未登录 |
- * | `available_balance` 非有限值（NaN/Infinity） | 放行 | 服务端字段异常时不该由用户承担 |
- * | `available_balance <= 0` | **抛 CS-BILL-001** | 余额见底后继续白跑生成，是唯一要拦的真问题 |
- *
- * 位置选在 `dramaPost`（消耗型生成请求的**唯一**出口）而不在 `requireDramaAuth`
- * 里：那个函数也被上传路径复用，而「上传参考图」本身不花积分，不该因为余额为 0
- * 而被拦。轮询（`dramaJobRequest`）同样不设闸 —— 它是已付费任务的后续查询。
- *
- * 不做**预扣 / 冻结**：G2（精确计费）需要后端给单价与 freeze/settle 接口，
- * 实测 `/v1/credits/pricing` 等全部 404，故本轮只能做到「见底即停」。
+ * G1 余额预检已收编进 `billing-gate.ts` 的 `assertBillableBalance`（2026-11-27
+ * 审查 P0-1 归位：计费拦截的唯一入口是 `wrapStudioToolDefinition` 的 execute 前置，
+ * 不在任务执行层）。此处不再各拦一遍 —— 闸散在执行层正是 video 车道抄漏 G1
+ * （审查 P1-6）与两份 quote 闸漂移的根因。
  */
-function requireCreditsForGeneration(): void {
-  if (!isDramaAuthRequired()) return
-  const balance = creditsView().balance
-  if (balance === null) return
-  const available = balance.available_balance
-  if (!Number.isFinite(available) || available > 0) return
-  throwError('CS-BILL-001', {
-    balance: formatCredits(available),
-    frozen: formatCredits(balance.frozen_balance),
-    currency: balance.currency,
-  })
-}
 
 /**
  * Drama 异步任务端点请求（`GET /api/v1/jobs/{id}` / `.../result` / `POST .../cancel`）。
@@ -928,6 +911,9 @@ function assertGenerationSucceeded(final: GenerationSnapshot, label: string): vo
   throwError('CS-GEN-206', {
     safe: sanitizeForUser(`${label} 生成未成功（${final.status}）：${detail}`),
     detail: `terminal=${final.status} ${detail}`,
+    // P1-5（2026-11-27）：终态标记 —— `isBadReferenceError` 据此永不触发句柄自愈
+    // （与创建期带 httpStatus 的 206 区分；那种才是「句柄可能失效」的结构化信号）。
+    phase: 'terminal',
   })
 }
 
@@ -959,9 +945,10 @@ async function runBusinessGenerationTask(opts: {
   warnings?: string[]
 }): Promise<GenerationSnapshot> {
   const run = async (): Promise<GenerationSnapshot> => {
-    // G1 余额闸（quote 失败 fail-open 时的兜底）：确定读到余额 ≤ 0 时拦。
-    requireCreditsForGeneration()
     // B4 quote 硬闸（拍板 ⑤）：预估 > 可用余额 → 提交前拦截（CS-BILL-002）。
+    // 实现收编 `billing-gate.ts` 的 `assertQuoteWithinBalance`（与 video 车道
+    // 共用同一份 —— 两处手写比较正是审查 P0-1 点名的漂移源）。G1 余额闸在
+    // `wrapStudioToolDefinition` execute 前置已拦（本函数不重复拦）。
     // quote 失败（网络/形状）fail-open 不阻断——最终以创建响应为准（§6.7）。
     // 报价只用 model/operation/input，素材不就绪也可以调（Host 会剔除 inputs）。
     const deps = businessEngineDeps()
@@ -970,14 +957,7 @@ async function runBusinessGenerationTask(opts: {
       operation: opts.operation,
       ...(opts.input !== undefined ? { input: opts.input } : {}),
     })
-    const balance = creditsView().balance
-    if (estimated !== null && balance !== null && Number.isFinite(balance.available_balance)
-      && estimated > balance.available_balance) {
-      throwError('CS-BILL-002', {
-        estimated: String(Math.round(estimated * 10000) / 10000),
-        available: String(Math.round(balance.available_balance * 10000) / 10000),
-      })
-    }
+    assertQuoteWithinBalance(estimated)
     let snapshot: GenerationSnapshot
     try {
       snapshot = await createGenerationTask(deps, {
@@ -1530,6 +1510,7 @@ export function generationLabelOf(endpoint: string): string {
  * 与参考句柄无关。句柄自愈（`isBadReferenceError`）必须放过它们。
  */
 const POST_CREATE_ERROR_CODES = new Set([
+  'CS-GEN-206', // 终态 failed/canceled 的通用包装（message 内嵌服务端 error.message，兜底正则命中率高）——P1-5（2026-11-27 审查）：2026-11-23 修复漏了它，句柄自愈会把「生成失败」改写成「素材失效」再白跑一轮
   'CS-GEN-209', // 客户端预算用完（已 cancel）
   'CS-GEN-210', // result_status=failed（服务端归档失败）
   'CS-GEN-211', // result_status=expired
@@ -1538,18 +1519,27 @@ const POST_CREATE_ERROR_CODES = new Set([
   'CS-NET-012', // 产物字节不完整
 ])
 
-function isBadReferenceError(e: unknown): boolean {
+/**
+ * 「这是参考句柄失效吗」判定（导出供单测：P1-5 的反例必须能钉住）。
+ */
+export function isBadReferenceError(e: unknown): boolean {
   if (!(e instanceof Error)) return false
   const csError = e instanceof CanvasStudioError ? e : null
+  // 判序（P1-5 修正，2026-11-27）——关键是区分**创建期**与**创建后**的同名 206：
+  //
+  // ① `phase:'terminal'`（`assertGenerationSucceeded` 的 206 打的标）⇒ 永不自愈：
+  //    任务已经建好、失败在轮询终态，重传句柄救不了，按文案猜会把码改写掉
+  //    （212 事件：「后端超时」被说成「素材失效」，模型照着重传素材）。
+  // ② `httpStatus`（`businessErrorToGenerationError` 的 206 = **创建期**非 2xx 响应）
+  //    ⇒ 按状态判（CV-238 结构化优先）：400 / 404 / 5xx = 句柄可能失效，值得一轮重传。
+  //    这是设计语义 —— 曾把 206 一刀切进排除集，创建期 500 的自愈全灭（回归红 7 条）。
+  // ③ 其余创建后包装码（209/210/211/212/NET-010/012，天然无 httpStatus）⇒ 排除。
+  // ④ 最后才按文案兜底正则猜（老裸 Error / 无码错误）。
+  if (csError?.params?.phase === 'terminal') return false
   const status = csError?.params?.httpStatus
   if (typeof status === 'number') {
     return status === 400 || status === 404 || status >= 500
   }
-  // 「句柄失效」只可能发生在**创建阶段**。下面这些码都是创建成功之后（轮询终态 /
-  // 下载）的产物，重传句柄救不了，而按文案猜会把码改写掉 —— 2026-11-23 真机：
-  // CS-GEN-212 的文案里带「参考图数量」建议，被 `/参考图/` 兜底正则判成句柄失效，
-  // 于是多跑一轮无意义重传，最后包成 CS-USER-ERR「参考文件句柄已失效」，把
-  // 「后端超时」说成「素材失效」，模型照着重传素材。
   if (csError !== null && POST_CREATE_ERROR_CODES.has(csError.code)) return false
   return /HTTP 400|HTTP 404|HTTP 5\d\d|not (found|exist)|file (not|doesn')|invalid|no (such|file)|internal server error|参考图|filename|image.*(missing|not)/i.test(e.message)
 }
@@ -1565,8 +1555,9 @@ function isBadReferenceError(e: unknown): boolean {
  *
  * 判据取产物名共有的「计数器段」形态（ComfyUI 工作流 `prefix_%0Nd_` 约定）：
  * 要求「下划线 + 4 位以上数字」，`ref-<8hex>` 这类句柄天然不含该形态，不会误伤。
- * 有意取窄：漏判由 `healReferenceFilename` 的失败自愈兜底，误判的代价只是多一次
- * 上传 —— 两个方向都安全，所以不需要穷举后端所有可能的前缀。
+ * 有意取窄：漏判由 `healReferenceFilename` 的失败自愈兜底。⚠️ 不要信「误判两个方向
+ * 都安全」的旧话（原注释如此，已被 212 事件证伪）——误判进自愈的代价是多跑一轮
+ * 必败任务，且兜底正则会把终态错误码改写成「素材失效」（见 `isBadReferenceError`）。
  *
  * 纯函数，供落盘前的主动换名与单测使用。
  */
@@ -2693,21 +2684,17 @@ export async function generateAsset(
       // dramaJobRequest/30s 轮询）随老端口退役，B5 清理批删除。
       businessRun: async (breq) => {
         // B4 quote 硬闸对视频同样生效（视频是最贵的生成；预估 30 积分/片起）。
-        // 放在 acquire 之前：余额不足快速失败，不占在途名额。
+        // 放在 acquire 之前：余额不足快速失败，不占在途名额。实现与图像车道
+        // 共用 `billing-gate.ts` 的 `assertQuoteWithinBalance`（审查 P0-1：此前
+        // 两处手写比较可独立漂移）；G1 余额闸同样收口在 wrap 前置（P1-6：本
+        // 车道此前漏抄 G1，余额 0 + 报价 fail-open 会放行建单）。
         const quoteDeps = businessEngineDeps()
         const estimated = await quoteGenerationCost(quoteDeps, {
           model: breq.model,
           operation: breq.operation,
           input: breq.input,
         })
-        const balance = creditsView().balance
-        if (estimated !== null && balance !== null && Number.isFinite(balance.available_balance)
-          && estimated > balance.available_balance) {
-          throwError('CS-BILL-002', {
-            estimated: String(Math.round(estimated * 10000) / 10000),
-            available: String(Math.round(balance.available_balance * 10000) / 10000),
-          })
-        }
+        assertQuoteWithinBalance(estimated)
         // 先按预估写；生成成功后按流水改写成实扣（见 credit-settle.ts）。
         const videoEstimateNote = estimateCreditNote(estimated)
         if (videoEstimateNote !== null) warnings.push(videoEstimateNote)

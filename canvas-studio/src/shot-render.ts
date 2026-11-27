@@ -36,6 +36,7 @@ import type { RenderJobOutcome, RenderJobReport, RenderSampleResult } from './re
 import type { ShotSegment } from './shot-slice.js'
 import { boundariesFromSpec, resolveShotBoundaries } from './shot-slice.js'
 import {
+  allTierCacheHashes,
   clearStaleEntries,
   getDirtySegments,
   planShotRender,
@@ -285,10 +286,10 @@ export async function runShotRender(
   // P1-2：全局态指纹由 planShotRender 算一次，比对与落缓存共用同一把钥匙。
   const shotGlobals = plan.globals as string
   const { dirty, reused } = getDirtySegments(segments, deps.quality, cacheDir, shotGlobals)
-  // 孤儿回收：hash 失配的旧条目按本次合法集合清理；hashes 异常缺失时跳过
-  // （绝不能拿空集合当合法集 —— 那会清光整个缓存目录）。
+  // 孤儿回收：hash 失配的旧条目按**全档合法集**清理（P1-4：只认本次档会把 high 条目
+  // 当垃圾清光）；hashes 异常缺失时跳过（绝不能拿空集合当合法集 —— 那会清光整个缓存目录）。
   if (Array.isArray(plan.hashes) && plan.hashes.length > 0) {
-    const orphans = clearStaleEntries(cacheDir, new Set(plan.hashes))
+    const orphans = clearStaleEntries(cacheDir, new Set(allTierCacheHashes(segments, shotGlobals)))
     if (orphans > 0) receipt.push(`🧹 段缓存回收 ${String(orphans)} 条过期条目`)
   }
 

@@ -599,44 +599,200 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
 }
 
-/* 一次性字段级意图卡（confirm_intent_card）：五段分区、逐字段可编辑、一次提交。 */
-.csIntentCard { gap: 6px; }
+/* 一次性字段级意图卡（confirm_intent_card）：首屏只放 needsUser / inferred，
+   其余收进折叠区；值独占一行、理由折到下一行，杜绝旧版「标签+输入+理由」同排
+   把 740px 聊天宽切成三列、值被截成胶囊的问题。 */
+.csQuestionCard.csIntentCard { gap: 10px; }
 
-.csIntentSection {
+.csIntentHint {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csIntentGroup {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
 }
 
-.csIntentSectionTitle {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.75;
-  color: var(--dsw-alias-label-primary);
-}
-
-.csIntentRow {
+.csIntentGroupTitle {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csIntentBadge {
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-interactive-bg-active);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csIntentCount {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csIntentRow {
+  padding: 8px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
   font-size: 12px;
 }
 
-.csIntentKey {
-  min-width: 96px;
-  color: var(--dsw-alias-label-primary);
+.csIntentRow:first-of-type { border-top: 0; }
+
+.csIntentRowTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-.csIntentRow .csFieldInput { flex: 1 1 auto; min-width: 0; }
+.csIntentKey {
+  flex: 0 0 96px;
+  padding-top: 4px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
 
-.csIntentReason,
-.csIntentConfidence { font-size: 10px; font-style: normal; opacity: 0.65; }
+.csIntentValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
-.csIntentConfidence { margin-left: auto; }
+.csIntentChanged {
+  margin-left: 6px;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csIntentEdit {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.csIntentEdit:hover { border-color: var(--dsw-alias-interactive-bg-active); }
+
+.csIntentLock {
+  flex: 0 0 auto;
+  padding-top: 5px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csIntentReason {
+  margin: 5px 0 0 104px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.csIntentEditor {
+  margin: 8px 0 2px 104px;
+  padding: 8px;
+  border: 1px dashed var(--dsw-alias-interactive-bg-active);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.csIntentEditorTitle {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csIntentOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.csIntentOptions button {
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.csIntentOptions button.csSelected {
+  background: var(--dsw-alias-interactive-bg-active);
+  border-color: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-bg-base);
+}
+
+.csIntentTextarea { width: 100%; min-height: 60px; resize: vertical; }
+
+.csIntentEditorActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.csIntentEditorActions button {
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.csIntentEditorActions .csIntentDone {
+  background: var(--dsw-alias-interactive-bg-active);
+  border-color: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-bg-base);
+}
+
+.csIntentMore {
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.csIntentMore > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csIntentMore .csIntentGroup { border: 0; padding: 8px 0 0; }
+
+@media (max-width: 520px) {
+  .csIntentRowTop { flex-wrap: wrap; }
+  .csIntentKey { flex-basis: 100%; }
+  .csIntentReason, .csIntentEditor { margin-left: 0; }
+}
 
 /* P7 点选式澄清卡片：ask_user_choice 弹出的选择题。 */
 .csQuestionCard {

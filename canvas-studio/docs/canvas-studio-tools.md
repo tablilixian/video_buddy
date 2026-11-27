@@ -99,7 +99,7 @@
 | `list_library_assets` | **列资产库**（P1-2，2026-10-26，只读）：拿 `lib:<id>` 句柄。复用角色定妆照 / 场景图 / **音色锚**前先调它；`category?`（character / scene / prop / group / voice）、`q?`、`limit?`（截断时 `truncated=true`） |
 | `add_to_library` | **画布节点入库**（P1-2，2026-10-26）：把音频 / 图片节点存成资产条目（媒体真拷贝进库目录）。音色锚的标准落地：`add_to_library(nodeId, category="voice", name="音色锚 · 女主")` → 之后 `refaudio: "lib:<id>"`。视频不能入库 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
-| `confirm_intent_card` | **一次性字段级意图卡**（提速方案 B1）：阶段一 confirm 模式唯一一次打断。五段分区（explicit / inferred / conflict / needsUser / defaults）逐字段可编辑、一次提交，答案以 JSON 字符串经既有 `answer` 路由回流；auto 模式不弹卡不等待，直接返回默认值意图卡并要求把假设写进 `write_note`。细则见 `skills/canvas-studio-creation/references/intent-card.md` |
+| `confirm_intent_card` | **一次性字段级意图卡**（提速方案 B1）：阶段一 confirm 模式唯一一次打断。五段分区（explicit / inferred / conflict / needsUser / defaults）一次提交，答案以 JSON 字符串经既有 `answer` 路由回流。首屏只展开 needsUser / inferred，其余收进「已裁决明细」（显式与缺省只读、冲突可改）；`choice` 字段可传 1–8 条 `options`，客户端渲染成可点选 chip，点「改」后也能自由输入。auto 模式不弹卡不等待，直接返回默认值意图卡并要求把假设写进 `write_note`。细则见 `skills/canvas-studio-creation/references/intent-card.md` |
 | `submit_keyframes_for_approval` | 关键帧审批门禁 |
 
 > **已下线留档（不在上表）**：`write_screenplay` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval`

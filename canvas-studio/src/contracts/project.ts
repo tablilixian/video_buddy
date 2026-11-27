@@ -113,6 +113,10 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
             ...(typeof f.reason === 'string' ? { reason: f.reason } : {}),
             ...(typeof f.confidence === 'string' ? { confidence: f.confidence } : {}),
             ...(typeof f.kind === 'string' ? { kind: f.kind } : {}),
+            // 候选项来自历史/异常数据时只保留字符串并封顶 8 项；脏数据不许带崩工作流状态。
+            ...(Array.isArray(f.options) ? {
+              options: (f.options as unknown[]).filter(o => typeof o === 'string' && o.trim() !== '').slice(0, 8).map(o => (o as string).trim()),
+            } : {}),
           }
         }),
       } : {}),
@@ -328,6 +332,8 @@ export interface StudioIntentField {
   confidence?: string
   /** choice | text | readonly —— 客户端据此决定字段是否可编辑 */
   kind?: string
+  /** 候选项：客户端把它渲染成可点选的 chip；最多 8 项，仅 choice 字段有意义 */
+  options?: string[]
 }
 
 /**

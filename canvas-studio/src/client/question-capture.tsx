@@ -10,7 +10,7 @@
  *
  * 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
  */
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useState, type ReactElement } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { autoAnswerSummary, extractResultNote } from '../question-result.js'
 import type { StudioIntentField } from '../contracts/project.js'
+import { intentCardSections, intentFieldEditable, intentFieldOptions } from '../intent-card-layout.js'
 import { getSkillEntry } from '../skill-catalog.js'
 import { shouldRenderStyleGrid, styleDemoSkill } from '../style-grid.js'
 
@@ -86,6 +87,9 @@ function parseIntentFields(raw: unknown): StudioIntentField[] | null {
       ...(typeof f.reason === 'string' ? { reason: f.reason } : {}),
       ...(typeof f.confidence === 'string' ? { confidence: f.confidence } : {}),
       ...(typeof f.kind === 'string' ? { kind: f.kind } : {}),
+      ...(Array.isArray(f.options) ? {
+        options: (f.options as unknown[]).filter(o => typeof o === 'string' && o.trim() !== '').slice(0, 8).map(o => (o as string).trim()),
+      } : {}),
     }
   }).filter(field => field.key !== '')
   return fields.length > 0 ? fields : null
@@ -108,14 +112,11 @@ function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'aut
   }
 }
 
-/** 意图卡五段分区的展示名与顺序（与 intent-card.md §2 一致）。 */
-const INTENT_SECTIONS: readonly (readonly [string, string])[] = [
-  ['explicit', '用户明确指定'],
-  ['inferred', '推断 · 默认，可改'],
-  ['conflict', '冲突 · 已裁决'],
-  ['needsUser', '需要你确认'],
-  ['defaults', '采用的缺省值'],
-]
+/** 默认展开分区的标题（折叠区统一收口，见 intent-card-layout.ts）。 */
+const INTENT_TITLES: Record<string, { title: string; badge: string }> = {
+  needsUser: { title: '需要你确认', badge: '必填' },
+  inferred: { title: '推断 · 默认，可改', badge: '可改' },
+}
 
 /** 字段级可编辑意图卡：逐项核对、一次提交，绝不做整包「同意 / 不同意」。 */
 export const IntentCardView = memo(function IntentCardView(props: {
@@ -127,52 +128,113 @@ export const IntentCardView = memo(function IntentCardView(props: {
   const [values, setValues] = useState<Record<string, string>>(
     () => Object.fromEntries(props.fields.map(field => [field.key, field.value])),
   )
+  const [editing, setEditing] = useState<Record<string, string>>({})
+  const [moreOpen, setMoreOpen] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const settled = props.note !== null || submitted
+  const changedCount = props.fields.filter(field => (values[field.key] ?? '') !== field.value).length
   const submit = (): void => {
     if (settled) return
     props.onAnswer(JSON.stringify(values))
     setSubmitted(true)
   }
-  const known = new Set(INTENT_SECTIONS.map(([key]) => key))
-  const others = props.fields.filter(field => !known.has(field.source))
-  const renderRow = (field: StudioIntentField) => (
-    <label className="csIntentRow" key={field.key}>
-      <span className="csIntentKey">{field.label}</span>
-      <input
-        className="csFieldInput"
-        value={values[field.key] ?? ''}
-        disabled={settled || field.kind === 'readonly'}
-        onChange={event => {
-          setValues(prev => ({ ...prev, [field.key]: event.target.value }))
-        }}
-      />
-      {field.reason !== undefined && <em className="csIntentReason">{field.reason}</em>}
-      {field.confidence !== undefined && <em className="csIntentConfidence">{field.confidence}</em>}
-    </label>
-  )
+  const toggleEdit = (field: StudioIntentField): void => {
+    setEditing(prev => {
+      const next = { ...prev }
+      if (Object.prototype.hasOwnProperty.call(next, field.key)) delete next[field.key]
+      else next[field.key] = values[field.key] ?? field.value
+      return next
+    })
+  }
+  const cancelEdit = (key: string): void => {
+    setEditing(prev => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+  const commitEdit = (key: string): void => {
+    const draft = (editing[key] ?? '').trim()
+    if (draft !== '') setValues(prev => ({ ...prev, [key]: draft }))
+    cancelEdit(key)
+  }
+  const renderRow = (field: StudioIntentField): ReactElement => {
+    const value = values[field.key] ?? ''
+    const changed = value !== field.value
+    const isEditing = Object.prototype.hasOwnProperty.call(editing, field.key)
+    const options = intentFieldOptions(field)
+    const editable = !settled && intentFieldEditable(field)
+    return (
+      <div className="csIntentRow" key={field.key}>
+        <div className="csIntentRowTop">
+          <span className="csIntentKey">{field.label}</span>
+          <span className="csIntentValue" title={value}>{value}{changed && <em className="csIntentChanged">已改</em>}</span>
+          {editable
+            ? <button type="button" className="csIntentEdit" onClick={() => toggleEdit(field)}>{isEditing ? '收起' : '改'}</button>
+            : <span className="csIntentLock">{field.source === 'explicit' ? '锁定' : '缺省'}</span>}
+        </div>
+        {field.reason !== undefined && <div className="csIntentReason">{field.reason}</div>}
+        {field.confidence !== undefined && <div className="csIntentReason">{field.confidence}</div>}
+        {isEditing && (
+          <div className="csIntentEditor">
+            <div className="csIntentEditorTitle">改动「{field.label}」· 点候选或直接在下面改</div>
+            {options.length > 0 && (
+              <div className="csIntentOptions">
+                {options.map(option => (
+                  <button
+                    type="button"
+                    key={option}
+                    className={option === editing[field.key] ? 'csSelected' : ''}
+                    onClick={() => setEditing(prev => ({ ...prev, [field.key]: option }))}
+                  >{option}</button>
+                ))}
+              </div>
+            )}
+            <textarea
+              className="csFieldInput csIntentTextarea"
+              value={editing[field.key] ?? ''}
+              disabled={settled}
+              onChange={event => setEditing(prev => ({ ...prev, [field.key]: event.target.value }))}
+            />
+            <div className="csIntentEditorActions">
+              <button type="button" onClick={() => cancelEdit(field.key)}>取消</button>
+              <button type="button" className="csIntentDone" onClick={() => commitEdit(field.key)}>完成</button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+  const { primary, more } = intentCardSections(props.fields)
+  const renderGroup = (source: string, rows: StudioIntentField[]): ReactElement | null => {
+    if (rows.length === 0) return null
+    const meta = INTENT_TITLES[source] ?? { title: '其它', badge: '可改' }
+    return (
+      <div className="csIntentGroup" key={source}>
+        <div className="csIntentGroupTitle">
+          {meta.title}<span className="csIntentBadge">{meta.badge}</span>
+          <span className="csIntentCount">{rows.length} 项</span>
+        </div>
+        {rows.map(renderRow)}
+      </div>
+    )
+  }
   return (
     <div className="csQuestionCard csIntentCard">
       <span className="csQuestionLabel">
         <em className="csQuestionIcon">✦</em>
         {props.question}
-        <i className="csQuestionHint">逐字段核对，一次提交</i>
+        <i className="csIntentHint">逐字段核对 · 一次提交{changedCount > 0 ? ` · 已改 ${changedCount} 项` : ''}</i>
       </span>
-      {INTENT_SECTIONS.map(([key, title]) => {
-        const rows = props.fields.filter(field => field.source === key)
-        if (rows.length === 0) return null
-        return (
-          <div className="csIntentSection" key={key}>
-            <div className="csIntentSectionTitle">{title}</div>
-            {rows.map(renderRow)}
+      {renderGroup('needsUser', primary.filter(field => field.source === 'needsUser'))}
+      {renderGroup('inferred', primary.filter(field => field.source === 'inferred'))}
+      {more.length > 0 && (
+        <details className="csIntentMore" open={moreOpen} onToggle={event => setMoreOpen(event.currentTarget.open)}>
+          <summary>查看已裁决明细（{more.length} 项）· 显式锁定 / 冲突可改 / 缺省只读</summary>
+          <div className="csIntentGroup">
+            {more.map(renderRow)}
           </div>
-        )
-      })}
-      {others.length > 0 && (
-        <div className="csIntentSection">
-          <div className="csIntentSectionTitle">其它</div>
-          {others.map(renderRow)}
-        </div>
+        </details>
       )}
       <button type="button" className="csQuestionConfirm" disabled={settled} onClick={submit}>
         {settled ? '已提交' : '按卡片继续'}

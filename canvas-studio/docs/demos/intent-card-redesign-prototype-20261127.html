@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>意图卡重做 · 交互原型</title>
+<style>
+  :root {
+    --bg: #17181b;
+    --panel: #202126;
+    --panel-2: #272930;
+    --pill: #121317;
+    --border: #3a3c45;
+    --text: #e8e9ee;
+    --muted: #9a9da8;
+    --accent: #e7e9f0;
+    --mark: #6cc0a6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px 16px 60px;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; display: flex; gap: 28px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .notes { flex: 1 1 280px; max-width: 360px; color: var(--muted); font-size: 13px; }
+  .notes h1 { color: var(--text); font-size: 18px; margin: 0 0 12px; }
+  .notes ol { padding-left: 20px; margin: 0 0 16px; }
+  .notes li { margin-bottom: 6px; }
+  .notes code { color: var(--mark); font-size: 12px; }
+  .sizes { display: flex; gap: 8px; margin-bottom: 12px; }
+  .sizes button {
+    padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--muted); cursor: pointer; font-size: 12px;
+  }
+  .sizes button.on { background: var(--accent); color: #17181b; border-color: var(--accent); }
+  .stage { width: 740px; max-width: 100%; transition: width 180ms ease; }
+  .stage.stress { width: 380px; }
+  .stage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+  .card {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+    padding: 14px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .card-head { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 600; }
+  .icon {
+    width: 20px; height: 20px; border-radius: 6px; background: var(--panel-2);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
+  }
+  .hint { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .group { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--panel-2); }
+  .group-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+  .group-title .tag { font-size: 10px; font-weight: 400; color: var(--mark); border: 1px solid var(--mark); border-radius: 999px; padding: 0 6px; }
+  .group-title .tag.plain { color: var(--muted); border-color: var(--border); }
+  .group-title .count { margin-left: auto; font-size: 10px; color: var(--muted); font-weight: 400; }
+  .row { border-top: 1px solid var(--border); padding: 9px 0 8px; }
+  .row:first-of-type { border-top: 0; }
+  .row-top { display: flex; align-items: flex-start; gap: 8px; }
+  .key { flex: 0 0 96px; color: var(--muted); font-size: 12px; padding-top: 3px; }
+  .val {
+    flex: 1 1 auto; min-width: 0; background: var(--pill); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 9px; font-size: 12px;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .edit {
+    flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 11px;
+  }
+  .edit:hover { background: var(--accent); color: #17181b; }
+  .readonly { flex: 0 0 auto; font-size: 10px; color: var(--muted); padding-top: 5px; }
+  .reason { margin: 5px 0 0 104px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+  .changed { color: var(--mark); font-size: 10px; margin-left: 6px; }
+  .editor { margin: 9px 0 2px 104px; padding: 10px; border: 1px dashed var(--mark); border-radius: 8px; background: var(--pill); }
+  .editor-label { font-size: 11px; color: var(--mark); margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 11px; }
+  .chip:hover, .chip.on { background: var(--accent); color: #17181b; border-color: var(--accent); }
+  textarea {
+    width: 100%; min-height: 60px; resize: vertical; font: inherit; font-size: 12px;
+    padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border);
+    background: #0e0f12; color: var(--text);
+  }
+  .editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .editor-actions button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 11px; }
+  .editor-actions .primary { background: var(--accent); color: #17181b; border-color: var(--accent); }
+  details.more { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--panel-2); }
+  details.more summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  details.more > .group { border: 0; padding: 10px 0 0; background: transparent; }
+  .submit { padding: 9px 18px; border: 0; border-radius: 999px; background: var(--accent); color: #17181b; font-size: 13px; font-weight: 600; cursor: pointer; align-self: flex-start; }
+  .result { margin-top: 10px; padding: 10px; border-radius: 8px; background: #0e0f12; border: 1px solid var(--mark); font: 11px/1.6 ui-monospace, monospace; color: var(--mark); white-space: pre-wrap; overflow-wrap: anywhere; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="notes">
+    <h1>意图卡重做 · 交互原型</h1>
+    <p>这不是最终代码，只看交互。用截图里的真实字段做样例。</p>
+    <ol>
+      <li>默认只展开 <code>需要你确认</code> 和 <code>推断 · 默认，可改</code>。</li>
+      <li>点任一项的 <code>改</code>：候选 chip 点一下即填入，也能直接编辑全宽输入框。</li>
+      <li>显式项和缺省项收进折叠区，标「锁定 / 缺省」；冲突项可改。</li>
+      <li>底部只有一个 <code>按卡片继续</code>，点后展示一次提交的 JSON。</li>
+      <li>默认 740px ≈ 截图里卡片的实测宽度；「压力 380px」是比产品实际更窄的极端情况，用来验证换行兜底。</li>
+    </ol>
+    <div class="sizes">
+      <button id="actual" class="on">实际约 740px</button>
+      <button id="stress">压力 380px</button>
+    </div>
+    <p>改动只在原型内，源码未动。</p>
+  </div>
+  <div class="stage" id="stage">
+    <div class="stage-head"><span>对话区内的卡片 · 按截图实测宽度</span><span id="counter">已改 0 项</span></div>
+    <div class="card" id="card"></div>
+    <div class="result" id="result"></div>
+  </div>
+</div>
+<script>
+  const fields = [
+    { key: 'voice', label: '旁白音色人格', value: '温和清晰的成年男声', reason: '音色审美只有你能定；改说「男声」「更活泼」「不要旁白」都行', source: 'needsUser', group: 'need', options: ['温和清晰的成年男声', '活泼明快的女声', '沉稳叙事男声', '不要旁白'], editable: true },
+    { key: 'knowledge', label: '4 个知识点', value: '对比才看得出 · 轨道机制 → 近地点 → 远地点 → 结果', reason: '按「为什么形成」的因果链排，从轨道机制推到结果；可改任一条', source: 'inferred', group: 'infer', options: ['对比才看得出 · 轨道机制 → 近地点 → 远地点 → 结果', '先讲现象再讲原因', '按时间顺序排'], editable: true },
+    { key: 'structure', label: '结构起点', value: '配方 explainer-cards', reason: '五判据机器判定：模板 0 个（10 个模板均不适配 80s / 4 要点容量）；配方恰好 1 个 = explainer-cards', source: 'inferred', group: 'infer', options: ['配方 explainer-cards', '自由编排', '模板'], editable: true },
+    { key: 'narration', label: '是否需要旁白', value: '需要，中文科普', reason: '六年级受众 + 原理讲解，无旁白看不懂；按每句约 4–5 字/秒卡稿', source: 'inferred', group: 'infer', options: ['需要，中文科普', '不要旁白，只上字幕', '需要，英文'], editable: true },
+    { key: 'aspect', label: '画幅', value: '16:9 横屏', reason: '项目预设', source: 'explicit', group: 'detail', options: [], editable: false },
+    { key: 'chain', label: '制作链路', value: '代码驱动动画（code-driven-explainer / render_composition）', reason: '科普讲解 + 原理拆解 + 要动画标注', source: 'explicit', group: 'detail', options: [], editable: false },
+    { key: 'duration', label: '时长冲突裁决', value: '项目预设（约 80s / 12 屏 / 6.5s 每屏）', reason: '你本轮明确说「长度自己决定，讲清楚是最终目标」；用户即时指示压过项目预设，15s 装不下 4 个知识点', source: 'conflict', group: 'detail', options: ['项目预设（约 80s / 12 屏 / 6.5s 每屏）', '改回短版 15s'], editable: true },
+    { key: 'defaults', label: '其余缺省', value: '分辨率 1080p / 帧率 30fps / 视觉主题 colorful-education', reason: '未指定的工程参数，事后可按此回退', source: 'defaults', group: 'detail', options: [], editable: false }
+  ]
+  const editing = new Map()
+  const originals = new Map(fields.map(f => [f.key, f.value]))
+  const card = document.getElementById('card')
+  const result = document.getElementById('result')
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+  function rowHtml(f) {
+    const changed = f.value !== originals.get(f.key)
+    const isEditing = editing.has(f.key)
+    const draft = isEditing ? editing.get(f.key) : f.value
+    const chips = (f.options || []).length
+      ? '<div class="chips">' + f.options.map(o =>
+          '<button class="chip' + (o === draft ? ' on' : '') + '" data-act="chip" data-key="' + f.key + '" data-val="' + esc(o) + '">' + esc(o) + '</button>').join('') + '</div>'
+      : ''
+    const editor = isEditing
+      ? '<div class="editor"><div class="editor-label">改动「' + esc(f.label) + '」· 点候选或直接在下面改</div>' + chips
+        + '<textarea data-act="input" data-key="' + f.key + '">' + esc(draft) + '</textarea>'
+        + '<div class="editor-actions"><button data-act="cancel" data-key="' + f.key + '">取消</button>'
+        + '<button class="primary" data-act="done" data-key="' + f.key + '">完成</button></div></div>'
+      : ''
+    return '<div class="row"><div class="row-top"><span class="key">' + esc(f.label) + '</span>'
+      + '<span class="val">' + esc(f.value) + (changed ? '<span class="changed">已改</span>' : '') + '</span>'
+      + (f.editable ? '<button class="edit" data-act="edit" data-key="' + f.key + '">' + (isEditing ? '收起' : '改') + '</button>'
+        : '<span class="readonly">' + (f.source === 'explicit' ? '锁定' : '缺省') + '</span>')
+      + '</div><div class="reason">' + esc(f.reason) + '</div>' + editor + '</div>'
+  }
+
+  function groupHtml(title, tag, tagPlain, keys) {
+    const rows = fields.filter(f => keys.includes(f.key)).map(rowHtml).join('')
+    return '<div class="group"><div class="group-title">' + esc(title)
+      + ' <span class="tag' + (tagPlain ? ' plain' : '') + '">' + esc(tag) + '</span>'
+      + '<span class="count">' + keys.length + ' 项</span></div>' + rows + '</div>'
+  }
+
+  function render() {
+    const changed = fields.filter(f => f.value !== originals.get(f.key)).length
+    document.getElementById('counter').textContent = '已改 ' + changed + ' 项'
+    card.innerHTML = '<div class="card-head"><span class="icon">✦</span><span>核对本次制作的意图与假设</span>'
+      + '<span class="hint">逐字段核对 · 一次提交</span></div>'
+      + groupHtml('需要你确认', '必填', false, ['voice'])
+      + groupHtml('推断 · 默认，可改', '可改', false, ['knowledge', 'structure', 'narration'])
+      + '<details class="more" id="more"><summary>查看已裁决明细（4 项）· 显式锁定 / 冲突可改 / 缺省只读</summary>'
+      + groupHtml('显式 / 冲突 / 缺省', '折叠区', true, ['aspect', 'chain', 'duration', 'defaults'])
+      + '</details>'
+      + '<button class="submit" id="submit">按卡片继续</button>'
+    const more = document.getElementById('more')
+    more.open = render.moreOpen === true
+    more.addEventListener('toggle', () => { render.moreOpen = more.open })
+    document.getElementById('submit').addEventListener('click', () => {
+      const answer = Object.fromEntries(fields.map(f => [f.key, f.value]))
+      result.style.display = 'block'
+      result.textContent = '一次提交（JSON）：\n' + JSON.stringify(answer, null, 2)
+      result.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
+  card.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-act]')
+    if (!btn) return
+    const f = fields.find(x => x.key === btn.dataset.key)
+    if (!f) return
+    if (btn.dataset.act === 'chip') {
+      editing.set(f.key, btn.dataset.val)
+      const ta = card.querySelector('textarea[data-key="' + f.key + '"]')
+      if (ta) ta.value = btn.dataset.val
+      card.querySelectorAll('.chip[data-key="' + f.key + '"]').forEach(c => c.classList.toggle('on', c === btn))
+      return
+    }
+    if (btn.dataset.act === 'edit') {
+      if (editing.has(f.key)) editing.delete(f.key)
+      else editing.set(f.key, f.value)
+    }
+    if (btn.dataset.act === 'cancel') editing.delete(f.key)
+    if (btn.dataset.act === 'done') {
+      const ta = card.querySelector('textarea[data-key="' + f.key + '"]')
+      if (ta) f.value = ta.value.trim() || f.value
+      editing.delete(f.key)
+    }
+    render()
+  })
+  card.addEventListener('input', e => {
+    if (e.target.dataset.act === 'input') editing.set(e.target.dataset.key, e.target.value)
+  })
+  document.getElementById('actual').addEventListener('click', e => {
+    document.getElementById('stage').classList.remove('stress')
+    e.currentTarget.classList.add('on')
+    document.getElementById('stress').classList.remove('on')
+  })
+  document.getElementById('stress').addEventListener('click', e => {
+    document.getElementById('stage').classList.add('stress')
+    e.currentTarget.classList.add('on')
+    document.getElementById('actual').classList.remove('on')
+  })
+  render()
+</script>
+</body>
+</html>

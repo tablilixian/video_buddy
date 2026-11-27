@@ -13,7 +13,7 @@ import { join, sep } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
-import { normalizeWorkflow } from './contracts/project.js'
+import { normalizeWorkflow, type StudioIntentField } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
 import { composedSourceIds } from './compose-selection.js'
@@ -3290,12 +3290,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         '阶段一需求澄清的**一次性字段级意图卡**：把 explicit / inferred / conflict / needsUser / defaults 五段字段一次提交，'
         + '卡片内联在对话区，用户逐字段核对、改完一次提交（**不是**整包「同意 / 不同意」）。这是 confirm 模式下阶段一唯一允许的一次打断；'
         + '逐项 ask_user_choice 仅作降级路径。放手跑（auto）下本工具**不弹卡、不等待**，直接返回按默认值组装的意图卡。'
-        + '用户答案以 JSON 字符串回流（{key: value}）；超时 / 内部错误按默认值继续，不把 turn 带崩。',
+        + '用户答案以 JSON 字符串回流（{key: value}）；超时 / 内部错误按默认值继续，不把 turn 带崩。'
+        + 'choice 字段请填 options 候选项（1–8 条），客户端渲染成可点选 chip；needsUser/inferred 默认展开，'
+        + 'explicit/conflict/defaults 收进折叠区（显式与缺省只读，冲突可改）。',
       parameters: {
         fields: {
           type: 'string' as const,
           required: true,
-          description: 'JSON 字符串：意图卡字段数组，每项 {key,label,value,source,reason?,confidence?,kind?}；source 取 explicit|inferred|conflict|needsUser|defaults，kind 取 choice|text|readonly。1–12 项、key 唯一',
+          description: 'JSON 字符串：意图卡字段数组，每项 {key,label,value,source,reason?,confidence?,kind?,options?}；source 取 explicit|inferred|conflict|needsUser|defaults，kind 取 choice|text|readonly，options 为 1–8 条候选字符串。1–12 项、key 唯一',
         },
         question: { type: 'string' as const, description: '卡片标题，缺省「请核对本次制作的意图与假设」' },
       },
@@ -3318,7 +3320,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           throwError('CS-USER-ERR', { message: 'fields 必须是合法 JSON 数组字符串' })
         }
         if (!Array.isArray(parsedFields)) throwError('CS-USER-ERR', { message: 'fields 必须是数组' })
-        const fields = (parsedFields as Record<string, unknown>[]).map((raw) => ({
+        const fields: StudioIntentField[] = (parsedFields as Record<string, unknown>[]).map((raw) => ({
           key: String(raw?.key ?? ''),
           label: String(raw?.label ?? ''),
           value: String(raw?.value ?? ''),
@@ -3326,8 +3328,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
           ...(typeof raw?.reason === 'string' ? { reason: raw.reason } : {}),
           ...(typeof raw?.confidence === 'string' ? { confidence: raw.confidence } : {}),
           ...(typeof raw?.kind === 'string' ? { kind: raw.kind } : {}),
+          ...(Array.isArray(raw?.options) && raw.options.every(o => typeof o === 'string')
+            ? { options: (raw.options as string[]).filter(o => o.trim() !== '').map(o => o.trim()) }
+            : {}),
         }))
         if (fields.length === 0 || fields.length > 12) throwError('CS-USER-ERR', { message: 'fields 需要 1–12 项' })
+        if (fields.some(field => (field.options?.length ?? 0) > 8)) {
+          throwError('CS-USER-ERR', { message: '每个字段的 options 最多 8 项' })
+        }
         if (fields.some(field => field.key.trim() === '' || field.label.trim() === '')) {
           throwError('CS-USER-ERR', { message: '每个字段都要有 key 与 label' })
         }

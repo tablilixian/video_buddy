@@ -17,6 +17,7 @@ import {
   autoIntentCardAnswerFor,
 } from '../lib/studio-defaults.js'
 import { normalizeWorkflow } from '../lib/contracts/project.js'
+import { intentCardSections, intentFieldEditable, intentFieldOptions } from '../lib/intent-card-layout.js'
 
 const FIELDS = [
   { key: 'duration', value: '45s', source: 'explicit' },
@@ -84,4 +85,51 @@ test('普通单题点选不因意图卡改动多出 fields 字段', () => {
   })
   assert.equal(workflow.pendingQuestion.fields, undefined)
   assert.equal(workflow.pendingQuestion.answer, 'A')
+})
+
+const ALL_SECTIONS = [
+  { key: 'voice', label: '音色', value: '男声', source: 'needsUser' },
+  { key: 'audience', label: '受众', value: '六年级', source: 'inferred' },
+  { key: 'aspect', label: '画幅', value: '16:9', source: 'explicit' },
+  { key: 'duration', label: '时长', value: '80s', source: 'conflict' },
+  { key: 'quality', label: '画质', value: '1080p', source: 'defaults' },
+  { key: 'weird', label: '脏值', value: 'x', source: 'unknown' },
+]
+
+test('首屏只展开 needsUser / inferred，其余含脏 source 全部折叠', () => {
+  const { primary, more } = intentCardSections(ALL_SECTIONS)
+  assert.deepEqual(primary.map(f => f.key), ['voice', 'audience'])
+  assert.deepEqual(more.map(f => f.key), ['aspect', 'duration', 'quality', 'weird'])
+})
+
+test('显式与缺省只读、冲突可改、kind:readonly 硬锁', () => {
+  assert.equal(intentFieldEditable(ALL_SECTIONS[0]), true)
+  assert.equal(intentFieldEditable(ALL_SECTIONS[1]), true)
+  assert.equal(intentFieldEditable(ALL_SECTIONS[2]), false)
+  assert.equal(intentFieldEditable(ALL_SECTIONS[3]), true)
+  assert.equal(intentFieldEditable(ALL_SECTIONS[4]), false)
+  assert.equal(intentFieldEditable({ ...ALL_SECTIONS[0], kind: 'readonly' }), false)
+})
+
+test('候选项过滤脏值并封顶 8 项', () => {
+  assert.deepEqual(intentFieldOptions({ ...ALL_SECTIONS[0], options: [' 男声', '', '女声', null, '旁白'] }), ['男声', '女声', '旁白'])
+  assert.deepEqual(intentFieldOptions(ALL_SECTIONS[0]), [])
+  assert.equal(intentFieldOptions({ ...ALL_SECTIONS[0], options: Array.from({ length: 12 }, (_, i) => `o${i}`) }).length, 8)
+})
+
+test('normalizeWorkflow 透传 options，脏值只留非空字符串', () => {
+  const workflow = normalizeWorkflow({
+    mode: 'confirm',
+    pendingQuestion: {
+      id: 'q4',
+      question: 'x',
+      options: [],
+      fields: [
+        { key: 'voice', label: '音色', value: '男声', source: 'needsUser', kind: 'choice', options: ['男声', '女声'] },
+        { key: 'quality', label: '画质', value: '', source: 'inferred', options: ['1080p', 3, '', '720p'] },
+      ],
+    },
+  })
+  assert.deepEqual(workflow.pendingQuestion.fields[0].options, ['男声', '女声'])
+  assert.deepEqual(workflow.pendingQuestion.fields[1].options, ['1080p', '720p'])
 })

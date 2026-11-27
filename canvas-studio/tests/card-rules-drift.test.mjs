@@ -36,13 +36,23 @@ test('覆盖完整：58 张一张不漏，且每行列数一致（ASCII 竖线�
   const fieldCounts = new Set(
     text.split('\n').filter((line) => /^\| [A-Z]+\d+ \|/u.test(line)).map((line) => line.split('|').length),
   )
-  assert.deepEqual([...fieldCounts], [9], `行内字段数不一致（${[...fieldCounts].join(', ')}）：单元格里的 | 必须转义或改名（D5 后应为 7 列 = 9 段）`)
+  // 8 列 = 9 段（首尾各一个空段）。2026-11-27 加「容量」列后从 7 列变 8 列。
+  assert.deepEqual([...fieldCounts], [10], `行内字段数不一致（${[...fieldCounts].join(', ')}）：单元格里的 | 必须转义或改名（加「容量」列后应为 8 列 = 10 段）`)
 })
 
-test('D5 新列：表头含「data 键」且列口径有说明（缺列 = data 通道对模型不可见）', () => {
+test('容量列：表头含「容量」且列口径有说明（缺列 = 模型不知道这张卡装不装得下）', () => {
   const text = readFileSync(OUTPUT, 'utf8')
-  assert.match(text, /\| 卡 \| copy 解析规则 \| label \| highlights \| dataSource \| data 键 \| 同义卡 \|/u, '表头缺 data 键列')
+  assert.match(text, /\| 卡 \| copy 解析规则 \| 容量 \| label \| highlights \| dataSource \| data 键 \| 同义卡 \|/u, '表头缺容量列')
+  assert.match(text, /容量\*\*（`条 \/ 行`）/u, '列口径缺容量说明')
+  // D5 的 data 键列口径不能因为加列被顺手删掉（缺说明 = data 通道对模型不可见）。
   assert.match(text, /data 键\*\*（D5）/u, '列口径缺 data 键说明')
+  // 硬截断的卡必须如实写出来（A4 slice(0,6) / B1 slice(0,4)），
+  // 「不限条」只给真的不截断的卡 —— 这列的用处就是让「塞 6 条点要」在写之前就知道会丢。
+  const rowOf = (id) => text.split('\n').find((line) => line.startsWith(`| ${id} `)) ?? ''
+  assert.match(rowOf('A4'), /^\| A4 \|.*\| 6 条 \/ \d+ 行 \|/u, `A4 的容量应实测为 6 条（实际：${rowOf('A4')}）`)
+  assert.match(rowOf('B1'), /^\| B1 \|.*\| 4 条 \/ \d+ 行 \|/u, `B1 的容量应实测为 4 条（实际：${rowOf('B1')}）`)
+  // 不吃 copy 的卡写 `—`，不许写「0 条」（会被读成"一张都装不下"）。
+  assert.match(rowOf('DAT4'), /^\| DAT4 \|.*\| — \|/u, `DAT4 不吃 copy，容量列应为 —（实际：${rowOf('DAT4')}）`)
 })
 
 test('DAT3 回归：解析规则必须是「键:值」拆 k/v，不得退回「多行」假信息', () => {

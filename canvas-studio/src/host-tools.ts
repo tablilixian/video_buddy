@@ -2298,6 +2298,14 @@ async function bindSegmentsToCanvas(
   }
 }
 
+// `write_storyboard` 在**已落地**项目上的拒收文案（模块级：函数内一改就撞体积棘轮）。
+// 三句都有代价，别删：①不许指路到不存在的工具（CV-304/SB-04 —— 旧文案让 agent 去找
+// 「结构修订」这个还没实现的工具，查不到就绕圈）；②「已落地」⇒ 写入一定成功过
+// （2026-11-27 超级月亮：模型不知上一笔已成功，把误报当失败反复重试）；③阶段二已解锁。
+const STORYBOARD_LOCKED_MESSAGE = '故事板只能在「拍摄定稿」阶段（落画布之前）整体重写；当前项目已落地，画布上的分镜卡是按当时的定稿铸的，整体重写会让产物与规划失去对应。因而不接受本次整体重写：请把「想改哪些分镜、怎么改」直接告诉用户，由用户决定怎么继续。\n'
+  + '**如果你是因为上一次调用返回了错误才来重试的：那次写入很可能已经成功**（本项目已落地，说明故事板当时已落盘并完成落地）。先看画布上的分镜卡与「拍摄定稿」覆盖层，确认现状后再决定要不要改。\n'
+  + '**注意：本项目阶段二已解锁** —— 不要再要求用户点「确认落地」，也不要以此为由拒绝旁白 / manifest / 渲染，需要推进时直接调对应工具。'
+
 /**
  * @param library - REQ-001 全局资产库实例。**必须与 routes.ts 共用同一实例**
  *   （`src/index.ts` 传入）：两个实例各有内存缓存，同 id 写入「内存为准」的合流
@@ -4395,25 +4403,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number | (() 
         const a = args as Record<string, unknown>
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
 
-        // 阶段纪律（CV-304 / 评审 SB-03）：**只有规划期（`storyboarding`）能整体重写故事板**。
-        //
-        // 契约 §3.3 的「工具互斥」早就写明这一点，但守卫一直只拦 `executing`，于是
-        // `keyframe_review` 期（已落地、关键帧已是画布产物）仍能把 §04 整体换掉 ——
-        // 分镜卡是按落地那一刻的定稿铸的，重写即当场失配，正是本守卫要防的事。
-        // 三态取值已穷尽，故按**白名单**放行：只有 `storyboarding` 过；`keyframe_review`
-        // 与 `executing` 一律拒；`workflow` 缺失（三态之前的老项目）保持放行，不给存量
-        // 项目凭空制造新红字。
+        // 阶段纪律（CV-304 / 评审 SB-03）：只有规划期（`storyboarding`）能整体重写故事板
+        // —— 三态取值已穷尽，按**白名单**放行；`keyframe_review` 与 `executing` 一律拒，
+        // `workflow` 缺失（三态之前的老项目）保持放行，不给存量项目凭空制造新红字。
+        // 文案与三条来由见 `STORYBOARD_LOCKED_MESSAGE`（抽到模块级是为了不撞体积棘轮）。
         const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
         const state = workflow.state
         if (state !== 'storyboarding') {
-          // CV-304（评审 SB-04）：文案**不许**再指路到不存在的工具。旧文案让 agent
-          // 去找「结构修订」那个独立工具（REQ-022 排期 P2，**尚未实现**）——查不到
-          // 就原地绕圈。现在只说事实 + 指出唯一出路（把改动意愿交回用户）。
-          // 连工具的**名字**都不在这里出现：产品代码里提名一个不存在的工具，下一个人
-          // 只会再被骗一次（本批的 ⑥ 号用例把这条钉住了）。
-          throwError('CS-USER-ERR', {
-            message: '故事板只能在「拍摄定稿」阶段（落画布之前）整体重写；当前项目已落地，画布上的分镜卡是按当时的定稿铸的，整体重写会让产物与规划失去对应。因而不接受本次整体重写：请把「想改哪些分镜、怎么改」直接告诉用户，由用户决定怎么继续。\n**注意：本项目阶段二已解锁** —— 不要再要求用户点「确认落地」，也不要以此为由拒绝旁白 / manifest / 渲染，需要推进时直接调对应工具。',
-          })
+          throwError('CS-USER-ERR', { message: STORYBOARD_LOCKED_MESSAGE })
         }
 
         const parseNotes: string[] = []

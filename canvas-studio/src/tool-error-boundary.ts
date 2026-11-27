@@ -85,10 +85,38 @@ export interface StudioToolClockContext {
  */
 export type StudioToolClock = (context: StudioToolClockContext) => Promise<string | null>
 
-/** 把时钟行追加到成功结果的末尾（纯函数，便于单测）。 */
+/**
+ * 把时钟行追加到成功结果的末尾（纯函数，便于单测）。
+ *
+ * **两种形态都要认** —— 这是 2026-11-27 超级月亮会话「故事板已落盘却报内部错误」的根因：
+ * - **框架形态** `{isError:false, content:ContentBlock[]}`：`tools/execute` 中间件拿到的那层
+ *   （`registerStudioToolErrorBoundary` 第 309 行）；
+ * - **canonical 形态**：工具 `execute` 的返回值，形状由各工具自己的 `output.schema` 决定
+ *   （本项目绝大多数是 `{text:string}`，由 `output.render: renderTextResult` 渲染成 content）。
+ *   闸门提示走的就是这条（第 249 行）。
+ *
+ * 旧实现无条件展开 `result.content`。canonical 形态没有 `content` 字段 ⇒ `[...undefined]`
+ * 抛 `TypeError: result.content is not iterable`，被外层 catch 收敛成 `CS-UNC-000`。
+ * 触发条件恰好是「auto 模式 + 首次 `write_storyboard` 未先调意图卡」——
+ * `guardSpecGate` 此时返回非空 gateNote（放手跑自动确认），于是**每一次放手跑第一次写故事板
+ * 都会炸**，而那时故事板早已落盘、自动落地也已完成。
+ *
+ * 危害不是少一行提示，而是把一次已成功（且已落地）的操作报成失败：模型据此重试，
+ * 再被「已落地不许整体重写」拒一次 = 双重惩罚。因此这里的原则是
+ * **宁可少一行提示，也绝不能把成功变失败**：认不出的形态原样返回。
+ */
 export function appendClockLine(result: ToolExecutionSuccess, line: string): ToolExecutionSuccess {
   const block: ContentBlock = { type: 'text', text: line }
-  return { ...result, content: [...result.content, block] }
+  if (Array.isArray(result.content)) return { ...result, content: [...result.content, block] }
+  // canonical 形态：只有带 `text` 的工具能承接；其余（图表/结构化产物）不动它。
+  const canonical = result as unknown as { text?: unknown }
+  if (typeof canonical.text === 'string') {
+    return {
+      ...(result as unknown as Record<string, unknown>),
+      text: canonical.text === '' ? line : `${canonical.text}\n${line}`,
+    } as unknown as ToolExecutionSuccess
+  }
+  return result
 }
 
 /**

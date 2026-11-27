@@ -19,9 +19,11 @@ import { throwError } from '../lib/error-system.js'
 import '../lib/errors/catalog.js'
 import {
   STUDIO_ERROR_INFO_NAME,
+  appendClockLine,
   decorateStudioToolResult,
   recordStudioToolFailure,
   registerStudioToolErrorBoundary,
+  setSpecGateAutoResolver,
   takePending,
   wrapStudioToolDefinition,
 } from '../lib/tool-error-boundary.js'
@@ -149,4 +151,58 @@ test('注册守卫：中间件必须被 agent scope 的 tools/execute 派发命�
     '错误码没能穿过边界 —— 中间件多半被注册到了插件自己的 scope 上',
   )
   assert.equal(result.error.info?.name, STUDIO_ERROR_INFO_NAME)
+})
+
+/**
+ * 2026-11-27 超级月亮会话实证的 P0：`write_storyboard` 已落盘（.666 写盘、.677 返回）
+ * 却被报成 `CS-UNC-000 内部错误`。
+ *
+ * 根因是 `appendClockLine` 只会处理**框架形态**（`{content:[...]}`），而闸门提示是在
+ * `wrapStudioToolDefinition` 里对**canonical 形态**（`{text}`）调用的 ⇒ `[...undefined]`
+ * 抛 TypeError，被外层 catch 收敛成内部错误。
+ *
+ * 触发条件不是边角：auto（放手跑）模式下首次 `write_storyboard` 未先调意图卡时，
+ * `guardSpecGate` 必返回非空提示 —— 也就是**每一次放手跑第一次写故事板都会踩到**，
+ * 而那一次恰恰是故事板刚落盘 + 自动落地刚完成的那一笔。
+ *
+ * 反向变异：把 `appendClockLine` 改回 `[...result.content, block]` ⇒ 本条子测试精确变红。
+ */
+test('appendClockLine：canonical 形态（{text}）不得抛错，提示行要接在正文后面', () => {
+  // ① 框架形态：追加成独立 content block（原行为保持不变）
+  const framed = appendClockLine(
+    { isError: false, value: null, content: [{ type: 'text', text: '正文' }] },
+    'ℹ️ 提示',
+  )
+  assert.deepEqual(framed.content.map((block) => block.text), ['正文', 'ℹ️ 提示'])
+
+  // ② canonical 形态：本项目工具的 execute 返回值，没有 content 字段
+  const canonical = appendClockLine({ text: '故事板已落盘' }, 'ℹ️ 放手跑：意图卡已自动确认')
+  assert.equal(canonical.text, '故事板已落盘\nℹ️ 放手跑：意图卡已自动确认')
+
+  // ③ canonical 且正文为空：提示行独占，不要留下前导换行
+  assert.equal(appendClockLine({ text: '' }, 'ℹ️ 提示').text, 'ℹ️ 提示')
+
+  // ④ 认不出的形态：原样返回（宁可少一行提示，也不能把成功变失败）
+  const shape = { ok: true }
+  assert.equal(appendClockLine(shape, 'ℹ️ 提示'), shape)
+})
+
+test('放手跑首次 write_storyboard：闸门提示不得把成功结果变成内部错误', async () => {
+  setSpecGateAutoResolver(async () => true)
+  try {
+    const wrapped = wrapStudioToolDefinition({
+      name: 'write_storyboard',
+      description: 'x',
+      parameters: {},
+      execute: async () => ({ text: '故事板已落盘（首稿已存为 **v1**）。' }),
+    })
+    const exec = { name: 'write_storyboard', agent: { session: { header: { id: 'session-append-clock-p0' } } } }
+
+    // 旧实现会在此抛 TypeError（result.content is not iterable）
+    const result = await wrapped.execute({}, exec)
+    assert.match(String(result.text), /故事板已落盘/)
+    assert.match(String(result.text), /放手跑/, '闸门自动代办必须留一行透明说明（看不见的决定等于没做）')
+  } finally {
+    setSpecGateAutoResolver(() => Promise.resolve(false))
+  }
 })

@@ -2,10 +2,16 @@
  * REQ-038 R11-C5 · **分镜渲染决策**（planShotRender）单测。
  *
  * 回退矩阵（每条都是一次「整片路径」的守卫）：
- * - probe/spot 单 / manifest 有 audio 段 ⇒ whole（D3：音频整轨后配 = Phase 1.5）；
+ * - probe/spot 单 / 带 video 轨（原生声找不回）⇒ whole；
  * - 无可用边界（spec 派生失败 + 无 transition）⇒ whole；
  * - 切片后不足 2 段 ⇒ whole；无项目目录 ⇒ whole；
  * - 正常三屏 spec ⇒ shots（段数/hash/缓存目录齐备）。
+ *
+ * **2026-11-27 口径变更（P0-2）**：`manifest.audio` 本身不再是回退理由。
+ * 旧口径「有 audio ⇒ whole」是因为分镜链路缺最后一步混音，于是「挂了旁白」这个最基本
+ * 情形被迫整片重渲（改一屏 68–150s，而段补渲 5–15s，真机会话 12 次整片渲染 820s）。
+ * 现在拼接后由 `muxManifestAudio` 补整轨混音 ⇒ 纯代码/图文片带旁白也走分镜。
+ * 唯一例外是**画面里有 video 轨**：它的原生声在段渲染 mute 之后就找不回来，仍整片渲。
  *
  * 定向跑：node --test tests/req038-r11-plan-shots.test.mjs
  */
@@ -14,6 +20,7 @@ import assert from 'node:assert/strict'
 import { planFromSpec } from '../lib/remotion/content-spec.js'
 import { planShotRender } from '../lib/shot-cache.js'
 import { boundariesFromSpec } from '../lib/shot-slice.js'
+import { audioCompatibleWithShots } from '../lib/manifest-audio-mux.js'
 
 const SPEC = {
   meta: { title: '决策样例', durationSec: 20, fps: 30, autoStages: true },
@@ -49,10 +56,26 @@ test('正常三屏：mode shots，段数 3、hash 3、缓存目录在 build/shot
   assert.ok(plan.globals.length > 0)
 })
 
-test('有 audio 段 ⇒ whole（D3：音频整轨后配 = Phase 1.5）', () => {
-  const plan = planShotRender(manifestWith({ bgmUrl: '/x.mp3' }), { ...base, allowShots: false })
+test('P0-2：带 audio 但无 video 轨 ⇒ 仍走 shots（混音在拼接后补，不再整片重渲）', () => {
+  const plan = planShotRender(manifestWith({ bgmUrl: '/x.mp3' }), base)
+  assert.equal(plan.mode, 'shots')
+  assert.equal(plan.segments.length, 3)
+  // 判据是「有没有 video 轨」，不是「有没有 audio」。
+  assert.equal(audioCompatibleWithShots(manifestWith({ bgmUrl: '/x.mp3' })), true)
+  assert.equal(audioCompatibleWithShots(manifestWith(undefined)), true)
+})
+
+test('P0-2：带 audio + 有 video 轨 ⇒ 判据拒绝分镜（原生声在段渲染静音后找不回）', () => {
+  const withVideo = manifestWith({ bgmUrl: '/x.mp3' })
+  withVideo.tracks = [
+    ...withVideo.tracks,
+    { id: 'clip', type: 'video', src: '/assets/p/abc.mp4', box: { x: 0, y: 0, w: 100, h: 100 }, startFrame: 0, durationInFrames: 600 },
+  ]
+  assert.equal(audioCompatibleWithShots(withVideo), false)
+  // 调用方据此传 allowShots:false ⇒ 回退整片，且回执说清是 video 轨而非 audio。
+  const plan = planShotRender(withVideo, { ...base, allowShots: audioCompatibleWithShots(withVideo) })
   assert.equal(plan.mode, 'whole')
-  assert.match(plan.reason, /音频/)
+  assert.match(plan.reason, /video 轨/)
 })
 
 test('probe/spot 单 ⇒ whole（allowShots false）', () => {

@@ -18,6 +18,7 @@ import { listTemplateSummaries } from './remotion/template-registry.js'
 import { RECIPES, type Recipe } from './remotion/recipes.js'
 import { getCard, lookupCardId } from './remotion/recipe-cards.js'
 import { recipeToStoryboardSeed } from './remotion/recipe-to-storyboard.js'
+import { MAX_STAGE_SEC, MIN_STAGE_SEC, TARGET_STAGE_SEC } from './remotion/stage-plan.js'
 
 /** `requirements` 的四个可算字段（都没给 = 不做适配判定）。 */
 function readRequirement(raw: unknown): TemplateRequirement {
@@ -224,7 +225,7 @@ interface RecipeCheck {
  * 4. 表达力：段卡全在册 + 卡级 required 素材不超 assetCount + 演示需求卡在册；
  * 5. 互斥：specPath 已给 ⇒ 本工具不参与裁决（工具入口短路，不在此表）。
  */
-function gateRecipe(
+export function gateRecipe(
   recipe: Recipe,
   requirement: RecipeRequirement,
   options: { theme?: string; demoNeeds?: readonly string[] },
@@ -232,16 +233,29 @@ function gateRecipe(
   const checks: RecipeCheck[] = []
 
   // 1 · 段数
-  const { stageSeconds, totalSeconds, assetCount } = requirement
-  if (stageSeconds !== undefined && stageSeconds > 0 && totalSeconds !== undefined && totalSeconds > 0) {
-    const screens = Math.max(1, Math.floor(totalSeconds / stageSeconds))
+  const { totalSeconds, assetCount } = requirement
+  // 屏长的权威值在 Host 这边（`stage-plan.ts`，`autoStages` 用的就是同一组常量）。
+  // 此前完全由模型自填：真机会话填了 12s（成片真实 7.5s/屏），于是「4 段 ≤ 6 屏 ✅」这种
+  // 结论是**用错的输入跑对的判据**——判据没错，模型却拿它当"配方不合适"的依据去否配方。
+  // 现在缺省 / 越界一律按 Host 口径兜底，并把「实际用了哪个值」写进回执，不让自填数隐身。
+  const stageRaw = requirement.stageSeconds
+  const stage = stageRaw === undefined || stageRaw <= 0
+    ? TARGET_STAGE_SEC
+    : Math.min(MAX_STAGE_SEC, Math.max(MIN_STAGE_SEC, stageRaw))
+  const stageNote = stageRaw === undefined || stageRaw <= 0
+    ? `，未给 stageSeconds ⇒ 按 Host 值 ${String(TARGET_STAGE_SEC)}s/屏`
+    : stageRaw === stage ? '' : `，stageSeconds ${String(stageRaw)} 越界（${String(MIN_STAGE_SEC)}–${String(MAX_STAGE_SEC)}s）已钳到 ${String(stage)}s`
+  if (totalSeconds !== undefined && totalSeconds > 0) {
+    const screens = Math.max(1, Math.floor(totalSeconds / stage))
     const ok = recipe.segments.length <= screens
     checks.push({
       mark: ok ? '✅' : '❌',
-      line: `段数：配方 ${String(recipe.segments.length)} 段 ${ok ? '≤' : '>'} 期望屏 ${String(screens)}（${String(totalSeconds)}s / ${String(stageSeconds)}s）`,
+      line: `段数：配方 ${String(recipe.segments.length)} 段 ${ok ? '≤' : '>'} 期望屏 ${String(screens)}（${String(totalSeconds)}s / ${String(stage)}s${stageNote}）`
+        // 段数只是上限判据：段 ≠ 屏。配方永远只给骨架段（4–5 段），真实屏数由屏表决定。
+        + (ok ? '；段数过闸 ≠ 屏数正确，成片屏数按屏表（每屏 4–10s）另行切分' : ''),
     })
   } else {
-    checks.push({ mark: '—', line: '段数：未给 totalSeconds / stageSeconds ⇒ 不参与判定' })
+    checks.push({ mark: '—', line: '段数：未给 totalSeconds ⇒ 不参与判定' })
   }
 
   // 2 · 素材

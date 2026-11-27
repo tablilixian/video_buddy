@@ -36,6 +36,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getCard, registeredCardIds } from '../lib/remotion/recipe-cards-all.js'
 import { probeSlotUsage, mockCtx, safeGenerate } from './gen-card-catalog.mjs'
+import { BULLETS_MAX_LINES, CAPTION_SOFT_MAX_LINES, TITLE_MAX_LINES } from '../lib/remotion/text-fit-plan.js'
+import { SUBTITLE_MAX_LINES } from '../lib/remotion/subtitle-fit.js'
 
 const workspaceRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const OUTPUT = join(workspaceRoot, 'skills', 'code-driven-explainer', 'references', 'card-rules.generated.md')
@@ -257,6 +259,74 @@ function probeCapabilities(card) {
   }
 }
 
+// ── 容量探针 ─────────────────────────────────────────────────────────────
+
+/**
+ * **这张卡到底能装几条 / 几行** —— 从产物实测，不抄源码常量。
+ *
+ * 为什么必须单列：2026-11-27 超级月亮会话里，模型为「这卡能放几行」重编了 3 次
+ * （A4 有底板 → 换 A2 只装 2 行 → 换 A1 也只装 2 行 → 最后删文案），因为旧表只答
+ * 「copy 怎么拆」，不答「装得下吗」。而答案是两件不同的事：
+ *
+ * - **条数**：有的卡硬截断（A4 `.slice(0,6)` / B1 `.slice(0,4)`），给 8 条只出 6/4 条；
+ *   有的卡不截断，把 8 条塞进同一个多行文本块 —— 后者才是更坑的，因为"没丢字"但溢出。
+ * - **行数**：由 textCard 的 `variant` 决定（title 2 / subtitle 3 / bullets 6）。
+ *
+ * 探针喂 8 条带序号的条目，数产物里还剩几条：全在 ⇒ 不截断（`不限条`），
+ * 少几条 ⇒ 那就是硬上限。行数取产物里**出现过的 variant 中最小的那个上限**
+ * （最受限的字段决定文案能写多长）。
+ */
+const VARIANT_LINES = {
+  title: TITLE_MAX_LINES,
+  subtitle: SUBTITLE_MAX_LINES,
+  bullets: BULLETS_MAX_LINES,
+  caption: CAPTION_SOFT_MAX_LINES,
+}
+const CAPACITY_MARKS = ['壹条', '贰条', '叁条', '肆条', '伍条', '陆条', '柒条', '捌条']
+/**
+ * 数值串卡的探针标记（DAT* 只认数字，中文串一条都取不到 —— 那会得出「0 条」的假结论）。
+ * 用三位数 + 前后数字边界判定，避免和产物里的坐标/序号撞车。
+ */
+const CAPACITY_NUM_MARKS = ['901', '902', '903', '904', '905', '906', '907', '908']
+
+function countMarks(blob, marks, numeric) {
+  if (!numeric) return marks.filter((mark) => blob.includes(mark)).length
+  return marks.filter((mark) => new RegExp(`(?<!\\d)${mark}(?!\\d)`, 'u').test(blob)).length
+}
+
+function probeCapacity(card) {
+  const probes = [
+    { marks: CAPACITY_MARKS, numeric: false, copy: CAPACITY_MARKS.join('\n') },
+    // 键:值 型卡：无冒号的串可能整段当值或直接丢，退一步用带冒号的形态再探。
+    { marks: CAPACITY_MARKS, numeric: false, copy: CAPACITY_MARKS.map((mark, index) => `${mark}:${index + 1}`).join('\n') },
+    { marks: CAPACITY_NUM_MARKS, numeric: true, copy: CAPACITY_NUM_MARKS.join('\n') },
+  ]
+  // 三种形态取**保留条数最多**的那次 —— 那才是这张卡的真实上限（谁最合适用谁）。
+  let best = null
+  for (const probe of probes) {
+    let tracks = null
+    try {
+      tracks = card.generate(mockCtx(card, probe.copy, '标'))
+    } catch {
+      continue
+    }
+    if (!Array.isArray(tracks)) continue
+    const blob = markerLocations(tracks).map(({ text }) => text).join('\u0001')
+    const kept = countMarks(blob, probe.marks, probe.numeric)
+    if (best === null || kept > best.kept) best = { kept, tracks, total: probe.marks.length }
+  }
+  // `—` = 这张卡不吃 copy（DAT4「写了也不上画面」）或三种形态都取不到 ⇒ 容量问题不适用，
+  // 不能写成「0 条」——那会被读成"一张都装不下"，比不给答案更误导。
+  if (best === null || best.kept === 0) return '—'
+
+  const countText = best.kept >= best.total ? '不限条' : `${String(best.kept)} 条`
+  const variants = best.tracks
+    .map((track) => (typeof track?.variant === 'string' ? VARIANT_LINES[track.variant] : undefined))
+    .filter((lines) => typeof lines === 'number')
+  if (variants.length === 0) return countText
+  return `${countText} / ${String(Math.min(...variants))} 行`
+}
+
 // ── 同义卡分组 ───────────────────────────────────────────────────────────
 
 /** 主体轨的 type（与卡目录 mainBoxCell 同一扫描口径，取面积最大者）。 */
@@ -299,6 +369,7 @@ function rowOf(id, synonymsOf) {
     id,
     title: card.title,
     copyRule: probeCopyParsing(card),
+    capacity: probeCapacity(card),
     label: labelCell,
     highlights: capabilities.highlights,
     dataSource: capabilities.dataSource,
@@ -348,16 +419,19 @@ export function renderCardRules() {
     '',
     '- **copy 解析规则**：`分段` = 实测能把多段拆开的分隔符；`→` 后面是段落的去向字段。',
     '  「每段整句上画面」= 键:值 写法不会拆 k/v（写了冒号也当普通文字）。',
+    '- **容量**（`条 / 行`）：**这张卡装得下多少**——喂 8 条探针后产物里还剩几条（`不限条` = 不截断，'
+      + '但超出行数会溢出/缩字，不是"安全"），以及正文最多显示几行（由 textCard 变体决定）。'
+      + '**写文案前先看这列**：`4 条 / 3 行` 的卡塞 6 条要点，后 2 条会直接消失。',
     '- **highlights / dataSource**：`✓` = 传了真的进产物（R11 的分段着色 / 数据来源标注）；`—` = 不支持，传了被忽略。',
     '- **data 键**（D5）：该卡消费的 `ctx.data` 结构化数值键（spec 写 `data: { "半径": 384 }` 时能传哪些键）；`—` = 不消费。键由卡注册时 `dataKeys` 声明，产物响应该卡的单测保证。',
     '- **同义卡**：主体轨型相同且素材依赖相同（渲染坏了 / 想换观感时按这列换，第 0 档降级）。',
     '',
-    '| 卡 | copy 解析规则 | label | highlights | dataSource | data 键 | 同义卡 |',
-    '|---|---|---|---|---|---|---|',
+    '| 卡 | copy 解析规则 | 容量 | label | highlights | dataSource | data 键 | 同义卡 |',
+    '|---|---|---|---|---|---|---|---|',
   ]
   for (const [, group] of byPrefix) {
     for (const row of group) {
-      lines.push(`| ${row.id} | ${row.copyRule} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.dataKeys} | ${row.synonyms} |`)
+      lines.push(`| ${row.id} | ${row.copyRule} | ${row.capacity} | ${row.label} | ${row.highlights} | ${row.dataSource} | ${row.dataKeys} | ${row.synonyms} |`)
     }
   }
   lines.push('')

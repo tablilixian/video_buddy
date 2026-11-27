@@ -54,6 +54,12 @@ import {
   type SegmentPointer,
 } from './segment-artifacts.js'
 import { throwError } from './error-system.js'
+import {
+  audioCompatibleWithShots,
+  muxManifestAudio,
+  type MuxManifestAudioInput,
+  type MuxManifestAudioResult,
+} from './manifest-audio-mux.js'
 import type { TeardownSegment } from './teardown-verify.js'
 import { verifyTeardown } from './teardown-verify.js'
 import {
@@ -100,6 +106,14 @@ export interface ShotRenderDeps {
   verifyTiming?: (args: { videoPath: string; segments: readonly TeardownSegment[] }) => Promise<TimingVerifyResult>
   /** 时钟注入（报告耗时与临时文件名；缺省 `Date.now`）。 */
   now?: () => number
+  /**
+   * 整轨混音实现（缺省 {@link muxManifestAudio}；测试注入假实现）。
+   *
+   * P0-2：段渲染恒静音 + concat `-c copy` ⇒ 合并片没有音轨。挂旁白的片子此前因此
+   * 被整体挡在分镜之外（改一屏 = 整片重渲 68–150s）。现在拼接后在这里补一次
+   * `manifest.audio` 整轨混音，画面零重编码，增量收益保留。
+   */
+  muxAudio?: (input: MuxManifestAudioInput) => Promise<MuxManifestAudioResult>
 }
 
 /** 一次分镜渲染的结果：`outcome = null` ⇒ 走了回退（回执里有原因）。 */
@@ -270,8 +284,10 @@ export async function runShotRender(
     specBoundaries,
     quality: deps.quality,
     projectDir: deps.projectDir,
-    // 入口已保证非 probe/spot；音频段（整轨后配）不走分镜 —— 判据在 planShotRender 内。
-    allowShots: manifest.audio === undefined,
+    // 入口已保证非 probe/spot。带 audio 的片子只要**画面里没有 video 轨**就能走分镜 ——
+    // 声音全在 `manifest.audio`，拼接后由 `muxAudio` 整轨补上（P0-2）。有 video 轨时
+    // 原生声在段渲染 mute 之后找不回来，仍整片渲。
+    allowShots: audioCompatibleWithShots(manifest),
   })
   if (plan.mode !== 'shots') {
     return {
@@ -322,12 +338,41 @@ export async function runShotRender(
   })
 
   const mergedTmp = join(shotCacheDir(deps.projectDir), `merged-${randomUUID().slice(0, 8)}.mp4`)
+  // 混音产物与拼接中间件同属临时文件，finally 一并清掉（不留 N 个 merged-* 在缓存目录）。
+  let voicedTmp: string | null = null
   let outcome: RenderJobOutcome
   let pointers: SegmentPointer[] = []
   const frames: RenderSampleResult[] = []
   try {
     await deps.concat({ segmentFiles: orderedFiles, outputPath: mergedTmp, signal: deps.signal })
-    const mergedBytes = readFileSync(mergedTmp)
+    // P0-2：段渲染恒静音、concat 又是 `-c copy` ⇒ 合并片没有音轨。挂旁白/配乐的片子
+    // 现在也走分镜（见上面的 `audioCompatibleWithShots`），所以这里必须补一次整轨混音，
+    // 否则"分镜快"是拿"成片没声音"换的。混音失败只降级成无声 + 一行回执，不让成片陪葬。
+    let mergedSource = mergedTmp
+    if (manifest.audio !== undefined) {
+      const mux = deps.muxAudio ?? muxManifestAudio
+      const outputPath = join(shotCacheDir(deps.projectDir), `merged-${randomUUID().slice(0, 8)}-voiced.mp4`)
+      try {
+        const result = await mux({
+          videoPath: mergedTmp,
+          outputPath,
+          manifest,
+          assetsDir: deps.assetsDir,
+          signal: deps.signal,
+        })
+        if (result.mixed) {
+          mergedSource = result.videoPath
+          voicedTmp = result.videoPath
+          receipt.push(result.audioComposition === undefined
+            ? '🔊 分镜成片已按 manifest.audio 整轨混音'
+            : `🔊 分镜成片已整轨混音（音轨构成：${result.audioComposition}）`)
+        }
+        if (result.note !== undefined) receipt.push(result.note)
+      } catch (cause) {
+        receipt.push(`⚠️ 分镜成片混音异常，已输出无声母版：${cause instanceof Error ? cause.message : String(cause)}`)
+      }
+    }
+    const mergedBytes = readFileSync(mergedSource)
     const saved = await deps.saveMerged(mergedBytes, `remotion-shot-merged-${randomUUID().slice(0, 8)}.mp4`)
     const info = await deps.probeMedia(deps.resolveAsset(saved.assetFile))
     const totalFrames = segments.reduce((sum, segment) => sum + (segment.endFrame - segment.startFrame), 0)
@@ -414,6 +459,8 @@ export async function runShotRender(
     }
   } finally {
     rmSync(mergedTmp, { force: true })
+    // 混音产物同样只是一次性的中间件（成片字节已读进内存）。
+    if (voicedTmp !== null) rmSync(voicedTmp, { force: true })
   }
 
   receipt.push(

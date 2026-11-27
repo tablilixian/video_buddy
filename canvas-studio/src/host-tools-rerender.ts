@@ -132,6 +132,12 @@ export function defineRerenderSegmentTool(ctx: RerenderSegmentContext) {
       + '定位二选一：`shotNodeId`（画布分镜卡节点 id）或 `segmentId`（spec 段 id），同时给会被拒收。'
       + '**结构性意见（拆屏 / 增删屏 / 换整片风格）不要调本工具**：那要重排段表，'
       + '之前看过的画面都会变 —— 必须先向用户明示，再走 `scaffold_manifest` 重编。'
+      // 2026-11-27 超级月亮复盘：模型改一屏后去调 render_composition 整片重渲，
+      // 12 次共 820s；而本工具实测单段 5.2s。成本差必须写在工具描述里 ——
+      // 模型不会自己算这笔账（"反正都能出片"）。
+      + '**改一屏就调本工具，不要调 `render_composition`**：这里只渲这一段（典型 5–15s），'
+      + '整片重渲是 68–150s，且屏数越多越慢 —— 改动只影响一屏时，整片重渲是纯重复劳动。'
+      + '只有改到**全片共用的东西**（主题令牌 / 画布尺寸 / 段表结构 / 全局动画参数）才需要整片重渲。'
       + '返回：段 id / ref / 新副本 URL / 版本号 `v` / 渲染耗时；段渲染失败会显式报错（不静默返回旧片）。',
     parameters: {
       projectId: { type: 'string' as const, description: '可选：目标项目 id；缺省取当前会话项目' },

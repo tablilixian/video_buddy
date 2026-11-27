@@ -530,7 +530,7 @@ export function planShotRender(
   manifest: CompositionManifest,
   opts: PlanShotRenderOptions,
 ): ShotRenderPlan {
-  if (!opts.allowShots) return { mode: 'whole', reason: 'probe/spot 单或 manifest 含音频段（音频整轨后配 = Phase 1.5）' }
+  if (!opts.allowShots) return { mode: 'whole', reason: 'probe/spot 单，或片中含 video 轨（原生声在段渲染静音后找不回来）' }
   if (opts.projectDir === null) return { mode: 'whole', reason: '无项目目录（首页态）' }
   const { cuts, source } = resolveShotBoundaries(manifest, opts.specBoundaries)
   if (cuts.length === 0) return { mode: 'whole', reason: `无可用边界（来源 ${source}）` }
